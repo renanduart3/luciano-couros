@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
-import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, isMockModeEnabled, setMockMode } from "./server/db.js";
+import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, isMockModeEnabled, setMockMode, BACKUP_DIR, LIVE_DB_FILE } from "./server/db.js";
 
 // Initialize express app
 const app = express();
@@ -16,7 +16,6 @@ app.use(express.json());
 initDatabase();
 
 // --- BACKUP & RESTORATION UTILITIES ---
-const BACKUP_DIR = path.join(process.cwd(), "backups");
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
@@ -1197,8 +1196,7 @@ app.post("/api/backups/restaurar", (req, res) => {
     db.close();
 
     // Copy backup over main database
-    const DB_FILE = path.join(process.cwd(), "database.db");
-    fs.copyFileSync(backupPath, DB_FILE);
+    fs.copyFileSync(backupPath, LIVE_DB_FILE);
 
     // Re-initialize database
     // We import it on demand or since db was exported from ./server/db.ts,

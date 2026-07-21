@@ -1,0 +1,24 @@
+LOCAL PERMANENTE DOS DADOS - CENTRAL DE TECIDOS
+================================================
+
+Banco real:
+  data\database.db
+
+Para instalar o banco na maquina do cliente:
+
+1. Garanta que o sistema ainda nao esteja aberto.
+2. Coloque o banco SQLite real nesta pasta.
+3. Renomeie o arquivo exatamente para database.db.
+4. Execute REINICIAR SISTEMA.cmd na pasta principal.
+5. Acesse http://localhost:3000.
+
+Esta pasta data nao e substituida por ATUALIZAR SISTEMA.cmd.
+
+Outros arquivos locais:
+  database_mock.db  - banco ficticio/demonstracao
+  mock_config.json  - define se o modo ficticio esta ativo
+  backups\          - backups automaticos, manuais e de atualizacao
+
+IMPORTANTE:
+Para usar o banco real, o modo ficticio deve estar desativado no sistema.
+Nunca coloque database.db dentro de dist, src ou server.

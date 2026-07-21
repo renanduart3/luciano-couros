@@ -8,10 +8,13 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $RuntimeDir = Join-Path $ProjectRoot ".runtime"
+$DataDir = Join-Path $ProjectRoot "data"
 $PidFile = Join-Path $RuntimeDir "server.pid"
 $OutputLog = Join-Path $RuntimeDir "server.log"
 $ErrorLog = Join-Path $RuntimeDir "server-error.log"
 $SystemUrl = "http://localhost:3000"
+$RepositoryUrl = "https://github.com/renanduart3/luciano-couros.git"
+$RepositoryArchiveUrl = "https://github.com/renanduart3/luciano-couros/archive/refs/heads/main.zip"
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -112,12 +115,14 @@ function Start-System {
 }
 
 function Backup-Databases {
-    $databaseFiles = @(Get-ChildItem -LiteralPath $ProjectRoot -File -Filter "database*.db*" -ErrorAction SilentlyContinue)
+    $databaseFiles = @(Get-ChildItem -LiteralPath $DataDir -File -Filter "database*.db*" -ErrorAction SilentlyContinue)
     if ($databaseFiles.Count -eq 0) { return }
     $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-    $backupDir = Join-Path $ProjectRoot "backups\antes-da-atualizacao_$timestamp"
+    $backupDir = Join-Path $DataDir "backups\antes-da-atualizacao_$timestamp"
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
     foreach ($databaseFile in $databaseFiles) { Copy-Item -LiteralPath $databaseFile.FullName -Destination $backupDir -Force }
+    $configFile = Join-Path $DataDir "mock_config.json"
+    if (Test-Path -LiteralPath $configFile) { Copy-Item -LiteralPath $configFile -Destination $backupDir -Force }
     Write-Host "Backup dos dados criado em: $backupDir" -ForegroundColor Green
 }
 
@@ -125,16 +130,27 @@ function Apply-UpdatePackage {
     $zipFile = Join-Path $ProjectRoot "atualizacao.zip"
     if (-not (Test-Path -LiteralPath $zipFile)) {
         $gitHead = Join-Path $ProjectRoot ".git\HEAD"
-        if (Test-Path -LiteralPath $gitHead) {
-            $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
-            if ($null -eq $gitCommand) { throw "Git nao foi encontrado para baixar a atualizacao." }
+        $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue
+        $hasCommit = $false
+        if ((Test-Path -LiteralPath $gitHead) -and $null -ne $gitCommand) {
+            & $gitCommand.Source -C $ProjectRoot rev-parse --verify HEAD 2>$null | Out-Null
+            $hasCommit = $LASTEXITCODE -eq 0
+        }
+
+        if ($hasCommit) {
             Write-Step "Baixando a versao mais recente"
-            & $gitCommand.Source -C $ProjectRoot pull --ff-only
+            & $gitCommand.Source -C $ProjectRoot pull --ff-only $RepositoryUrl main
             if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel baixar a atualizacao pelo Git." }
             return
         }
-        Write-Host "Nenhum atualizacao.zip encontrado; recompilando os arquivos atuais." -ForegroundColor Yellow
-        return
+
+        Write-Step "Baixando a versao mais recente do GitHub"
+        try {
+            Invoke-WebRequest -Uri $RepositoryArchiveUrl -OutFile $zipFile -UseBasicParsing
+        } catch {
+            Remove-Item -LiteralPath $zipFile -Force -ErrorAction SilentlyContinue
+            throw "Nao foi possivel baixar $RepositoryUrl. Verifique a internet e confirme que o repositorio e a branch main ja existem."
+        }
     }
 
     Write-Step "Aplicando o pacote atualizacao.zip"
@@ -153,7 +169,7 @@ function Apply-UpdatePackage {
         }
     }
 
-    $robocopyArgs = @($sourceDir, $ProjectRoot, "/E", "/R:2", "/W:1", "/XD", ".git", "node_modules", "dist", ".runtime", "backups", "/XF", "database*.db*", "mock_config.json", ".env", "atualizacao.zip")
+    $robocopyArgs = @($sourceDir, $ProjectRoot, "/E", "/R:2", "/W:1", "/XD", ".git", "node_modules", "dist", ".runtime", "backups", "data", "/XF", "database*.db*", "mock_config.json", ".env", "atualizacao.zip")
     & robocopy.exe @robocopyArgs | Out-Host
     if ($LASTEXITCODE -gt 7) { throw "Falha ao copiar os arquivos da atualizacao (codigo $LASTEXITCODE)." }
 

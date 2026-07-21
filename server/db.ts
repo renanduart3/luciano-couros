@@ -2,9 +2,37 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-// Ensure database files are managed dynamically
-const DB_FILE = path.join(process.cwd(), "database.db");
-const CONFIG_PATH = path.join(process.cwd(), "mock_config.json");
+// Customer data lives outside the application files replaced during updates.
+export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), "data"));
+export const LIVE_DB_FILE = path.join(DATA_DIR, "database.db");
+export const MOCK_DB_FILE = path.join(DATA_DIR, "database_mock.db");
+export const BACKUP_DIR = path.join(DATA_DIR, "backups");
+const CONFIG_PATH = path.join(DATA_DIR, "mock_config.json");
+
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+
+// One-time, non-destructive migration for installations that stored data in the project root.
+const legacyFiles: Array<[string, string]> = [
+  ["database.db", "database.db"],
+  ["database.db-shm", "database.db-shm"],
+  ["database.db-wal", "database.db-wal"],
+  ["database_mock.db", "database_mock.db"],
+  ["database_mock.db-shm", "database_mock.db-shm"],
+  ["database_mock.db-wal", "database_mock.db-wal"],
+  ["database_mock_sqlite.db", "database_mock_sqlite.db"],
+  ["database_mock_sqlite.db-shm", "database_mock_sqlite.db-shm"],
+  ["database_mock_sqlite.db-wal", "database_mock_sqlite.db-wal"],
+  ["mock_config.json", "mock_config.json"],
+];
+
+for (const [legacyName, dataName] of legacyFiles) {
+  const legacyPath = path.join(process.cwd(), legacyName);
+  const dataPath = path.join(DATA_DIR, dataName);
+  if (fs.existsSync(legacyPath) && !fs.existsSync(dataPath)) {
+    fs.copyFileSync(legacyPath, dataPath);
+    console.log(`[Database] Migrated local data to: ${dataPath}`);
+  }
+}
 
 export function isMockModeEnabled(): boolean {
   if (fs.existsSync(CONFIG_PATH)) {
@@ -21,9 +49,7 @@ export function isMockModeEnabled(): boolean {
 function getActiveDbFile(): string {
   const enabled = isMockModeEnabled();
   console.log(`[Database] Mock mode status: ${enabled ? "ON" : "OFF"}`);
-  return enabled 
-    ? path.join(process.cwd(), "database_mock.db")
-    : path.join(process.cwd(), "database.db");
+  return enabled ? MOCK_DB_FILE : LIVE_DB_FILE;
 }
 
 let currentDbFile = getActiveDbFile();
@@ -592,8 +618,8 @@ export function setMockMode(enabled: boolean) {
 
   // Open the new SQLite file
   currentDbFile = enabled
-    ? path.join(process.cwd(), "database_mock_sqlite.db")
-    : path.join(process.cwd(), "database.db");
+    ? MOCK_DB_FILE
+    : LIVE_DB_FILE;
 
   console.log(`[Database] Switched active database file to: ${currentDbFile}`);
   currentDb = new Database(currentDbFile);

@@ -103,12 +103,23 @@ O sistema é construído sobre pilaras tecnológicos modernos e robustos:
 
 Depois de instalar o **Node.js 22 LTS**, o cliente pode operar o sistema por dois arquivos na pasta principal:
 
-- `ATUALIZAR SISTEMA.cmd`: faz backup dos bancos locais, aplica um `atualizacao.zip` quando presente, instala dependências, compila e reinicia o sistema. Sem o ZIP, recompila a versão atual.
+- `ATUALIZAR SISTEMA.cmd`: faz backup dos bancos locais, baixa a branch `main` de `https://github.com/renanduart3/luciano-couros`, instala dependências, compila e reinicia o sistema. Se houver um `atualizacao.zip` na pasta, ele será usado no lugar do download.
 - `REINICIAR SISTEMA.cmd`: encerra somente a instância deste projeto, inicia o servidor oculto e abre `http://localhost:3000` no navegador.
 
-Para entregar uma nova versão, compacte o projeto como `atualizacao.zip` e envie o arquivo ao cliente. Ele deve colocar o ZIP na mesma pasta do sistema e clicar em `ATUALIZAR SISTEMA.cmd`. Bancos SQLite, configurações locais, backups e dependências não são sobrescritos pelo pacote.
+Para entregar uma nova versão, publique-a na branch `main` e peça ao cliente para clicar em `ATUALIZAR SISTEMA.cmd`. Como alternativa offline, compacte o projeto como `atualizacao.zip` e envie o arquivo ao cliente para ser colocado na mesma pasta do sistema. Bancos SQLite, configurações locais, backups e dependências não são sobrescritos.
 
-Logs de execução ficam em `.runtime` e backups anteriores à atualização ficam em `backups`.
+Logs de execução ficam em `.runtime` e backups ficam em `data/backups`.
+
+#### Local permanente dos dados
+
+Todos os dados do cliente ficam na pasta `data`, que nunca é substituída pelo atualizador:
+
+- `data/database.db`: banco de produção que deve receber os dados reais.
+- `data/database_mock.db`: banco fictício usado quando o modo de demonstração está ativo.
+- `data/mock_config.json`: seleção local entre modo real e fictício.
+- `data/backups`: backups automáticos, manuais e anteriores às atualizações.
+
+Para instalar ou restaurar um banco real com o servidor parado, coloque-o em `data/database.db`. Instalações antigas que ainda tenham `database.db` na raiz são migradas automaticamente na primeira inicialização, sem apagar o arquivo original.
 
 ### Pré-requisitos
 *   Node.js (versão 18 ou superior)

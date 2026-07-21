@@ -3,6 +3,14 @@ build/
 dist/
 .runtime/
 atualizacao.zip
+backups/
+data/*
+!data/.gitkeep
+!data/LEIA-ME.txt
+database*.db
+database*.db-shm
+database*.db-wal
+mock_config.json
 coverage/
 .DS_Store
 *.log

@@ -1,0 +1,125 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Segoe UI Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Print Specific Media Styles */
+@media print {
+  @page {
+    size: auto;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    background-color: white !important;
+    color: #0f172a !important;
+    font-size: 11px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+  
+  /* Hide interactive margins */
+  aside, header, .print\:hidden, button, select, input {
+    display: none !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+  }
+
+  /* Make containers print full-width and remove screen-specific shadows/borders */
+  .max-w-7xl, .max-w-4xl, .max-w-2xl {
+    max-w: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .border, .border-slate-100, .border-slate-200 {
+    border-color: #cbd5e1 !important;
+  }
+
+  .shadow-sm, .shadow-md, .shadow-xl, .shadow-2xl {
+    box-shadow: none !important;
+  }
+
+  .bg-slate-50, .bg-slate-100 {
+    background-color: transparent !important;
+  }
+
+  /* Print only the active receipt; the screen behind the modal must not create extra pages. */
+  #quick-sale-view:has(#print-receipt) > *:not(#print-receipt),
+  #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay) {
+    display: none !important;
+  }
+
+  #print-receipt,
+  #print-sale-detail-overlay {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
+    backdrop-filter: none !important;
+  }
+
+  #print-receipt > div,
+  #print-sale-detail-overlay > div {
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    animation: none !important;
+  }
+
+  #print-receipt-detail {
+    overflow: visible !important;
+    padding: 0 !important;
+  }
+
+  #print-receipt img,
+  #print-receipt-detail img {
+    width: auto !important;
+    height: 15mm !important;
+    margin-bottom: 2mm !important;
+  }
+}

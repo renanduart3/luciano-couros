@@ -1,0 +1,6 @@
+{
+  "name": "Controle Comercial Enxuto",
+  "description": "Sistema ágil e sem fricção para controle de vendas, compras, pagamentos, clientes e relatórios gerenciais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

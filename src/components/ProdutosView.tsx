@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Edit2, Plus, Search, Tag, Trash2, TrendingUp, X } from "lucide-react";
-import { Produto } from "../types";
+import { Edit2, Plus, Search, Tag, Trash2, TrendingUp, Truck, X } from "lucide-react";
+import { FornecedorProduto, Produto } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 
@@ -25,6 +25,9 @@ export function ProdutosView() {
   const [precoVendaPadrao, setPrecoVendaPadrao] = useState("");
   const [ativo, setAtivo] = useState(true);
   const [formError, setFormError] = useState("");
+  const [historicoProduto, setHistoricoProduto] = useState<Produto | null>(null);
+  const [fornecedoresProduto, setFornecedoresProduto] = useState<FornecedorProduto[]>([]);
+  const [loadingFornecedores, setLoadingFornecedores] = useState(false);
 
   const fetchProdutos = async () => {
     setLoading(true);
@@ -90,6 +93,17 @@ export function ProdutosView() {
     }
   };
 
+  const handleOpenFornecedores = async (produto: Produto) => {
+    setHistoricoProduto(produto);
+    setFornecedoresProduto([]);
+    setLoadingFornecedores(true);
+    try {
+      setFornecedoresProduto(await api.getProdutoFornecedores(produto.id));
+    } finally {
+      setLoadingFornecedores(false);
+    }
+  };
+
   const filtrados = produtos.filter((produto) =>
     produto.nome.toLowerCase().includes(busca.toLowerCase()) ||
     (produto.codigo || "").toLowerCase().includes(busca.toLowerCase())
@@ -147,7 +161,7 @@ export function ProdutosView() {
                     <td className="p-4 text-right">{resumoCusto(produto)}</td>
                     <td className="p-4 text-right font-mono font-extrabold text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</td>
                     <td className="p-4 text-center"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${produto.ativo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{produto.ativo ? "ATIVO" : "ARQUIVADO"}</span></td>
-                    <td className="p-4 text-center"><div className="flex justify-center gap-1"><button aria-label={`Editar ${produto.nome}`} onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
+                    <td className="p-4 text-center"><div className="flex justify-center gap-1"><button aria-label={`Ver fornecedores de ${produto.nome}`} title="Fornecedores e custos" onClick={() => handleOpenFornecedores(produto)} className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50"><Truck size={15} /></button><button aria-label={`Editar ${produto.nome}`} onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
                   </tr>
                 ))}
               </tbody>
@@ -159,7 +173,7 @@ export function ProdutosView() {
               <article key={produto.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-extrabold text-slate-900">{produto.nome}</h3><p className="mt-1 font-mono text-[10px] text-slate-400">REF: {produto.codigo || "SEM REFERÊNCIA"}</p></div><span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">{produto.unidade}</span></div>
                 <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-[9px] font-bold uppercase text-slate-400">Último custo</p>{resumoCusto(produto)}</div><div className="text-right"><p className="text-[9px] font-bold uppercase text-slate-400">Preço de venda</p><p className="font-mono font-black text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</p></div></div>
-                <div className="mt-3 flex gap-2"><button onClick={() => handleOpenForm(produto)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white"><Edit2 size={14} /> Editar</button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-xl border border-red-200 px-3 text-red-600"><Trash2 size={15} /></button></div>
+                <div className="mt-3 flex gap-2"><button onClick={() => handleOpenFornecedores(produto)} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-800"><Truck size={14} /> Fornecedores</button><button onClick={() => handleOpenForm(produto)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white"><Edit2 size={14} /> Editar</button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-xl border border-red-200 px-3 text-red-600"><Trash2 size={15} /></button></div>
               </article>
             ))}
           </div>
@@ -188,6 +202,15 @@ export function ProdutosView() {
               {formError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{formError}</p>}
               <div className="flex gap-3 border-t border-slate-100 pt-4"><button type="button" onClick={() => setFormOpen(false)} className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-xs font-bold text-slate-600">Cancelar</button><button type="submit" className="flex-[1.4] rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white">{editingProd ? "Salvar alterações" : "Cadastrar material"}</button></div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {historicoProduto && (
+        <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" aria-labelledby="historico-fornecedores-titulo" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white p-5"><div><h3 id="historico-fornecedores-titulo" className="font-black text-slate-950">Fornecedores e custos</h3><p className="text-xs font-bold text-slate-600">{historicoProduto.nome}</p></div><button aria-label="Fechar histórico" onClick={() => setHistoricoProduto(null)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100"><X size={18} /></button></div>
+            {loadingFornecedores ? <div className="p-12 text-center font-bold text-slate-600">Carregando histórico...</div> : fornecedoresProduto.length === 0 ? <div className="p-12 text-center"><Truck className="mx-auto text-slate-400" /><p className="mt-3 font-bold text-slate-700">Produto ainda sem fornecedor associado.</p><p className="mt-1 text-xs text-slate-600">Ele continua disponível para venda normalmente.</p></div> : <div className="overflow-x-auto p-5"><table className="w-full min-w-[650px] text-sm"><thead><tr><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-left">Código</th><th className="p-3 text-right">Último custo</th><th className="p-3 text-left">Última compra</th><th className="p-3 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{fornecedoresProduto.map((item) => <tr key={item.fornecedorId}><td className="p-3"><p className="font-extrabold text-slate-950">{item.fornecedorNome}</p><p className="text-xs text-slate-600">{item.fornecedorTelefone || "Sem telefone"}</p></td><td className="p-3 font-mono font-bold">{item.codigoFornecedor || "—"}</td><td className="p-3 text-right font-mono font-black">{item.ultimoCusto == null ? "Ainda não comprado" : formatCurrency(item.ultimoCusto)}</td><td className="p-3 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-3 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}
           </div>
         </div>
       )}

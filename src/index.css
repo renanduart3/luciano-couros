@@ -47,11 +47,303 @@
   box-shadow: 0 4px 10px rgb(5 150 105 / 20%);
 }
 
+/* Legibilidade operacional: visual de planilha, alto contraste e caixa alta. */
+body,
+button,
+input,
+select,
+textarea {
+  text-transform: uppercase;
+}
+
+@media screen {
+  body {
+    color: #0f172a;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+  }
+
+  main :where(p, label, button, td, th, span) {
+    font-size: max(0.8125rem, 1em);
+  }
+
+  main .text-slate-400 {
+    color: #475569 !important;
+  }
+
+  main .text-slate-500 {
+    color: #334155 !important;
+  }
+
+  main .text-slate-600 {
+    color: #1e293b !important;
+  }
+
+  main .border-slate-100 {
+    border-color: #cbd5e1 !important;
+  }
+
+  main .border-slate-200 {
+    border-color: #94a3b8 !important;
+  }
+
+  main input,
+  main select,
+  main textarea {
+    min-height: 44px;
+    border-color: #94a3b8 !important;
+    background-color: #ffffff !important;
+    color: #020617 !important;
+    font-size: 0.9375rem !important;
+    font-weight: 700;
+    opacity: 1;
+  }
+
+  main textarea {
+    line-height: 1.45;
+  }
+
+  main input[type="checkbox"],
+  main input[type="radio"] {
+    min-height: 0;
+    border-color: #64748b !important;
+    background-color: #ffffff !important;
+  }
+
+  main input::placeholder,
+  main textarea::placeholder {
+    color: #475569 !important;
+    opacity: 1;
+  }
+
+  main label,
+  main table th {
+    color: #1e293b !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.025em;
+  }
+
+  main table th {
+    background-color: #e2e8f0 !important;
+  }
+
+  main table td {
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  main button {
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+
+  :where(button, input, select, textarea):focus-visible {
+    outline: 3px solid rgb(16 185 129 / 35%);
+    outline-offset: 2px;
+  }
+}
+
+/* Comprovante histórico: duas meias páginas idênticas em uma folha A4. */
+.receipt-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.receipt-sheet-a4 {
+  box-sizing: border-box;
+  width: 210mm;
+  height: 296mm;
+  margin: 0 auto;
+  padding: 3mm 4mm;
+  background: white;
+  color: #111827;
+  box-shadow: 0 18px 50px rgb(15 23 42 / 25%);
+}
+
+.receipt-copy {
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  height: 142mm;
+  flex-direction: column;
+  overflow: hidden;
+  border: 0.3mm solid #111827;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 8.5pt;
+  line-height: 1.15;
+}
+
+.receipt-copy-label {
+  position: absolute;
+  right: 1.5mm;
+  top: 1mm;
+  z-index: 2;
+  color: #64748b;
+  font-size: 6.5pt;
+  font-weight: 700;
+}
+
+.receipt-header {
+  display: grid;
+  min-height: 22mm;
+  grid-template-columns: 48mm 1fr 31mm;
+  align-items: center;
+  border-bottom: 0.3mm solid #111827;
+  padding: 1.5mm 2mm;
+}
+
+.receipt-logo {
+  width: 46mm;
+  height: 19mm;
+  object-fit: contain;
+}
+
+.receipt-store {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.7mm;
+  text-align: center;
+  font-size: 7.3pt;
+}
+
+.receipt-store em {
+  font-weight: 700;
+}
+
+.receipt-document-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1mm;
+  text-align: right;
+  font-size: 7.3pt;
+}
+
+.receipt-document-meta strong {
+  font-size: 8pt;
+}
+
+.receipt-client-grid {
+  display: grid;
+  grid-template-columns: 1fr 58mm;
+  border-bottom: 0.3mm solid #111827;
+}
+
+.receipt-field {
+  min-height: 5.5mm;
+  overflow: hidden;
+  border-bottom: 0.2mm solid #64748b;
+  padding: 1.1mm 1.5mm 0.6mm;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.receipt-client-name,
+.receipt-client-address {
+  border-right: 0.2mm solid #64748b;
+}
+
+.receipt-items-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 7.4pt;
+}
+
+.receipt-items-table th,
+.receipt-items-table td {
+  height: 4.1mm;
+  overflow: hidden;
+  border-bottom: 0.2mm solid #111827;
+  border-right: 0.2mm solid #111827;
+  padding: 0.6mm 1mm;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.receipt-items-table th:last-child,
+.receipt-items-table td:last-child {
+  border-right: 0;
+}
+
+.receipt-items-table th {
+  height: 5mm;
+  background: #f1f5f9;
+  text-align: center;
+  font-size: 7pt;
+  font-weight: 800;
+}
+
+.receipt-ref { width: 22mm; }
+.receipt-qty { width: 22mm; }
+.receipt-money { width: 34mm; }
+.receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
+
+.receipt-payment-line {
+  display: flex;
+  min-height: 6mm;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1mm 5mm;
+  border-top: 0.3mm solid #111827;
+  padding: 1mm 1.5mm;
+  font-size: 7pt;
+}
+
+.receipt-footer {
+  display: grid;
+  min-height: 14mm;
+  grid-template-columns: 1fr 43mm;
+  grid-template-rows: 7mm 7mm;
+  margin-top: auto;
+  border-top: 0.3mm solid #111827;
+}
+
+.receipt-counts {
+  display: flex;
+  align-items: center;
+  gap: 6mm;
+  padding: 1mm 1.5mm;
+}
+
+.receipt-signature {
+  flex: 1;
+  border-bottom: 0.2mm solid #111827;
+  padding-bottom: 1mm;
+}
+
+.receipt-total,
+.receipt-due {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 0.3mm solid #111827;
+  padding: 1mm 1.5mm;
+  font-size: 7pt;
+}
+
+.receipt-total { grid-column: 2; grid-row: 1; }
+.receipt-due { grid-column: 2; grid-row: 2; border-top: 0.2mm solid #111827; }
+.receipt-total strong { font-size: 10pt; }
+
+.receipt-cut {
+  box-sizing: border-box;
+  display: flex;
+  height: 4mm;
+  align-items: center;
+  justify-content: center;
+  border-top: 0.3mm dashed #64748b;
+  border-bottom: 0.3mm dashed #64748b;
+  color: #64748b;
+  font-size: 7pt;
+}
+
 /* Evita o zoom automático do Safari/iOS ao focar campos pequenos. */
 @media (max-width: 767px) {
-  input,
-  select,
-  textarea {
+  main input,
+  main select,
+  main textarea {
     font-size: 16px !important;
   }
 }
@@ -59,8 +351,8 @@
 /* Print Specific Media Styles */
 @media print {
   @page {
-    size: auto;
-    margin: 8mm;
+    size: A4 portrait;
+    margin: 0;
   }
 
   html,
@@ -74,8 +366,12 @@
   }
   
   /* Hide interactive margins */
-  aside, header, .print\:hidden, button, select, input {
+  aside, .print\:hidden, button, select, input {
     display: none !important;
+  }
+
+  .receipt-header {
+    display: grid !important;
   }
 
   main {
@@ -147,15 +443,35 @@
     animation: none !important;
   }
 
+  .receipt-pages {
+    display: block !important;
+  }
+
+  .receipt-sheet-a4 {
+    width: 210mm !important;
+    height: 296mm !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 3mm 4mm !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    overflow: hidden !important;
+  }
+
+  .receipt-sheet-a4:not(:last-child) {
+    break-after: page;
+    page-break-after: always;
+  }
+
   #print-receipt-detail {
     overflow: visible !important;
     padding: 0 !important;
   }
 
-  #print-receipt img,
-  #print-receipt-detail img {
-    width: auto !important;
-    height: 15mm !important;
-    margin-bottom: 2mm !important;
+  .receipt-logo {
+    width: 46mm !important;
+    height: 19mm !important;
+    margin: 0 !important;
   }
 }

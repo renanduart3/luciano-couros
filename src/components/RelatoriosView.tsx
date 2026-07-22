@@ -1,423 +1,208 @@
-import React, { useState, useEffect } from "react";
-import { 
-  Calendar, FileSpreadsheet, Printer, TrendingUp, DollarSign, Percent, ArrowUpRight, ReceiptText, AlertTriangle
-} from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Calendar, FileSpreadsheet, HandCoins, Printer, RefreshCw, ShoppingBag, TrendingUp, Truck, Users } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
+import { Cliente, Fornecedor, Produto } from "../types";
 import { formatCurrency, formatDate } from "../lib/utils";
-import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from "recharts";
+
+type AbaRelatorio = "geral" | "clientes" | "fornecedores" | "vales";
+
+const iso = (data: Date) => data.toISOString().slice(0, 10);
+const inicioPadrao = () => { const data = new Date(); data.setDate(data.getDate() - 30); return iso(data); };
+const hoje = () => iso(new Date());
+const csvCelula = (valor: unknown) => `"${String(valor ?? "").replace(/"/g, '""')}"`;
 
 export function RelatoriosView() {
-  const [dataInicio, setDataInicio] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30); // Last 30 days by default
-    return d.toISOString().split("T")[0];
-  });
-  const [dataFim, setDataFim] = useState(() => {
-    return new Date().toISOString().split("T")[0];
-  });
-
-  const [reportData, setReportData] = useState<any | null>(null);
+  const [aba, setAba] = useState<AbaRelatorio>("geral");
+  const [dataInicio, setDataInicio] = useState(inicioPadrao);
+  const [dataFim, setDataFim] = useState(hoje);
+  const [clienteId, setClienteId] = useState("");
+  const [fornecedorId, setFornecedorId] = useState("");
+  const [produtoId, setProdutoId] = useState("");
+  const [formaPagamento, setFormaPagamento] = useState("");
+  const [situacaoCliente, setSituacaoCliente] = useState("todos");
+  const [valeStatus, setValeStatus] = useState("abertos");
+  const [vencimentoInicio, setVencimentoInicio] = useState("");
+  const [vencimentoFim, setVencimentoFim] = useState("");
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [dados, setDados] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
 
-  const fetchReport = async () => {
-    if (dataInicio > dataFim) {
+  useEffect(() => {
+    Promise.all([api.getClientes(), api.getFornecedores(), api.getProdutos()])
+      .then(([listaClientes, listaFornecedores, listaProdutos]) => {
+        setClientes(listaClientes.filter((item) => item.ativo === 1));
+        setFornecedores(listaFornecedores.filter((item) => item.ativo === 1));
+        setProdutos(listaProdutos.filter((item) => item.ativo === 1));
+      })
+      .catch((err) => setError(err.message || "Não foi possível carregar os filtros."));
+  }, []);
+
+  const carregar = async () => {
+    if (dataInicio && dataFim && dataInicio > dataFim) {
       setError("A data inicial não pode ser posterior à data final.");
-      setLoading(false);
       return;
     }
-
     setLoading(true);
-    setError(null);
+    setError("");
     try {
-      const rawData = await api.getRelatorios({ startDate: dataInicio, endDate: dataFim });
-      
-      // Calculate dynamic stats from raw data arrays
-      const faturamentoTotal = rawData.vendas.reduce((acc: number, v: any) => acc + v.totalLiquido, 0);
-      const custoTotal = rawData.itensVendidos.reduce((acc: number, item: any) => acc + item.custoTotal, 0);
-      const lucroBruto = faturamentoTotal - custoTotal;
-      const margemLucro = faturamentoTotal > 0 ? (lucroBruto / faturamentoTotal) * 100 : 0;
-      const totalRecebidoPeriodo = rawData.pagamentos.reduce((acc: number, p: any) => acc + p.valor, 0);
-      const descontosConcedidos = rawData.vendas.reduce((acc: number, v: any) => acc + Number(v.desconto || 0), 0);
-      const ticketMedio = rawData.vendas.length > 0 ? faturamentoTotal / rawData.vendas.length : 0;
-
-      const topProdutos = (rawData.rankings?.produtos || []).map((p: any) => ({
-        descricao: p.descricao,
-        totalReceita: p.totalValor,
-        totalLucro: p.totalLucro,
-        margem: p.totalValor > 0 ? (p.totalLucro / p.totalValor) * 100 : 0
-      })).slice(0, 5);
-
-      const topClientes = (rawData.rankings?.clientes || []).map((c: any) => ({
-        clienteNome: c.clienteNome,
-        clienteTelefone: c.clienteTelefone,
-        totalComprado: c.totalComprado,
-        saldoDevedor: c.saldoDevedor
-      })).slice(0, 5);
-
-      // Group daily billing chronologically
-      const dailyMap: Record<string, number> = {};
-      rawData.vendas.forEach((v: any) => {
-        const dStr = formatDate(v.data);
-        dailyMap[dStr] = (dailyMap[dStr] || 0) + v.totalLiquido;
-      });
-      const historicoFaturamento = Object.entries(dailyMap).map(([dateStr, total]) => ({
-        dataStr: dateStr,
-        total
-      })).reverse();
-
-      // Group payment methods
-      const paymentMap: Record<string, number> = {};
-      rawData.pagamentos.forEach((p: any) => {
-        paymentMap[p.formaPagamento] = (paymentMap[p.formaPagamento] || 0) + p.valor;
-      });
-      const metodosPagamento = Object.entries(paymentMap).map(([metodo, total]) => ({
-        metodo,
-        total
+      setDados(await api.getRelatorios({
+        startDate: dataInicio,
+        endDate: dataFim,
+        clienteId: aba === "clientes" || aba === "vales" ? clienteId : undefined,
+        fornecedorId: aba === "fornecedores" ? fornecedorId : undefined,
+        produtoId: aba === "fornecedores" ? produtoId : undefined,
+        formaPagamento: aba === "geral" ? formaPagamento : undefined,
+        valeStatus: aba === "vales" ? valeStatus : undefined,
+        vencimentoInicio: aba === "vales" ? vencimentoInicio : undefined,
+        vencimentoFim: aba === "vales" ? vencimentoFim : undefined,
       }));
-
-      setReportData({
-        resumo: {
-          faturamentoTotal,
-          custoTotal,
-          lucroBruto,
-          margemLucro,
-          totalRecebidoPeriodo,
-          descontosConcedidos,
-          ticketMedio
-        },
-        carteiraVencida: rawData.carteiraVencida || { quantidade: 0, total: 0, ate7Dias: 0, de8a30Dias: 0, mais30Dias: 0 },
-        topProdutos,
-        topClientes,
-        historicoFaturamento,
-        metodosPagamento
-      });
     } catch (err: any) {
-      setError(err.message || "Erro ao gerar relatórios.");
+      setError(err.message || "Erro ao gerar os relatórios.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchReport();
-  }, [dataInicio, dataFim]);
+  useEffect(() => { carregar(); }, [aba, dataInicio, dataFim, clienteId, fornecedorId, produtoId, formaPagamento, valeStatus, vencimentoInicio, vencimentoFim]);
 
-  const handleExportCSV = () => {
-    if (!reportData) return;
-    const csvCell = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const geral = useMemo(() => {
+    if (!dados) return null;
+    const faturamento = dados.vendas.reduce((total: number, venda: any) => total + Number(venda.totalLiquido), 0);
+    const custo = dados.itensVendidos.reduce((total: number, item: any) => total + Number(item.custoTotal), 0);
+    const recebido = dados.pagamentos.reduce((total: number, pagamento: any) => total + Number(pagamento.valor), 0);
+    const lucro = faturamento - custo;
+    const porDia = new Map<string, number>();
+    dados.vendas.slice().reverse().forEach((venda: any) => porDia.set(venda.data, (porDia.get(venda.data) || 0) + Number(venda.totalLiquido)));
+    const meios = new Map<string, number>();
+    dados.pagamentos.forEach((pagamento: any) => meios.set(pagamento.formaPagamento, (meios.get(pagamento.formaPagamento) || 0) + Number(pagamento.valor)));
+    return {
+      faturamento, custo, recebido, lucro,
+      margem: faturamento ? lucro / faturamento * 100 : 0,
+      ticket: dados.vendas.length ? faturamento / dados.vendas.length : 0,
+      vendas: dados.vendas.length,
+      historico: [...porDia].map(([data, total]) => ({ data: formatDate(data), total })),
+      meios: [...meios].map(([nome, total]) => ({ nome, total })),
+      produtos: (dados.rankings?.produtos || []).slice(0, 10),
+    };
+  }, [dados]);
 
-    // Build the CSV string
-    let csvContent = "\uFEFF"; // BOM for Excel encoding compatibility
-    
-    // 1. Title & Range
-    csvContent += `RELATÓRIO FINANCEIRO GERENCIAL;;;\n`;
-    csvContent += `Período:;${formatDate(dataInicio)} a ${formatDate(dataFim)};;\n\n`;
+  const linhasClientes = useMemo(() => {
+    const linhas = dados?.clientesResumo || [];
+    if (situacaoCliente === "com_saldo") return linhas.filter((item: any) => Number(item.saldoDevedor) > 0);
+    if (situacaoCliente === "com_bonus") return linhas.filter((item: any) => Number(item.saldoBonus) > 0);
+    if (situacaoCliente === "sem_movimento") return linhas.filter((item: any) => Number(item.totalVendas) === 0);
+    return linhas;
+  }, [dados, situacaoCliente]);
 
-    // 2. Metrics Table
-    csvContent += `MÉTRICA;VALOR;;\n`;
-    csvContent += `Faturamento Líquido;${reportData.resumo.faturamentoTotal};;\n`;
-    csvContent += `Lucro Bruto;${reportData.resumo.lucroBruto};;\n`;
-    csvContent += `Margem Lucro;${reportData.resumo.margemLucro.toFixed(2).replace(".", ",")};%\n`;
-    csvContent += `Ticket Médio;${reportData.resumo.ticketMedio};;\n`;
-    csvContent += `Descontos Concedidos;${reportData.resumo.descontosConcedidos};;\n`;
-    csvContent += `Total Recebido (Caixa);${reportData.resumo.totalRecebidoPeriodo};;\n`;
-    csvContent += `Carteira Vencida Atual;${reportData.carteiraVencida.total};;\n\n`;
+  const linhasFornecedores = useMemo(() => {
+    const mapa = new Map<string, any>();
+    for (const item of dados?.comprasFornecedores || []) {
+      const atual = mapa.get(item.fornecedorId) || { fornecedorId: item.fornecedorId, fornecedorNome: item.fornecedorNome, telefone: item.fornecedorTelefone, compras: new Map<string, number>(), produtos: new Set<string>(), itens: 0, ultimaCompra: "" };
+      atual.compras.set(item.compraId, Number(item.totalCompra));
+      atual.produtos.add(item.produtoId);
+      atual.itens += 1;
+      if (!atual.ultimaCompra || item.data > atual.ultimaCompra) atual.ultimaCompra = item.data;
+      mapa.set(item.fornecedorId, atual);
+    }
+    return [...mapa.values()].map((item) => ({ ...item, quantidadeCompras: item.compras.size, totalComprado: [...item.compras.values()].reduce((a: number, b: number) => a + b, 0), quantidadeProdutos: item.produtos.size })).sort((a, b) => b.totalComprado - a.totalComprado);
+  }, [dados]);
 
-    // 3. Top Products
-    csvContent += `RANKING: MATERIAIS POR LUCRO BRUTO;;;\n`;
-    csvContent += `Posição;Descrição;Receita (R$);Lucro Bruto (R$);Margem (%)\n`;
-    reportData.topProdutos.forEach((p: any, idx: number) => {
-      csvContent += `${idx + 1};${csvCell(p.descricao)};${p.totalReceita};${p.totalLucro};${p.margem.toFixed(2).replace(".", ",")}\n`;
-    });
-    csvContent += `\n`;
+  const resumoVales = useMemo(() => {
+    const vales = dados?.vales || [];
+    return {
+      quantidade: vales.length,
+      totalOriginal: vales.reduce((total: number, vale: any) => total + Number(vale.totalLiquido), 0),
+      saldo: vales.reduce((total: number, vale: any) => total + Number(vale.saldoRestante), 0),
+      vencido: vales.filter((vale: any) => Number(vale.diasAtraso) > 0).reduce((total: number, vale: any) => total + Number(vale.saldoRestante), 0),
+    };
+  }, [dados]);
 
-    // 4. Top Clients
-    csvContent += `RANKING: CLIENTES MAIORES COMPRADORES;;;\n`;
-    csvContent += `Posição;Nome do Cliente;Telefone;Total Comprado (R$);Saldo Aberto (R$)\n`;
-    reportData.topClientes.forEach((c: any, idx: number) => {
-      csvContent += `${idx + 1};${csvCell(c.clienteNome)};${csvCell(c.clienteTelefone || "")};${c.totalComprado};${c.saldoDevedor}\n`;
-    });
+  const periodoRapido = (dias: number) => {
+    const fim = new Date();
+    const inicio = new Date();
+    inicio.setDate(fim.getDate() - dias);
+    setDataInicio(iso(inicio));
+    setDataFim(iso(fim));
+  };
 
-    // Download blob
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const exportarCsv = () => {
+    if (!dados) return;
+    let csv = "\uFEFF";
+    if (aba === "clientes") {
+      csv += "CLIENTE;TELEFONE;VENDAS;TOTAL COMPRADO;RECEBIDO;SALDO DEVEDOR;BÔNUS;ÚLTIMA COMPRA\n";
+      linhasClientes.forEach((item: any) => { csv += `${csvCelula(item.clienteNome)};${csvCelula(item.clienteTelefone)};${item.totalVendas};${item.totalComprado};${item.totalRecebido};${item.saldoDevedor};${item.saldoBonus};${item.ultimaCompra}\n`; });
+    } else if (aba === "fornecedores") {
+      csv += "FORNECEDOR;TELEFONE;COMPRAS;TOTAL COMPRADO;PRODUTOS;ÚLTIMA COMPRA\n";
+      linhasFornecedores.forEach((item: any) => { csv += `${csvCelula(item.fornecedorNome)};${csvCelula(item.telefone)};${item.quantidadeCompras};${item.totalComprado};${item.quantidadeProdutos};${item.ultimaCompra}\n`; });
+    } else if (aba === "vales") {
+      csv += "DOCUMENTO;CLIENTE;EMISSÃO;VENCIMENTO;TOTAL;PAGO;SALDO;SITUAÇÃO;DIAS EM ATRASO\n";
+      (dados.vales || []).forEach((item: any) => { csv += `${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.data};${item.vencimento};${item.totalLiquido};${item.valorPago};${item.saldoRestante};${item.status};${item.diasAtraso}\n`; });
+    } else {
+      csv += "MÉTRICA;VALOR\n";
+      csv += `FATURAMENTO;${geral?.faturamento || 0}\nRECEBIDO;${geral?.recebido || 0}\nCUSTO;${geral?.custo || 0}\nLUCRO;${geral?.lucro || 0}\nMARGEM;${geral?.margem || 0}\n`;
+    }
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Relatorio_Luciano_Couros_${dataInicio}_${dataFim}.csv`);
-    document.body.appendChild(link);
+    link.href = url;
+    link.download = `relatorio_${aba}_${dataInicio}_${dataFim}.csv`;
     link.click();
-    document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
+  const Card = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><p className="text-xs font-black text-slate-600">{titulo}</p><p className={`mt-2 text-xl font-black ${destaque}`}>{valor}</p></div>;
+
   return (
-    <div className="space-y-6">
-      
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4 print:hidden">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Relatórios Gerenciais</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Vendas, rentabilidade, recebimentos e saúde da carteira.</p>
-        </div>
-        
-        <div className="flex gap-2">
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 border border-slate-200/50 hover:bg-slate-100 text-slate-600 rounded-xl text-xs font-bold shadow-sm transition-colors"
-          >
-            <FileSpreadsheet size={16} /> Exportar Planilha (CSV)
-          </button>
-          <button 
-            onClick={() => window.print()}
-            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md transition-all"
-          >
-            <Printer size={16} /> Imprimir Relatório
-          </button>
-        </div>
+    <section className="space-y-5">
+      <div className="flex flex-col gap-4 border-b border-slate-300 pb-4 lg:flex-row lg:items-end lg:justify-between print:hidden">
+        <div><h1 className="text-2xl font-black text-slate-950 sm:text-3xl">Relatórios</h1><p className="mt-1 text-sm font-bold text-slate-600">Consultas comerciais e financeiras separadas por área.</p></div>
+        <div className="flex flex-wrap gap-2"><button onClick={exportarCsv} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-400 bg-white px-4 text-xs font-black text-slate-900"><FileSpreadsheet size={16} /> Exportar CSV</button><button onClick={() => window.print()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-black text-white"><Printer size={16} /> Imprimir</button></div>
       </div>
 
-      {/* Date Filters - Hide on print */}
-      <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-4 flex flex-col sm:flex-row items-center gap-4 print:hidden">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-          <Calendar size={16} className="text-slate-500" />
-          Filtro do Período:
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <input 
-            type="date" 
-            value={dataInicio}
-            onChange={(e) => setDataInicio(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-sm px-3.5 py-2 rounded-xl text-slate-900 outline-none font-bold focus:border-emerald-500"
-          />
-          <span className="text-slate-400 text-xs font-bold">até</span>
-          <input 
-            type="date" 
-            value={dataFim}
-            onChange={(e) => setDataFim(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-sm px-3.5 py-2 rounded-xl text-slate-900 outline-none font-bold focus:border-emerald-500"
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm sm:flex print:hidden">
+        {([['geral', TrendingUp, 'Visão geral'], ['clientes', Users, 'Clientes'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap ${aba === id ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
       </div>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
-          <p className="text-slate-500 mt-4 text-sm font-medium">Processando métricas e agregando gráficos...</p>
+      <div className="space-y-4 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="text-xs font-black text-slate-700">EMISSÃO DE<input data-testid="relatorio-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
+          <label className="text-xs font-black text-slate-700">ATÉ<input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
+          <div className="flex flex-wrap gap-2"><button onClick={() => periodoRapido(7)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">7 DIAS</button><button onClick={() => periodoRapido(30)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">30 DIAS</button><button onClick={() => periodoRapido(90)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">90 DIAS</button></div>
+          <button onClick={carregar} className="ml-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white"><RefreshCw size={16} />Atualizar</button>
         </div>
-      ) : error ? (
-        <div className="p-4 bg-red-50 text-red-800 rounded-lg border border-red-200">{error}</div>
-      ) : !reportData ? null : (
-        <div className="space-y-8">
-          
-          {/* Printable Report Title Header */}
-          <div className="hidden print:block text-center border-b border-dashed border-slate-200 pb-4 mb-6">
-            <h1 className="text-xl font-bold uppercase tracking-tight">Relatório de Gestão Comercial</h1>
-            <p className="text-xs text-slate-500">Luciano Couros</p>
-            <p className="text-xs text-slate-400 mt-1">Período Selecionado: {formatDate(dataInicio)} a {formatDate(dataFim)}</p>
-          </div>
 
-          {/* KPI Widget Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-            
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vendas Líquidas</span>
-                <span className="p-1 bg-emerald-50 text-emerald-600 rounded-lg"><TrendingUp size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-slate-950 tracking-tighter leading-none" title={formatCurrency(reportData.resumo.faturamentoTotal)}>{formatCurrency(reportData.resumo.faturamentoTotal)}</p>
-              <p className="text-[10px] text-slate-400 font-semibold">Após descontos</p>
-            </div>
+        {aba === "geral" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label></div>}
+        {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select value={situacaoCliente} onChange={(e) => setSituacaoCliente(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="com_saldo">COM SALDO DEVEDOR</option><option value="com_bonus">COM BÔNUS</option><option value="sem_movimento">SEM COMPRA NO PERÍODO</option></select></label></div>}
+        {aba === "fornecedores" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORNECEDOR<select data-testid="relatorio-filtro-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS FORNECEDORES</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">PRODUTO / MATERIAL<select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS PRODUTOS</option>{produtos.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
+        {aba === "vales" && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vale-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select data-testid="relatorio-vale-status" value={valeStatus} onChange={(e) => setValeStatus(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="abertos">EM ABERTO</option><option value="vencidos">VENCIDOS</option><option value="a_vencer">A VENCER</option><option value="quitados">QUITADOS</option></select></label><label className="text-xs font-black text-slate-700">VENCIMENTO DE<input type="date" value={vencimentoInicio} onChange={(e) => setVencimentoInicio(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label><label className="text-xs font-black text-slate-700">VENCIMENTO ATÉ<input type="date" value={vencimentoFim} onChange={(e) => setVencimentoFim(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label></div>}
+      </div>
 
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Ticket Médio</span>
-                <span className="p-1 bg-blue-50 text-blue-600 rounded-lg"><ReceiptText size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-slate-900 tracking-tighter leading-none" title={formatCurrency(reportData.resumo.ticketMedio)}>{formatCurrency(reportData.resumo.ticketMedio)}</p>
-              <p className="text-[10px] text-slate-400 font-semibold">Valor médio por venda</p>
-            </div>
+      {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-4 font-black text-red-900"><AlertTriangle size={18} />{error}</div>}
+      {loading ? <div className="rounded-2xl border border-slate-300 bg-white p-12 text-center font-black text-slate-600">PROCESSANDO RELATÓRIO...</div> : dados && <>
+        {aba === "geral" && geral && <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="FATURAMENTO" valor={formatCurrency(geral.faturamento)} destaque="text-emerald-800" /><Card titulo="RECEBIDO NO PERÍODO" valor={formatCurrency(geral.recebido)} destaque="text-blue-800" /><Card titulo="LUCRO BRUTO" valor={formatCurrency(geral.lucro)} destaque={geral.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /><Card titulo="MARGEM / TICKET" valor={`${geral.margem.toFixed(1)}% • ${formatCurrency(geral.ticket)}`} /></div><div className="grid gap-5 lg:grid-cols-[2fr_1fr]"><div className="rounded-2xl border border-slate-300 bg-white p-4"><h3 className="mb-4 font-black text-slate-950">FATURAMENTO POR DIA</h3><div className="h-72">{geral.historico.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={geral.historico}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="data" fontSize={11} /><YAxis fontSize={11} /><Tooltip formatter={(valor) => formatCurrency(Number(valor))} /><Area dataKey="total" stroke="#047857" fill="#d1fae5" /></AreaChart></ResponsiveContainer> : <p className="p-10 text-center font-bold text-slate-500">SEM VENDAS NO PERÍODO.</p>}</div></div><div className="rounded-2xl border border-slate-300 bg-white p-4"><h3 className="mb-4 font-black text-slate-950">RECEBIMENTOS POR MEIO</h3><div className="space-y-2">{geral.meios.map((item) => <div key={item.nome} className="flex justify-between gap-3 rounded-lg bg-slate-100 p-3 text-xs font-black"><span>{item.nome.replaceAll("_", " ")}</span><span>{formatCurrency(item.total)}</span></div>)}</div></div></div><div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[650px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead><tbody className="divide-y">{geral.produtos.map((item: any) => <tr key={item.produtoId}><td className="p-3 font-black">{item.descricao}</td><td className="p-3 text-right">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>)}</tbody></table></div></div>}
 
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lucro Bruto</span>
-                <span className="p-1 bg-teal-50 text-teal-700 rounded-lg"><DollarSign size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-teal-600 tracking-tighter leading-none" title={formatCurrency(reportData.resumo.lucroBruto)}>{formatCurrency(reportData.resumo.lucroBruto)}</p>
-              <p className="text-[10px] text-teal-500 font-bold flex items-center gap-1">
-                <Percent size={12} /> Margem de {reportData.resumo.margemLucro.toFixed(1)}%
-              </p>
-            </div>
+        {aba === "clientes" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="CLIENTES LISTADOS" valor={String(linhasClientes.length)} /><Card titulo="COMPRAS NO PERÍODO" valor={formatCurrency(linhasClientes.reduce((t: number, i: any) => t + Number(i.totalComprado), 0))} /><Card titulo="SALDO DEVEDOR ATUAL" valor={formatCurrency(linhasClientes.reduce((t: number, i: any) => t + Number(i.saldoDevedor), 0))} destaque="text-amber-800" /><Card titulo="BÔNUS ATUAL" valor={formatCurrency(linhasClientes.reduce((t: number, i: any) => t + Number(i.saldoBonus), 0))} destaque="text-emerald-800" /></div><TabelaClientes linhas={linhasClientes} /></div>}
 
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Entradas Caixa</span>
-                <span className="p-1 bg-emerald-50 text-emerald-600 rounded-lg"><ArrowUpRight size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-emerald-700 tracking-tighter leading-none" title={formatCurrency(reportData.resumo.totalRecebidoPeriodo)}>{formatCurrency(reportData.resumo.totalRecebidoPeriodo)}</p>
-              <p className="text-[10px] text-slate-400 font-semibold">Total recebido</p>
-            </div>
+        {aba === "fornecedores" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Card titulo="FORNECEDORES COM COMPRA" valor={String(linhasFornecedores.length)} /><Card titulo="COMPRAS REGISTRADAS" valor={String(linhasFornecedores.reduce((t: number, i: any) => t + i.quantidadeCompras, 0))} /><Card titulo="TOTAL COMPRADO" valor={formatCurrency(linhasFornecedores.reduce((t: number, i: any) => t + i.totalComprado, 0))} destaque="text-blue-800" /></div><TabelaFornecedores linhas={linhasFornecedores} /></div>}
 
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Descontos</span>
-                <span className="p-1 bg-amber-50 text-amber-600 rounded-lg"><Percent size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-amber-600 tracking-tighter leading-none" title={formatCurrency(reportData.resumo.descontosConcedidos)}>{formatCurrency(reportData.resumo.descontosConcedidos)}</p>
-              <p className="text-[10px] text-slate-400 font-semibold">Concedidos no período</p>
-            </div>
-
-            <div className="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm space-y-2 overflow-hidden">
-              <div className="flex justify-between items-center">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Carteira Vencida</span>
-                <span className="p-1 bg-red-50 text-red-600 rounded-lg"><AlertTriangle size={14} /></span>
-              </div>
-              <p className="text-base sm:text-lg md:text-xl font-black text-red-600 tracking-tighter leading-none" title={formatCurrency(reportData.carteiraVencida.total)}>{formatCurrency(reportData.carteiraVencida.total)}</p>
-              <p className="text-[10px] text-slate-400 font-semibold">{reportData.carteiraVencida.quantidade} contas atrasadas</p>
-            </div>
-
-          </div>
-
-          {/* Charts Row - Hide on print if charts don't render perfectly */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 print:hidden">
-            
-            {/* Daily billing curve */}
-            <div className="lg:col-span-8 bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Evolução do Faturamento Diário</h4>
-              <div className="h-[280px] w-full">
-                {reportData.historicoFaturamento.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-slate-400 text-xs">Sem dados de faturamento para o período.</div>
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={reportData.historicoFaturamento} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorFaturamento" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="dataStr" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                      <Tooltip formatter={(value) => [`R$ ${parseFloat(value as string).toFixed(2)}`, "Faturamento"]} />
-                      <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorFaturamento)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </div>
-
-            {/* Compact cash and receivables summary */}
-            <div className="lg:col-span-4 bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-5">
-              <div>
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Atrasos atuais</h4>
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between rounded-lg bg-amber-50 px-3 py-2 text-amber-800"><span>Até 7 dias</span><strong>{formatCurrency(reportData.carteiraVencida.ate7Dias)}</strong></div>
-                  <div className="flex justify-between rounded-lg bg-orange-50 px-3 py-2 text-orange-800"><span>8 a 30 dias</span><strong>{formatCurrency(reportData.carteiraVencida.de8a30Dias)}</strong></div>
-                  <div className="flex justify-between rounded-lg bg-red-50 px-3 py-2 text-red-800"><span>Mais de 30 dias</span><strong>{formatCurrency(reportData.carteiraVencida.mais30Dias)}</strong></div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 pt-4">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Recebimentos por meio</h4>
-                {reportData.metodosPagamento.length === 0 ? (
-                  <p className="text-slate-400 text-xs">Nenhum pagamento no período.</p>
-                ) : (
-                  <div className="space-y-2 text-xs">
-                    {reportData.metodosPagamento.map((item: any) => (
-                      <div key={item.metodo} className="flex justify-between items-center">
-                        <span className="text-slate-500 font-semibold uppercase">{item.metodo.replace(/_/g, " ")}</span>
-                        <strong className="text-slate-900">{formatCurrency(item.total)}</strong>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-          </div>
-
-          {/* Rankings Grid (Top Products / Top Clients) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
-            {/* Top Sold Materials */}
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <TrendingUp size={15} className="text-emerald-600" />
-                Materiais por Lucro Bruto
-              </h4>
-              <div className="border border-slate-100 rounded-xl overflow-hidden">
-                <table className="w-full text-xs text-left">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100">
-                      <th className="p-3">Descrição do Material</th>
-                      <th className="p-3 text-right">Receita</th>
-                      <th className="p-3 text-right">Lucro Bruto</th>
-                      <th className="p-3 text-right">Margem</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {reportData.topProdutos.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-4 text-center text-slate-400 font-medium">Sem vendas no período.</td>
-                      </tr>
-                    ) : (
-                      reportData.topProdutos.map((p: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50/20">
-                          <td className="p-3 font-semibold text-slate-900">{p.descricao}</td>
-                          <td className="p-3 text-right font-mono font-bold text-slate-900">{formatCurrency(p.totalReceita)}</td>
-                          <td className={`p-3 text-right font-mono font-extrabold ${p.totalLucro >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatCurrency(p.totalLucro)}</td>
-                          <td className="p-3 text-right font-bold text-slate-700">{p.margem.toFixed(1)}%</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Top Buyers */}
-            <div className="bg-white border border-slate-100 rounded-2xl shadow-sm p-5 space-y-4">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <DollarSign size={15} className="text-emerald-600" />
-                Clientes Maiores Compradores
-              </h4>
-              <div className="border border-slate-100 rounded-xl overflow-hidden">
-                <table className="w-full text-xs text-left">
-                  <thead>
-                    <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100">
-                      <th className="p-3">Nome do Cliente</th>
-                      <th className="p-3">Telefone</th>
-                      <th className="p-3 text-right">Total Comprado</th>
-                      <th className="p-3 text-right">Saldo Aberto</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
-                    {reportData.topClientes.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="p-4 text-center text-slate-400 font-medium">Sem compras registradas no período.</td>
-                      </tr>
-                    ) : (
-                      reportData.topClientes.map((c: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-50/20">
-                          <td className="p-3 font-bold text-slate-900">{c.clienteNome}</td>
-                          <td className="p-3 text-slate-500 font-medium">{c.clienteTelefone || "-"}</td>
-                          <td className="p-3 text-right font-mono font-extrabold text-emerald-800">{formatCurrency(c.totalComprado)}</td>
-                          <td className={`p-3 text-right font-mono font-bold ${c.saldoDevedor > 0 ? "text-amber-700" : "text-slate-400"}`}>{formatCurrency(c.saldoDevedor)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-    </div>
+        {aba === "vales" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="VALES LISTADOS" valor={String(resumoVales.quantidade)} /><Card titulo="VALOR ORIGINAL" valor={formatCurrency(resumoVales.totalOriginal)} /><Card titulo="SALDO EM ABERTO" valor={formatCurrency(resumoVales.saldo)} destaque="text-amber-800" /><Card titulo="SALDO VENCIDO" valor={formatCurrency(resumoVales.vencido)} destaque="text-red-800" /></div><TabelaVales linhas={dados.vales || []} /></div>}
+      </>}
+    </section>
   );
+}
+
+function TabelaClientes({ linhas }: { linhas: any[] }) {
+  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">COMPRADO</th><th className="p-3 text-right">RECEBIDO</th><th className="p-3 text-right">DÍVIDA ATUAL</th><th className="p-3 text-right">BÔNUS</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId}><td className="p-3 font-black text-slate-950">{item.clienteNome}</td><td className="p-3 font-bold text-slate-600">{item.clienteTelefone || "—"}</td><td className="p-3 text-right font-bold">{item.totalVendas}</td><td className="p-3 text-right font-black">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoDevedor)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.saldoBonus)}</td><td className="p-3 text-right">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM CLIENTE NESTE FILTRO.</td></tr>}</tbody></table></div>;
+}
+
+function TabelaFornecedores({ linhas }: { linhas: any[] }) {
+  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">FORNECEDOR</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">COMPRAS</th><th className="p-3 text-right">PRODUTOS</th><th className="p-3 text-right">TOTAL COMPRADO</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-black">{item.fornecedorNome}</td><td className="p-3 font-bold text-slate-600">{item.telefone || "—"}</td><td className="p-3 text-right">{item.quantidadeCompras}</td><td className="p-3 text-right">{item.quantidadeProdutos}</td><td className="p-3 text-right font-black text-blue-800">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right">{formatDate(item.ultimaCompra)}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA COMPRA DE FORNECEDOR NESTE FILTRO.</td></tr>}</tbody></table></div>;
+}
+
+function TabelaVales({ linhas }: { linhas: any[] }) {
+  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[950px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">DOCUMENTO</th><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">EMISSÃO</th><th className="p-3 text-left">VENCIMENTO</th><th className="p-3 text-right">TOTAL</th><th className="p-3 text-right">PAGO</th><th className="p-3 text-right">SALDO</th><th className="p-3 text-center">SITUAÇÃO</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.id}><td className="p-3 font-mono font-black">#{item.numeroSequencial}</td><td className="p-3 font-black">{item.clienteNome}</td><td className="p-3">{formatDate(item.data)}</td><td className="p-3">{formatDate(item.vencimento)}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalLiquido)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.valorPago)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoRestante)}</td><td className="p-3 text-center">{item.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-800">QUITADO</span> : item.diasAtraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-black text-red-800">{item.diasAtraso} DIAS ATRASADO</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-black text-amber-800">EM ABERTO</span>}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM VALE NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }

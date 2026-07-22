@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, Produto, ProdutoHabitual, Venda, Pagamento, Compra, DashboardStats, Config, SegurancaStatus
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, Venda, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
 } from "../types";
 
 const API_BASE = "/api";
@@ -17,6 +17,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
 }
 
 export const api = {
+  getSystemInfo: () => fetch(`${API_BASE}/system/version`).then(r => handleResponse<SystemInfo>(r)),
+
   // MOCK DATA CONTROL
   getMockStatus: () => fetch(`${API_BASE}/mock/status`).then(r => handleResponse<{ mockEnabled: boolean }>(r)),
   toggleMock: (enabled: boolean) => 
@@ -85,6 +87,33 @@ export const api = {
     }>(r)),
   getClienteProdutosHabituais: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
+  getCarteiraCliente: (id: string) =>
+    fetch(`${API_BASE}/clientes/${id}/carteira`).then(r => handleResponse<CarteiraCliente>(r)),
+  createRecebimentoCliente: (clienteId: string, dados: {
+    data: string;
+    valorRecebido: number;
+    bonusDisponivel: number;
+    formaPagamento: string;
+    observacao?: string;
+    alocacoes: Array<{ vendaId: string; valor: number }>;
+  }) => fetch(`${API_BASE}/clientes/${clienteId}/carteira/recebimentos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<{
+    success: boolean;
+    id: string;
+    valorRecebido: number;
+    valorAplicado: number;
+    bonusUtilizado: number;
+    bonusGerado: number;
+  }>(r)),
+  cancelarRecebimentoCliente: (id: string, pin: string) =>
+    fetch(`${API_BASE}/recebimentos-cliente/${id}/cancelar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin })
+    }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
 
   // FORNECEDORES
   getFornecedores: () => fetch(`${API_BASE}/fornecedores`).then(r => handleResponse<Fornecedor[]>(r)),
@@ -102,6 +131,14 @@ export const api = {
     }).then(r => handleResponse<Fornecedor>(r)),
   deleteFornecedor: (id: string) => 
     fetch(`${API_BASE}/fornecedores/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
+  getFornecedorProdutos: (id: string) =>
+    fetch(`${API_BASE}/fornecedores/${id}/produtos`).then(r => handleResponse<FornecedorProduto[]>(r)),
+  vincularFornecedorProduto: (fornecedorId: string, dados: { produtoId: string; codigoFornecedor?: string; observacao?: string }) =>
+    fetch(`${API_BASE}/fornecedores/${fornecedorId}/produtos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // PRODUTOS
   getProdutos: () => fetch(`${API_BASE}/produtos`).then(r => handleResponse<Produto[]>(r)),
@@ -119,6 +156,8 @@ export const api = {
     }).then(r => handleResponse<Produto>(r)),
   deleteProduto: (id: string) => 
     fetch(`${API_BASE}/produtos/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
+  getProdutoFornecedores: (id: string) =>
+    fetch(`${API_BASE}/produtos/${id}/fornecedores`).then(r => handleResponse<FornecedorProduto[]>(r)),
 
   // VENDAS
   getVendas: () => fetch(`${API_BASE}/vendas`).then(r => handleResponse<Venda[]>(r)),
@@ -207,6 +246,9 @@ export const api = {
     fornecedorId?: string;
     formaPagamento?: string;
     statusVenda?: string;
+    valeStatus?: string;
+    vencimentoInicio?: string;
+    vencimentoFim?: string;
   }) => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([k, v]) => {

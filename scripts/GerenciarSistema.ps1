@@ -21,6 +21,23 @@ function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
 }
 
+function Get-SystemVersion {
+    $packageFile = Join-Path $ProjectRoot "package.json"
+    if (-not (Test-Path -LiteralPath $packageFile)) { return "desconhecida" }
+    try {
+        $package = Get-Content -LiteralPath $packageFile -Raw | ConvertFrom-Json
+        return [string]$package.version
+    } catch {
+        return "desconhecida"
+    }
+}
+
+function Register-UpdateHistory([string]$PreviousVersion, [string]$NewVersion) {
+    $historyFile = Join-Path $RuntimeDir "update-history.log"
+    $record = "{0} | SUCESSO | v{1} -> v{2}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $PreviousVersion, $NewVersion
+    Add-Content -LiteralPath $historyFile -Value $record -Encoding utf8
+}
+
 function Get-ManagedProcess {
     if (-not (Test-Path -LiteralPath $PidFile)) { return $null }
     $savedPid = (Get-Content -LiteralPath $PidFile -Raw).Trim()
@@ -69,7 +86,8 @@ function Assert-PortAvailable {
 }
 
 function Start-System {
-    Write-Step "Iniciando o sistema em $SystemUrl"
+    $systemVersion = Get-SystemVersion
+    Write-Step "Iniciando o sistema v$systemVersion em $SystemUrl"
     New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
     $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($null -eq $nodeCommand) { throw "Node.js nao foi encontrado. Instale o Node.js 22 LTS e tente novamente." }
@@ -104,7 +122,7 @@ function Start-System {
         try {
             # Use IPv4 explicitly: on some Windows installations, localhost resolves
             # to ::1 while the Node server is listening on the IPv4 interface.
-            $response = Invoke-WebRequest -Uri "$HealthUrl/api/clientes" -UseBasicParsing -TimeoutSec 2
+            $response = Invoke-WebRequest -Uri "$HealthUrl/api/health" -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -eq 200) { $ready = $true; break }
         } catch { }
     }
@@ -201,11 +219,16 @@ function Build-System {
 }
 
 function Update-System {
+    $previousVersion = Get-SystemVersion
+    Write-Host "Versao instalada: v$previousVersion" -ForegroundColor Gray
     Stop-System
     Backup-Databases
     Apply-UpdatePackage
     Build-System
+    $newVersion = Get-SystemVersion
     Start-System
+    Register-UpdateHistory -PreviousVersion $previousVersion -NewVersion $newVersion
+    Write-Host "Sistema atualizado: v$previousVersion -> v$newVersion" -ForegroundColor Green
 }
 
 try {

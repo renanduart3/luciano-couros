@@ -5,7 +5,7 @@ import {
 import { Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
-import logo from "../img/logo.png";
+import { VendaComprovante } from "./VendaComprovante";
 
 interface VendasListaViewProps {
   onRefreshStats?: () => void;
@@ -211,7 +211,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
       {vendaDetalhada && (
         <div id="print-sale-detail-overlay" className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           {/* Main modal container */}
-          <div className="bg-white rounded-2xl w-full max-w-2xl border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in print:absolute print:inset-0 print:border-none print:shadow-none print:max-h-none print:overflow-visible">
+          <div className="w-full max-w-[230mm] rounded-2xl bg-slate-200 p-3 shadow-2xl animate-fade-in print:max-w-none print:bg-white print:p-0 print:shadow-none">
             
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 print:hidden">
@@ -233,94 +233,12 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
             </div>
 
             {/* Modal Body / Receipt Printable content */}
-            <div id="print-receipt-detail" className="flex-1 p-6 overflow-y-auto space-y-6 print:p-0 print:overflow-visible">
-              
-              {/* Receipt Header */}
-              <div className="text-center pb-4 border-b border-dashed border-slate-200">
-                <img
-                  src={logo}
-                  alt="Luciano Couros"
-                  className="mx-auto mb-3 h-20 w-48 object-contain print:h-20"
-                />
-                <h2 className="text-lg font-extrabold text-slate-900 uppercase">Comprovante de Venda</h2>
-                <p className="text-xs text-slate-500 mt-0.5">Central dos Tecidos e Aviamentos</p>
-                <p className="text-xs text-slate-400">Emissão: {formatDate(vendaDetalhada.data)}</p>
-                <p className="text-base font-bold text-slate-800 mt-2">Nº Sequencial: #{vendaDetalhada.numeroSequencial}</p>
-              </div>
-
-              {/* Client Info */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-700 bg-slate-50 p-4 rounded-xl border border-slate-100 print:bg-transparent print:border-none print:p-0">
-                <div>
-                  <h5 className="font-bold text-slate-400 uppercase tracking-wide text-[10px] mb-1">Dados do Cliente</h5>
-                  <p className="font-extrabold text-slate-900 text-sm">{vendaDetalhada.clienteNome}</p>
-                  {vendaDetalhada.clienteTelefone && <p className="mt-1">Telefone: {vendaDetalhada.clienteTelefone}</p>}
-                </div>
-                <div className="sm:text-right">
-                  <h5 className="font-bold text-slate-400 uppercase tracking-wide text-[10px] mb-1">Status de Cobrança</h5>
-                  <span className={`inline-block px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full ${
-                    vendaDetalhada.status === "paga" 
-                      ? "bg-emerald-100 text-emerald-800" 
-                      : vendaDetalhada.status === "pendente" 
-                      ? "bg-amber-100 text-amber-800" 
-                      : "bg-red-100 text-red-800"
-                  }`}>
-                    {vendaDetalhada.status}
-                  </span>
-                  {vendaDetalhada.vencimento && <p className="mt-1">Vencimento: <strong className="text-red-600">{formatDate(vendaDetalhada.vencimento)}</strong></p>}
-                </div>
-              </div>
-
-              {/* Items List */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase text-slate-400 tracking-wide">Itens Registrados</h4>
-                <div className="border border-slate-100 rounded-xl overflow-hidden">
-                  <table className="w-full text-xs text-left">
-                    <thead>
-                      <tr className="bg-slate-50/50 border-b border-slate-100 text-slate-500 font-bold">
-                        <th className="p-3">Descrição do Item</th>
-                        <th className="p-3 text-center">Qtd</th>
-                        <th className="p-3 text-right">Preço Unit</th>
-                        <th className="p-3 text-right">Desconto</th>
-                        <th className="p-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700">
-                      {vendaDetalhada.items?.map((item) => (
-                        <tr key={item.id}>
-                          <td className="p-3 font-semibold text-slate-900">{item.descricao}</td>
-                          <td className="p-3 text-center font-bold">{formatDecimal(item.quantidade)} <span className="text-[10px] text-slate-400 uppercase">{item.unidade}</span></td>
-                          <td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>
-                          <td className="p-3 text-right font-mono text-red-600">-{formatCurrency(item.desconto)}</td>
-                          <td className="p-3 text-right font-mono font-bold text-slate-900">{formatCurrency(item.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Totals */}
-              <div className="py-2 space-y-1.5 text-xs text-right border-t border-dashed border-slate-200">
-                <p className="text-slate-400">Subtotal: <strong className="text-slate-800 font-semibold">{formatCurrency(vendaDetalhada.subtotal)}</strong></p>
-                {vendaDetalhada.desconto > 0 && (
-                  <p className="text-red-600 font-medium">Desconto Geral: -{formatCurrency(vendaDetalhada.desconto)}</p>
-                )}
-                <p className="text-sm font-extrabold text-slate-900">Total Líquido: {formatCurrency(vendaDetalhada.totalLiquido)}</p>
-                <p className="text-emerald-700 font-semibold">Valor Recebido: {formatCurrency(vendaDetalhada.valorPago)}</p>
-                {vendaDetalhada.saldoRestante > 0 && (
-                  <p className="text-amber-700 font-bold">Saldo Restante: {formatCurrency(vendaDetalhada.saldoRestante)}</p>
-                )}
-              </div>
-
-              {vendaDetalhada.observacoes && (
-                <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 italic">
-                  Observações: {vendaDetalhada.observacoes}
-                </div>
-              )}
+            <div id="print-receipt-detail" className="space-y-3 print:space-y-0">
+              <VendaComprovante venda={vendaDetalhada} />
 
               {/* Confirm Cancellation Dialog Box */}
               {showConfirmCancel ? (
-                <div className="bg-red-50 p-4 border border-red-200 rounded-xl space-y-3 print:hidden">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3 print:hidden">
                   <div className="flex items-start gap-2.5 text-red-800">
                     <AlertTriangle size={20} className="shrink-0 text-red-600 mt-0.5" />
                     <div>

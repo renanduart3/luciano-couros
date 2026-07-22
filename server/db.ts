@@ -249,6 +249,34 @@ export function initDatabase() {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_produtos_habituais_cliente ON cliente_produtos_habituais (clienteId, oculto, ultimaCompraEm DESC)`).run();
 
+    // Catálogo opcional: o produto continua independente, mas pode ser
+    // relacionado a um ou mais fornecedores antes ou depois da primeira compra.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS fornecedor_produtos (
+        fornecedorId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        codigoFornecedor TEXT,
+        observacao TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (fornecedorId, produtoId),
+        FOREIGN KEY (fornecedorId) REFERENCES fornecedores (id),
+        FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_fornecedor_produtos_produto ON fornecedor_produtos (produtoId, ativo)`).run();
+
+    // Bancos existentes ganham automaticamente os vínculos comprovados pelo
+    // histórico de compras, sem alterar produtos cadastrados manualmente.
+    db.prepare(`
+      INSERT OR IGNORE INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
+      SELECT DISTINCT c.fornecedorId, ic.produtoId, 1
+      FROM itens_compra ic
+      JOIN compras c ON c.id = ic.compraId
+      WHERE c.deletedAt IS NULL
+    `).run();
+
     // 11. Usuários locais. A estrutura já permite novos perfis no futuro,
     // mas nesta etapa usamos um administrador responsável pelas autorizações.
     db.prepare(`
@@ -304,10 +332,77 @@ export function initDatabase() {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_instrumentos_vencimento ON instrumentos_recebimento (status, vencimento)`).run();
 
+    // 14. Carteira do cliente. Um recebimento representa o dinheiro que
+    // efetivamente entrou; as alocações registram exatamente quais vendas
+    // foram baixadas e os movimentos mantêm o bônus auditável.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS recebimentos_cliente (
+        id TEXT PRIMARY KEY,
+        clienteId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        valorRecebido REAL NOT NULL DEFAULT 0,
+        valorAplicado REAL NOT NULL DEFAULT 0,
+        bonusUtilizado REAL NOT NULL DEFAULT 0,
+        bonusGerado REAL NOT NULL DEFAULT 0,
+        formaPagamento TEXT NOT NULL,
+        observacao TEXT,
+        pagamentoId TEXT,
+        status TEXT NOT NULL DEFAULT 'ativo',
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (pagamentoId) REFERENCES pagamentos (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimentos_cliente_data ON recebimentos_cliente (clienteId, data DESC, createdAt DESC)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS recebimento_alocacoes (
+        id TEXT PRIMARY KEY,
+        recebimentoId TEXT NOT NULL,
+        vendaId TEXT NOT NULL,
+        valor REAL NOT NULL,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_alocacoes_recebimento ON recebimento_alocacoes (recebimentoId, deletedAt)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_alocacoes_venda ON recebimento_alocacoes (vendaId, deletedAt)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS cliente_bonus_movimentos (
+        id TEXT PRIMARY KEY,
+        clienteId TEXT NOT NULL,
+        recebimentoId TEXT,
+        data TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        valor REAL NOT NULL,
+        observacao TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_saldo ON cliente_bonus_movimentos (clienteId, deletedAt)`).run();
+
     db.prepare(`
       INSERT OR IGNORE INTO usuarios (id, nome, perfil, ativo)
       VALUES ('usuario_admin', 'Administrador', 'administrador', 1)
     `).run();
+
+    const configuracoesLoja: Array<[string, string]> = [
+      ["store_name", "Luciano Couros"],
+      ["store_address", "R. Lunard, 289 - B. Caiçara - CEP: 30.770-030 - BH/MG"],
+      ["store_phone", "(31) 3413-5778"],
+      ["store_mobile", "98800-5778 e 98719-4108"],
+      ["store_email", "lucianocouros@hotmail.com"]
+    ];
+    const inserirConfiguracao = db.prepare("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)");
+    for (const configuracao of configuracoesLoja) inserirConfiguracao.run(...configuracao);
   })();
 
   // Dynamic migrations for existing databases to support WhatsApp and product unit conversion fields
@@ -317,6 +412,8 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeVenda TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
 
   // A partir desta versão compra e venda usam a mesma unidade. Mantemos as
   // colunas antigas apenas para compatibilidade com bancos já instalados.

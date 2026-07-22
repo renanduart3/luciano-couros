@@ -32,9 +32,27 @@ export interface Produto {
   custoPadrao: number;
   ultimaCompraEm?: string;
   ultimoFornecedorNome?: string;
+  quantidadeFornecedores?: number;
   ativo: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FornecedorProduto {
+  fornecedorId: string;
+  produtoId: string;
+  codigoFornecedor?: string;
+  observacao?: string;
+  ativo: number;
+  produtoNome?: string;
+  produtoCodigo?: string;
+  fornecedorNome?: string;
+  fornecedorTelefone?: string;
+  unidade?: string;
+  precoVendaPadrao?: number;
+  ultimoCusto?: number | null;
+  ultimaCompraEm?: string | null;
+  comprasRealizadas: number;
 }
 
 export interface ProdutoHabitual {
@@ -66,6 +84,7 @@ export interface ItemVenda {
   total: number;
   custoTotal: number;
   lucroBruto: number;
+  referencia?: string;
 }
 
 export interface Venda {
@@ -74,6 +93,8 @@ export interface Venda {
   clienteId: string;
   clienteNome?: string;
   clienteTelefone?: string;
+  clienteEndereco?: string;
+  clienteDocumento?: string;
   data: string; // YYYY-MM-DD
   subtotal: number;
   desconto: number;
@@ -83,6 +104,16 @@ export interface Venda {
   status: "paga" | "pendente" | "cancelada";
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
+  formaPagamento?: string;
+  instrumentoRecebimento?: {
+    tipo: string;
+    emitente: string;
+    numeroDocumento: string;
+    valor: number;
+    vencimento: string;
+    status: string;
+    observacao?: string;
+  } | null;
   items?: ItemVenda[];
   deletedAt?: string;
   createdAt: string;
@@ -117,6 +148,57 @@ export interface Pagamento {
   updatedAt: string;
 }
 
+export interface DividaCarteira {
+  id: string;
+  numeroSequencial: number;
+  data: string;
+  vencimento?: string;
+  totalLiquido: number;
+  valorPago: number;
+  saldoRestante: number;
+  status: "pendente";
+}
+
+export interface RecebimentoCliente {
+  id: string;
+  clienteId: string;
+  data: string;
+  valorRecebido: number;
+  valorAplicado: number;
+  bonusUtilizado: number;
+  bonusGerado: number;
+  formaPagamento: string;
+  observacao?: string;
+  status: "ativo" | "cancelado";
+  createdAt: string;
+  alocacoes: Array<{
+    id: string;
+    vendaId: string;
+    numeroSequencial: number;
+    valor: number;
+  }>;
+}
+
+export interface MovimentoBonus {
+  id: string;
+  clienteId: string;
+  recebimentoId?: string;
+  data: string;
+  tipo: "credito" | "debito";
+  valor: number;
+  observacao?: string;
+  createdAt: string;
+}
+
+export interface CarteiraCliente {
+  cliente: Cliente;
+  saldoDevedor: number;
+  saldoBonus: number;
+  dividas: DividaCarteira[];
+  recebimentos: RecebimentoCliente[];
+  movimentosBonus: MovimentoBonus[];
+}
+
 export interface ItemCompra {
   id: string;
   compraId: string;
@@ -145,6 +227,11 @@ export interface Compra {
 
 export interface Config {
   nome_loja: string;
+  store_name?: string;
+  store_address?: string;
+  store_phone?: string;
+  store_mobile?: string;
+  store_email?: string;
   retencao_backups_dias: string;
 }
 
@@ -152,6 +239,12 @@ export interface SegurancaStatus {
   usuarioId: string | null;
   nome: string;
   pinConfigurado: boolean;
+}
+
+export interface SystemInfo {
+  version: string;
+  startedAt: string;
+  environment: "production" | "development";
 }
 
 export interface DashboardStats {

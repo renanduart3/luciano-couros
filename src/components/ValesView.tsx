@@ -3,7 +3,7 @@ import { AlertCircle, CalendarClock, HandCoins, History, WalletCards } from "luc
 import { Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
-import { PagamentosView } from "./PagamentosView";
+import { CarteiraClienteView } from "./CarteiraClienteView";
 
 interface ValesViewProps {
   onRefreshStats?: () => void;
@@ -59,12 +59,12 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         </div>
         <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           <button type="button" onClick={() => setTab("abertos")} className={`module-tab ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={17} /> Em aberto</button>
-          <button type="button" onClick={() => setTab("recebimentos")} className={`module-tab ${tab === "recebimentos" ? "module-tab-active" : ""}`}><History size={17} /> Recebimentos</button>
+          <button type="button" onClick={() => setTab("recebimentos")} className={`module-tab ${tab === "recebimentos" ? "module-tab-active" : ""}`}><History size={17} /> Carteira do cliente</button>
         </div>
       </div>
 
       {tab === "recebimentos" ? (
-        <PagamentosView onRefreshStats={onRefreshStats} />
+        <CarteiraClienteView onRefreshStats={onRefreshStats} />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

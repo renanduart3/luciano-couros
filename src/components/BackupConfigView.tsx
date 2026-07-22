@@ -10,7 +10,12 @@ interface BackupConfigViewProps {
 }
 
 export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
+  const [activeTab, setActiveTab] = useState<"loja" | "sistema">("loja");
   const [storeName, setStoreName] = useState("");
+  const [storeAddress, setStoreAddress] = useState("");
+  const [storePhone, setStorePhone] = useState("");
+  const [storeMobile, setStoreMobile] = useState("");
+  const [storeEmail, setStoreEmail] = useState("");
   const [backups, setBackups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -44,7 +49,11 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
         api.getMockStatus().catch(() => ({ mockEnabled: false })),
         api.getSegurancaStatus()
       ]);
-      setStoreName(config.store_name || "Central de Tecidos");
+      setStoreName(config.store_name || "Luciano Couros");
+      setStoreAddress(config.store_address || "R. Lunard, 289 - B. Caiçara - CEP: 30.770-030 - BH/MG");
+      setStorePhone(config.store_phone || "(31) 3413-5778");
+      setStoreMobile(config.store_mobile || "98800-5778 e 98719-4108");
+      setStoreEmail(config.store_email || "lucianocouros@hotmail.com");
       setBackups(backupList);
       setMockEnabled(mockStatus.mockEnabled);
       setSeguranca(segurancaStatus);
@@ -68,8 +77,14 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     }
     setSavingConfig(true);
     try {
-      await api.updateConfig({ store_name: storeName.trim() });
-      alert("Configurações salvas com sucesso!");
+      await api.updateConfig({
+        store_name: storeName.trim(),
+        store_address: storeAddress.trim(),
+        store_phone: storePhone.trim(),
+        store_mobile: storeMobile.trim(),
+        store_email: storeEmail.trim()
+      });
+      alert("Informações da loja salvas com sucesso!");
       if (onRefreshConfig) onRefreshConfig();
     } catch (err: any) {
       alert(err.message || "Erro ao salvar configurações.");
@@ -191,6 +206,15 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
         <p className="text-slate-500 text-sm mt-0.5">Definições da marca da loja, segurança de dados e restauração de cópias de segurança.</p>
       </div>
 
+      <div className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1">
+        <button type="button" onClick={() => setActiveTab("loja")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "loja" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+          Informações da loja
+        </button>
+        <button type="button" onClick={() => setActiveTab("sistema")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "sistema" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+          Sistema, PIN e backups
+        </button>
+      </div>
+
       {loading ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-600"></div>
@@ -212,6 +236,21 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
           </div>
         </div>
 
+      ) : activeTab === "loja" ? (
+        <form onSubmit={handleSaveConfig} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
+          <div className="mb-6 flex items-start gap-3 border-b border-slate-100 pb-5">
+            <span className="rounded-xl bg-emerald-100 p-2.5 text-emerald-700"><Store size={20} /></span>
+            <div><h3 className="text-base font-extrabold text-slate-950">Dados impressos no comprovante</h3><p className="mt-1 text-xs text-slate-500">Qualquer alteração salva aqui aparece nas duas vias da próxima impressão.</p></div>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold uppercase text-slate-500">Nome comercial *</span><input required value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-emerald-500" /></label>
+            <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold uppercase text-slate-500">Endereço completo</span><input value={storeAddress} onChange={(e) => setStoreAddress(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none focus:border-emerald-500" /></label>
+            <label className="space-y-1.5"><span className="text-xs font-bold uppercase text-slate-500">Telefone</span><input value={storePhone} onChange={(e) => setStorePhone(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none focus:border-emerald-500" /></label>
+            <label className="space-y-1.5"><span className="text-xs font-bold uppercase text-slate-500">Celulares</span><input value={storeMobile} onChange={(e) => setStoreMobile(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none focus:border-emerald-500" /></label>
+            <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold uppercase text-slate-500">E-mail</span><input type="email" value={storeEmail} onChange={(e) => setStoreEmail(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-950 outline-none focus:border-emerald-500" /></label>
+          </div>
+          <div className="mt-6 flex justify-end"><button type="submit" disabled={savingConfig} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50"><Save size={15} /> {savingConfig ? "Salvando..." : "Salvar informações da loja"}</button></div>
+        </form>
       ) : (
         
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
@@ -219,35 +258,6 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
           {/* Left Column (Config Form) */}
           <div className="md:col-span-5 space-y-6">
             
-            {/* Branding form */}
-            <form onSubmit={handleSaveConfig} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-50 pb-3">
-                <Store size={16} className="text-slate-500" />
-                Identidade da Loja
-              </h3>
-
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-400 uppercase">Nome Comercial / Cabeçalho *</label>
-                <input 
-                  type="text" 
-                  value={storeName}
-                  onChange={(e) => setStoreName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-bold text-slate-950 focus:border-emerald-500 outline-none"
-                  placeholder="Ex: Central de Tecidos"
-                  required
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Este nome será exibido nos comprovantes de vendas e nos cabeçalhos da tela inicial.</p>
-              </div>
-
-              <button 
-                type="submit"
-                disabled={savingConfig}
-                className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-colors"
-              >
-                <Save size={14} /> {savingConfig ? "Salvando..." : "Salvar Configurações"}
-              </button>
-            </form>
-
             {/* Administrative PIN */}
             <form onSubmit={handleSavePin} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
               <div className="flex items-start justify-between gap-3 border-b border-slate-50 pb-3">

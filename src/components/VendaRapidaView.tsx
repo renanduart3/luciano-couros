@@ -2,12 +2,12 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
   TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare, KeyRound, ShieldCheck,
-  Lock, Unlock, TableProperties
+  Lock, Unlock, TableProperties, History, ListChecks
 } from "lucide-react";
 import { Cliente, Produto, SegurancaStatus, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
-import logo from "../img/logo.png";
+import { VendaComprovante } from "./VendaComprovante";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -104,6 +104,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     vendas: Venda[];
     pagamentos: any[];
   } | null>(null);
+  const [vendaAnteriorId, setVendaAnteriorId] = useState("");
+  const [itensVendaAnteriorSelecionados, setItensVendaAnteriorSelecionados] = useState<string[]>([]);
 
   // Checkout Fields
   const [descontoGeral, setDescontoGeral] = useState("0");
@@ -166,6 +168,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     let active = true;
 
     if (clienteSelecionado) {
+      setVendaAnteriorId("");
+      setItensVendaAnteriorSelecionados([]);
       setCarregandoHabituais(true);
       Promise.all([
         api.getClienteHistorico(clienteSelecionado.id),
@@ -208,6 +212,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       setClienteHistorico(null);
       setItensVenda([]);
       setQuantidadeHabituaisCarregados(0);
+      setVendaAnteriorId("");
+      setItensVendaAnteriorSelecionados([]);
     }
 
     return () => {
@@ -303,6 +309,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     (v) => v.status === "pendente" && !!v.vencimento && v.vencimento < hoje
   );
   const overdueDebt = overdueSales.reduce((total, venda) => total + Number(venda.saldoRestante || 0), 0);
+  const ultimasVendasCliente = (clienteHistorico?.vendas || []).slice(0, 7);
+  const vendaAnteriorSelecionada = ultimasVendasCliente.find((venda) => venda.id === vendaAnteriorId) || null;
   
   // Handlers
   const handleSelectCliente = (cli: Cliente) => {
@@ -445,6 +453,67 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     ));
   };
 
+  const handleSelecionarVendaAnterior = (vendaId: string) => {
+    setVendaAnteriorId(vendaId);
+    const venda = ultimasVendasCliente.find((item) => item.id === vendaId);
+    setItensVendaAnteriorSelecionados(
+      (venda?.items || [])
+        .filter((item) => produtos.some((produto) => produto.id === item.produtoId))
+        .map((item) => item.id)
+    );
+  };
+
+  const handleAlternarItemVendaAnterior = (itemId: string) => {
+    setItensVendaAnteriorSelecionados((atuais) =>
+      atuais.includes(itemId) ? atuais.filter((id) => id !== itemId) : [...atuais, itemId]
+    );
+  };
+
+  const handleImportarItensVendaAnterior = () => {
+    if (!vendaAnteriorSelecionada) return;
+    const itensSelecionados = (vendaAnteriorSelecionada.items || []).filter((item) =>
+      itensVendaAnteriorSelecionados.includes(item.id)
+    );
+
+    if (itensSelecionados.length === 0) {
+      setFeedbackMsg({ type: "error", text: "Selecione pelo menos um item da venda anterior." });
+      return;
+    }
+
+    setItensVenda((atuais) => {
+      let resultado = [...atuais];
+      for (const itemHistorico of itensSelecionados) {
+        const produto = produtos.find((item) => item.id === itemHistorico.produtoId);
+        if (!produto) continue;
+        const importado: ItemRascunho = {
+          produtoId: produto.id,
+          codigo: produto.codigo,
+          nome: itemHistorico.descricao || produto.nome,
+          quantidade: Number(itemHistorico.quantidade).toString().replace(".", ","),
+          unidade: itemHistorico.unidade || produto.unidade,
+          precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ","),
+          desconto: "0",
+          precoPadrao: Number(produto.precoVendaPadrao)
+        };
+        const existenteIndex = resultado.findIndex((item) => item.produtoId === produto.id);
+        if (existenteIndex >= 0) {
+          resultado = resultado.map((item, index) => index === existenteIndex
+            ? { ...importado, precoAutorizado: item.precoAutorizado }
+            : item
+          );
+        } else {
+          resultado.push(importado);
+        }
+      }
+      return resultado;
+    });
+
+    setFeedbackMsg({
+      type: "success",
+      text: `${itensSelecionados.length} ${itensSelecionados.length === 1 ? "item importado" : "itens importados"} da venda #${vendaAnteriorSelecionada.numeroSequencial}. Quantidades e preços continuam editáveis.`
+    });
+  };
+
   // Quick keyboard focus skip helper on ENTER
   const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any>) => {
     if (e.key === "Enter") {
@@ -496,8 +565,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
         ...result,
         clienteNome: clienteSelecionado.nome,
         clienteTelefone: clienteSelecionado.telefone,
+        clienteEndereco: clienteSelecionado.endereco,
+        clienteDocumento: clienteSelecionado.documento,
         clienteIsWhatsapp: clienteSelecionado.isWhatsapp,
+        formaPagamento,
+        instrumentoRecebimento: formaExigeInstrumento ? {
+          tipo: formaPagamento,
+          emitente: instrumentoEmitente.trim(),
+          numeroDocumento: instrumentoNumero.trim(),
+          valor: vPago,
+          vencimento: instrumentoVencimento,
+          status: "a_receber"
+        } : undefined,
         items: itensPreenchidos.map(it => ({
+          referencia: it.codigo,
           descricao: it.nome,
           quantidade: parseBrazilianNumber(it.quantidade),
           unidade: it.unidade,
@@ -587,6 +668,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     setProdutoBusca("");
     setItensVenda([]);
     setQuantidadeHabituaisCarregados(0);
+    setVendaAnteriorId("");
+    setItensVendaAnteriorSelecionados([]);
     setDescontoGeral("0");
     setValorPago("");
     setVencimento("");
@@ -790,24 +873,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
         </div>
       )}
 
-      {/* Printable Area - Hidden on Screen */}
+      {/* Pré-visualização e impressão: duas vias na mesma folha A4 */}
       {vendaSalvaParaImpressao && (
         <div
           id="print-receipt"
           role="dialog"
           aria-modal="true"
           aria-labelledby="venda-finalizada-titulo"
-          className="fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-y-auto print:absolute print:inset-0 print:block print:bg-white print:backdrop-blur-none print:p-0"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6 print:absolute print:inset-0 print:block print:bg-white print:p-0"
         >
-          <div className="max-w-lg mx-auto w-full max-h-[92vh] overflow-y-auto bg-white p-6 border border-slate-200 rounded-2xl print:max-h-none print:overflow-visible print:border-none print:shadow-none shadow-2xl animate-fade-in">
-            <div className="flex items-start justify-between gap-4 pb-4 mb-1 border-b border-slate-100 print:hidden">
+          <div className="mx-auto w-full max-w-[230mm] rounded-2xl bg-slate-200 p-3 shadow-2xl print:max-w-none print:bg-white print:p-0 print:shadow-none">
+            <div className="mb-3 flex items-start justify-between gap-4 rounded-xl bg-white p-4 print:hidden">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                   <CheckCircle2 size={21} />
                 </span>
                 <div>
                   <h3 id="venda-finalizada-titulo" className="text-base font-extrabold text-slate-900">Venda finalizada</h3>
-                  <p className="text-xs text-slate-500">Confira os detalhes e escolha o que deseja fazer.</p>
+                  <p className="text-xs text-slate-500">A prévia abaixo já contém as duas vias na mesma folha A4.</p>
                 </div>
               </div>
               <button
@@ -824,78 +907,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
               </button>
             </div>
 
-            <div className="text-center pb-4 border-b border-dashed border-slate-300">
-              <img
-                src={logo}
-                alt="Luciano Couros"
-                className="mx-auto mb-3 h-20 w-48 object-contain print:h-20"
-              />
-              <h2 className="text-xl font-extrabold text-slate-900 uppercase">Comprovante de Venda</h2>
-              <p className="text-xs text-slate-500 mt-1">Central dos Tecidos e Aviamentos</p>
-              <p className="text-xs text-slate-400">Data: {formatDate(vendaSalvaParaImpressao.data)}</p>
-              <p className="text-base font-bold text-slate-800 mt-2">Venda #{vendaSalvaParaImpressao.numeroSequencial}</p>
-            </div>
-
-            <div className="py-4 border-b border-dashed border-slate-300 text-xs space-y-1 text-slate-700">
-              <p><strong>Cliente:</strong> {vendaSalvaParaImpressao.clienteNome}</p>
-              {vendaSalvaParaImpressao.clienteTelefone && <p><strong>Telefone:</strong> {vendaSalvaParaImpressao.clienteTelefone}</p>}
-            </div>
-
-            <div className="py-4 border-b border-dashed border-slate-300">
-              <h4 className="text-xs font-bold uppercase text-slate-400 mb-2">Itens do Pedido</h4>
-              <table className="w-full text-xs text-left">
-                <thead>
-                  <tr className="border-b border-slate-100 font-bold text-slate-500">
-                    <th className="pb-1">Descrição</th>
-                    <th className="pb-1 text-center">Qtd</th>
-                    <th className="pb-1 text-right">Unit</th>
-                    <th className="pb-1 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {vendaSalvaParaImpressao.items.map((it: any, idx: number) => (
-                    <tr key={idx} className="text-slate-800">
-                      <td className="py-2 pr-2 font-medium">{it.descricao}</td>
-                      <td className="py-2 text-center">{formatDecimal(it.quantidade)} <span className="text-[10px] text-slate-400">{it.unidade}</span></td>
-                      <td className="py-2 text-right">{formatCurrency(it.precoUnitario)}</td>
-                      <td className="py-2 text-right">{formatCurrency(it.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="py-4 space-y-1.5 text-xs text-right border-b border-dashed border-slate-300">
-              <p className="text-slate-500">Subtotal: <strong className="text-slate-800 font-semibold">{formatCurrency(vendaSalvaParaImpressao.subtotal)}</strong></p>
-              {vendaSalvaParaImpressao.desconto > 0 && (
-                <p className="text-red-600 font-medium">Desconto Geral: -{formatCurrency(vendaSalvaParaImpressao.desconto)}</p>
-              )}
-              <p className="text-sm font-bold text-slate-900">Total Líquido: {formatCurrency(vendaSalvaParaImpressao.totalLiquido)}</p>
-              <p className="text-emerald-700 font-semibold">Valor Pago: {formatCurrency(vendaSalvaParaImpressao.valorPago)} ({formaPagamento.toUpperCase()})</p>
-              {vendaSalvaParaImpressao.saldoRestante > 0 && (
-                <p className="text-amber-700 font-bold">Saldo Restante: {formatCurrency(vendaSalvaParaImpressao.saldoRestante)} {vendaSalvaParaImpressao.vencimento && `(Venc: ${formatDate(vendaSalvaParaImpressao.vencimento)})`}</p>
-              )}
-            </div>
-
-            {vendaSalvaParaImpressao.observacoes && (
-              <div className="py-4 text-xs text-slate-500 border-b border-dashed border-slate-300 italic">
-                Obs: {vendaSalvaParaImpressao.observacoes}
-              </div>
-            )}
-
-            <div className="text-center pt-6 text-[10px] text-slate-400">
-              <p>Obrigado pela preferência!</p>
-              <p className="mt-1">Sistema Controle Comercial Enxuto</p>
-            </div>
+            <VendaComprovante venda={vendaSalvaParaImpressao} />
 
             {/* Print action bar */}
-            <div className="mt-8 space-y-3 print:hidden">
+            <div className="mt-3 space-y-3 rounded-xl bg-white p-4 print:hidden">
               <div className="flex gap-3">
                 <button 
                   onClick={executePrint}
                   className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
                 >
-                  <Printer size={15} /> Imprimir Recibo
+                  <Printer size={15} /> Imprimir 2 vias em A4
                 </button>
 
                 {vendaSalvaParaImpressao.clienteTelefone && vendaSalvaParaImpressao.clienteIsWhatsapp === 1 && (
@@ -1129,6 +1150,33 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-900"><TableProperties size={17} className="text-emerald-600" /> Análise durante a venda</h3><p className="mt-1 text-xs font-medium text-slate-500">Uma linha para cada material. Desconto geral rateado proporcionalmente.</p></div>
             {dadosAdmVisiveis ? <button type="button" onClick={() => setDadosAdmVisiveis(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setAnalisePinErro(""); setAnalisePin(""); setShowAnalisePin(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}
+          </div>
+          <div className="border-b border-slate-200 bg-white p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <label className="min-w-0 flex-1">
+                <span className="mb-1.5 flex items-center gap-2 text-xs font-extrabold text-slate-700"><History size={15} className="text-emerald-600" /> Repetir itens de uma das últimas 7 vendas</span>
+                <select data-testid="venda-anterior-select" value={vendaAnteriorId} disabled={!clienteSelecionado || ultimasVendasCliente.length === 0} onChange={(event) => handleSelecionarVendaAnterior(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-500">
+                  <option value="">{!clienteSelecionado ? "Selecione primeiro o cliente" : ultimasVendasCliente.length === 0 ? "Cliente sem vendas anteriores" : "Escolha uma venda anterior..."}</option>
+                  {ultimasVendasCliente.map((venda) => <option key={venda.id} value={venda.id}>{formatDate(venda.data)} — Venda #{venda.numeroSequencial} — {(venda.items || []).length} itens — {formatCurrency(venda.totalLiquido)}</option>)}
+                </select>
+              </label>
+              {vendaAnteriorSelecionada && <button data-testid="importar-venda-anterior" type="button" disabled={itensVendaAnteriorSelecionados.length === 0} onClick={handleImportarItensVendaAnterior} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:bg-slate-300"><ListChecks size={16} /> Adicionar selecionados</button>}
+            </div>
+
+            {vendaAnteriorSelecionada && (
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
+                  <span className="text-xs font-bold text-slate-700">Marque os itens que deseja levar para a venda atual.</span>
+                  <button type="button" onClick={() => setItensVendaAnteriorSelecionados((vendaAnteriorSelecionada.items || []).filter((item) => produtos.some((produto) => produto.id === item.produtoId)).map((item) => item.id))} className="rounded-lg px-2 py-1 text-[11px] font-extrabold text-emerald-700 hover:bg-emerald-100">Selecionar todos</button>
+                </div>
+                <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-2 md:divide-y-0">
+                  {(vendaAnteriorSelecionada.items || []).map((item) => {
+                    const produtoDisponivel = produtos.some((produto) => produto.id === item.produtoId);
+                    return <label key={item.id} className={`flex cursor-pointer items-center gap-3 border-slate-200 px-3 py-2.5 md:border-b ${produtoDisponivel ? "bg-white" : "cursor-not-allowed bg-slate-100 opacity-60"}`}><input type="checkbox" disabled={!produtoDisponivel} checked={itensVendaAnteriorSelecionados.includes(item.id)} onChange={() => handleAlternarItemVendaAnterior(item.id)} className="h-4 w-4 shrink-0 accent-emerald-600" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-extrabold text-slate-900">{item.descricao}</span><span className="block text-[11px] font-semibold text-slate-500">{formatDecimal(item.quantidade)} {item.unidade} • {formatCurrency(item.precoUnitario)} / un.</span></span>{!produtoDisponivel && <span className="text-[10px] font-bold text-red-600">Indisponível</span>}</label>;
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1080px] border-collapse text-left text-xs">

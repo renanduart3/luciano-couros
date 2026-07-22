@@ -110,6 +110,8 @@ O cliente não precisa instalar pnpm nem executar `pnpm dev`. Os atalhos usam o 
 
 Para entregar uma nova versão, publique-a na branch `main` e peça ao cliente para clicar em `ATUALIZAR SISTEMA.cmd`. Como alternativa offline, compacte o projeto como `atualizacao.zip` e envie o arquivo ao cliente para ser colocado na mesma pasta do sistema. Bancos SQLite, configurações locais, backups e dependências não são sobrescritos.
 
+O sistema usa versionamento semântico e mantém a versão oficial no `package.json`. O procedimento completo para incrementar a versão, registrar alterações, criar a tag e publicar está em [`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md). O histórico funcional fica em [`CHANGELOG.md`](CHANGELOG.md).
+
 Logs de execução ficam em `.runtime` e backups ficam em `data/backups`.
 
 #### Local permanente dos dados

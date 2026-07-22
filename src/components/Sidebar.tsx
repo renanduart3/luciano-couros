@@ -4,6 +4,7 @@ import {
   Menu, Package, Settings, ShoppingCart, Truck, Users, X
 } from "lucide-react";
 import logo from "../img/logo.png";
+import { APP_VERSION } from "../lib/version";
 
 interface SidebarProps {
   currentView: string;
@@ -66,7 +67,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
                 return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold ${active ? "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={19} /><span>{item.label}</span></button>;
               })}
             </nav>
-            <div className="border-t border-slate-800 p-4 text-center text-[10px] text-slate-500">v1.0.0 • Servidor local</div>
+            <div className="border-t border-slate-800 p-4 text-center text-[10px] text-slate-400">v{APP_VERSION} • Servidor local</div>
           </aside>
         </div>
       )}
@@ -83,7 +84,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
             return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={isCollapsed ? item.label : undefined} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex w-full items-center rounded-lg text-sm font-medium transition-all ${isCollapsed ? "min-h-11 flex-col justify-center gap-1 px-1 py-2 text-center" : "gap-3 px-3 py-2.5 text-left"} ${active ? item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" />{isCollapsed ? <span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span> : <span className="truncate">{item.label}</span>}</button>;
           })}
         </nav>
-        <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-500">{isCollapsed ? "v1.0" : "v1.0.0 • Offline Autônomo"}</div>
+        <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">{isCollapsed ? `v${APP_VERSION}` : `v${APP_VERSION} • Offline Autônomo`}</div>
       </aside>
     </>
   );

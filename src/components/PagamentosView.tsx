@@ -133,8 +133,8 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Recebimentos e Pagamentos</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Controle de entradas, liquidação de faturas de clientes e amortização de saldos devedores.</p>
+          <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Recebimentos</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Baixa de vales, liquidação de débitos e histórico das entradas de clientes.</p>
         </div>
         
         <button 

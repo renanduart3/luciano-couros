@@ -54,9 +54,7 @@ export function ComprasView() {
     setProdutoId(id);
     const prod = produtos.find(p => p.id === id);
     if (prod) {
-      const unidadeCompraDiferente = prod.unidadeCompra && prod.unidadeCompra !== (prod.unidadeVenda || prod.unidade);
-      const fator = unidadeCompraDiferente ? Number(prod.fatorConversao || 1) : 1;
-      setCustoUnitario((prod.custoPadrao * fator).toFixed(2).replace(".", ","));
+      setCustoUnitario(prod.custoPadrao > 0 ? prod.custoPadrao.toFixed(2).replace(".", ",") : "");
     }
   };
 
@@ -90,7 +88,7 @@ export function ComprasView() {
         nome: prod.nome,
         codigo: prod.codigo,
         quantidade: qty,
-        unidade: prod.unidadeCompra || prod.unidadeVenda || prod.unidade,
+        unidade: prod.unidade,
         custoUnitario: cost,
         total: itemTotal
       }
@@ -150,7 +148,7 @@ export function ComprasView() {
   };
 
   const handleCancelCompra = async (id: string) => {
-    if (confirm("Deseja realmente cancelar esta compra? O status do custo do produto não será revertido automaticamente, mas a compra será anulada.")) {
+    if (confirm("Deseja realmente cancelar esta compra? O custo dos produtos voltará automaticamente para a compra válida anterior.")) {
       try {
         await api.cancelarCompra(id);
         fetchData();
@@ -166,8 +164,8 @@ export function ComprasView() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Compras (Entrada de Estoque)</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Registro de aquisição de matérias-primas e atualização de custo médio histórico.</p>
+          <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Compras de Materiais</h2>
+          <p className="text-slate-500 text-sm mt-0.5">Cada item atualiza o produto com o último custo comprado. Não há controle geral de estoque.</p>
         </div>
         
         <button 
@@ -175,7 +173,7 @@ export function ComprasView() {
             setModoCadastro(!modoCadastro);
             setItensRascunho([]);
           }}
-          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold shadow-md transition-all ${
+          className={`flex w-full sm:w-auto items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-xs font-bold shadow-md transition-all ${
             modoCadastro 
               ? "bg-slate-900 text-white hover:bg-slate-800" 
               : "bg-emerald-600 text-white hover:bg-emerald-700"
@@ -250,7 +248,7 @@ export function ComprasView() {
                   >
                     <option value="">Buscar material no catálogo...</option>
                     {produtos.map(p => (
-                      <option key={p.id} value={p.id}>{p.nome} ({p.unidadeCompra || p.unidadeVenda || p.unidade})</option>
+                      <option key={p.id} value={p.id}>{p.nome} ({p.unidade})</option>
                     ))}
                   </select>
                 </div>
@@ -288,8 +286,8 @@ export function ComprasView() {
               </div>
 
               {/* Items Table */}
-              <div className="border border-slate-100 rounded-xl overflow-hidden mt-4">
-                <table className="w-full text-sm text-left">
+              <div className="border border-slate-100 rounded-xl overflow-x-auto mt-4">
+                <table className="min-w-[680px] w-full text-sm text-left">
                   <thead>
                     <tr className="bg-slate-50 text-slate-400 font-bold text-xs uppercase border-b border-slate-100">
                       <th className="p-3.5">Material</th>
@@ -396,7 +394,7 @@ export function ComprasView() {
         /* LIST PAST PURCHASES */
         <div className="bg-white border border-slate-100 rounded-2xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            <table className="min-w-[760px] w-full text-sm text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold text-xs uppercase">
                   <th className="p-4">Data</th>

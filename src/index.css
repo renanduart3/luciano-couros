@@ -20,6 +20,42 @@
   animation: fadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.module-tab {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.65rem 1rem;
+  color: #475569;
+  font-size: 0.875rem;
+  font-weight: 800;
+  transition: background-color 150ms, color 150ms, box-shadow 150ms;
+}
+
+.module-tab:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.module-tab-active,
+.module-tab-active:hover {
+  background: #059669;
+  color: white;
+  box-shadow: 0 4px 10px rgb(5 150 105 / 20%);
+}
+
+/* Evita o zoom automático do Safari/iOS ao focar campos pequenos. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* Print Specific Media Styles */
 @media print {
   @page {

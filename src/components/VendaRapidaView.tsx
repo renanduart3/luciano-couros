@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
-  TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare
+  TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare, KeyRound, ShieldCheck,
+  Lock, Unlock, TableProperties
 } from "lucide-react";
-import { Cliente, Produto, Venda } from "../types";
+import { Cliente, Produto, SegurancaStatus, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import logo from "../img/logo.png";
@@ -21,31 +22,35 @@ interface ItemRascunho {
   unidade: string;
   precoUnitario: string; // Keep as string for friendly typing
   desconto: string;      // Keep as string for friendly typing
+  precoPadrao: number;
+  precoAutorizado?: number;
 }
 
-const getUnidadeVendaPrincipal = (produto: Produto) => produto.unidadeVenda || produto.unidade;
+type ProdutoComUnidades = Pick<Produto, "unidade">;
 
-const getUnidadesVendaPermitidas = (produto: Produto) => {
-  const unidadePrincipal = getUnidadeVendaPrincipal(produto);
-  const unidades = [unidadePrincipal];
+const getUnidadeVendaPrincipal = (produto: ProdutoComUnidades) => produto.unidade;
 
-  if (
-    produto.venderUnidadeCompra === 1 &&
-    produto.unidadeCompra &&
-    produto.unidadeCompra !== unidadePrincipal
-  ) {
-    unidades.push(produto.unidadeCompra);
-  }
+const getUnidadesVendaPermitidas = (produto: ProdutoComUnidades) => [produto.unidade];
 
-  return unidades;
-};
+const FORMAS_RECEBIMENTO = [
+  { value: "avista_dinheiro", label: "À vista — dinheiro" },
+  { value: "avista_debito", label: "À vista — débito" },
+  { value: "cartao_credito", label: "Cartão de crédito" },
+  { value: "pix", label: "PIX" },
+  { value: "cheque_emitente", label: "Cheque do emitente" },
+  { value: "cheque_terceiro", label: "Cheque de terceiro" },
+  { value: "duplicata_emitente", label: "Duplicata do emitente" },
+  { value: "duplicata_terceiro", label: "Duplicata de terceiro" },
+  { value: "bonus", label: "Bônus / crédito — próxima etapa", disabled: true },
+  { value: "vale", label: "Vale — pagar depois" },
+] as const;
 
-const getFatorDaUnidade = (produto: Produto, unidade: string) => {
-  const unidadePrincipal = getUnidadeVendaPrincipal(produto);
-  return unidade === produto.unidadeCompra && unidade !== unidadePrincipal
-    ? Number(produto.fatorConversao || 1)
-    : 1;
-};
+const FORMAS_COM_INSTRUMENTO = new Set([
+  "cheque_emitente",
+  "cheque_terceiro",
+  "duplicata_emitente",
+  "duplicata_terceiro",
+]);
 
 export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaViewProps) {
   // Clients state
@@ -74,7 +79,17 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
 
   // Cart
   const [itensVenda, setItensVenda] = useState<ItemRascunho[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [quantidadeHabituaisCarregados, setQuantidadeHabituaisCarregados] = useState(0);
+  const [carregandoHabituais, setCarregandoHabituais] = useState(false);
+  const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
+  const [showAutorizacaoPreco, setShowAutorizacaoPreco] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [salvarPrecoCliente, setSalvarPrecoCliente] = useState(true);
+  const [autorizacaoErro, setAutorizacaoErro] = useState("");
+  const [dadosAdmVisiveis, setDadosAdmVisiveis] = useState(false);
+  const [showAnalisePin, setShowAnalisePin] = useState(false);
+  const [analisePin, setAnalisePin] = useState("");
+  const [analisePinErro, setAnalisePinErro] = useState("");
 
   // Client History for Sales BI
   const [clienteHistorico, setClienteHistorico] = useState<{
@@ -96,6 +111,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [vencimento, setVencimento] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  const [instrumentoEmitente, setInstrumentoEmitente] = useState("");
+  const [instrumentoNumero, setInstrumentoNumero] = useState("");
+  const [instrumentoVencimento, setInstrumentoVencimento] = useState("");
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -125,14 +143,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   // Load clients, products and next sequence number
   const loadInitialData = async () => {
     try {
-      const [cList, pList, seq] = await Promise.all([
+      const [cList, pList, seq, segurancaStatus] = await Promise.all([
         api.getClientes(),
         api.getProdutos(),
-        api.getProximoNumeroVenda()
+        api.getProximoNumeroVenda(),
+        api.getSegurancaStatus()
       ]);
       setClientes(cList.filter(c => c.ativo === 1));
       setProdutos(pList.filter(p => p.ativo === 1));
       setVendaNumero(seq.proximoNumero);
+      setSeguranca(segurancaStatus);
     } catch (err) {
       console.error("Erro ao carregar dados de venda:", err);
     }
@@ -143,16 +163,56 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     if (clienteSelecionado) {
-      api.getClienteHistorico(clienteSelecionado.id)
-        .then(res => setClienteHistorico(res))
+      setCarregandoHabituais(true);
+      Promise.all([
+        api.getClienteHistorico(clienteSelecionado.id),
+        api.getClienteProdutosHabituais(clienteSelecionado.id)
+      ])
+        .then(([historico, habituais]) => {
+          if (!active) return;
+          setClienteHistorico(historico);
+          setItensVenda(habituais.map((item) => ({
+            produtoId: item.produtoId,
+            codigo: item.codigo,
+            nome: item.nome,
+            quantidade: "",
+            unidade: item.unidade,
+            precoUnitario: Number(item.ultimoPreco).toString().replace(".", ","),
+            desconto: "0",
+            precoPadrao: Number(item.precoVendaPadrao),
+            precoAutorizado: item.precoAutorizado == null ? undefined : Number(item.precoAutorizado)
+          })));
+          setQuantidadeHabituaisCarregados(habituais.length);
+          if (habituais.length > 0) {
+            setFeedbackMsg({
+              type: "success",
+              text: `${habituais.length} ${habituais.length === 1 ? "produto habitual carregado" : "produtos habituais carregados"}. Preencha somente as quantidades desta venda.`
+            });
+          }
+        })
         .catch(err => {
-          console.error("Erro ao obter historico para BI da Venda:", err);
+          if (!active) return;
+          console.error("Erro ao carregar dados habituais do cliente:", err);
           setClienteHistorico(null);
+          setItensVenda([]);
+          setQuantidadeHabituaisCarregados(0);
+          setFeedbackMsg({ type: "error", text: "Não foi possível carregar o padrão de compra deste cliente." });
+        })
+        .finally(() => {
+          if (active) setCarregandoHabituais(false);
         });
     } else {
       setClienteHistorico(null);
+      setItensVenda([]);
+      setQuantidadeHabituaisCarregados(0);
     }
+
+    return () => {
+      active = false;
+    };
   }, [clienteSelecionado]);
 
   // Filter clients based on query
@@ -175,25 +235,62 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     const desc = parseBrazilianNumber(item.desconto);
     return acc + (qty * preco) - desc;
   }, 0);
+  const quantidadeItensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length;
 
   const descGeralPercent = parseBrazilianNumber(descontoGeral);
   const descGeral = subtotalItens * (descGeralPercent / 100);
   const totalLiquido = Math.max(0, subtotalItens - descGeral);
-  const vPago = valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
+  const fatorPrecoEfetivo = subtotalItens > 0 ? totalLiquido / subtotalItens : 1;
+  const itensQueExigemAutorizacao = itensVenda.filter((item) => {
+    if (parseBrazilianNumber(item.quantidade) <= 0) return false;
+    const pisoPermitido = item.precoAutorizado ?? item.precoPadrao;
+    const precoEfetivo = parseBrazilianNumber(item.precoUnitario) * fatorPrecoEfetivo;
+    return precoEfetivo < pisoPermitido - 0.005;
+  });
+  const vendaNoVale = formaPagamento === "vale";
+  const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
+  const vPago = vendaNoVale ? 0 : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
   const saldoRestante = Math.max(0, totalLiquido - vPago);
+
+  const analiseLinhas = itensVenda
+    .map((item) => {
+      const quantidade = parseBrazilianNumber(item.quantidade);
+      const precoUnitario = parseBrazilianNumber(item.precoUnitario);
+      const descontoItem = parseBrazilianNumber(item.desconto);
+      const produto = produtos.find((prod) => prod.id === item.produtoId);
+      const valorAntesDescontoGeral = Math.max(0, (quantidade * precoUnitario) - descontoItem);
+      const valorVenda = valorAntesDescontoGeral * fatorPrecoEfetivo;
+      const custoUnitario = Number(produto?.custoPadrao || 0);
+      const custoTotal = quantidade * custoUnitario;
+      const lucro = valorVenda - custoTotal;
+      const margem = valorVenda > 0 ? (lucro / valorVenda) * 100 : 0;
+      return {
+        ...item,
+        quantidade,
+        precoUnitario,
+        valorVenda,
+        custoUnitario,
+        custoTotal,
+        lucro,
+        margem,
+        fornecedor: produto?.ultimoFornecedorNome || "Sem compra registrada",
+      };
+    })
+    .filter((item) => item.quantidade > 0);
+
+  const quantidadeTotalAnalise = analiseLinhas.reduce((total, item) => total + item.quantidade, 0);
+  const precoMedioAnalise = quantidadeTotalAnalise > 0 ? totalLiquido / quantidadeTotalAnalise : 0;
 
   // BI calculations
   const totalCustoItens = itensVenda.reduce((acc, item) => {
     const prod = produtos.find(p => p.id === item.produtoId);
-    const custoUnit = prod ? prod.custoPadrao * getFatorDaUnidade(prod, item.unidade) : 0;
+    const custoUnit = prod ? prod.custoPadrao : 0;
     const qty = parseBrazilianNumber(item.quantidade);
     return acc + (qty * custoUnit);
   }, 0);
 
   const lucroEstimado = totalLiquido - totalCustoItens;
   const margemEstimada = totalLiquido > 0 ? (lucroEstimado / totalLiquido) * 100 : 0;
-
-  const historicalTotal = clienteHistorico?.estatisticas?.totalComprado || 0;
 
   // Suggest safe maximum discount to retain 15% margin
   const precoMinimoVenda = totalCustoItens / 0.85;
@@ -207,13 +304,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   );
   const overdueDebt = overdueSales.reduce((total, venda) => total + Number(venda.saldoRestante || 0), 0);
   
-  const ultimaCompra = clienteHistorico?.vendas && clienteHistorico.vendas.length > 0
-    ? clienteHistorico.vendas.reduce((latest, current) => {
-        return new Date(current.data) > new Date(latest.data) ? current : latest;
-      }, clienteHistorico.vendas[0])
-    : null;
-  const dataUltimaCompraStr = ultimaCompra ? formatDate(ultimaCompra.data) : "Sem compras registradas";
-
   // Handlers
   const handleSelectCliente = (cli: Cliente) => {
     setClienteSelecionado(cli);
@@ -248,8 +338,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     }
 
     setItemUnidade(novaUnidade);
-    const fator = getFatorDaUnidade(produtoSelecionado, novaUnidade);
-    setItemPreco((produtoSelecionado.precoVendaPadrao * fator).toFixed(2).replace(".", ","));
+    setItemPreco(produtoSelecionado.precoVendaPadrao.toFixed(2).replace(".", ","));
   };
 
   const handleAddClienteRapido = async (e: React.FormEvent) => {
@@ -312,13 +401,23 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       quantidade: itemQtd,
       unidade: itemUnidade,
       precoUnitario: itemPreco,
-      desconto: "0"
+      desconto: "0",
+      precoPadrao: produtoSelecionado.precoVendaPadrao
     };
 
     setItensVenda(prev => {
-      const updated = [...prev, novoItem];
-      setCurrentPage(Math.ceil(updated.length / 5));
-      return updated;
+      const habitualVazioIndex = prev.findIndex((item) =>
+        item.produtoId === novoItem.produtoId && parseBrazilianNumber(item.quantidade) <= 0
+      );
+
+      if (habitualVazioIndex >= 0) {
+        return prev.map((item, index) => index === habitualVazioIndex
+          ? { ...novoItem, precoPadrao: item.precoPadrao, precoAutorizado: item.precoAutorizado }
+          : item
+        );
+      }
+
+      return [...prev, novoItem];
     });
 
     // Clear item inputs for next item
@@ -337,14 +436,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   };
 
   const handleRemoveItem = (index: number) => {
-    setItensVenda(prev => {
-      const updated = prev.filter((_, i) => i !== index);
-      const maxPage = Math.ceil(updated.length / 5);
-      if (currentPage > maxPage) {
-        setCurrentPage(Math.max(1, maxPage));
-      }
-      return updated;
-    });
+    setItensVenda(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateItem = (index: number, changes: Partial<ItemRascunho>) => {
+    setItensVenda(prev => prev.map((item, itemIndex) =>
+      itemIndex === index ? { ...item, ...changes } : item
+    ));
   };
 
   // Quick keyboard focus skip helper on ENTER
@@ -358,34 +456,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     }
   };
 
-  const handleSaveVenda = async () => {
-    if (!clienteSelecionado) {
-      setFeedbackMsg({ type: "error", text: "Por favor, selecione um cliente para a venda." });
-      clienteInputRef.current?.focus();
-      return;
-    }
-
-    if (itensVenda.length === 0) {
-      setFeedbackMsg({ type: "error", text: "Adicione pelo menos um item à venda." });
-      produtoInputRef.current?.focus();
-      return;
-    }
-
-    if (saldoRestante > 0 && !vencimento) {
-      setFeedbackMsg({ type: "error", text: "Venda com saldo restante exige informar data de vencimento!" });
-      vencimentoRef.current?.focus();
-      return;
-    }
+  const executarSalvamentoVenda = async (autorizacaoPreco?: { pin: string; salvarParaCliente: boolean }) => {
+    if (!clienteSelecionado) return;
+    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
 
     setLoading(true);
     setFeedbackMsg(null);
+    setAutorizacaoErro("");
 
     try {
       const vendaData = {
         clienteId: clienteSelecionado.id,
         data: new Date().toISOString().split("T")[0],
         descontoGeral: descGeral,
-        items: itensVenda.map(it => ({
+        items: itensPreenchidos.map(it => ({
           produtoId: it.produtoId,
           descricao: it.nome,
           quantidade: parseBrazilianNumber(it.quantidade),
@@ -396,18 +480,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
         valorPago: vPago,
         formaPagamento,
         vencimento: vencimento || undefined,
-        observacoes: observacoes || undefined
+        observacoes: observacoes || undefined,
+        instrumentoRecebimento: formaExigeInstrumento ? {
+          emitente: instrumentoEmitente.trim(),
+          numeroDocumento: instrumentoNumero.trim(),
+          vencimento: instrumentoVencimento
+        } : undefined,
+        autorizacaoPreco
       };
 
       const result = await api.createVenda(vendaData);
-      
-      // Prepare print preview details for the confirmation modal
+      setShowAutorizacaoPreco(false);
+      setAdminPin("");
       setVendaSalvaParaImpressao({
         ...result,
         clienteNome: clienteSelecionado.nome,
         clienteTelefone: clienteSelecionado.telefone,
         clienteIsWhatsapp: clienteSelecionado.isWhatsapp,
-        items: itensVenda.map(it => ({
+        items: itensPreenchidos.map(it => ({
           descricao: it.nome,
           quantidade: parseBrazilianNumber(it.quantidade),
           unidade: it.unidade,
@@ -416,11 +506,77 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           total: (parseBrazilianNumber(it.quantidade) * parseBrazilianNumber(it.precoUnitario)) - parseBrazilianNumber(it.desconto)
         }))
       });
-
     } catch (err: any) {
-      setFeedbackMsg({ type: "error", text: err.message || "Erro ao salvar a venda." });
+      if (showAutorizacaoPreco || autorizacaoPreco) {
+        setAutorizacaoErro(err.message || "Não foi possível validar a autorização.");
+      } else {
+        setFeedbackMsg({ type: "error", text: err.message || "Erro ao salvar a venda." });
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveVenda = async () => {
+    if (!clienteSelecionado) {
+      setFeedbackMsg({ type: "error", text: "Por favor, selecione um cliente para a venda." });
+      clienteInputRef.current?.focus();
+      return;
+    }
+
+    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
+
+    if (itensPreenchidos.length === 0) {
+      setFeedbackMsg({ type: "error", text: "Preencha a quantidade de pelo menos um item da venda." });
+      produtoInputRef.current?.focus();
+      return;
+    }
+
+    if (saldoRestante > 0 && !vencimento) {
+      setFeedbackMsg({ type: "error", text: "Venda com saldo restante exige informar data de vencimento!" });
+      vencimentoRef.current?.focus();
+      return;
+    }
+
+    if (formaExigeInstrumento && (!instrumentoEmitente.trim() || !instrumentoNumero.trim() || !instrumentoVencimento)) {
+      setFeedbackMsg({ type: "error", text: "Informe emitente, número e vencimento do cheque ou duplicata." });
+      return;
+    }
+
+    if (itensQueExigemAutorizacao.length > 0) {
+      setAdminPin("");
+      setAutorizacaoErro("");
+      setSalvarPrecoCliente(true);
+      setShowAutorizacaoPreco(true);
+      return;
+    }
+
+    await executarSalvamentoVenda();
+  };
+
+  const handleAutorizarPreco = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4,8}$/.test(adminPin)) {
+      setAutorizacaoErro("Informe o PIN administrativo de 4 a 8 números.");
+      return;
+    }
+    await executarSalvamentoVenda({ pin: adminPin, salvarParaCliente: salvarPrecoCliente });
+  };
+
+  const handleDesbloquearAnalise = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4,8}$/.test(analisePin)) {
+      setAnalisePinErro("Informe o PIN administrativo de 4 a 8 números.");
+      return;
+    }
+    setAnalisePinErro("");
+    try {
+      await api.verificarPinAdministrador(analisePin, "visualizar_analise_venda");
+      setDadosAdmVisiveis(true);
+      setShowAnalisePin(false);
+      setAnalisePin("");
+    } catch (err: any) {
+      setAnalisePinErro(err.message || "PIN administrativo inválido.");
     }
   };
 
@@ -430,11 +586,23 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     setProdutoSelecionado(null);
     setProdutoBusca("");
     setItensVenda([]);
+    setQuantidadeHabituaisCarregados(0);
     setDescontoGeral("0");
     setValorPago("");
     setVencimento("");
     setObservacoes("");
+    setFormaPagamento("pix");
+    setInstrumentoEmitente("");
+    setInstrumentoNumero("");
+    setInstrumentoVencimento("");
     setFeedbackMsg(null);
+    setShowAutorizacaoPreco(false);
+    setAdminPin("");
+    setAutorizacaoErro("");
+    setDadosAdmVisiveis(false);
+    setShowAnalisePin(false);
+    setAnalisePin("");
+    setAnalisePinErro("");
   };
 
   const executePrint = () => {
@@ -497,7 +665,131 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   };
 
   return (
-    <div id="quick-sale-view" className="space-y-6">
+    <div id="quick-sale-view" className="flex flex-col gap-6">
+      {showAnalisePin && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <form onSubmit={handleDesbloquearAnalise} role="dialog" aria-modal="true" aria-labelledby="analise-pin-titulo" className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white"><Lock size={18} /></span>
+                <div><h3 id="analise-pin-titulo" className="font-extrabold text-slate-950">Informações administrativas</h3><p className="mt-0.5 text-xs text-slate-500">Custo, lucro, fornecedor e margem.</p></div>
+              </div>
+              <button type="button" aria-label="Fechar PIN da análise" onClick={() => setShowAnalisePin(false)} className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700"><X size={18} /></button>
+            </div>
+            <div className="space-y-4 p-5">
+              {!seguranca?.pinConfigurado ? (
+                <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900"><p className="font-bold">Configure primeiro o PIN do administrador.</p><button type="button" onClick={() => onNavigateToView("config")} className="w-full rounded-lg bg-slate-900 px-3 py-2.5 font-bold text-white">Ir para Configurações</button></div>
+              ) : (
+                <><label className="block text-xs font-extrabold uppercase tracking-wider text-slate-500">PIN de {seguranca.nome}</label><input type="password" inputMode="numeric" autoComplete="off" autoFocus value={analisePin} onChange={(event) => setAnalisePin(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="••••" aria-label="PIN para visualizar análise" className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" /></>
+              )}
+              {analisePinErro && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{analisePinErro}</p>}
+            </div>
+            {seguranca?.pinConfigurado && <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4"><button type="button" onClick={() => setShowAnalisePin(false)} className="rounded-lg px-4 py-2 text-xs font-bold text-slate-600">Cancelar</button><button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-bold text-white">Desbloquear</button></div>}
+          </form>
+        </div>
+      )}
+      {showAutorizacaoPreco && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleAutorizarPreco}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="autorizar-preco-titulo"
+            className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-amber-100 bg-amber-50 px-5 py-4">
+              <div className="flex gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white">
+                  <KeyRound size={20} />
+                </span>
+                <div>
+                  <h3 id="autorizar-preco-titulo" className="font-extrabold text-slate-950">Autorizar preço especial</h3>
+                  <p className="mt-0.5 text-xs text-amber-800">{itensQueExigemAutorizacao.length} {itensQueExigemAutorizacao.length === 1 ? "item está" : "itens estão"} abaixo do preço permitido.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar autorização"
+                onClick={() => setShowAutorizacaoPreco(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-3">
+                {itensQueExigemAutorizacao.map((item) => (
+                  <div key={item.produtoId} className="flex items-center justify-between gap-3 text-xs">
+                    <span className="min-w-0 truncate font-bold text-slate-800">{item.nome}</span>
+                    <span className="shrink-0 font-mono font-black text-red-700">
+                      {formatCurrency(parseBrazilianNumber(item.precoUnitario) * fatorPrecoEfetivo)}
+                      <span className="ml-1 font-sans text-[9px] font-medium text-slate-400">/ piso {formatCurrency(item.precoAutorizado ?? item.precoPadrao)}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {!seguranca?.pinConfigurado ? (
+                <div className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-800">
+                  <p className="font-bold">O PIN administrativo ainda não foi configurado.</p>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToView("config")}
+                    className="w-full rounded-lg bg-slate-900 px-3 py-2.5 font-bold text-white"
+                  >
+                    Ir para Ajustes & Backups
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-500">PIN de {seguranca.nome}</label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      autoFocus
+                      value={adminPin}
+                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                      placeholder="••••"
+                      aria-label="PIN administrativo"
+                      className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                    />
+                  </div>
+
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <input
+                      type="checkbox"
+                      checked={salvarPrecoCliente}
+                      onChange={(e) => setSalvarPrecoCliente(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-emerald-600"
+                    />
+                    <span className="text-xs leading-relaxed text-emerald-900">
+                      <strong>Manter estes preços para {clienteSelecionado?.nome}</strong><br />
+                      Nas próximas vendas, valores iguais ou maiores não pedirão o PIN novamente.
+                    </span>
+                  </label>
+                </>
+              )}
+
+              {autorizacaoErro && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{autorizacaoErro}</p>
+              )}
+            </div>
+
+            {seguranca?.pinConfigurado && (
+              <div className="flex gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
+                <button type="button" onClick={() => setShowAutorizacaoPreco(false)} className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-600">Cancelar</button>
+                <button type="submit" disabled={loading} className="flex-[1.5] rounded-xl bg-amber-500 px-4 py-2.5 text-xs font-extrabold text-white shadow-md hover:bg-amber-600 disabled:opacity-50">
+                  {loading ? "Validando..." : "Autorizar e finalizar"}
+                </button>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
+
       {/* Printable Area - Hidden on Screen */}
       {vendaSalvaParaImpressao && (
         <div
@@ -643,7 +935,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       {/* Screen Area */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Nova Venda</h2>
             <span className="px-3 py-1 bg-emerald-50 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-100">
               Número Sequencial: #{vendaNumero}
@@ -676,10 +968,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       )}
 
       {/* Step Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+      <div className="contents">
         
         {/* Card 1: Cliente da Venda */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
+        <div className="order-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <label className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -815,49 +1107,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
               )}
             </div>
 
-            {/* Client business health summary */}
             {clienteSelecionado && (
-              <div className="mt-4 p-4 border border-slate-100 rounded-xl bg-slate-50/50 space-y-3.5 animate-fade-in">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Saúde do Cliente</span>
-                  <span className={`px-2 py-1 rounded-full border text-[9px] font-extrabold uppercase ${
-                    overdueDebt > 0
-                      ? "bg-red-50 border-red-200 text-red-700"
-                      : activeDebt > 0
-                      ? "bg-amber-50 border-amber-200 text-amber-700"
-                      : "bg-emerald-50 border-emerald-200 text-emerald-700"
-                  }`}>
-                    {overdueDebt > 0 ? "Pagamento atrasado" : activeDebt > 0 ? "Saldo em aberto" : "Em dia"}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3.5 text-[10px]">
-                  <div className="space-y-0.5">
-                    <span className="text-slate-400 font-bold uppercase tracking-wide block">Cliente desde</span>
-                    <p className="font-extrabold text-slate-800">{formatDate(clienteSelecionado.createdAt)}</p>
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <span className="text-slate-400 font-bold uppercase tracking-wide block">Última Compra</span>
-                    <p className="font-extrabold text-slate-800">{dataUltimaCompraStr}</p>
-                  </div>
-
-                  <div className="space-y-0.5 border-t border-slate-100/50 pt-2">
-                    <span className="text-slate-400 font-bold uppercase tracking-wide block">Total comprado</span>
-                    <p className="font-black text-emerald-700 text-xs">{formatCurrency(historicalTotal)}</p>
-                  </div>
-                  <div className="space-y-0.5 border-t border-slate-100/50 pt-2 text-right">
-                    <span className="text-slate-400 font-bold uppercase tracking-wide block">Saldo aberto</span>
-                    <p className={`font-black text-xs ${activeDebt > 0 ? "text-amber-700" : "text-slate-500"}`}>{formatCurrency(activeDebt)}</p>
-                  </div>
-                </div>
-
-                {overdueDebt > 0 && (
-                  <div className="p-2.5 bg-red-50 text-red-800 border border-red-100 rounded-lg flex items-center justify-between text-[10px]">
-                    <span className="font-bold uppercase tracking-wider">Vencido em {overdueSales.length} {overdueSales.length === 1 ? "venda" : "vendas"}</span>
-                    <strong className="text-sm font-black text-red-700">{formatCurrency(overdueDebt)}</strong>
-                  </div>
-                )}
+              <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs ${overdueDebt > 0 ? "border-red-200 bg-red-50 text-red-800" : activeDebt > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+                <span className="font-bold">{overdueDebt > 0 ? `${overdueSales.length} débito(s) vencido(s)` : activeDebt > 0 ? "Cliente possui saldo em aberto" : "Cliente em dia"}</span>
+                <strong className="font-mono text-sm">Saldo: {formatCurrency(activeDebt)}</strong>
               </div>
             )}
           </div>
@@ -866,59 +1119,31 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
             {!clienteSelecionado ? (
               "Identifique o cliente para consultar histórico e saldo antes de concluir a venda."
             ) : (
-              "Histórico financeiro atualizado em tempo real. O fiado continua disponível no fechamento."
+              "Dados operacionais carregados. A análise abaixo acompanha os itens desta venda."
             )}
           </div>
         </div>
 
-        {/* Card 2: essential sale indicators */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-          <label className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-3">
-            <Sparkles size={14} className="text-amber-500" />
-            Resumo de Rentabilidade
-          </label>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Lucro Bruto</span>
-              <p className={`text-base font-black ${lucroEstimado > 0 ? "text-emerald-600" : lucroEstimado < 0 ? "text-red-600" : "text-slate-500"}`}>
-                {formatCurrency(lucroEstimado)}
-              </p>
-            </div>
-            <div className="p-3 bg-slate-50/70 border border-slate-100 rounded-xl">
-              <span className="text-[9px] font-bold text-slate-400 uppercase block">Margem Bruta</span>
-              <p className={`text-base font-black ${margemEstimada >= 15 ? "text-emerald-600" : margemEstimada > 0 ? "text-amber-600" : "text-red-600"}`}>
-                {margemEstimada.toFixed(1)}%
-              </p>
-            </div>
+        {/* Análise por item, inspirada na planilha histórica do cliente. */}
+        <section className="order-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-900"><TableProperties size={17} className="text-emerald-600" /> Análise durante a venda</h3><p className="mt-1 text-xs font-medium text-slate-500">Uma linha para cada material. Desconto geral rateado proporcionalmente.</p></div>
+            {dadosAdmVisiveis ? <button type="button" onClick={() => setDadosAdmVisiveis(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setAnalisePinErro(""); setAnalisePin(""); setShowAnalisePin(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}
           </div>
-
-          {itensVenda.length === 0 ? (
-            <p className="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-xl p-3">
-              Adicione um produto para calcular a rentabilidade.
-            </p>
-          ) : (
-            <div className={`rounded-xl border p-3 text-[11px] ${
-              lucroEstimado < 0
-                ? "bg-red-50 border-red-200 text-red-800"
-                : margemEstimada < 15
-                ? "bg-amber-50 border-amber-200 text-amber-800"
-                : "bg-emerald-50 border-emerald-200 text-emerald-800"
-            }`}>
-              <div className="flex items-center justify-between gap-3">
-                <span className="font-bold">
-                  {lucroEstimado < 0 ? "Venda abaixo do custo" : margemEstimada < 15 ? "Margem abaixo de 15%" : "Margem saudável"}
-                </span>
-                <span className="font-extrabold whitespace-nowrap">
-                  Desconto seguro: {maxSafeDiscountPct.toFixed(1)}%
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
+              <thead><tr className="border-b border-slate-300 bg-white font-black uppercase text-slate-500"><th className="border-r border-slate-200 p-3">Data</th><th className="border-r border-slate-200 p-3">Cliente</th><th className="border-r border-slate-200 p-3 text-right">Qtd.</th><th className="border-r border-slate-200 p-3">Unid.</th><th className="border-r border-slate-200 p-3">Artigo / material</th><th className="border-r border-slate-200 p-3 text-right">V. unitário</th><th className="border-r border-slate-200 p-3 text-right">V. venda</th><th className="border-r border-slate-200 bg-slate-100 p-3 text-right">Custo</th><th className="border-r border-slate-200 bg-slate-100 p-3 text-right">Lucro</th><th className="border-r border-slate-200 bg-slate-100 p-3">Fornecedor</th><th className="bg-slate-100 p-3 text-right">Margem</th></tr></thead>
+              <tbody className="divide-y divide-slate-200">
+                {analiseLinhas.length === 0 ? <tr><td colSpan={11} className="p-8 text-center font-bold text-slate-400">Selecione o cliente e preencha a quantidade dos materiais para formar a análise.</td></tr> : analiseLinhas.map((item, index) => <tr key={`analise-${item.produtoId}-${index}`} className="bg-amber-50/55 text-slate-800"><td className="border-r border-slate-200 p-3 font-mono">{formatDate(new Date().toISOString().slice(0, 10))}</td><td className="border-r border-slate-200 p-3 font-bold">{clienteSelecionado?.nome || "—"}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatDecimal(item.quantidade)}</td><td className="border-r border-slate-200 p-3 font-bold">{item.unidade}</td><td className="border-r border-slate-200 p-3 font-extrabold">{item.nome}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-bold">{formatCurrency(item.precoUnitario)}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatCurrency(item.valorVenda)}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-bold">{dadosAdmVisiveis ? formatCurrency(item.custoTotal) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? formatCurrency(item.lucro) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 font-bold">{dadosAdmVisiveis ? item.fornecedor : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> Protegido</span>}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? `${item.margem.toFixed(1)}%` : "••••"}</td></tr>)}
+              </tbody>
+              {analiseLinhas.length > 0 && <tfoot><tr className="border-t-2 border-slate-400 bg-slate-100 font-black text-slate-900"><td className="p-3" colSpan={2}>TOTAL DA VENDA</td><td className="border-l border-slate-300 p-3 text-right font-mono">{formatDecimal(quantidadeTotalAnalise)}</td><td className="p-3"></td><td className="p-3 text-right text-slate-500">Média {formatCurrency(precoMedioAnalise)}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{formatCurrency(totalLiquido)}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(totalCustoItens) : "••••"}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(lucroEstimado) : "••••"}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? `${margemEstimada.toFixed(1)}%` : "••••"}</td></tr></tfoot>}
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-[11px]"><span className="font-bold text-slate-500">Vendedor: dados da venda • Administrador: custo, lucro, fornecedor e margem</span>{dadosAdmVisiveis && <span className={`rounded-lg px-2 py-1 font-extrabold ${margemEstimada >= 15 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{margemEstimada >= 15 ? "Margem saudável" : "Revisar margem"} • desconto seguro {maxSafeDiscountPct.toFixed(1)}%</span>}</div>
+        </section>
 
         {/* Card 3: Resumo e Fechamento */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
+        <div className="order-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
           <div>
             <label className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-3">
               <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
@@ -963,15 +1188,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
 
               {/* Valor Pago Input */}
               <div className="flex items-center justify-between gap-4 py-0.5">
-                <span className="text-slate-500 font-bold">Valor Recebido (R$):</span>
+                <span className="text-slate-500 font-bold">{vendaNoVale ? "Valor recebido agora:" : "Valor Recebido (R$):"}</span>
                 <input 
                   ref={valorPagoRef}
                   type="text" 
-                  value={valorPago}
+                  value={vendaNoVale ? "0,00" : valorPago}
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
                   placeholder={totalLiquido.toFixed(2).replace(".", ",")}
-                  className="w-24 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none"
+                  disabled={vendaNoVale}
+                  className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
               </div>
 
@@ -992,7 +1218,17 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
                 <select 
                   ref={formaPagamentoRef}
                   value={formaPagamento}
-                  onChange={(e) => setFormaPagamento(e.target.value)}
+                  onChange={(e) => {
+                    const novaForma = e.target.value;
+                    setFormaPagamento(novaForma);
+                    if (novaForma === "vale") setValorPago("0");
+                    else if (formaPagamento === "vale") setValorPago("");
+                    if (!FORMAS_COM_INSTRUMENTO.has(novaForma)) {
+                      setInstrumentoEmitente("");
+                      setInstrumentoNumero("");
+                      setInstrumentoVencimento("");
+                    }
+                  }}
                   onKeyDown={(e) => {
                     if (saldoRestante > 0) {
                       handleKeyDown(e, vencimentoRef);
@@ -1000,15 +1236,27 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
                       handleKeyDown(e, observacoesRef);
                     }
                   }}
-                  className="bg-slate-50 border border-slate-200 text-[11px] px-2 py-1 rounded-lg font-bold text-slate-700 outline-none w-36"
+                  className="min-w-0 flex-1 bg-slate-50 border border-slate-200 text-xs px-3 py-2 rounded-lg font-bold text-slate-700 outline-none sm:max-w-xs"
                 >
-                  <option value="pix">PIX</option>
-                  <option value="dinheiro">Dinheiro</option>
-                  <option value="cartao_credito">Crédito</option>
-                  <option value="cartao_debito">Débito</option>
-                  <option value="boleto">Boleto</option>
+                  {FORMAS_RECEBIMENTO.map((forma) => <option key={forma.value} value={forma.value} disabled={"disabled" in forma && forma.disabled}>{forma.label}</option>)}
                 </select>
               </div>
+
+              {vendaNoVale && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                  <p className="font-extrabold">Esta venda será lançada como Vale.</p>
+                  <p className="mt-1 font-medium">A venda será concluída normalmente e o valor integral ficará em aberto no módulo Vales.</p>
+                </div>
+              )}
+
+              {formaExigeInstrumento && (
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-3">
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Emitente *</label><input type="text" value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value)} placeholder={formaPagamento.includes("terceiro") ? "Nome do terceiro" : clienteSelecionado?.nome || "Nome do emitente"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque/documento *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="Número" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Vencimento *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-3">O vencimento gera alerta; não marca o cheque ou a duplicata como recebido automaticamente.</p>
+                </div>
+              )}
 
               {/* Date Vencimento if there is Remaining Balance */}
               {saldoRestante > 0 && (
@@ -1059,7 +1307,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       </div>
 
       {/* Full Width Bottom Row: Adicionar Itens and Table Carrinho */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+      <div className="order-3 bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
@@ -1069,9 +1317,22 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           </label>
           <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            Total de {itensVenda.length} {itensVenda.length === 1 ? 'item' : 'itens'} no carrinho
+            {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}
           </div>
         </div>
+
+        {(carregandoHabituais || quantidadeHabituaisCarregados > 0) && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
+            <span className="font-bold">
+              {carregandoHabituais
+                ? "Carregando o padrão de compra do cliente..."
+                : `${quantidadeHabituaisCarregados} ${quantidadeHabituaisCarregados === 1 ? "produto habitual foi carregado" : "produtos habituais foram carregados"}.`}
+            </span>
+            {!carregandoHabituais && (
+              <span className="text-emerald-700">Preencha as quantidades usadas hoje; linhas vazias não serão vendidas.</span>
+            )}
+          </div>
+        )}
 
         {/* Inputs row - horizontal, spacious, full layout width */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
@@ -1109,7 +1370,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
                       <div>
                         <p className="font-bold text-slate-800">{p.nome}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">
-                          Código: {p.codigo || "Sem"} • Venda: {getUnidadesVendaPermitidas(p).join(" ou ")} • Custo: {formatCurrency(p.custoPadrao)}
+                          Código: {p.codigo || "Sem"} • Venda: {getUnidadesVendaPermitidas(p).join(" ou ")}
+                          {dadosAdmVisiveis ? ` • Custo: ${formatCurrency(p.custoPadrao)}` : ""}
                         </p>
                       </div>
                       <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-2 py-0.5">{formatCurrency(p.precoVendaPadrao)}</span>
@@ -1192,13 +1454,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
         </div>
 
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
-        <div className="border border-slate-150 rounded-2xl overflow-hidden mt-6 shadow-sm">
-          <table className="w-full text-sm text-left">
+        <div className="border border-slate-150 rounded-2xl overflow-x-auto mt-6 shadow-sm">
+          <table className="min-w-[820px] w-full text-sm text-left">
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-extrabold text-xs uppercase border-b border-slate-100">
                 <th className="p-4 w-20">Cód</th>
                 <th className="p-4">Material</th>
                 <th className="p-4 text-center w-36">Quantidade</th>
+                <th className="p-4 text-center w-32">Unidade</th>
                 <th className="p-4 text-right w-40">Preço Unit</th>
                 <th className="p-4 text-right w-44">Total</th>
                 <th className="p-4 text-center w-24">Remover</th>
@@ -1207,31 +1470,80 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
             <tbody className="divide-y divide-slate-100">
               {itensVenda.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-16 text-center text-slate-400 text-sm font-semibold">
+                  <td colSpan={7} className="p-16 text-center text-slate-400 text-sm font-semibold">
                     Carrinho vazio. Adicione os tecidos e materiais no formulário acima.
                   </td>
                 </tr>
               ) : (
-                itensVenda.slice((currentPage - 1) * 5, currentPage * 5).map((it, idx) => {
+                itensVenda.map((it, idx) => {
                   const qty = parseBrazilianNumber(it.quantidade);
                   const price = parseBrazilianNumber(it.precoUnitario);
                   const totalItem = qty * price;
-                  const itemIndexInMainList = (currentPage - 1) * 5 + idx;
+                  const produto = produtos.find((item) => item.id === it.produtoId);
+                  const unidadesPermitidas = produto ? getUnidadesVendaPermitidas(produto) : [it.unidade];
+                  const pisoPermitido = it.precoAutorizado ?? it.precoPadrao;
+                  const exigeAutorizacao = qty > 0 && (price * fatorPrecoEfetivo) < pisoPermitido - 0.005;
 
                   return (
-                    <tr key={itemIndexInMainList} className="hover:bg-slate-50/50 text-slate-700 transition-colors">
+                    <tr key={`${it.produtoId}-${idx}`} className={`${exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} hover:bg-slate-50/70 text-slate-700 transition-colors`}>
                       <td className="p-4 font-mono text-xs text-slate-400 font-bold">{it.codigo || "-"}</td>
-                      <td className="p-4 font-bold text-slate-900">{it.nome}</td>
-                      <td className="p-4 text-center font-extrabold">
-                        {formatDecimal(qty)} <span className="text-[10px] text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded font-extrabold uppercase">{it.unidade}</span>
+                      <td className="p-4 font-bold text-slate-900">
+                        {it.nome}
+                        {it.precoAutorizado != null && (
+                          <span className="mt-1 flex w-fit items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-emerald-700">
+                            <ShieldCheck size={10} /> preço especial: {formatCurrency(it.precoAutorizado)}
+                          </span>
+                        )}
                       </td>
-                      <td className="p-4 text-right font-mono font-bold text-slate-600">{formatCurrency(price)}</td>
+                      <td className="p-2 text-center font-extrabold">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={it.quantidade}
+                          onChange={(event) => handleUpdateItem(idx, { quantidade: event.target.value })}
+                          placeholder="Quantidade"
+                          aria-label={`Quantidade de ${it.nome}`}
+                          className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-right text-sm font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <select
+                          value={it.unidade}
+                          onChange={(event) => handleUpdateItem(idx, { unidade: event.target.value })}
+                          aria-label={`Unidade de ${it.nome}`}
+                          className="w-28 rounded-lg border border-slate-300 bg-slate-100 px-2 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                        >
+                          {unidadesPermitidas.map((unidade) => (
+                            <option key={unidade} value={unidade}>{unidade}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2 text-right font-mono font-bold text-slate-600">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={it.precoUnitario}
+                          onChange={(event) => handleUpdateItem(idx, { precoUnitario: event.target.value })}
+                          aria-label={`Preço unitário de ${it.nome}`}
+                          className={`w-32 rounded-lg border px-3 py-2 text-right text-sm font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
+                            exigeAutorizacao
+                              ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100"
+                              : "border-sky-300 bg-sky-50 focus:border-emerald-600 focus:ring-emerald-100"
+                          }`}
+                        />
+                        {exigeAutorizacao && (
+                          <span className="mt-1 flex items-center justify-end gap-1 text-[9px] font-extrabold uppercase text-red-700">
+                            <KeyRound size={9} /> exige PIN
+                          </span>
+                        )}
+                      </td>
                       <td className="p-4 text-right font-mono font-extrabold text-slate-900">{formatCurrency(totalItem)}</td>
                       <td className="p-4 text-center">
                         <button 
                           type="button" 
-                          onClick={() => handleRemoveItem(itemIndexInMainList)}
+                          onClick={() => handleRemoveItem(idx)}
                           className="px-2.5 py-1.5 text-red-600 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg inline-flex items-center gap-1 text-xs font-bold transition-all"
+                          title="Remover somente desta venda"
                         >
                           <Trash2 size={13} /> Remover
                         </button>
@@ -1243,35 +1555,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
             </tbody>
           </table>
 
-          {/* Pagination Controls */}
-          {itensVenda.length > 5 && (
-            <div className="flex items-center justify-between p-4 border-t border-slate-100 bg-slate-50/50">
-              <p className="text-xs text-slate-500 font-semibold">
-                Mostrando <strong className="text-slate-800">{(currentPage - 1) * 5 + 1}</strong> até <strong className="text-slate-800">{Math.min(currentPage * 5, itensVenda.length)}</strong> de <strong className="text-slate-800">{itensVenda.length}</strong> itens adicionados
-              </p>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none rounded-lg text-xs font-bold text-slate-700 transition-all active:scale-[0.98]"
-                >
-                  Anterior
-                </button>
-                <span className="text-xs font-bold text-slate-600 px-2.5">
-                  Página {currentPage} de {Math.ceil(itensVenda.length / 5)}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage === Math.ceil(itensVenda.length / 5)}
-                  onClick={() => setCurrentPage(prev => Math.min(Math.ceil(itensVenda.length / 5), prev + 1))}
-                  className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none rounded-lg text-xs font-bold text-slate-700 transition-all active:scale-[0.98]"
-                >
-                  Próxima
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -13,6 +13,7 @@ $PidFile = Join-Path $RuntimeDir "server.pid"
 $OutputLog = Join-Path $RuntimeDir "server.log"
 $ErrorLog = Join-Path $RuntimeDir "server-error.log"
 $SystemUrl = "http://localhost:3000"
+$HealthUrl = "http://127.0.0.1:3000"
 $RepositoryUrl = "https://github.com/renanduart3/luciano-couros.git"
 $RepositoryArchiveUrl = "https://github.com/renanduart3/luciano-couros/archive/refs/heads/main.zip"
 
@@ -73,7 +74,10 @@ function Start-System {
     $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($null -eq $nodeCommand) { throw "Node.js nao foi encontrado. Instale o Node.js 22 LTS e tente novamente." }
     $serverFile = Join-Path $ProjectRoot "dist\server.cjs"
-    if (-not (Test-Path -LiteralPath $serverFile)) { throw "O sistema ainda nao foi compilado. Execute ATUALIZAR SISTEMA.cmd primeiro." }
+    if (-not (Test-Path -LiteralPath $serverFile)) {
+        Write-Host "Primeira execucao detectada; preparando o sistema automaticamente." -ForegroundColor Yellow
+        Build-System
+    }
 
     $existingProcess = Get-ManagedProcess
     if ($null -ne $existingProcess) {
@@ -98,7 +102,9 @@ function Start-System {
         Start-Sleep -Milliseconds 250
         if ($serverProcess.HasExited) { break }
         try {
-            $response = Invoke-WebRequest -Uri "$SystemUrl/api/clientes" -UseBasicParsing -TimeoutSec 2
+            # Use IPv4 explicitly: on some Windows installations, localhost resolves
+            # to ::1 while the Node server is listening on the IPv4 interface.
+            $response = Invoke-WebRequest -Uri "$HealthUrl/api/clientes" -UseBasicParsing -TimeoutSec 2
             if ($response.StatusCode -eq 200) { $ready = $true; break }
         } catch { }
     }
@@ -140,8 +146,8 @@ function Apply-UpdatePackage {
         if ($hasCommit) {
             Write-Step "Baixando a versao mais recente"
             & $gitCommand.Source -C $ProjectRoot pull --ff-only $RepositoryUrl main
-            if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel baixar a atualizacao pelo Git." }
-            return
+            if ($LASTEXITCODE -eq 0) { return }
+            Write-Host "Atualizacao pelo Git indisponivel; tentando o pacote da branch main." -ForegroundColor Yellow
         }
 
         Write-Step "Baixando a versao mais recente do GitHub"
@@ -149,7 +155,9 @@ function Apply-UpdatePackage {
             Invoke-WebRequest -Uri $RepositoryArchiveUrl -OutFile $zipFile -UseBasicParsing
         } catch {
             Remove-Item -LiteralPath $zipFile -Force -ErrorAction SilentlyContinue
-            throw "Nao foi possivel baixar $RepositoryUrl. Verifique a internet e confirme que o repositorio e a branch main ja existem."
+            Write-Host "Nao foi possivel baixar $RepositoryUrl." -ForegroundColor Yellow
+            Write-Host "Continuando com os arquivos locais desta instalacao." -ForegroundColor Yellow
+            return
         }
     }
 
@@ -180,10 +188,7 @@ function Apply-UpdatePackage {
     Remove-Item -LiteralPath $extractDir -Recurse -Force
 }
 
-function Update-System {
-    Stop-System
-    Backup-Databases
-    Apply-UpdatePackage
+function Build-System {
     $npmCommand = Get-Command npm.cmd -ErrorAction SilentlyContinue
     if ($null -eq $npmCommand) { throw "npm nao foi encontrado. Instale o Node.js 22 LTS e tente novamente." }
 
@@ -193,6 +198,13 @@ function Update-System {
     Write-Step "Compilando a nova versao"
     & $npmCommand.Source run build
     if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do sistema." }
+}
+
+function Update-System {
+    Stop-System
+    Backup-Databases
+    Apply-UpdatePackage
+    Build-System
     Start-System
 }
 

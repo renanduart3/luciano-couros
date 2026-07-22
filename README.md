@@ -106,6 +106,8 @@ Depois de instalar o **Node.js 22 LTS**, o cliente pode operar o sistema por doi
 - `ATUALIZAR SISTEMA.cmd`: faz backup dos bancos locais, baixa a branch `main` de `https://github.com/renanduart3/luciano-couros`, instala dependências, compila e reinicia o sistema. Se houver um `atualizacao.zip` na pasta, ele será usado no lugar do download.
 - `REINICIAR SISTEMA.cmd`: encerra somente a instância deste projeto, inicia o servidor oculto e abre `http://localhost:3000` no navegador.
 
+O cliente não precisa instalar pnpm nem executar `pnpm dev`. Os atalhos usam o npm que já acompanha o Node.js e preparam automaticamente a primeira execução. `pnpm dev` é reservado ao desenvolvimento e não deve ser usado na instalação do cliente.
+
 Para entregar uma nova versão, publique-a na branch `main` e peça ao cliente para clicar em `ATUALIZAR SISTEMA.cmd`. Como alternativa offline, compacte o projeto como `atualizacao.zip` e envie o arquivo ao cliente para ser colocado na mesma pasta do sistema. Bancos SQLite, configurações locais, backups e dependências não são sobrescritos.
 
 Logs de execução ficam em `.runtime` e backups ficam em `data/backups`.

@@ -3,17 +3,83 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
-import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, isMockModeEnabled, setMockMode, BACKUP_DIR, LIVE_DB_FILE } from "./server/db.js";
+import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, isMockModeEnabled, setMockMode, BACKUP_DIR, LIVE_DB_FILE, rebuildClienteProdutosHabituais } from "./server/db.js";
 
 // Initialize express app
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 const IS_PRODUCTION = process.env.NODE_ENV === "production" || path.basename(process.argv[1] ?? "") === "server.cjs";
 
 app.use(express.json());
 
+app.get("/pwa-icon.png", (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "src", "img", "logo.png"));
+});
+
 // Initialize SQLite database and tables
 initDatabase();
+
+type UsuarioAdministrador = {
+  id: string;
+  nome: string;
+  pinHash: string | null;
+  pinSalt: string | null;
+};
+
+function getUsuarioAdministrador(): UsuarioAdministrador | undefined {
+  return queryOne<UsuarioAdministrador>(
+    `SELECT id, nome, pinHash, pinSalt
+     FROM usuarios
+     WHERE perfil = 'administrador' AND ativo = 1
+     ORDER BY createdAt ASC
+     LIMIT 1`
+  );
+}
+
+function gerarHashPin(pin: string, salt = crypto.randomBytes(16).toString("hex")) {
+  return {
+    salt,
+    hash: crypto.scryptSync(pin, salt, 64).toString("hex")
+  };
+}
+
+function validarPinAdministrador(pin: unknown): UsuarioAdministrador | null {
+  const administrador = getUsuarioAdministrador();
+  if (!administrador?.pinHash || !administrador.pinSalt || typeof pin !== "string") {
+    return null;
+  }
+
+  const informado = Buffer.from(gerarHashPin(pin, administrador.pinSalt).hash, "hex");
+  const esperado = Buffer.from(administrador.pinHash, "hex");
+  return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado)
+    ? administrador
+    : null;
+}
+
+function registrarAuditoria(
+  usuarioId: string | null,
+  acao: string,
+  entidade: string,
+  entidadeId: string | null,
+  detalhes: Record<string, unknown> = {}
+) {
+  execute(
+    `INSERT INTO auditoria (id, usuarioId, acao, entidade, entidadeId, detalhes)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      "aud_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+      usuarioId,
+      acao,
+      entidade,
+      entidadeId,
+      JSON.stringify(detalhes)
+    ]
+  );
+}
+
+function erroHttp(message: string, statusCode: number) {
+  return Object.assign(new Error(message), { statusCode });
+}
 
 // --- BACKUP & RESTORATION UTILITIES ---
 if (!fs.existsSync(BACKUP_DIR)) {
@@ -133,6 +199,86 @@ app.put("/api/config", (req, res) => {
     res.json({ success: true, message: "Configurações salvas!" });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 1.1 SEGURANÇA LOCAL
+app.get("/api/seguranca/status", (_req, res) => {
+  try {
+    const administrador = getUsuarioAdministrador();
+    res.json({
+      usuarioId: administrador?.id || null,
+      nome: administrador?.nome || "Administrador",
+      pinConfigurado: !!administrador?.pinHash
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/seguranca/verificar-pin", (req, res) => {
+  try {
+    const administrador = getUsuarioAdministrador();
+    if (!administrador?.pinHash) {
+      return res.status(428).json({ error: "Configure primeiro o PIN administrativo em Ajustes & Backups." });
+    }
+
+    const usuario = validarPinAdministrador(req.body?.pin);
+    if (!usuario) {
+      return res.status(403).json({ error: "PIN administrativo inválido." });
+    }
+
+    if (req.body?.finalidade === "visualizar_analise_venda") {
+      registrarAuditoria(usuario.id, "analise_venda_desbloqueada", "venda_em_edicao", null, {
+        origem: req.ip || null
+      });
+    }
+
+    res.json({ valido: true, usuario: { id: usuario.id, nome: usuario.nome } });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/seguranca/admin-pin", (req, res) => {
+  try {
+    const { nome, pinAtual, novoPin } = req.body || {};
+    const administrador = getUsuarioAdministrador();
+    if (!administrador) {
+      return res.status(500).json({ error: "Usuário administrador não foi inicializado." });
+    }
+    const origemLocal = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || "");
+    if (!administrador.pinHash && !origemLocal) {
+      return res.status(403).json({ error: "A configuração inicial do PIN deve ser feita diretamente no computador servidor." });
+    }
+    if (typeof novoPin !== "string" || !/^\d{4,8}$/.test(novoPin)) {
+      return res.status(400).json({ error: "O novo PIN deve possuir de 4 a 8 números." });
+    }
+    if (administrador.pinHash && !validarPinAdministrador(pinAtual)) {
+      return res.status(403).json({ error: "PIN atual inválido." });
+    }
+
+    const pinProtegido = gerarHashPin(novoPin);
+    const nomeNormalizado = typeof nome === "string" && nome.trim() ? nome.trim() : administrador.nome;
+    runInTransaction(() => {
+      execute(
+        `UPDATE usuarios
+         SET nome = ?, pinHash = ?, pinSalt = ?, updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [nomeNormalizado, pinProtegido.hash, pinProtegido.salt, administrador.id]
+      );
+      registrarAuditoria(
+        administrador.id,
+        administrador.pinHash ? "pin_administrativo_alterado" : "pin_administrativo_configurado",
+        "usuario",
+        administrador.id,
+        { nome: nomeNormalizado }
+      );
+    });
+
+    res.json({ success: true, nome: nomeNormalizado, pinConfigurado: true });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -379,6 +525,44 @@ app.get("/api/clientes/:id/historico", (req, res) => {
   }
 });
 
+app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
+  try {
+    const cliente = queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+    if (!cliente) {
+      return res.status(404).json({ error: "Cliente não encontrado." });
+    }
+
+    const produtos = queryAll<any>(
+      `SELECT
+         cph.clienteId,
+         cph.produtoId,
+         cph.ultimoPreco,
+         cph.ultimaQuantidade,
+         cph.ultimaUnidade,
+         cph.vezesComprado,
+         cph.ultimaCompraEm,
+         cph.precoAutorizado,
+         p.nome,
+         p.codigo,
+         p.unidade,
+         p.precoVendaPadrao,
+         p.custoPadrao
+       FROM cliente_produtos_habituais cph
+       JOIN produtos p ON p.id = cph.produtoId
+       WHERE cph.clienteId = ?
+         AND cph.oculto = 0
+         AND p.ativo = 1
+         AND p.deletedAt IS NULL
+       ORDER BY cph.ultimaCompraEm DESC, cph.vezesComprado DESC, p.nome ASC`,
+      [req.params.id]
+    );
+
+    res.json(produtos);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // 4. FORNECEDORES
 app.get("/api/fornecedores", (req, res) => {
@@ -444,7 +628,30 @@ app.delete("/api/fornecedores/:id", (req, res) => {
 // 5. PRODUTOS
 app.get("/api/produtos", (req, res) => {
   try {
-    const rows = queryAll("SELECT * FROM produtos WHERE deletedAt IS NULL ORDER BY nome ASC");
+    const rows = queryAll(`
+      SELECT
+        p.*,
+        (
+          SELECT c.data
+          FROM itens_compra ic
+          JOIN compras c ON c.id = ic.compraId
+          WHERE ic.produtoId = p.id AND ic.unidade = p.unidade AND c.deletedAt IS NULL
+          ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+          LIMIT 1
+        ) AS ultimaCompraEm,
+        (
+          SELECT f.nome
+          FROM itens_compra ic
+          JOIN compras c ON c.id = ic.compraId
+          JOIN fornecedores f ON f.id = c.fornecedorId
+          WHERE ic.produtoId = p.id AND ic.unidade = p.unidade AND c.deletedAt IS NULL
+          ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+          LIMIT 1
+        ) AS ultimoFornecedorNome
+      FROM produtos p
+      WHERE p.deletedAt IS NULL
+      ORDER BY p.nome ASC
+    `);
     res.json(rows);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -453,12 +660,12 @@ app.get("/api/produtos", (req, res) => {
 
 app.post("/api/produtos", (req, res) => {
   try {
-    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, unidadeCompra, unidadeVenda, fatorConversao, venderUnidadeCompra } = req.body;
-    if (!nome) {
-      return res.status(400).json({ error: "Nome é obrigatório." });
+    const { nome, codigo, unidade, precoVendaPadrao, ativo } = req.body;
+    if (!nome || !unidade) {
+      return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
-    if (precoVendaPadrao < 0 || custoPadrao < 0) {
-      return res.status(400).json({ error: "Preços e custos não podem ser negativos." });
+    if (!Number.isFinite(Number(precoVendaPadrao)) || Number(precoVendaPadrao) < 0) {
+      return res.status(400).json({ error: "O preço de venda não pode ser negativo." });
     }
     const id = "prod_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
     execute(
@@ -468,13 +675,13 @@ app.post("/api/produtos", (req, res) => {
         id, 
         nome, 
         codigo || null, 
-        unidadeVenda || unidade, 
+        unidade,
         Number(precoVendaPadrao), 
-        Number(custoPadrao), 
-        unidadeCompra || unidade,
-        unidadeVenda || unidade,
-        fatorConversao !== undefined ? Number(fatorConversao) : 1.0,
-        venderUnidadeCompra ? 1 : 0,
+        0,
+        unidade,
+        unidade,
+        1,
+        0,
         ativo !== undefined ? (ativo ? 1 : 0) : 1
       ]
     );
@@ -488,27 +695,24 @@ app.post("/api/produtos", (req, res) => {
 app.put("/api/produtos/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, unidadeCompra, unidadeVenda, fatorConversao, venderUnidadeCompra } = req.body;
-    if (!nome) {
-      return res.status(400).json({ error: "Nome é obrigatório." });
+    const { nome, codigo, unidade, precoVendaPadrao, ativo } = req.body;
+    if (!nome || !unidade) {
+      return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
-    if (precoVendaPadrao < 0 || custoPadrao < 0) {
-      return res.status(400).json({ error: "Preços e custos não podem ser negativos." });
+    if (!Number.isFinite(Number(precoVendaPadrao)) || Number(precoVendaPadrao) < 0) {
+      return res.status(400).json({ error: "O preço de venda não pode ser negativo." });
     }
     execute(
       `UPDATE produtos
-       SET nome = ?, codigo = ?, unidade = ?, precoVendaPadrao = ?, custoPadrao = ?, unidadeCompra = ?, unidadeVenda = ?, fatorConversao = ?, venderUnidadeCompra = ?, ativo = ?, updatedAt = CURRENT_TIMESTAMP
+       SET nome = ?, codigo = ?, unidade = ?, precoVendaPadrao = ?, unidadeCompra = ?, unidadeVenda = ?, fatorConversao = 1, venderUnidadeCompra = 0, ativo = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ? AND deletedAt IS NULL`,
       [
         nome, 
         codigo || null, 
-        unidadeVenda || unidade, 
+        unidade,
         Number(precoVendaPadrao), 
-        Number(custoPadrao), 
-        unidadeCompra || unidade,
-        unidadeVenda || unidade,
-        fatorConversao !== undefined ? Number(fatorConversao) : 1.0,
-        venderUnidadeCompra ? 1 : 0,
+        unidade,
+        unidade,
         ativo ? 1 : 0, 
         id
       ]
@@ -576,7 +780,9 @@ app.post("/api/vendas", (req, res) => {
       valorPago,     // Amount paid immediately
       formaPagamento,// e.g. "pix", "dinheiro"
       vencimento,    // YYYY-MM-DD
-      observacoes
+      observacoes,
+      autorizacaoPreco,
+      instrumentoRecebimento
     } = req.body;
 
     if (!clienteId || !data || !items || !Array.isArray(items) || items.length === 0) {
@@ -598,31 +804,31 @@ app.post("/api/vendas", (req, res) => {
       const resolvedItems = items.map((it: any) => {
         const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
         if (!prod) {
-          throw new Error(`Produto não encontrado para o ID: ${it.produtoId}`);
+          throw erroHttp(`Produto não encontrado para o ID: ${it.produtoId}`, 404);
         }
 
         const qty = Number(it.quantidade);
         const precoUnit = Number(it.precoUnitario);
         const descItem = Number(it.desconto || 0);
-        const unidadeVenda = prod.unidadeVenda || prod.unidade;
-        const unidadeItem = it.unidade || unidadeVenda;
-        const unidadesPermitidas = [unidadeVenda];
+        const unidadeItem = it.unidade || prod.unidade;
 
-        if (prod.venderUnidadeCompra && prod.unidadeCompra && prod.unidadeCompra !== unidadeVenda) {
-          unidadesPermitidas.push(prod.unidadeCompra);
-        }
-
-        if (!unidadesPermitidas.includes(unidadeItem)) {
-          throw new Error(`A unidade "${unidadeItem}" não está liberada para venda do produto ${prod.nome}.`);
+        if (unidadeItem !== prod.unidade) {
+          throw new Error(`A venda de ${prod.nome} deve ser registrada em ${prod.unidade}.`);
         }
 
         if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(precoUnit) || precoUnit < 0 || !Number.isFinite(descItem) || descItem < 0) {
           throw new Error(`Quantidade, preço ou desconto inválido para o produto ${prod.nome}.`);
         }
 
-        const usaUnidadeCompra = unidadeItem === prod.unidadeCompra && unidadeItem !== unidadeVenda;
-        const fatorCusto = usaUnidadeCompra ? Number(prod.fatorConversao || 1) : 1;
-        const custoUnit = Number(prod.custoPadrao || 0) * fatorCusto;
+        const custoUnit = Number(prod.custoPadrao || 0);
+        const precoPadraoUnidade = Number(prod.precoVendaPadrao || 0);
+        const preferenciaCliente = queryOne<{ precoAutorizado: number | null }>(
+          `SELECT precoAutorizado
+           FROM cliente_produtos_habituais
+           WHERE clienteId = ? AND produtoId = ?`,
+          [clienteId, it.produtoId]
+        );
+        const precoMinimoSemPin = preferenciaCliente?.precoAutorizado ?? precoPadraoUnidade;
 
         // Calculate totals
         const totalItem = (qty * precoUnit) - descItem;
@@ -642,7 +848,8 @@ app.post("/api/vendas", (req, res) => {
           desconto: descItem,
           total: totalItem,
           custoTotal: totalCustoItem,
-          lucroBruto: lucroItem
+          lucroBruto: lucroItem,
+          precoMinimoSemPin
         };
       });
 
@@ -652,8 +859,48 @@ app.post("/api/vendas", (req, res) => {
       const vPago = Number(valorPago || 0);
       const saldoRestante = totalLiquido - vPago;
 
+      const formasComInstrumento = new Set([
+        "cheque_emitente",
+        "cheque_terceiro",
+        "duplicata_emitente",
+        "duplicata_terceiro"
+      ]);
+      const exigeInstrumento = formasComInstrumento.has(String(formaPagamento || ""));
+
+      if (exigeInstrumento) {
+        const emitente = String(instrumentoRecebimento?.emitente || "").trim();
+        const numeroDocumento = String(instrumentoRecebimento?.numeroDocumento || "").trim();
+        const vencimentoInstrumento = String(instrumentoRecebimento?.vencimento || "").trim();
+        if (!emitente || !numeroDocumento || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInstrumento)) {
+          throw erroHttp("Informe emitente, número e vencimento do cheque ou duplicata.", 400);
+        }
+        if (vPago <= 0) {
+          throw erroHttp("Cheque ou duplicata exige um valor recebido maior que zero.", 400);
+        }
+      }
+
       if (totalLiquido < 0) {
         throw new Error("O desconto geral não pode ser maior que o subtotal.");
+      }
+
+      // O desconto geral também reduz o preço real dos produtos e não pode ser
+      // usado para contornar a autorização administrativa.
+      const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
+      const itensQueExigemAutorizacao = resolvedItems
+        .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
+        .filter((item) => item.precoEfetivo < item.precoMinimoSemPin - 0.005);
+      let administradorAutorizador: UsuarioAdministrador | null = null;
+
+      if (itensQueExigemAutorizacao.length > 0) {
+        const administrador = getUsuarioAdministrador();
+        if (!administrador?.pinHash) {
+          throw erroHttp("Configure o PIN administrativo em Ajustes & Backups antes de autorizar preços menores.", 428);
+        }
+
+        administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
+        if (!administradorAutorizador) {
+          throw erroHttp("PIN administrativo inválido. A venda não foi registrada.", 403);
+        }
       }
 
       const status = saldoRestante <= 0 ? "paga" : "pendente";
@@ -684,13 +931,66 @@ app.post("/api/vendas", (req, res) => {
         );
       }
 
+
+      if (exigeInstrumento) {
+        execute(
+          `INSERT INTO instrumentos_recebimento
+             (id, vendaId, clienteId, tipo, emitente, numeroDocumento, valor, vencimento, status, observacao)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'em_carteira', ?)`,
+          [
+            "ins_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            vendaId,
+            clienteId,
+            formaPagamento,
+            String(instrumentoRecebimento.emitente).trim(),
+            String(instrumentoRecebimento.numeroDocumento).trim(),
+            vPago,
+            instrumentoRecebimento.vencimento,
+            instrumentoRecebimento.observacao || null
+          ]
+        );
+      }
+
+      rebuildClienteProdutosHabituais(clienteId);
+
+      if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
+        const salvarParaCliente = autorizacaoPreco?.salvarParaCliente === true;
+        if (salvarParaCliente) {
+          for (const item of itensQueExigemAutorizacao) {
+            execute(
+              `UPDATE cliente_produtos_habituais
+               SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
+               WHERE clienteId = ? AND produtoId = ?`,
+              [item.precoEfetivo, clienteId, item.produtoId]
+            );
+          }
+        }
+
+        registrarAuditoria(
+          administradorAutorizador.id,
+          salvarParaCliente ? "preco_cliente_autorizado" : "preco_venda_autorizado",
+          "venda",
+          vendaId,
+          {
+            clienteId,
+            numeroSequencial: nextSeq,
+            salvarParaCliente,
+            itens: itensQueExigemAutorizacao.map((item) => ({
+              produtoId: item.produtoId,
+              precoAnteriorPermitido: item.precoMinimoSemPin,
+              precoAutorizado: item.precoEfetivo
+            }))
+          }
+        );
+      }
+
       return { id: vendaId, numeroSequencial: nextSeq };
     });
 
     const fullVenda = queryOne("SELECT * FROM vendas WHERE id = ?", [resultVenda.id]);
     res.status(210).json(fullVenda);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -700,6 +1000,11 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
     const nowStr = new Date().toISOString();
     
     runInTransaction(() => {
+      const venda = queryOne<any>("SELECT clienteId FROM vendas WHERE id = ? AND deletedAt IS NULL", [id]);
+      if (!venda) {
+        throw new Error("Venda não encontrada ou já cancelada.");
+      }
+
       // Marcar venda como cancelada e excluída logicamente
       execute(
         "UPDATE vendas SET deletedAt = ?, status = 'cancelada', updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
@@ -711,6 +1016,12 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
         "UPDATE pagamentos SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ?",
         [nowStr, id]
       );
+      execute(
+        "UPDATE instrumentos_recebimento SET deletedAt = ?, status = 'cancelado', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ?",
+        [nowStr, id]
+      );
+
+      rebuildClienteProdutosHabituais(venda.clienteId);
     });
 
     res.json({ success: true, message: "Venda e pagamentos vinculados cancelados com sucesso." });
@@ -719,6 +1030,24 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
   }
 });
 
+
+function recalcularUltimoCustoProduto(produtoId: string) {
+  const ultimaCompra = queryOne<{ custoUnitario: number }>(
+    `SELECT ic.custoUnitario
+     FROM itens_compra ic
+     JOIN compras c ON c.id = ic.compraId
+     JOIN produtos p ON p.id = ic.produtoId
+     WHERE ic.produtoId = ? AND ic.unidade = p.unidade AND c.deletedAt IS NULL
+     ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+     LIMIT 1`,
+    [produtoId]
+  );
+
+  execute(
+    "UPDATE produtos SET custoPadrao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+    [ultimaCompra ? Number(ultimaCompra.custoUnitario) : 0, produtoId]
+  );
+}
 
 // 7. COMPRAS
 app.get("/api/compras", (req, res) => {
@@ -757,42 +1086,30 @@ app.post("/api/compras", (req, res) => {
       const resolvedItems = items.map((it: any) => {
         const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
         if (!prod) {
-          throw new Error(`Produto não encontrado para o ID: ${it.produtoId}`);
+          throw erroHttp(`Produto não encontrado para o ID: ${it.produtoId}`, 404);
         }
 
         const qty = Number(it.quantidade);
         const custoUnit = Number(it.custoUnitario);
-        const unidadeCompra = prod.unidadeCompra || prod.unidadeVenda || prod.unidade;
-        const unidadeInformada = it.unidade || unidadeCompra;
+        const unidadeInformada = it.unidade || prod.unidade;
 
-        if (unidadeInformada !== unidadeCompra) {
-          throw new Error(`A compra de ${prod.nome} deve ser registrada em ${unidadeCompra}.`);
+        if (unidadeInformada !== prod.unidade) {
+          throw erroHttp(`A compra de ${prod.nome} deve ser registrada em ${prod.unidade}.`, 400);
         }
 
         if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(custoUnit) || custoUnit < 0) {
-          throw new Error(`Quantidade ou custo inválido para o produto ${prod.nome}.`);
+          throw erroHttp(`Quantidade ou custo inválido para o produto ${prod.nome}.`, 400);
         }
 
         const itemTotal = qty * custoUnit;
 
         subtotal += itemTotal;
 
-        const unidadeVenda = prod.unidadeVenda || prod.unidade;
-        const usaConversao = unidadeCompra !== unidadeVenda;
-        const fatorConversao = usaConversao ? Number(prod.fatorConversao || 1) : 1;
-        const custoBaseVenda = custoUnit / fatorConversao;
-
-        // Auto-update standard product cost in standard database
-        execute(
-          "UPDATE produtos SET custoPadrao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-          [custoBaseVenda, it.produtoId]
-        );
-
         return {
           id: "itc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
           produtoId: it.produtoId,
           quantidade: qty,
-          unidade: unidadeCompra,
+          unidade: prod.unidade,
           custoUnitario: custoUnit,
           total: itemTotal
         };
@@ -802,7 +1119,7 @@ app.post("/api/compras", (req, res) => {
       const total = subtotal - desc;
 
       if (total < 0) {
-        throw new Error("Desconto não pode ser maior que o subtotal da compra.");
+        throw erroHttp("Desconto não pode ser maior que o subtotal da compra.", 400);
       }
 
       // Insert Compra
@@ -820,12 +1137,16 @@ app.post("/api/compras", (req, res) => {
           [it.id, compraId, it.produtoId, it.quantidade, it.unidade, it.custoUnitario, it.total]
         );
       }
+
+      for (const produtoId of new Set(resolvedItems.map((item) => item.produtoId))) {
+        recalcularUltimoCustoProduto(produtoId);
+      }
     });
 
     const fullCompra = queryOne("SELECT * FROM compras WHERE id = ?", [compraId]);
     res.status(210).json(fullCompra);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -833,10 +1154,23 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
   try {
     const { id } = req.params;
     const nowStr = new Date().toISOString();
-    execute("UPDATE compras SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [nowStr, id]);
-    res.json({ success: true, message: "Compra cancelada com sucesso." });
+    runInTransaction(() => {
+      const compra = queryOne<{ id: string }>("SELECT id FROM compras WHERE id = ? AND deletedAt IS NULL", [id]);
+      if (!compra) {
+        throw erroHttp("Compra não encontrada ou já cancelada.", 404);
+      }
+      const produtosAfetados = queryAll<{ produtoId: string }>(
+        "SELECT DISTINCT produtoId FROM itens_compra WHERE compraId = ?",
+        [id]
+      );
+      execute("UPDATE compras SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [nowStr, id]);
+      for (const item of produtosAfetados) {
+        recalcularUltimoCustoProduto(item.produtoId);
+      }
+    });
+    res.json({ success: true, message: "Compra cancelada e custos restaurados pela última compra válida." });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

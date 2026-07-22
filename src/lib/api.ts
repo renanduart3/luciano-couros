@@ -1,5 +1,5 @@
-import { 
-  Cliente, Fornecedor, Produto, Venda, Pagamento, Compra, DashboardStats, Config 
+import {
+  Cliente, Fornecedor, Produto, ProdutoHabitual, Venda, Pagamento, Compra, DashboardStats, Config, SegurancaStatus
 } from "../types";
 
 const API_BASE = "/api";
@@ -35,6 +35,22 @@ export const api = {
       body: JSON.stringify(updates)
     }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
 
+  // SEGURANÇA LOCAL
+  getSegurancaStatus: () =>
+    fetch(`${API_BASE}/seguranca/status`).then(r => handleResponse<SegurancaStatus>(r)),
+  verificarPinAdministrador: (pin: string, finalidade?: string) =>
+    fetch(`${API_BASE}/seguranca/verificar-pin`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, finalidade })
+    }).then(r => handleResponse<{ valido: boolean; usuario: { id: string; nome: string } }>(r)),
+  configurarPinAdministrador: (dados: { nome: string; pinAtual?: string; novoPin: string }) =>
+    fetch(`${API_BASE}/seguranca/admin-pin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ success: boolean; nome: string; pinConfigurado: boolean }>(r)),
+
   // DASHBOARD
   getDashboard: () => fetch(`${API_BASE}/dashboard`).then(r => handleResponse<DashboardStats>(r)),
 
@@ -67,6 +83,8 @@ export const api = {
       vendas: Venda[];
       pagamentos: Pagamento[];
     }>(r)),
+  getClienteProdutosHabituais: (id: string) =>
+    fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
 
   // FORNECEDORES
   getFornecedores: () => fetch(`${API_BASE}/fornecedores`).then(r => handleResponse<Fornecedor[]>(r)),
@@ -121,6 +139,16 @@ export const api = {
     formaPagamento: string;
     vencimento?: string;
     observacoes?: string;
+    instrumentoRecebimento?: {
+      emitente: string;
+      numeroDocumento: string;
+      vencimento: string;
+      observacao?: string;
+    };
+    autorizacaoPreco?: {
+      pin: string;
+      salvarParaCliente: boolean;
+    };
   }) => 
     fetch(`${API_BASE}/vendas`, {
       method: "POST",

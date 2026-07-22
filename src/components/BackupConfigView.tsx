@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Database, RefreshCw, ShieldAlert, CheckCircle2, ChevronRight, Save, Store, Archive 
+  Database, RefreshCw, ShieldAlert, CheckCircle2, ChevronRight, Save, Store, Archive, KeyRound
 } from "lucide-react";
 import { api } from "../lib/api";
+import { SegurancaStatus } from "../types";
 
 interface BackupConfigViewProps {
   onRefreshConfig?: () => void;
@@ -15,6 +16,13 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
   const [savingConfig, setSavingConfig] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
+  const [adminNome, setAdminNome] = useState("Administrador");
+  const [pinAtual, setPinAtual] = useState("");
+  const [novoPin, setNovoPin] = useState("");
+  const [confirmarPin, setConfirmarPin] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+  const [pinFeedback, setPinFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Mock status state
   const [mockEnabled, setMockEnabled] = useState(false);
@@ -30,14 +38,17 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [config, backupList, mockStatus] = await Promise.all([
+      const [config, backupList, mockStatus, segurancaStatus] = await Promise.all([
         api.getConfig(),
         api.getBackups(),
-        api.getMockStatus().catch(() => ({ mockEnabled: false }))
+        api.getMockStatus().catch(() => ({ mockEnabled: false })),
+        api.getSegurancaStatus()
       ]);
       setStoreName(config.store_name || "Central de Tecidos");
       setBackups(backupList);
       setMockEnabled(mockStatus.mockEnabled);
+      setSeguranca(segurancaStatus);
+      setAdminNome(segurancaStatus.nome);
     } catch (err: any) {
       setError(err.message || "Erro ao carregar configurações.");
     } finally {
@@ -78,6 +89,43 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
       alert(err.message || "Erro ao gerar backup.");
     } finally {
       setCreatingBackup(false);
+    }
+  };
+
+  const handleSavePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinFeedback(null);
+
+    if (!/^\d{4,8}$/.test(novoPin)) {
+      setPinFeedback({ type: "error", text: "O novo PIN deve possuir de 4 a 8 números." });
+      return;
+    }
+    if (novoPin !== confirmarPin) {
+      setPinFeedback({ type: "error", text: "A confirmação do PIN não confere." });
+      return;
+    }
+
+    setSavingPin(true);
+    try {
+      const result = await api.configurarPinAdministrador({
+        nome: adminNome.trim() || "Administrador",
+        pinAtual: seguranca?.pinConfigurado ? pinAtual : undefined,
+        novoPin
+      });
+      setSeguranca((atual) => ({
+        usuarioId: atual?.usuarioId || "usuario_admin",
+        nome: result.nome,
+        pinConfigurado: true
+      }));
+      setAdminNome(result.nome);
+      setPinAtual("");
+      setNovoPin("");
+      setConfirmarPin("");
+      setPinFeedback({ type: "success", text: "PIN administrativo salvo com segurança." });
+    } catch (err: any) {
+      setPinFeedback({ type: "error", text: err.message || "Erro ao salvar o PIN." });
+    } finally {
+      setSavingPin(false);
     }
   };
 
@@ -197,6 +245,96 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md transition-colors"
               >
                 <Save size={14} /> {savingConfig ? "Salvando..." : "Salvar Configurações"}
+              </button>
+            </form>
+
+            {/* Administrative PIN */}
+            <form onSubmit={handleSavePin} className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
+              <div className="flex items-start justify-between gap-3 border-b border-slate-50 pb-3">
+                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <KeyRound size={16} className="text-amber-600" />
+                  PIN Administrativo
+                </h3>
+                <span className={`rounded-full px-2 py-1 text-[9px] font-extrabold uppercase ${
+                  seguranca?.pinConfigurado ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                }`}>
+                  {seguranca?.pinConfigurado ? "Configurado" : "Pendente"}
+                </span>
+              </div>
+
+              <p className="text-[11px] leading-relaxed text-slate-500">
+                Usado pelo proprietário para ver custos e lucros, autorizar preços abaixo do permitido e proteger ações administrativas.
+              </p>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-400 uppercase">Responsável</label>
+                <input
+                  type="text"
+                  value={adminNome}
+                  onChange={(e) => setAdminNome(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-bold text-slate-950 focus:border-emerald-500 outline-none"
+                  placeholder="Nome do administrador"
+                />
+              </div>
+
+              {seguranca?.pinConfigurado && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-400 uppercase">PIN atual</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="current-password"
+                    value={pinAtual}
+                    onChange={(e) => setPinAtual(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    className="w-full bg-amber-50 border border-amber-200 text-lg tracking-[0.35em] px-3.5 py-2.5 rounded-xl font-black text-slate-950 focus:border-amber-500 outline-none"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Novo PIN</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="new-password"
+                    value={novoPin}
+                    onChange={(e) => setNovoPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    className="w-full bg-slate-50 border border-slate-200 text-lg tracking-[0.28em] px-3 py-2.5 rounded-xl font-black text-slate-950 focus:border-emerald-500 outline-none"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Confirmar</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    autoComplete="new-password"
+                    value={confirmarPin}
+                    onChange={(e) => setConfirmarPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    className="w-full bg-slate-50 border border-slate-200 text-lg tracking-[0.28em] px-3 py-2.5 rounded-xl font-black text-slate-950 focus:border-emerald-500 outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              {pinFeedback && (
+                <p className={`rounded-lg border px-3 py-2 text-[11px] font-bold ${
+                  pinFeedback.type === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-red-200 bg-red-50 text-red-700"
+                }`}>
+                  {pinFeedback.text}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={savingPin}
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition-colors disabled:opacity-50"
+              >
+                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar PIN" : "Configurar PIN"}
               </button>
             </form>
 

@@ -1,28 +1,19 @@
 import React, { useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { DashboardView } from "./components/DashboardView";
-import { VendaRapidaView } from "./components/VendaRapidaView";
-import { VendasListaView } from "./components/VendasListaView";
 import { ClientesView } from "./components/ClientesView";
-import { FornecedoresView } from "./components/FornecedoresView";
 import { ProdutosView } from "./components/ProdutosView";
-import { ComprasView } from "./components/ComprasView";
-import { PagamentosView } from "./components/PagamentosView";
 import { RelatoriosView } from "./components/RelatoriosView";
 import { BackupConfigView } from "./components/BackupConfigView";
+import { VendaModuleView } from "./components/VendaModuleView";
+import { FornecedoresModuleView } from "./components/FornecedoresModuleView";
+import { ValesView } from "./components/ValesView";
 
 export default function App() {
-  const [currentView, setCurrentView] = useState("dashboard");
+  const [currentView, setCurrentView] = useState("venda");
   const [statsKey, setStatsKey] = useState(0); // Reactive trigger for other views to refresh data
   
   // Pivot shortcut state (e.g. going from dashboard overdue alert to sales ledger)
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
-
-  // Handle direct navigation to past sales from dashboard alerts
-  const handleSelectSaleFromDashboard = (saleId: string) => {
-    setSelectedSaleId(saleId);
-    setCurrentView("vendas");
-  };
 
   // Helper to force-update stats in other views
   const handleRefreshStats = () => {
@@ -31,26 +22,14 @@ export default function App() {
 
   const renderActiveView = () => {
     switch (currentView) {
-      case "dashboard":
+      case "venda":
         return (
-          <DashboardView 
-            onNavigateToView={(view) => setCurrentView(view)}
-            onSelectVenda={handleSelectSaleFromDashboard}
-          />
-        );
-      case "venda-rapida":
-        return (
-          <VendaRapidaView 
+          <VendaModuleView
             onSaleSaved={handleRefreshStats}
-            onNavigateToView={(view) => setCurrentView(view)}
-          />
-        );
-      case "vendas":
-        return (
-          <VendasListaView 
             onRefreshStats={handleRefreshStats}
             selectedSaleId={selectedSaleId}
             onClearSelectedSaleId={() => setSelectedSaleId(null)}
+            onNavigateToView={(view) => setCurrentView(view)}
           />
         );
       case "clientes":
@@ -61,19 +40,15 @@ export default function App() {
         );
       case "fornecedores":
         return (
-          <FornecedoresView />
+          <FornecedoresModuleView />
         );
       case "produtos":
         return (
           <ProdutosView />
         );
-      case "compras":
+      case "vales":
         return (
-          <ComprasView />
-        );
-      case "pagamentos":
-        return (
-          <PagamentosView 
+          <ValesView
             onRefreshStats={handleRefreshStats}
           />
         );
@@ -105,17 +80,17 @@ export default function App() {
         onViewChange={(view) => {
           setCurrentView(view);
           // If moving away from sales list, clear any selection shortcut
-          if (view !== "vendas") {
+          if (view !== "venda") {
             setSelectedSaleId(null);
           }
         }}
       />
 
       {/* Main Workspace */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
+      <main className="min-w-0 flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Top Mini Header Bar */}
-        <header className="bg-white border-b border-slate-200/50 px-8 py-3 flex justify-between items-center shrink-0 print:hidden">
+        <header className="bg-white border-b border-slate-200/50 px-8 py-3 hidden md:flex justify-between items-center shrink-0 print:hidden">
           <div className="text-xs text-slate-400 font-bold font-mono">
             ESTADO: <span className="text-emerald-600">● ONLINE LOCAL</span>
           </div>
@@ -126,7 +101,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Content Viewport */}
-        <div key={statsKey} className="flex-1 p-8 overflow-y-auto print:p-0 print:bg-white">
+        <div key={statsKey} className="flex-1 overflow-y-auto px-4 pb-6 pt-20 sm:px-5 md:p-8 print:p-0 print:bg-white">
           <div className="max-w-7xl mx-auto">
             {renderActiveView()}
           </div>

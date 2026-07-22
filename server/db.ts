@@ -226,6 +226,88 @@ export function initDatabase() {
         valor TEXT NOT NULL
       )
     `).run();
+
+    // 10. Padrão incremental de produtos por cliente
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS cliente_produtos_habituais (
+        clienteId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        ultimoPreco REAL NOT NULL,
+        ultimaQuantidade REAL,
+        ultimaUnidade TEXT NOT NULL,
+        vezesComprado INTEGER NOT NULL DEFAULT 1,
+        ultimaCompraEm TEXT NOT NULL,
+        precoAutorizado REAL,
+        oculto INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (clienteId, produtoId),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_produtos_habituais_cliente ON cliente_produtos_habituais (clienteId, oculto, ultimaCompraEm DESC)`).run();
+
+    // 11. Usuários locais. A estrutura já permite novos perfis no futuro,
+    // mas nesta etapa usamos um administrador responsável pelas autorizações.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS usuarios (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        perfil TEXT NOT NULL DEFAULT 'operador',
+        pinHash TEXT,
+        pinSalt TEXT,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+
+    // 12. Registro imutável das ações sensíveis feitas com PIN.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS auditoria (
+        id TEXT PRIMARY KEY,
+        usuarioId TEXT,
+        acao TEXT NOT NULL,
+        entidade TEXT NOT NULL,
+        entidadeId TEXT,
+        detalhes TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (usuarioId) REFERENCES usuarios (id)
+      )
+    `).run();
+
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_auditoria_entidade ON auditoria (entidade, entidadeId, createdAt DESC)`).run();
+
+    // 13. Cheques e duplicatas recebidos em vendas. O título permanece em
+    // carteira até uma baixa explícita; o vencimento, por si só, não o recebe.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS instrumentos_recebimento (
+        id TEXT PRIMARY KEY,
+        vendaId TEXT NOT NULL,
+        clienteId TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        emitente TEXT NOT NULL,
+        numeroDocumento TEXT NOT NULL,
+        valor REAL NOT NULL,
+        vencimento TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'em_carteira',
+        observacao TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (vendaId) REFERENCES vendas (id),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id)
+      )
+    `).run();
+
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_instrumentos_vencimento ON instrumentos_recebimento (status, vencimento)`).run();
+
+    db.prepare(`
+      INSERT OR IGNORE INTO usuarios (id, nome, perfil, ativo)
+      VALUES ('usuario_admin', 'Administrador', 'administrador', 1)
+    `).run();
   })();
 
   // Dynamic migrations for existing databases to support WhatsApp and product unit conversion fields
@@ -236,8 +318,35 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
 
+  // A partir desta versão compra e venda usam a mesma unidade. Mantemos as
+  // colunas antigas apenas para compatibilidade com bancos já instalados.
+  db.prepare(`
+    UPDATE produtos
+    SET unidade = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
+        unidadeCompra = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
+        unidadeVenda = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
+        fatorConversao = 1,
+        venderUnidadeCompra = 0
+  `).run();
+
   // Seed initial demo data if database is empty
   seedDemoData();
+
+  // Backfill existing installations once. Afterwards each sale keeps the projection current.
+  const habitualCount = db.prepare("SELECT COUNT(*) as count FROM cliente_produtos_habituais").get() as { count: number };
+  if (habitualCount.count === 0) {
+    const clientesComVenda = db.prepare(`
+      SELECT DISTINCT clienteId
+      FROM vendas
+      WHERE deletedAt IS NULL AND status <> 'cancelada'
+    `).all() as Array<{ clienteId: string }>;
+
+    db.transaction(() => {
+      for (const { clienteId } of clientesComVenda) {
+        rebuildClienteProdutosHabituais(clienteId);
+      }
+    })();
+  }
 }
 
 function seedDemoData() {
@@ -467,6 +576,90 @@ function seedDemoData() {
 
     console.log("Demo data successfully seeded!");
   });
+}
+
+export function rebuildClienteProdutosHabituais(clienteId: string) {
+  const existentes = db.prepare(`
+    SELECT produtoId, oculto, precoAutorizado
+    FROM cliente_produtos_habituais
+    WHERE clienteId = ?
+  `).all(clienteId) as Array<{ produtoId: string; oculto: number; precoAutorizado: number | null }>;
+
+  const preferencias = new Map(existentes.map((item) => [item.produtoId, item]));
+  const historico = db.prepare(`
+    SELECT
+      iv.vendaId,
+      iv.produtoId,
+      iv.quantidade,
+      iv.unidade,
+      iv.precoUnitario,
+      v.data,
+      v.numeroSequencial
+    FROM itens_venda iv
+    JOIN vendas v ON v.id = iv.vendaId
+    WHERE v.clienteId = ?
+      AND v.deletedAt IS NULL
+      AND v.status <> 'cancelada'
+    ORDER BY v.data ASC, v.numeroSequencial ASC, iv.id ASC
+  `).all(clienteId) as Array<{
+    vendaId: string;
+    produtoId: string;
+    quantidade: number;
+    unidade: string;
+    precoUnitario: number;
+    data: string;
+    numeroSequencial: number;
+  }>;
+
+  const agregados = new Map<string, {
+    produtoId: string;
+    ultimoPreco: number;
+    ultimaQuantidade: number;
+    ultimaUnidade: string;
+    ultimaCompraEm: string;
+    vendas: Set<string>;
+  }>();
+
+  for (const item of historico) {
+    const atual = agregados.get(item.produtoId) || {
+      produtoId: item.produtoId,
+      ultimoPreco: Number(item.precoUnitario),
+      ultimaQuantidade: Number(item.quantidade),
+      ultimaUnidade: item.unidade,
+      ultimaCompraEm: item.data,
+      vendas: new Set<string>(),
+    };
+
+    atual.ultimoPreco = Number(item.precoUnitario);
+    atual.ultimaQuantidade = Number(item.quantidade);
+    atual.ultimaUnidade = item.unidade;
+    atual.ultimaCompraEm = item.data;
+    atual.vendas.add(item.vendaId);
+    agregados.set(item.produtoId, atual);
+  }
+
+  db.prepare("DELETE FROM cliente_produtos_habituais WHERE clienteId = ?").run(clienteId);
+  const insert = db.prepare(`
+    INSERT INTO cliente_produtos_habituais (
+      clienteId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade,
+      vezesComprado, ultimaCompraEm, precoAutorizado, oculto
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  for (const item of agregados.values()) {
+    const preferencia = preferencias.get(item.produtoId);
+    insert.run(
+      clienteId,
+      item.produtoId,
+      item.ultimoPreco,
+      item.ultimaQuantidade,
+      item.ultimaUnidade,
+      item.vendas.size,
+      item.ultimaCompraEm,
+      preferencia?.precoAutorizado ?? null,
+      preferencia?.oculto ?? 0,
+    );
+  }
 }
 
 // Database query helpers

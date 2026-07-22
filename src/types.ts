@@ -27,16 +27,30 @@ export interface Produto {
   id: string;
   nome: string;
   codigo?: string;
-  unidade: "metro" | "unidade" | "quilograma" | "rolo" | "peça";
+  unidade: string;
   precoVendaPadrao: number;
   custoPadrao: number;
-  unidadeCompra?: string;
-  unidadeVenda?: string;
-  fatorConversao?: number;
-  venderUnidadeCompra?: number;
+  ultimaCompraEm?: string;
+  ultimoFornecedorNome?: string;
   ativo: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ProdutoHabitual {
+  clienteId: string;
+  produtoId: string;
+  nome: string;
+  codigo?: string;
+  ultimoPreco: number;
+  ultimaQuantidade?: number;
+  ultimaUnidade: string;
+  vezesComprado: number;
+  ultimaCompraEm: string;
+  precoAutorizado?: number;
+  unidade: Produto["unidade"];
+  precoVendaPadrao: number;
+  custoPadrao: number;
 }
 
 export interface ItemVenda {
@@ -83,7 +97,20 @@ export interface Pagamento {
   vendaSequencial?: number;
   data: string; // YYYY-MM-DD
   valor: number;
-  formaPagamento: "dinheiro" | "pix" | "cartao_credito" | "cartao_debito" | "boleto";
+  formaPagamento:
+    | "avista_dinheiro"
+    | "avista_debito"
+    | "cartao_credito"
+    | "cheque_emitente"
+    | "cheque_terceiro"
+    | "duplicata_emitente"
+    | "duplicata_terceiro"
+    | "bonus"
+    | "pix"
+    | "vale"
+    | "dinheiro"
+    | "cartao_debito"
+    | "boleto";
   observacao?: string;
   deletedAt?: string;
   createdAt: string;
@@ -119,6 +146,12 @@ export interface Compra {
 export interface Config {
   nome_loja: string;
   retencao_backups_dias: string;
+}
+
+export interface SegurancaStatus {
+  usuarioId: string | null;
+  nome: string;
+  pinConfigurado: boolean;
 }
 
 export interface DashboardStats {

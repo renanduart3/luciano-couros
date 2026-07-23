@@ -8,7 +8,7 @@ echo       ATUALIZACAO - CENTRAL DE TECIDOS
 echo ===============================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\GerenciarSistema.ps1" -Action Update
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ExecutarComoAdministrador.ps1" -Action Update
 set "RESULTADO=%ERRORLEVEL%"
 
 echo.

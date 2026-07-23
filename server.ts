@@ -2005,8 +2005,8 @@ app.post("/api/backups/restaurar", (req, res) => {
     // We import it on demand or since db was exported from ./server/db.ts,
     // we can re-open it. Since better-sqlite3 instance is cached, we need to restart or re-instantiate.
     // In node, to safely reload, restarting the dev server is cleanest.
-    // But we can also just let the process crash or successfully respond, and since it's a backup restore,
-    // we will exit the process and let the container orchestrator (or PM2/nodemon/tsx) auto-restart it instantly!
+    // Exit with a non-zero code so the Windows service (or another supervisor)
+    // recognizes this as a restart request and starts a fresh process.
     // This is the absolute SAFEST way to prevent corrupt in-memory SQLite handles after a restore.
     res.json({ 
       success: true, 
@@ -2015,7 +2015,7 @@ app.post("/api/backups/restaurar", (req, res) => {
 
     setTimeout(() => {
       console.log("Exiting to trigger container / tsx restart for database refresh...");
-      process.exit(0);
+      process.exit(1);
     }, 1000);
 
   } catch (error: any) {

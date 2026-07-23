@@ -101,12 +101,21 @@ O sistema é construído sobre pilaras tecnológicos modernos e robustos:
 
 ### Uso na máquina do cliente (Windows)
 
-Depois de instalar o **Node.js 22 LTS**, o cliente pode operar o sistema por dois arquivos na pasta principal:
+Depois de instalar o **Node.js 22 LTS**, execute uma vez `INSTALAR SERVICO.cmd` e confirme a janela de administrador. A instalação:
 
+- registra o serviço automático **Central de Tecidos - Servidor**, que inicia junto com o Windows e é reiniciado em caso de falha;
+- adiciona o ícone **Central de Tecidos** à bandeja do Windows no login do usuário;
+- deixa o ícone verde quando a API está respondendo e vermelho quando o sistema está parado;
+- oferece no menu do ícone as ações **Abrir sistema**, **Atualizar**, **Iniciar**, **Parar** e **Reiniciar**.
+
+Os arquivos disponíveis na pasta principal são:
+
+- `INSTALAR SERVICO.cmd`: prepara o build, registra/inicia o serviço e instala o ícone da bandeja.
+- `DESINSTALAR SERVICO.cmd`: para e remove o serviço e o início automático do ícone, preservando dados e backups.
 - `ATUALIZAR SISTEMA.cmd`: faz backup dos bancos locais, baixa a branch `main` de `https://github.com/renanduart3/luciano-couros`, instala dependências, compila e reinicia o sistema. Se houver um `atualizacao.zip` na pasta, ele será usado no lugar do download.
-- `REINICIAR SISTEMA.cmd`: encerra somente a instância deste projeto, inicia o servidor oculto e abre `http://localhost:3000` no navegador.
+- `REINICIAR SISTEMA.cmd`: reinicia o serviço da aplicação e abre `http://localhost:3000` no navegador.
 
-O cliente não precisa instalar pnpm nem executar `pnpm dev`. Os atalhos usam o npm que já acompanha o Node.js e preparam automaticamente a primeira execução. `pnpm dev` é reservado ao desenvolvimento e não deve ser usado na instalação do cliente.
+As ações do serviço exibem a confirmação de administrador do Windows. “Reiniciar” reinicia somente a aplicação, nunca o computador. O cliente não precisa instalar pnpm nem executar `pnpm dev`. Os atalhos usam o npm que já acompanha o Node.js e preparam automaticamente a primeira execução. `pnpm dev` é reservado ao desenvolvimento e não deve ser usado na instalação do cliente.
 
 Para entregar uma nova versão, publique-a na branch `main` e peça ao cliente para clicar em `ATUALIZAR SISTEMA.cmd`. Como alternativa offline, compacte o projeto como `atualizacao.zip` e envie o arquivo ao cliente para ser colocado na mesma pasta do sistema. Bancos SQLite, configurações locais, backups e dependências não são sobrescritos.
 

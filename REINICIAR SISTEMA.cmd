@@ -8,7 +8,7 @@ echo         REINICIO - CENTRAL DE TECIDOS
 echo ===============================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\GerenciarSistema.ps1" -Action Restart
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ExecutarComoAdministrador.ps1" -Action Restart
 set "RESULTADO=%ERRORLEVEL%"
 
 echo.

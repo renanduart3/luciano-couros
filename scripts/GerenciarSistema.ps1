@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Update", "Restart")]
+    [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart", "Status")]
     [string]$Action,
     [switch]$NoBrowser
 )
@@ -16,9 +16,44 @@ $SystemUrl = "http://localhost:3000"
 $HealthUrl = "http://127.0.0.1:3000"
 $RepositoryUrl = "https://github.com/renanduart3/luciano-couros.git"
 $RepositoryArchiveUrl = "https://github.com/renanduart3/luciano-couros/archive/refs/heads/main.zip"
+$ServiceName = "CentralDeTecidos"
+$ServiceDisplayName = "Central de Tecidos - Servidor"
+$ServiceDir = Join-Path $RuntimeDir "service"
+$ServiceExecutable = Join-Path $ServiceDir "$ServiceName.Service.exe"
+$ServiceConfig = Join-Path $ServiceDir "$ServiceName.Service.xml"
+$WinSwDownloadUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
+$TrayScript = Join-Path $PSScriptRoot "TrayIcon.ps1"
+$TrayShortcutName = "Central de Tecidos.lnk"
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
+}
+
+function Test-Administrator {
+    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Assert-Administrator {
+    if (-not (Test-Administrator)) {
+        throw "Esta operacao precisa de permissao de administrador. Use um dos arquivos .cmd da pasta principal e confirme a janela do Windows."
+    }
+}
+
+function Get-SystemService {
+    return Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+}
+
+function Wait-SystemHealth([int]$Attempts = 40) {
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        Start-Sleep -Milliseconds 250
+        try {
+            $response = Invoke-WebRequest -Uri "$HealthUrl/api/health" -UseBasicParsing -TimeoutSec 2
+            if ($response.StatusCode -eq 200) { return $true }
+        } catch { }
+    }
+    return $false
 }
 
 function Get-SystemVersion {
@@ -64,6 +99,20 @@ function Get-ProjectProcessOnPort {
 }
 
 function Stop-System {
+    $service = Get-SystemService
+    if ($null -ne $service) {
+        Assert-Administrator
+        if ($service.Status -eq "Stopped") {
+            Write-Host "O servico ja esta parado."
+            return
+        }
+        Write-Step "Parando o servico $ServiceDisplayName"
+        Stop-Service -Name $ServiceName -Force
+        (Get-Service -Name $ServiceName).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(30))
+        Write-Host "Sistema parado." -ForegroundColor Yellow
+        return
+    }
+
     $managedProcess = Get-ManagedProcess
     if ($null -eq $managedProcess) {
         $managedProcess = Get-ProjectProcessOnPort
@@ -89,6 +138,22 @@ function Start-System {
     $systemVersion = Get-SystemVersion
     Write-Step "Iniciando o sistema v$systemVersion em $SystemUrl"
     New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
+
+    $service = Get-SystemService
+    if ($null -ne $service) {
+        Assert-Administrator
+        if ($service.Status -ne "Running") {
+            Start-Service -Name $ServiceName
+            (Get-Service -Name $ServiceName).WaitForStatus("Running", [TimeSpan]::FromSeconds(30))
+        }
+        if (-not (Wait-SystemHealth)) {
+            throw "O servico foi iniciado, mas o sistema nao respondeu em $HealthUrl. Consulte os logs em $RuntimeDir."
+        }
+        Write-Host "Sistema iniciado com sucesso." -ForegroundColor Green
+        if (-not $NoBrowser) { Start-Process $SystemUrl }
+        return
+    }
+
     $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
     if ($null -eq $nodeCommand) { throw "Node.js nao foi encontrado. Instale o Node.js 22 LTS e tente novamente." }
     $serverFile = Join-Path $ProjectRoot "dist\server.cjs"
@@ -115,17 +180,7 @@ function Start-System {
     }
     Set-Content -LiteralPath $PidFile -Value $serverProcess.Id -Encoding ascii
 
-    $ready = $false
-    for ($attempt = 0; $attempt -lt 40; $attempt++) {
-        Start-Sleep -Milliseconds 250
-        if ($serverProcess.HasExited) { break }
-        try {
-            # Use IPv4 explicitly: on some Windows installations, localhost resolves
-            # to ::1 while the Node server is listening on the IPv4 interface.
-            $response = Invoke-WebRequest -Uri "$HealthUrl/api/health" -UseBasicParsing -TimeoutSec 2
-            if ($response.StatusCode -eq 200) { $ready = $true; break }
-        } catch { }
-    }
+    $ready = Wait-SystemHealth
 
     if (-not $ready) {
         if (-not $serverProcess.HasExited) { Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue }
@@ -218,6 +273,110 @@ function Build-System {
     if ($LASTEXITCODE -ne 0) { throw "Falha na compilacao do sistema." }
 }
 
+function Write-ServiceConfig {
+    $nodeCommand = Get-Command node.exe -ErrorAction SilentlyContinue
+    if ($null -eq $nodeCommand) { throw "Node.js nao foi encontrado. Instale o Node.js 22 LTS e tente novamente." }
+
+    $escapedNode = [Security.SecurityElement]::Escape($nodeCommand.Source)
+    $escapedRoot = [Security.SecurityElement]::Escape($ProjectRoot)
+    $escapedRuntime = [Security.SecurityElement]::Escape($RuntimeDir)
+    $xml = @"
+<service>
+  <id>$ServiceName</id>
+  <name>$ServiceDisplayName</name>
+  <description>Mantem o sistema Central de Tecidos disponivel nesta maquina.</description>
+  <executable>$escapedNode</executable>
+  <arguments>dist/server.cjs</arguments>
+  <workingdirectory>$escapedRoot</workingdirectory>
+  <env name="NODE_ENV" value="production" />
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>$escapedRuntime</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>4</keepFiles>
+  </log>
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+</service>
+"@
+    Set-Content -LiteralPath $ServiceConfig -Value $xml -Encoding utf8
+}
+
+function Install-TrayShortcut {
+    if (-not (Test-Path -LiteralPath $TrayScript)) {
+        throw "O controlador da bandeja nao foi encontrado em $TrayScript."
+    }
+    $startupDir = [Environment]::GetFolderPath("Startup")
+    $shortcutPath = Join-Path $startupDir $TrayShortcutName
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TrayScript`""
+    $shortcut.WorkingDirectory = $ProjectRoot
+    $shortcut.IconLocation = (Join-Path $ProjectRoot "src\img\favicon.ico")
+    $shortcut.Save()
+}
+
+function Install-SystemService {
+    Assert-Administrator
+    if ($null -ne (Get-SystemService)) {
+        Write-Host "O servico $ServiceDisplayName ja esta instalado." -ForegroundColor Yellow
+        Install-TrayShortcut
+        Start-System
+        return
+    }
+
+    Stop-System
+    Build-System
+    New-Item -ItemType Directory -Path $ServiceDir -Force | Out-Null
+    if (-not (Test-Path -LiteralPath $ServiceExecutable)) {
+        Write-Step "Baixando o componente do servico do Windows"
+        Invoke-WebRequest -Uri $WinSwDownloadUrl -OutFile $ServiceExecutable -UseBasicParsing
+    }
+    Write-ServiceConfig
+
+    Write-Step "Registrando $ServiceDisplayName"
+    & $ServiceExecutable install
+    if ($LASTEXITCODE -ne 0) { throw "O Windows nao conseguiu registrar o servico (codigo $LASTEXITCODE)." }
+    & sc.exe failure $ServiceName "reset=" "86400" "actions=" "restart/5000/restart/10000/restart/30000" | Out-Null
+    Install-TrayShortcut
+    Start-System
+    Write-Host "Servico instalado e configurado para iniciar com o Windows." -ForegroundColor Green
+}
+
+function Uninstall-SystemService {
+    Assert-Administrator
+    $service = Get-SystemService
+    if ($null -ne $service) {
+        Stop-System
+        Write-Step "Removendo o servico $ServiceDisplayName"
+        if (-not (Test-Path -LiteralPath $ServiceExecutable)) {
+            throw "O executavel de manutencao do servico nao foi encontrado em $ServiceExecutable."
+        }
+        & $ServiceExecutable uninstall
+        if ($LASTEXITCODE -ne 0) { throw "O Windows nao conseguiu remover o servico (codigo $LASTEXITCODE)." }
+    } else {
+        Write-Host "O servico nao estava instalado."
+    }
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath("Startup")) $TrayShortcutName
+    Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+    Write-Host "Servico e inicializacao automatica do icone removidos." -ForegroundColor Green
+}
+
+function Show-SystemStatus {
+    $service = Get-SystemService
+    if ($null -eq $service) {
+        Write-Host "Servico: nao instalado" -ForegroundColor Red
+        exit 2
+    }
+    $healthy = Wait-SystemHealth -Attempts 1
+    $color = if ($service.Status -eq "Running" -and $healthy) { "Green" } else { "Red" }
+    Write-Host "Servico: $($service.Status) | API: $(if ($healthy) { 'respondendo' } else { 'indisponivel' })" -ForegroundColor $color
+}
+
 function Update-System {
     $previousVersion = Get-SystemVersion
     Write-Host "Versao instalada: v$previousVersion" -ForegroundColor Gray
@@ -234,7 +393,15 @@ function Update-System {
 try {
     Set-Location -LiteralPath $ProjectRoot
     New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
-    if ($Action -eq "Update") { Update-System } else { Stop-System; Start-System }
+    switch ($Action) {
+        "Install" { Install-SystemService }
+        "Uninstall" { Uninstall-SystemService }
+        "Update" { Update-System }
+        "Start" { Start-System }
+        "Stop" { Stop-System }
+        "Restart" { Stop-System; Start-System }
+        "Status" { Show-SystemStatus }
+    }
     Write-Host "`nOperacao concluida." -ForegroundColor Green
     exit 0
 } catch {

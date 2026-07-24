@@ -213,6 +213,16 @@ export const api = {
     }).then(r => handleResponse<Venda>(r)),
   cancelarVenda: (id: string) => 
     fetch(`${API_BASE}/vendas/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+  createDevolucaoVenda: (id: string, dados: {
+    data: string;
+    observacoes?: string;
+    pin: string;
+    items: Array<{ itemVendaId: string; quantidade: number }>;
+  }) => fetch(`${API_BASE}/vendas/${id}/devolucoes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<{ success: boolean; id: string; valorCredito: number }>(r)),
 
   // ORÇAMENTOS
   getOrcamentos: () => fetch(`${API_BASE}/orcamentos`).then(r => handleResponse<Orcamento[]>(r)),

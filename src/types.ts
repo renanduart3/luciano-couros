@@ -96,6 +96,31 @@ export interface ItemVenda {
   custoTotal: number;
   lucroBruto: number;
   referencia?: string;
+  quantidadeDevolvida?: number;
+  quantidadeDisponivel?: number;
+}
+
+export interface ItemDevolucaoVenda {
+  id: string;
+  devolucaoId: string;
+  itemVendaId: string;
+  produtoId: string;
+  descricao?: string;
+  unidade?: string;
+  quantidade: number;
+  valorUnitarioCredito: number;
+  totalCredito: number;
+}
+
+export interface DevolucaoVenda {
+  id: string;
+  vendaId: string;
+  clienteId: string;
+  data: string;
+  valorCredito: number;
+  observacoes?: string;
+  createdAt: string;
+  items: ItemDevolucaoVenda[];
 }
 
 export interface Venda {
@@ -126,6 +151,7 @@ export interface Venda {
     observacao?: string;
   } | null;
   items?: ItemVenda[];
+  devolucoes?: DevolucaoVenda[];
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -229,6 +255,7 @@ export interface MovimentoBonus {
   id: string;
   clienteId: string;
   recebimentoId?: string;
+  vendaId?: string;
   data: string;
   tipo: "credito" | "debito";
   valor: number;

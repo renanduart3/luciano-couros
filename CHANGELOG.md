@@ -4,6 +4,17 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.0 — 2026-07-24
+
+- Cliente selecionado antes da operação e compartilhado entre venda e lista de pedido.
+- Orçamento operacional transformado em uma lista ativa por cliente, sem listagem genérica na tela de venda.
+- Lista do pedido preservada no perfil do cliente após a conversão em venda.
+- Preço especial do cliente aplicado automaticamente; na ausência dele, é usado o preço-padrão do produto.
+- Devolução parcial de itens pelo histórico da venda, protegida por PIN e sem apagar a venda original.
+- Crédito proporcional da devolução registrado automaticamente na carteira do cliente.
+- Crédito da carteira disponível como forma de recebimento em vendas futuras, inclusive com saldo restante.
+- Cancelamento protegido contra vendas que já possuem devoluções e estorno automático do crédito usado quando aplicável.
+
 ## 1.6.0 — 2026-07-24
 
 - Venda e orçamento reunidos em uma operação dividida no desktop e alternável no celular.

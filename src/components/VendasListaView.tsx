@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Trash2, Printer, Eye, X, AlertTriangle, Calendar, Filter, Clock, FileText 
+  Search, Trash2, Printer, Eye, X, AlertTriangle, Filter, FileText, KeyRound, RotateCcw, WalletCards
 } from "lucide-react";
 import { Venda } from "../types";
 import { api } from "../lib/api";
@@ -28,6 +28,13 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
   const [vendaDetalhada, setVendaDetalhada] = useState<Venda | null>(null);
   const [showConfirmCancel, setShowConfirmCancel] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [devolucaoOpen, setDevolucaoOpen] = useState(false);
+  const [devolucaoQuantidades, setDevolucaoQuantidades] = useState<Record<string, string>>({});
+  const [devolucaoData, setDevolucaoData] = useState(() => new Date().toISOString().split("T")[0]);
+  const [devolucaoObservacoes, setDevolucaoObservacoes] = useState("");
+  const [devolucaoPin, setDevolucaoPin] = useState("");
+  const [devolucaoErro, setDevolucaoErro] = useState("");
+  const [devolvendo, setDevolvendo] = useState(false);
 
   const fetchVendas = async () => {
     setLoading(true);
@@ -90,6 +97,51 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
 
   const triggerPrintDetail = () => {
     window.print();
+  };
+
+  const valorCreditoPrevisto = vendaDetalhada?.items?.reduce((total, item) => {
+    const quantidade = Number((devolucaoQuantidades[item.id] || "0").replace(",", "."));
+    const descontoRateado = Number(vendaDetalhada.subtotal) > 0
+      ? Number(vendaDetalhada.desconto || 0) * (Number(item.total) / Number(vendaDetalhada.subtotal))
+      : 0;
+    const unitarioLiquido = (Number(item.total) - descontoRateado) / Number(item.quantidade);
+    return total + (Number.isFinite(quantidade) ? quantidade * unitarioLiquido : 0);
+  }, 0) || 0;
+
+  const registrarDevolucao = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!vendaDetalhada) return;
+    const items = (vendaDetalhada.items || []).map((item) => ({
+      itemVendaId: item.id,
+      quantidade: Number((devolucaoQuantidades[item.id] || "0").replace(",", "."))
+    })).filter((item) => item.quantidade > 0);
+    if (items.length === 0) {
+      setDevolucaoErro("Informe a quantidade devolvida de pelo menos um item.");
+      return;
+    }
+    setDevolvendo(true);
+    setDevolucaoErro("");
+    try {
+      const resultado = await api.createDevolucaoVenda(vendaDetalhada.id, {
+        data: devolucaoData,
+        observacoes: devolucaoObservacoes.trim() || undefined,
+        pin: devolucaoPin,
+        items
+      });
+      const atualizadas = await api.getVendas();
+      setVendas(atualizadas);
+      setVendaDetalhada(atualizadas.find((venda) => venda.id === vendaDetalhada.id) || null);
+      setDevolucaoOpen(false);
+      setDevolucaoQuantidades({});
+      setDevolucaoPin("");
+      setDevolucaoObservacoes("");
+      alert(`Devolução registrada. ${formatCurrency(resultado.valorCredito)} creditados na carteira do cliente.`);
+      onRefreshStats?.();
+    } catch (err: any) {
+      setDevolucaoErro(err.message || "Não foi possível registrar a devolução.");
+    } finally {
+      setDevolvendo(false);
+    }
   };
 
   return (
@@ -243,6 +295,43 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
             <div id="print-receipt-detail" className="max-w-full space-y-3 overflow-x-auto print:space-y-0 print:overflow-visible">
               <VendaComprovante venda={vendaDetalhada} />
 
+              {vendaDetalhada.devolucoes && vendaDetalhada.devolucoes.length > 0 && (
+                <section className="rounded-xl border border-violet-200 bg-violet-50 p-4 print:hidden">
+                  <h4 className="flex items-center gap-2 text-sm font-black text-violet-950"><WalletCards size={17} /> Créditos gerados por devolução</h4>
+                  <div className="mt-3 space-y-2">
+                    {vendaDetalhada.devolucoes.map((devolucao) => (
+                      <div key={devolucao.id} className="rounded-lg bg-white p-3 text-xs ring-1 ring-violet-100">
+                        <div className="flex justify-between gap-3"><strong>{formatDate(devolucao.data)}</strong><strong className="text-violet-800">{formatCurrency(devolucao.valorCredito)}</strong></div>
+                        <p className="mt-1 text-slate-600">{devolucao.items.map((item) => `${formatDecimal(item.quantidade)} ${item.unidade} de ${item.descricao}`).join(" • ")}</p>
+                        {devolucao.observacoes && <p className="mt-1 text-slate-500">{devolucao.observacoes}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {devolucaoOpen && (
+                <form onSubmit={registrarDevolucao} className="space-y-4 rounded-xl border border-violet-300 bg-white p-4 print:hidden">
+                  <div className="flex items-center justify-between"><div><h4 className="font-black text-slate-950">Registrar devolução</h4><p className="text-xs text-slate-500">O valor vira crédito na carteira deste cliente.</p></div><button type="button" onClick={() => setDevolucaoOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><X size={17} /></button></div>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full min-w-[620px] text-sm">
+                      <thead><tr className="bg-slate-50 text-xs uppercase text-slate-500"><th className="p-3 text-left">Item</th><th className="p-3 text-right">Vendido</th><th className="p-3 text-right">Já devolvido</th><th className="p-3 text-right">Devolver agora</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">{(vendaDetalhada.items || []).map((item) => {
+                        const disponivel = Number(item.quantidadeDisponivel ?? item.quantidade);
+                        return <tr key={item.id}><td className="p-3"><strong>{item.descricao}</strong><span className="ml-2 text-xs text-slate-500">{item.unidade}</span></td><td className="p-3 text-right font-mono">{formatDecimal(item.quantidade)}</td><td className="p-3 text-right font-mono">{formatDecimal(Number(item.quantidadeDevolvida || 0))}</td><td className="p-3 text-right"><input disabled={disponivel <= 0} value={devolucaoQuantidades[item.id] || ""} onChange={(event) => setDevolucaoQuantidades((atual) => ({ ...atual, [item.id]: event.target.value }))} placeholder="0" className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-right font-black disabled:bg-slate-100" /><small className="ml-2 text-slate-400">máx. {formatDecimal(disponivel)}</small></td></tr>;
+                      })}</tbody>
+                    </table>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Data</span><input required type="date" value={devolucaoData} onChange={(event) => setDevolucaoData(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-bold" /></label>
+                    <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Motivo / observação</span><input value={devolucaoObservacoes} onChange={(event) => setDevolucaoObservacoes(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-bold" /></label>
+                    <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">PIN administrativo</span><div className="relative"><KeyRound size={16} className="absolute left-3 top-3 text-slate-400" /><input required type="password" inputMode="numeric" value={devolucaoPin} onChange={(event) => setDevolucaoPin(event.target.value)} className="w-full rounded-xl border border-slate-300 py-2.5 pl-10 pr-3 font-black tracking-widest" /></div></label>
+                  </div>
+                  {devolucaoErro && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{devolucaoErro}</p>}
+                  <div className="flex flex-col items-stretch justify-between gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center"><strong className="text-violet-900">Crédito previsto: {formatCurrency(valorCreditoPrevisto)}</strong><button disabled={devolvendo} type="submit" className="rounded-xl bg-violet-700 px-5 py-3 text-sm font-black text-white disabled:opacity-50"><RotateCcw size={16} className="mr-2 inline" /> {devolvendo ? "Registrando..." : "Confirmar devolução e crédito"}</button></div>
+                </form>
+              )}
+
               {/* Confirm Cancellation Dialog Box */}
               {showConfirmCancel ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3 print:hidden">
@@ -273,7 +362,8 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                 </div>
               ) : (
                 vendaDetalhada.status !== "cancelada" && (
-                  <div className="flex justify-start print:hidden">
+                  <div className="flex flex-wrap justify-between gap-2 print:hidden">
+                    <button type="button" onClick={() => { setDevolucaoOpen(true); setDevolucaoErro(""); }} className="flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-black text-white"><RotateCcw size={15} /> Alterar venda / devolver itens</button>
                     <button 
                       type="button"
                       onClick={() => setShowConfirmCancel(true)}

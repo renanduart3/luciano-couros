@@ -12,6 +12,8 @@ import { OrcamentoComprovante } from "./OrcamentoComprovante";
 interface OrcamentoViewProps {
   onLevarParaVenda: (orcamento: Orcamento) => void;
   compact?: boolean;
+  clienteExterno?: Cliente | null;
+  ocultarSeletorCliente?: boolean;
 }
 
 interface ItemRascunhoOrcamento {
@@ -30,12 +32,12 @@ function dataFutura(dias: number) {
   return data.toISOString().split("T")[0];
 }
 
-export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoViewProps) {
+export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExterno, ocultarSeletorCliente = false }: OrcamentoViewProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
   const [orcamentos, setOrcamentos] = useState<Orcamento[]>([]);
-  const [aba, setAba] = useState<"lista" | "formulario">("lista");
+  const [aba, setAba] = useState<"lista" | "formulario">(compact ? "formulario" : "lista");
   const [buscaOrcamentos, setBuscaOrcamentos] = useState("");
   const [orcamentosPage, setOrcamentosPage] = useState(1);
   const [orcamento, setOrcamento] = useState<Orcamento | null>(null);
@@ -246,6 +248,29 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
     }
   };
 
+  useEffect(() => {
+    if (!ocultarSeletorCliente || loading) return;
+    if (!clienteExterno) {
+      setCliente(null);
+      setClienteBusca("");
+      setOrcamento(null);
+      setItems([]);
+      return;
+    }
+    const aberto = orcamentos.find((registro) =>
+      registro.clienteId === clienteExterno.id && registro.status === "aberto"
+    );
+    if (aberto) {
+      abrirEdicaoOrcamento(aberto);
+      return;
+    }
+    setItems([]);
+    setOrcamento(null);
+    setCliente(null);
+    setAba("formulario");
+    selecionarCliente(clienteExterno);
+  }, [clienteExterno?.id, loading]);
+
   const selecionarProduto = (produto: Produto) => {
     const referenciaCliente = produtosCliente.find((item) => item.produtoId === produto.id);
     const precoAtual = Number(referenciaCliente?.precoAutorizado ?? referenciaCliente?.ultimoPreco ?? produto.precoVendaPadrao);
@@ -381,7 +406,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
       setPinErro("");
       if (levarParaVenda) {
         onLevarParaVenda(salvo);
-      } else {
+      } else if (!compact) {
         setAba("lista");
       }
     } catch (error: any) {
@@ -557,19 +582,19 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
         </div>
       )}
 
-      <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
+      {!compact && <header className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div><h2 className="text-2xl font-black text-slate-950">Orçamentos</h2><p className="mt-1 text-sm text-slate-500">{orcamentos.length} registro(s)</p></div>
         <button type="button" onClick={abrirNovoOrcamento} className="w-full rounded-xl bg-blue-700 px-4 py-2.5 text-sm font-black text-white sm:w-auto"><Plus size={17} className="mr-1.5 inline" /> Novo orçamento</button>
-      </header>
+      </header>}
 
-      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:flex">
+      {!compact && <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:flex">
         <button type="button" aria-label="Orçamentos salvos" onClick={() => setAba("lista")} className={`flex min-w-0 items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black sm:px-4 sm:text-sm ${aba === "lista" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}><ClipboardList size={17} className="shrink-0" /> <span className="sm:hidden">Salvos</span><span className="hidden sm:inline">Orçamentos salvos</span></button>
         <button type="button" aria-label="Novo orçamento" onClick={abrirNovoOrcamento} className={`flex min-w-0 items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black sm:px-4 sm:text-sm ${aba === "formulario" ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}><Plus size={17} className="shrink-0" /> <span className="sm:hidden">Novo</span><span className="hidden sm:inline">Novo orçamento</span></button>
-      </div>
+      </div>}
 
       {mensagem && <div className={`flex items-center justify-between rounded-xl border p-3 text-sm font-bold ${mensagem.tipo === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}><span>{mensagem.texto}</span><button type="button" onClick={() => setMensagem(null)}><X size={15} /></button></div>}
 
-      {aba === "lista" ? (
+      {aba === "lista" && !compact ? (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h3 className="font-black text-slate-950">Orçamentos por cliente</h3><p className="text-xs text-slate-500">{orcamentosFiltrados.length} encontrado(s)</p></div>
@@ -630,11 +655,11 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
       ) : (
         <>
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
-            <div className="flex min-w-0 items-center gap-3"><h3 className="truncate text-xl font-black text-slate-950">{orcamento ? "Editar orçamento" : "Novo orçamento"}</h3><span className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black text-blue-800">#{numero}</span></div>
-            {orcamento && <span className="rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-800">ABERTO</span>}
+            <div className="flex min-w-0 items-center gap-3"><h3 className="truncate text-xl font-black text-slate-950">{compact ? "Lista de pedido do cliente" : orcamento ? "Editar orçamento" : "Novo orçamento"}</h3>{!compact && <span className="shrink-0 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black text-blue-800">#{numero}</span>}</div>
+            {orcamento && <span className="rounded-xl bg-amber-100 px-3 py-2 text-xs font-black text-amber-800">SALVA</span>}
           </header>
 
-      <section className="relative rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5">
+      {!ocultarSeletorCliente && <section className="relative rounded-2xl border-2 border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5">
         <div className="mb-3">
           <p className="text-xs font-black uppercase tracking-wider text-blue-700">Cliente do orçamento</p>
         </div>
@@ -696,7 +721,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
             )}
           </>
         )}
-      </section>
+      </section>}
 
       <div className={compact ? "grid min-w-0 gap-4" : "grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]"}>
         <section className="min-w-0 space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
@@ -714,7 +739,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
 
           <div className={compact ? "space-y-3" : "space-y-3 md:hidden"}>
             {items.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm font-bold text-slate-400">Adicione os produtos deste orçamento.</div>
+              <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm font-bold text-slate-400">Adicione os produtos da lista de pedido.</div>
             ) : items.map((item, index) => (
               <article key={item.produtoId} className={`rounded-2xl border p-4 shadow-sm ${item.faltante ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
                 <div className="flex items-start justify-between gap-3">
@@ -736,13 +761,13 @@ export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoVi
         </section>
 
         <aside className="min-w-0 h-fit space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.length} item(ns) • {quantidadeFaltantes} faltante(s)</p></div></div>
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">{compact ? "Resumo do pedido" : "Resumo do orçamento"}</p><p className="text-xs text-slate-500">{items.length} item(ns) • {quantidadeFaltantes} faltante(s)</p></div></div>
           <div className="space-y-3"><div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatCurrency(subtotal)}</strong></div><label><span className="mb-1 flex items-center gap-1 text-xs font-black uppercase text-slate-500"><Percent size={13} /> Desconto percentual</span><div className="relative"><input aria-label="Desconto percentual" value={descontoPercentual} onChange={(event) => setDescontoPercentual(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-3 pr-9 text-right font-black" /><span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-500">%</span></div><span className="mt-1 block text-right text-xs font-bold text-slate-500">Desconto: {formatCurrency(descontoValor)}</span></label><div className="flex justify-between border-t-2 border-slate-900 pt-3 text-lg"><span className="font-black">Total</span><strong className="text-blue-800">{formatCurrency(totalLiquido)}</strong></div></div>
           <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Observações e condições</span><textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={4} placeholder="Prazo, condições de pagamento ou observações..." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500" /></label>
           {(orcamento || itensAbaixoDoPrecoCliente.length > 0) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> {orcamento ? "PIN necessário para alterar este orçamento." : `PIN necessário para ${itensAbaixoDoPrecoCliente.length} item(ns).`}</p>}
           <div className="space-y-2 border-t border-slate-200 pt-4">
-            <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : "Salvar orçamento"}</button>
-            <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> Salvar e levar para venda</button>
+            <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : compact ? "Salvar lista do cliente" : "Salvar orçamento"}</button>
+            <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> {compact ? "Levar itens disponíveis à venda" : "Salvar e levar para venda"}</button>
             {orcamento && <button type="button" onClick={() => setPreviewOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
             {orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
           </div>

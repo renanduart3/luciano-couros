@@ -15,6 +15,8 @@ interface VendaRapidaViewProps {
   orcamentoInicial?: Orcamento | null;
   onOrcamentoCarregado?: () => void;
   compact?: boolean;
+  clienteExterno?: Cliente | null;
+  ocultarSeletorCliente?: boolean;
 }
 
 interface ItemRascunho {
@@ -44,7 +46,7 @@ const FORMAS_RECEBIMENTO = [
   { value: "cheque_terceiro", label: "Cheque de terceiro" },
   { value: "duplicata_emitente", label: "Duplicata do emitente" },
   { value: "duplicata_terceiro", label: "Duplicata de terceiro" },
-  { value: "bonus", label: "Bônus / crédito — próxima etapa", disabled: true },
+  { value: "bonus", label: "Crédito da carteira" },
   { value: "vale", label: "Vale — pagar depois" },
 ] as const;
 
@@ -55,11 +57,12 @@ const FORMAS_COM_INSTRUMENTO = new Set([
   "duplicata_terceiro",
 ]);
 
-export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false }: VendaRapidaViewProps) {
+export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteBusca, setClienteBusca] = useState("");
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
+  const [saldoCreditoCarteira, setSaldoCreditoCarteira] = useState(0);
   const [showClienteDropdown, setShowClienteDropdown] = useState(false);
   const [showNovoClienteRapido, setShowNovoClienteRapido] = useState(false);
   
@@ -176,6 +179,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   }, []);
 
   useEffect(() => {
+    if (!ocultarSeletorCliente) return;
+    setClienteSelecionado(clienteExterno || null);
+    setClienteBusca(clienteExterno?.nome || "");
+  }, [clienteExterno, ocultarSeletorCliente]);
+
+  useEffect(() => {
     if (!toastMsg) return;
     const timer = window.setTimeout(() => setToastMsg(null), 3500);
     return () => window.clearTimeout(timer);
@@ -189,12 +198,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       setItensVendaAnteriorSelecionados([]);
       Promise.all([
         api.getClienteHistorico(clienteSelecionado.id),
-        api.getClienteProdutosHabituais(clienteSelecionado.id)
+        api.getClienteProdutosHabituais(clienteSelecionado.id),
+        api.getCarteiraCliente(clienteSelecionado.id)
       ])
-        .then(([historico, habituais]) => {
+        .then(([historico, habituais, carteira]) => {
           if (!active) return;
           setClienteHistorico(historico);
           setProdutosCliente(habituais);
+          setSaldoCreditoCarteira(Number(carteira.saldoBonus || 0));
           const precosAtuais = new Map(habituais.map((item) => [
             item.produtoId,
             Number(item.precoAutorizado ?? item.ultimoPreco)
@@ -209,12 +220,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           console.error("Erro ao carregar dados do cliente:", err);
           setClienteHistorico(null);
           setProdutosCliente([]);
+          setSaldoCreditoCarteira(0);
           setFeedbackMsg({ type: "error", text: "Não foi possível carregar o histórico de preços deste cliente." });
         });
     } else {
       setClienteHistorico(null);
       setItensVenda([]);
       setProdutosCliente([]);
+      setSaldoCreditoCarteira(0);
       setVendaAnteriorId("");
       setItensVendaAnteriorSelecionados([]);
     }
@@ -293,8 +306,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     return precoEfetivo < pisoPermitido - 0.005;
   });
   const vendaNoVale = formaPagamento === "vale";
+  const vendaComCredito = formaPagamento === "bonus";
   const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
-  const vPago = vendaNoVale ? 0 : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
+  const vPago = vendaNoVale ? 0 : vendaComCredito
+    ? Math.min(totalLiquido, saldoCreditoCarteira)
+    : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
   const saldoRestante = Math.max(0, totalLiquido - vPago);
 
   const analiseLinhas = itensVenda
@@ -675,6 +691,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
     if (formaExigeInstrumento && (!instrumentoEmitente.trim() || !instrumentoNumero.trim() || !instrumentoVencimento)) {
       setFeedbackMsg({ type: "error", text: "Informe emitente, número e vencimento do cheque ou duplicata." });
+      return;
+    }
+    if (vendaComCredito && saldoCreditoCarteira <= 0) {
+      setFeedbackMsg({ type: "error", text: "Este cliente não possui crédito disponível na carteira." });
       return;
     }
 
@@ -1089,7 +1109,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       <div className="contents">
         
         {/* Card 1: Cliente da Venda */}
-        <div className="order-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between space-y-4">
+        <div className={`${ocultarSeletorCliente ? "hidden" : "flex"} order-1 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex-col justify-between space-y-4`}>
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <label className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1316,11 +1336,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <input 
                   ref={valorPagoRef}
                   type="text" 
-                  value={vendaNoVale ? "0,00" : valorPago}
+                  value={vendaNoVale ? "0,00" : vendaComCredito ? vPago.toFixed(2).replace(".", ",") : valorPago}
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
                   placeholder={totalLiquido.toFixed(2).replace(".", ",")}
-                  disabled={vendaNoVale}
+                  disabled={vendaNoVale || vendaComCredito}
                   className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
               </div>
@@ -1362,9 +1382,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   }}
                   className="min-w-0 flex-1 bg-slate-50 border border-slate-200 text-xs px-3 py-2 rounded-lg font-bold text-slate-700 outline-none sm:max-w-xs"
                 >
-                  {FORMAS_RECEBIMENTO.map((forma) => <option key={forma.value} value={forma.value} disabled={"disabled" in forma && forma.disabled}>{forma.label}</option>)}
+                  {FORMAS_RECEBIMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}
                 </select>
               </div>
+
+              {vendaComCredito && (
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
+                  <div className="flex justify-between gap-3"><span className="font-bold">Crédito disponível</span><strong>{formatCurrency(saldoCreditoCarteira)}</strong></div>
+                  <div className="mt-1 flex justify-between gap-3"><span>Aplicado nesta venda</span><strong>{formatCurrency(vPago)}</strong></div>
+                </div>
+              )}
 
               {vendaNoVale && (
                 <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">

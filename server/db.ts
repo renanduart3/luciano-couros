@@ -434,6 +434,7 @@ export function initDatabase() {
         id TEXT PRIMARY KEY,
         clienteId TEXT NOT NULL,
         recebimentoId TEXT,
+        vendaId TEXT,
         data TEXT NOT NULL,
         tipo TEXT NOT NULL,
         valor REAL NOT NULL,
@@ -441,10 +442,45 @@ export function initDatabase() {
         deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (clienteId) REFERENCES clientes (id),
-        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id)
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
       )
     `).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_saldo ON cliente_bonus_movimentos (clienteId, deletedAt)`).run();
+
+    // 15. Devoluções preservam a venda original e geram crédito rastreável
+    // na carteira do cliente.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS devolucoes_venda (
+        id TEXT PRIMARY KEY,
+        vendaId TEXT NOT NULL,
+        clienteId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        valorCredito REAL NOT NULL,
+        observacoes TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (vendaId) REFERENCES vendas (id),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_devolucoes_venda ON devolucoes_venda (vendaId, createdAt DESC)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS itens_devolucao (
+        id TEXT PRIMARY KEY,
+        devolucaoId TEXT NOT NULL,
+        itemVendaId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        quantidade REAL NOT NULL,
+        valorUnitarioCredito REAL NOT NULL,
+        totalCredito REAL NOT NULL,
+        FOREIGN KEY (devolucaoId) REFERENCES devolucoes_venda (id),
+        FOREIGN KEY (itemVendaId) REFERENCES itens_venda (id),
+        FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_itens_devolucao_item ON itens_devolucao (itemVendaId)`).run();
 
     db.prepare(`
       INSERT OR IGNORE INTO usuarios (id, nome, perfil, ativo)
@@ -471,7 +507,9 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE cliente_bonus_movimentos ADD COLUMN vendaId TEXT`).run(); } catch (e) {}
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_venda ON cliente_bonus_movimentos (vendaId, deletedAt)`).run();
 
   // A partir desta versão compra e venda usam a mesma unidade. Mantemos as
   // colunas antigas apenas para compatibilidade com bancos já instalados.

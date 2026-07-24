@@ -592,8 +592,13 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
     }
 
     const itens = queryAll<any>(
-      `SELECT
-         cph.produtoId,
+      `WITH produtos_cliente AS (
+         SELECT produtoId FROM cliente_produtos_habituais WHERE clienteId = ? AND oculto = 0
+         UNION
+         SELECT produtoId FROM cliente_orcamento_itens WHERE clienteId = ?
+       )
+       SELECT
+         pc.produtoId,
          p.nome,
          p.codigo,
          p.unidade,
@@ -601,16 +606,16 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
          COALESCE(coi.precoUnitario, cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
          COALESCE(coi.faltante, 0) AS faltante,
          CASE WHEN coi.produtoId IS NULL THEN 0 ELSE 1 END AS personalizado
-       FROM cliente_produtos_habituais cph
-       JOIN produtos p ON p.id = cph.produtoId
+       FROM produtos_cliente pc
+       JOIN produtos p ON p.id = pc.produtoId
+       LEFT JOIN cliente_produtos_habituais cph
+         ON cph.clienteId = ? AND cph.produtoId = pc.produtoId
        LEFT JOIN cliente_orcamento_itens coi
-         ON coi.clienteId = cph.clienteId AND coi.produtoId = cph.produtoId
-       WHERE cph.clienteId = ?
-         AND cph.oculto = 0
-         AND p.ativo = 1
+         ON coi.clienteId = ? AND coi.produtoId = pc.produtoId
+       WHERE p.ativo = 1
          AND p.deletedAt IS NULL
        ORDER BY COALESCE(coi.updatedAt, cph.ultimaCompraEm) DESC, p.nome ASC`,
-      [req.params.id]
+      [req.params.id, req.params.id, req.params.id, req.params.id]
     );
 
     res.json(itens);
@@ -1040,7 +1045,12 @@ app.post("/api/orcamentos", (req, res) => {
     const resultado = runInTransaction(() => {
       const existente = idInformado
         ? queryOne<any>("SELECT * FROM orcamentos WHERE id = ? AND deletedAt IS NULL", [idInformado])
-        : null;
+        : queryOne<any>(
+            `SELECT * FROM orcamentos
+             WHERE clienteId = ? AND status = 'aberto' AND deletedAt IS NULL
+             ORDER BY numeroSequencial DESC LIMIT 1`,
+            [clienteId]
+          );
       if (idInformado && !existente) {
         throw erroHttp("Orçamento não encontrado para edição.", 404);
       }
@@ -1162,6 +1172,18 @@ app.post("/api/orcamentos", (req, res) => {
         );
       }
 
+      // O orçamento operacional é também a lista de pedido permanente deste
+      // cliente. Ao converter em venda, a próxima conferência reabre desta base.
+      execute("DELETE FROM cliente_orcamento_itens WHERE clienteId = ?", [clienteId]);
+      for (const item of itensResolvidos) {
+        execute(
+          `INSERT INTO cliente_orcamento_itens
+             (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [clienteId, item.produtoId, item.quantidade, item.precoUnitario, item.faltante]
+        );
+      }
+
       if (existente && administradorAutorizador) {
         registrarAuditoria(
           administradorAutorizador.id,
@@ -1258,12 +1280,27 @@ app.get("/api/vendas", (req, res) => {
     // Fetch items for each sale
     for (const v of rows) {
       v.items = queryAll(
-        `SELECT iv.*, p.codigo as referencia
+        `SELECT iv.*, p.codigo as referencia,
+                COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
+                iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
          FROM itens_venda iv
          LEFT JOIN produtos p ON p.id = iv.produtoId
          WHERE iv.vendaId = ?`,
         [v.id]
       );
+      v.devolucoes = queryAll<any>(
+        `SELECT * FROM devolucoes_venda WHERE vendaId = ? ORDER BY createdAt DESC`,
+        [v.id]
+      );
+      for (const devolucao of v.devolucoes) {
+        devolucao.items = queryAll(
+          `SELECT idv.*, iv.descricao, iv.unidade
+           FROM itens_devolucao idv
+           JOIN itens_venda iv ON iv.id = idv.itemVendaId
+           WHERE idv.devolucaoId = ?`,
+          [devolucao.id]
+        );
+      }
       v.instrumentoRecebimento = queryOne(
         `SELECT tipo, emitente, numeroDocumento, valor, vencimento, status, observacao
          FROM instrumentos_recebimento
@@ -1390,6 +1427,7 @@ app.post("/api/vendas", (req, res) => {
       const totalLiquido = subtotal - descGeral;
       const vPago = Number(valorPago || 0);
       const saldoRestante = totalLiquido - vPago;
+      const usandoCreditoCarteira = formaPagamento === "bonus";
 
       const formasComInstrumento = new Set([
         "cheque_emitente",
@@ -1413,6 +1451,23 @@ app.post("/api/vendas", (req, res) => {
 
       if (totalLiquido < 0) {
         throw new Error("O desconto geral não pode ser maior que o subtotal.");
+      }
+      if (!Number.isFinite(vPago) || vPago < 0 || vPago > totalLiquido + 0.005) {
+        throw erroHttp("O valor recebido deve estar entre zero e o total da venda.", 400);
+      }
+      if (usandoCreditoCarteira) {
+        const saldoBonus = queryOne<{ saldo: number }>(
+          `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) as saldo
+           FROM cliente_bonus_movimentos
+           WHERE clienteId = ? AND deletedAt IS NULL`,
+          [clienteId]
+        )?.saldo || 0;
+        if (vPago <= 0) {
+          throw erroHttp("Este cliente não possui crédito disponível para aplicar.", 400);
+        }
+        if (vPago > saldoBonus + 0.005) {
+          throw erroHttp("O crédito informado é maior que o saldo disponível na carteira.", 409);
+        }
       }
 
       // O desconto geral também reduz o preço real dos produtos e não pode ser
@@ -1454,12 +1509,26 @@ app.post("/api/vendas", (req, res) => {
       }
 
       // Se houver pagamento inicial, registrar
-      if (vPago > 0) {
+      if (vPago > 0 && !usandoCreditoCarteira) {
         const pagId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
         execute(
           `INSERT INTO pagamentos (id, clienteId, vendaId, data, valor, formaPagamento, observacao)
            VALUES (?, ?, ?, ?, ?, ?, ?)`,
           [pagId, clienteId, vendaId, data, vPago, formaPagamento || "pix", "Pagamento inicial da venda #" + nextSeq]
+        );
+      }
+      if (vPago > 0 && usandoCreditoCarteira) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, NULL, ?, ?, 'debito', ?, ?)`,
+          [
+            "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            clienteId,
+            vendaId,
+            data,
+            vPago,
+            "Crédito aplicado na venda #" + nextSeq
+          ]
         );
       }
 
@@ -1534,6 +1603,106 @@ app.post("/api/vendas", (req, res) => {
   }
 });
 
+app.post("/api/vendas/:id/devolucoes", (req, res) => {
+  try {
+    const vendaId = req.params.id;
+    const { data, observacoes, pin, items } = req.body || {};
+    const administrador = validarPinAdministrador(pin);
+    if (!administrador) {
+      return res.status(403).json({ error: "PIN administrativo inválido." });
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || "")) || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Informe a data e ao menos um item para devolução." });
+    }
+
+    const resultado = runInTransaction(() => {
+      const venda = queryOne<any>(
+        "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status <> 'cancelada'",
+        [vendaId]
+      );
+      if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
+
+      const resolvidos = items.map((entrada: any) => {
+        const item = queryOne<any>(
+          `SELECT iv.*,
+                  COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida
+           FROM itens_venda iv
+           WHERE iv.id = ? AND iv.vendaId = ?`,
+          [entrada.itemVendaId, vendaId]
+        );
+        if (!item) throw erroHttp("Um item informado não pertence a esta venda.", 400);
+        const quantidade = Number(entrada.quantidade);
+        const disponivel = Number(item.quantidade) - Number(item.quantidadeDevolvida || 0);
+        if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > disponivel + 0.000001) {
+          throw erroHttp(`Quantidade inválida para ${item.descricao}. Disponível: ${disponivel}.`, 400);
+        }
+        const descontoProporcional = Number(venda.subtotal) > 0
+          ? Number(venda.desconto || 0) * (Number(item.total) / Number(venda.subtotal))
+          : 0;
+        const valorUnitarioCredito = (Number(item.total) - descontoProporcional) / Number(item.quantidade);
+        return {
+          ...item,
+          quantidade,
+          valorUnitarioCredito,
+          totalCredito: Math.round(quantidade * valorUnitarioCredito * 100) / 100
+        };
+      });
+
+      const valorCredito = Math.round(resolvidos.reduce((total, item) => total + item.totalCredito, 0) * 100) / 100;
+      const devolucaoId = "dev_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+      execute(
+        `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, String(observacoes || "").trim() || null]
+      );
+      for (const item of resolvidos) {
+        execute(
+          `INSERT INTO itens_devolucao
+             (id, devolucaoId, itemVendaId, produtoId, quantidade, valorUnitarioCredito, totalCredito)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            "idv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            devolucaoId,
+            item.id,
+            item.produtoId,
+            item.quantidade,
+            item.valorUnitarioCredito,
+            item.totalCredito
+          ]
+        );
+      }
+      execute(
+        `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+         VALUES (?, ?, NULL, ?, ?, 'credito', ?, ?)`,
+        [
+          "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+          venda.clienteId,
+          vendaId,
+          data,
+          valorCredito,
+          `Devolução da venda #${venda.numeroSequencial}`
+        ]
+      );
+      registrarAuditoria(administrador.id, "devolucao_venda_registrada", "venda", vendaId, {
+        devolucaoId,
+        clienteId: venda.clienteId,
+        valorCredito,
+        itens: resolvidos.map((item) => ({
+          itemVendaId: item.id,
+          produtoId: item.produtoId,
+          quantidade: item.quantidade,
+          totalCredito: item.totalCredito
+        }))
+      });
+      return { id: devolucaoId, valorCredito };
+    });
+
+    res.status(201).json({ success: true, ...resultado });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.post("/api/vendas/:id/cancelar", (req, res) => {
   try {
     const { id } = req.params;
@@ -1553,6 +1722,13 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
       if (Number(alocacaoAtiva?.quantidade || 0) > 0) {
         throw erroHttp("Esta venda possui recebimentos na Carteira do Cliente. Estorne primeiro esses recebimentos para cancelar a venda.", 409);
       }
+      const devolucaoAtiva = queryOne<{ quantidade: number }>(
+        "SELECT COUNT(*) AS quantidade FROM devolucoes_venda WHERE vendaId = ?",
+        [id]
+      );
+      if (Number(devolucaoAtiva?.quantidade || 0) > 0) {
+        throw erroHttp("Esta venda possui devoluções registradas. Ela não pode ser cancelada porque já gerou crédito para o cliente.", 409);
+      }
 
       // Marcar venda como cancelada e excluída logicamente
       execute(
@@ -1567,6 +1743,10 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
       );
       execute(
         "UPDATE instrumentos_recebimento SET deletedAt = ?, status = 'cancelado', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ?",
+        [nowStr, id]
+      );
+      execute(
+        "UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE vendaId = ? AND deletedAt IS NULL",
         [nowStr, id]
       );
 

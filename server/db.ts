@@ -149,7 +149,7 @@ export function initDatabase() {
     // Index on sequential number and client
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_seq ON vendas (numeroSequencial)`).run();
 
-    // 4.1 Orçamentos — somente um orçamento pode permanecer aberto por vez.
+    // 4.1 Orçamentos vinculados aos respectivos clientes.
     db.prepare(`
       CREATE TABLE IF NOT EXISTS orcamentos (
         id TEXT PRIMARY KEY,
@@ -171,11 +171,9 @@ export function initDatabase() {
       )
     `).run();
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_seq ON orcamentos (numeroSequencial)`).run();
-    db.prepare(`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_unico_aberto
-      ON orcamentos ((1))
-      WHERE status = 'aberto' AND deletedAt IS NULL
-    `).run();
+    // Migração: versões anteriores limitavam o sistema a um orçamento aberto global.
+    db.prepare(`DROP INDEX IF EXISTS idx_orcamentos_unico_aberto`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_orcamentos_cliente ON orcamentos (clienteId, numeroSequencial DESC)`).run();
 
     db.prepare(`
       CREATE TABLE IF NOT EXISTS itens_orcamento (

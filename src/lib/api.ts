@@ -214,6 +214,7 @@ export const api = {
     validade?: string;
     desconto: number;
     observacoes?: string;
+    autorizacaoPreco?: { pin: string };
     items: Array<{
       produtoId: string;
       descricao: string;
@@ -229,6 +230,8 @@ export const api = {
   }).then(r => handleResponse<Orcamento>(r)),
   cancelarOrcamento: (id: string) =>
     fetch(`${API_BASE}/orcamentos/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean }>(r)),
+  deleteOrcamento: (id: string) =>
+    fetch(`${API_BASE}/orcamentos/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // COMPRAS
   getCompras: () => fetch(`${API_BASE}/compras`).then(r => handleResponse<Compra[]>(r)),

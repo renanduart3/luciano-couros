@@ -4,6 +4,20 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.5.1 — 2026-07-24
+
+- Orçamentos organizados por cliente em uma lista própria, com criação, edição, conversão em venda e exclusão.
+- Lista de orçamentos com paginação no desktop e cartões otimizados para celular.
+- Formulário de criação e edição adaptado para conferência dos itens no celular.
+- Removido o limite global de um único orçamento aberto.
+- Seleção do cliente destacada no topo do formulário.
+- Desconto do orçamento informado em porcentagem, com cálculo automático do valor.
+- Histórico de vendas disponível durante o orçamento, com filtro por período e importação de itens.
+- PIN administrativo obrigatório para salvar orçamento abaixo do preço atual do cliente.
+- Comprovante do orçamento no padrão visual da venda, com uma via centralizada.
+- Impressão A4 ajustada para margens de 2,5 cm no topo e laterais e 5 cm na parte inferior.
+- Textos auxiliares reduzidos para deixar a operação mais direta.
+
 ## 1.5.0 — 2026-07-24
 
 - Novo módulo de Orçamentos com somente um orçamento aberto por vez.

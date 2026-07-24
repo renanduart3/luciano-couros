@@ -881,7 +881,7 @@ app.delete("/api/produtos/:id", (req, res) => {
 // 5.1 ORÇAMENTOS
 function carregarOrcamentoCompleto(id: string) {
   const orcamento = queryOne<any>(
-    `SELECT o.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.documento AS clienteDocumento
+    `SELECT o.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco, c.documento AS clienteDocumento
      FROM orcamentos o
      JOIN clientes c ON c.id = o.clienteId
      WHERE o.id = ? AND o.deletedAt IS NULL`,
@@ -941,7 +941,7 @@ app.get("/api/orcamentos/proximo-numero", (_req, res) => {
 
 app.post("/api/orcamentos", (req, res) => {
   try {
-    const { id: idInformado, clienteId, data, validade, desconto, observacoes, items } = req.body;
+    const { id: idInformado, clienteId, data, validade, desconto, observacoes, items, autorizacaoPreco } = req.body;
     if (!clienteId || !data || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Informe cliente, data e ao menos um item para o orçamento." });
     }
@@ -950,19 +950,16 @@ app.post("/api/orcamentos", (req, res) => {
     }
 
     const resultado = runInTransaction(() => {
-      const aberto = queryOne<{ id: string }>(
-        "SELECT id FROM orcamentos WHERE status = 'aberto' AND deletedAt IS NULL LIMIT 1"
-      );
-      const orcamentoId = String(idInformado || aberto?.id || ("orc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16)));
-
-      if (aberto && aberto.id !== orcamentoId) {
-        throw erroHttp("Já existe um orçamento aberto. Conclua ou cancele antes de iniciar outro.", 409);
+      const existente = idInformado
+        ? queryOne<any>("SELECT * FROM orcamentos WHERE id = ? AND deletedAt IS NULL", [idInformado])
+        : null;
+      if (idInformado && !existente) {
+        throw erroHttp("Orçamento não encontrado para edição.", 404);
       }
-
-      const existente = queryOne<any>("SELECT * FROM orcamentos WHERE id = ? AND deletedAt IS NULL", [orcamentoId]);
       if (existente && existente.status !== "aberto") {
         throw erroHttp("Somente um orçamento aberto pode ser alterado.", 409);
       }
+      const orcamentoId = existente?.id || ("orc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16));
 
       let subtotal = 0;
       const itensResolvidos = items.map((item: any) => {
@@ -978,6 +975,18 @@ app.post("/api/orcamentos", (req, res) => {
         }
         const total = (quantidade * precoUnitario) - descontoItem;
         if (total < 0) throw erroHttp(`O desconto de ${produto.nome} é maior que o valor do item.`, 400);
+        const preferenciaCliente = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
+          `SELECT precoAutorizado, ultimoPreco
+           FROM cliente_produtos_habituais
+           WHERE clienteId = ? AND produtoId = ?`,
+          [clienteId, produto.id]
+        );
+        const precoMinimoSemPin = Number(
+          preferenciaCliente?.precoAutorizado
+          ?? preferenciaCliente?.ultimoPreco
+          ?? produto.precoVendaPadrao
+          ?? 0
+        );
         subtotal += total;
         return {
           id: "ito_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
@@ -987,7 +996,8 @@ app.post("/api/orcamentos", (req, res) => {
           unidade,
           precoUnitario,
           desconto: descontoItem,
-          total
+          total,
+          precoMinimoSemPin
         };
       });
 
@@ -996,6 +1006,22 @@ app.post("/api/orcamentos", (req, res) => {
         throw erroHttp("O desconto do orçamento deve estar entre zero e o subtotal.", 400);
       }
       const totalLiquido = subtotal - descontoGeral;
+      const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
+      const itensQueExigemAutorizacao = itensResolvidos
+        .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
+        .filter((item) => item.precoEfetivo < item.precoMinimoSemPin - 0.005);
+      let administradorAutorizador: UsuarioAdministrador | null = null;
+
+      if (itensQueExigemAutorizacao.length > 0) {
+        const administrador = getUsuarioAdministrador();
+        if (!administrador?.pinHash) {
+          throw erroHttp("Configure o PIN administrativo antes de autorizar preços menores.", 428);
+        }
+        administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
+        if (!administradorAutorizador) {
+          throw erroHttp("PIN administrativo inválido. O orçamento não foi salvo.", 403);
+        }
+      }
 
       if (existente) {
         execute(
@@ -1037,6 +1063,23 @@ app.post("/api/orcamentos", (req, res) => {
         );
       }
 
+      if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
+        registrarAuditoria(
+          administradorAutorizador.id,
+          "preco_orcamento_autorizado",
+          "orcamento",
+          orcamentoId,
+          {
+            clienteId,
+            itens: itensQueExigemAutorizacao.map((item) => ({
+              produtoId: item.produtoId,
+              precoAtualCliente: item.precoMinimoSemPin,
+              precoOrcado: item.precoEfetivo
+            }))
+          }
+        );
+      }
+
       return orcamentoId;
     });
 
@@ -1058,6 +1101,23 @@ app.post("/api/orcamentos/:id/cancelar", (req, res) => {
     }
     execute(
       "UPDATE orcamentos SET status = 'cancelado', updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/orcamentos/:id", (req, res) => {
+  try {
+    const orcamento = queryOne<any>(
+      "SELECT id FROM orcamentos WHERE id = ? AND deletedAt IS NULL",
+      [req.params.id]
+    );
+    if (!orcamento) return res.status(404).json({ error: "Orçamento não encontrado." });
+    execute(
+      "UPDATE orcamentos SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
       [req.params.id]
     );
     res.json({ success: true });

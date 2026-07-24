@@ -139,6 +139,7 @@ export interface Orcamento {
   clienteId: string;
   clienteNome?: string;
   clienteTelefone?: string;
+  clienteEndereco?: string;
   clienteDocumento?: string;
   data: string;
   validade?: string;

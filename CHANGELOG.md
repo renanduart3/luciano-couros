@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.1 — 2026-07-24
+
+- Itens da venda e do orçamento reorganizados em grades compactas no estilo planilha.
+- Inclusão de produtos feita pela primeira linha da grade, como uma nova linha da tabela.
+- Orçamento operacional identificado como “Orçamento do cliente”.
+- Seção duplicada “Lista habitual do orçamento” removida do perfil do cliente.
+- Produtos e preços do cliente consolidados em “Preços praticados para este cliente”.
+- Produto incluído no orçamento passa a integrar automaticamente os preços do cliente.
+- Remoção individual disponível nos preços do cliente e sincronizada com o orçamento aberto.
+
 ## 1.7.0 — 2026-07-24
 
 - Cliente selecionado antes da operação e compartilhado entre venda e lista de pedido.

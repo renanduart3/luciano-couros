@@ -714,6 +714,65 @@ app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
   }
 });
 
+app.delete("/api/clientes/:clienteId/produtos/:produtoId", (req, res) => {
+  try {
+    const { clienteId, produtoId } = req.params;
+    const resultado = runInTransaction(() => {
+      const relacionamento = queryOne(
+        `SELECT clienteId, produtoId
+         FROM cliente_produtos_habituais
+         WHERE clienteId = ? AND produtoId = ?`,
+        [clienteId, produtoId]
+      );
+      if (!relacionamento) {
+        throw erroHttp("Produto não encontrado nos preços deste cliente.", 404);
+      }
+      execute(
+        `UPDATE cliente_produtos_habituais
+         SET oculto = 1, updatedAt = CURRENT_TIMESTAMP
+         WHERE clienteId = ? AND produtoId = ?`,
+        [clienteId, produtoId]
+      );
+      execute(
+        "DELETE FROM cliente_orcamento_itens WHERE clienteId = ? AND produtoId = ?",
+        [clienteId, produtoId]
+      );
+      const abertos = queryAll<{ id: string }>(
+        `SELECT id FROM orcamentos
+         WHERE clienteId = ? AND status = 'aberto' AND deletedAt IS NULL`,
+        [clienteId]
+      );
+      for (const orcamento of abertos) {
+        execute(
+          "DELETE FROM itens_orcamento WHERE orcamentoId = ? AND produtoId = ?",
+          [orcamento.id, produtoId]
+        );
+        const totais = queryOne<{ subtotal: number }>(
+          "SELECT COALESCE(SUM(total), 0) AS subtotal FROM itens_orcamento WHERE orcamentoId = ?",
+          [orcamento.id]
+        );
+        const atual = queryOne<{ desconto: number }>(
+          "SELECT desconto FROM orcamentos WHERE id = ?",
+          [orcamento.id]
+        );
+        const subtotal = Number(totais?.subtotal || 0);
+        const desconto = Math.min(Number(atual?.desconto || 0), subtotal);
+        execute(
+          `UPDATE orcamentos
+           SET subtotal = ?, desconto = ?, totalLiquido = ?, updatedAt = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [subtotal, desconto, subtotal - desconto, orcamento.id]
+        );
+      }
+      return true;
+    });
+    registrarAuditoria(null, "produto_cliente_removido", "cliente", clienteId, { produtoId });
+    res.json({ success: resultado });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 
 // 4. FORNECEDORES
 app.get("/api/fornecedores", (req, res) => {
@@ -1181,6 +1240,17 @@ app.post("/api/orcamentos", (req, res) => {
              (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
           [clienteId, item.produtoId, item.quantidade, item.precoUnitario, item.faltante]
+        );
+        execute(
+          `INSERT INTO cliente_produtos_habituais
+             (clienteId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade,
+              vezesComprado, ultimaCompraEm, precoAutorizado, oculto)
+           VALUES (?, ?, ?, ?, ?, 0, ?, ?, 0)
+           ON CONFLICT(clienteId, produtoId) DO UPDATE SET
+             precoAutorizado = excluded.precoAutorizado,
+             oculto = 0,
+             updatedAt = CURRENT_TIMESTAMP`,
+          [clienteId, item.produtoId, item.precoUnitario, item.quantidade, item.unidade, data, item.precoUnitario]
         );
       }
 

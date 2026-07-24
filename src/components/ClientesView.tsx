@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Plus, Edit2, Trash2, X, Eye, Phone, MapPin, FileText, TrendingUp, AlertCircle, RefreshCw, MessageCircle, KeyRound, Save
+  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle
 } from "lucide-react";
-import { Cliente, Venda, Pagamento, ProdutoHabitual, OrcamentoPadraoClienteItem } from "../types";
+import { Cliente, Venda, Pagamento, ProdutoHabitual } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
@@ -40,11 +40,6 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
   const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
   const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
-  const [orcamentoPadraoCliente, setOrcamentoPadraoCliente] = useState<OrcamentoPadraoClienteItem[]>([]);
-  const [pinOrcamentoOpen, setPinOrcamentoOpen] = useState(false);
-  const [pinOrcamento, setPinOrcamento] = useState("");
-  const [pinOrcamentoErro, setPinOrcamentoErro] = useState("");
-  const [salvandoOrcamentoPadrao, setSalvandoOrcamentoPadrao] = useState(false);
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -140,14 +135,12 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const handleViewHistory = async (cli: Cliente) => {
     setLoadingHistory(true);
     try {
-      const [data, produtosHabituais, listaOrcamento] = await Promise.all([
+      const [data, produtosHabituais] = await Promise.all([
         api.getClienteHistorico(cli.id),
-        api.getClienteProdutosHabituais(cli.id),
-        api.getClienteOrcamentoPadrao(cli.id)
+        api.getClienteProdutosHabituais(cli.id)
       ]);
       setActiveHistory(data);
       setProdutosCliente(produtosHabituais);
-      setOrcamentoPadraoCliente(listaOrcamento);
       setPrecosCliente(Object.fromEntries(produtosHabituais.map((item) => [
         item.produtoId,
         Number(item.precoAutorizado ?? item.ultimoPreco).toFixed(2).replace(".", ",")
@@ -189,28 +182,21 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
     }
   };
 
-  const salvarOrcamentoPadraoCliente = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!activeHistory) return;
-    setSalvandoOrcamentoPadrao(true);
-    setPinOrcamentoErro("");
+  const removerProdutoCliente = async (produto: ProdutoHabitual) => {
+    if (!activeHistory || !confirm(`Remover ${produto.nome} dos preços e do orçamento deste cliente?`)) return;
+    setSalvandoPrecoProduto(produto.produtoId);
     try {
-      await api.updateClienteOrcamentoPadrao(activeHistory.cliente.id, {
-        pin: pinOrcamento,
-        items: orcamentoPadraoCliente.map((item) => ({
-          produtoId: item.produtoId,
-          quantidade: Number(item.quantidade),
-          precoUnitario: Number(item.precoUnitario),
-          faltante: item.faltante === 1
-        }))
+      await api.removeClienteProduto(activeHistory.cliente.id, produto.produtoId);
+      setProdutosCliente((atuais) => atuais.filter((item) => item.produtoId !== produto.produtoId));
+      setPrecosCliente((atuais) => {
+        const proximos = { ...atuais };
+        delete proximos[produto.produtoId];
+        return proximos;
       });
-      setPinOrcamentoOpen(false);
-      setPinOrcamento("");
-      alert("Lista habitual do orçamento atualizada.");
     } catch (err: any) {
-      setPinOrcamentoErro(err.message || "Não foi possível atualizar a lista.");
+      alert(err.message || "Não foi possível remover o produto deste cliente.");
     } finally {
-      setSalvandoOrcamentoPadrao(false);
+      setSalvandoPrecoProduto("");
     }
   };
 
@@ -463,19 +449,6 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
         </div>
       )}
 
-      {pinOrcamentoOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <form onSubmit={salvarOrcamentoPadraoCliente} role="dialog" aria-modal="true" aria-labelledby="pin-lista-orcamento" className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-start justify-between border-b border-slate-200 bg-amber-50 p-5">
-              <div className="flex gap-3"><span className="rounded-xl bg-amber-500 p-2 text-white"><KeyRound size={19} /></span><div><h3 id="pin-lista-orcamento" className="font-black text-slate-950">Alterar lista do cliente</h3><p className="mt-1 text-xs text-slate-600">Confirme com o PIN administrativo.</p></div></div>
-              <button type="button" aria-label="Fechar autorização" onClick={() => setPinOrcamentoOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={18} /></button>
-            </div>
-            <div className="space-y-3 p-5"><input type="password" inputMode="numeric" autoFocus value={pinOrcamento} onChange={(event) => { setPinOrcamento(event.target.value.replace(/\D/g, "").slice(0, 8)); setPinOrcamentoErro(""); }} aria-label="PIN para alterar lista do cliente" placeholder="Digite o PIN" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" />{pinOrcamentoErro && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{pinOrcamentoErro}</p>}</div>
-            <div className="flex gap-3 border-t border-slate-200 bg-slate-50 p-4"><button type="button" onClick={() => setPinOrcamentoOpen(false)} className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black">Cancelar</button><button type="submit" disabled={salvandoOrcamentoPadrao} className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50">{salvandoOrcamentoPadrao ? "Salvando..." : "Confirmar"}</button></div>
-          </form>
-        </div>
-      )}
-
       {/* Customer Full History Modal ("Ficha do Cliente") */}
       {activeHistory && (
         <div className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -536,7 +509,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     <TrendingUp size={14} />
                     Preços praticados para este cliente
                   </h4>
-                  <p className="mt-1 text-xs text-slate-500">Compare o preço-base, o último preço vendido e o preço personalizado. A margem usa o custo atual do produto.</p>
+                  <p className="mt-1 text-xs text-slate-500">Cada produto vendido entra automaticamente nesta relação. Ajuste o preço individual ou remova o item do cliente.</p>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full min-w-[920px] text-left text-xs">
@@ -549,30 +522,19 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                         const lucro = precoPraticado - custo;
                         const margem = precoPraticado > 0 ? (lucro / precoPraticado) * 100 : 0;
                         return <tr key={produto.produtoId} className="bg-white">
-                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p><p className="text-[10px] text-slate-500">{produto.vezesComprado} compra(s) • última em {formatDate(produto.ultimaCompraEm)}</p></td>
+                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p><p className="text-[10px] text-slate-500">{produto.vezesComprado > 0 ? `${produto.vezesComprado} compra(s) • última em ${formatDate(produto.ultimaCompraEm)}` : "Adicionado ao orçamento do cliente"}</p></td>
                           <td className="p-3 text-right font-mono font-bold">{formatCurrency(produto.precoVendaPadrao)}</td>
                           <td className="p-3 text-right font-mono">{formatCurrency(produto.ultimoPreco)}</td>
                           <td className="p-3 text-right font-mono text-slate-600">{formatCurrency(custo)}</td>
                           <td className="p-3"><input aria-label={`Preço de ${produto.nome} para o cliente`} value={precosCliente[produto.produtoId] || ""} onChange={(event) => setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: event.target.value }))} inputMode="decimal" className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
                           <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
                           <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
-                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto)} className="rounded-lg bg-emerald-600 px-2.5 py-2 font-bold text-white disabled:bg-slate-300">Salvar</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto, true)} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button></div></td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto)} className="rounded-lg bg-emerald-600 px-2.5 py-2 font-bold text-white disabled:bg-slate-300">Salvar</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto, true)} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
                         </tr>;
                       })}
                     </tbody>
                   </table>
                 </div>
-              </div>
-
-              <div className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/40 p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div><h4 className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-wider text-blue-800"><FileText size={15} /> Lista habitual do orçamento</h4><p className="mt-1 text-xs text-slate-500">A lista é carregada ao selecionar este cliente no orçamento. Marque somente o que costuma faltar.</p></div>
-                  <button type="button" disabled={orcamentoPadraoCliente.length === 0} onClick={() => { setPinOrcamento(""); setPinOrcamentoErro(""); setPinOrcamentoOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white disabled:bg-slate-300"><Save size={15} /> Salvar com PIN</button>
-                </div>
-                <div className="space-y-2 md:hidden">
-                  {orcamentoPadraoCliente.map((item, index) => <article key={item.produtoId} className={`rounded-xl border p-3 ${item.faltante ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}><strong className="text-sm text-slate-900">{item.nome}</strong><p className="mt-0.5 text-xs text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</p><div className="mt-3 grid grid-cols-2 gap-2"><label className="text-[10px] font-black uppercase text-slate-500">Quantidade<input type="number" min="0.001" step="0.001" value={item.quantidade} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: Number(event.target.value) } : registro))} className="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 text-right font-black" /></label><label className="text-[10px] font-black uppercase text-slate-500">Preço<input type="number" min="0" step="0.01" value={item.precoUnitario} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: Number(event.target.value) } : registro))} className="mt-1 w-full rounded-lg border border-blue-200 px-2 py-2 text-right font-black" /></label></div><label className={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-xs font-black uppercase ${item.faltante ? "border-red-300 bg-red-100 text-red-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}><span>{item.faltante ? "Faltante" : "Disponível"}</span><input type="checkbox" checked={item.faltante === 1} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, faltante: event.target.checked ? 1 : 0 } : registro))} className="h-5 w-5 accent-red-600" /></label></article>)}
-                </div>
-                <div className="hidden overflow-x-auto rounded-xl border border-slate-200 bg-white md:block"><table className="w-full min-w-[720px] text-xs"><thead className="bg-slate-50 font-black uppercase text-slate-500"><tr><th className="p-3 text-left">Produto</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-left">Unidade</th><th className="p-3 text-right">Preço do cliente</th><th className="p-3 text-center">Estoque</th></tr></thead><tbody className="divide-y">{orcamentoPadraoCliente.length ? orcamentoPadraoCliente.map((item, index) => <tr key={item.produtoId} className={item.faltante ? "bg-red-50" : ""}><td className="p-3 font-black">{item.nome}</td><td className="p-2 text-right"><input type="number" min="0.001" step="0.001" value={item.quantidade} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: Number(event.target.value) } : registro))} className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-right font-black" /></td><td className="p-3">{item.unidade}</td><td className="p-2 text-right"><input type="number" min="0" step="0.01" value={item.precoUnitario} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: Number(event.target.value) } : registro))} className="w-28 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-right font-black" /></td><td className="p-2 text-center"><label className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 font-black uppercase text-red-700"><input type="checkbox" checked={item.faltante === 1} onChange={(event) => setOrcamentoPadraoCliente((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, faltante: event.target.checked ? 1 : 0 } : registro))} className="h-4 w-4 accent-red-600" /> Faltante</label></td></tr>) : <tr><td colSpan={5} className="p-8 text-center font-bold text-slate-400">O cliente ainda não possui produtos habituais.</td></tr>}</tbody></table></div>
               </div>
 
               {/* Products Ranking */}

@@ -1458,7 +1458,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       </div>
 
       {/* Full Width Bottom Row: Adicionar Itens and Table Carrinho */}
-      <div className="order-3 bg-white p-4 sm:p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
+      <div className={`order-3 rounded-2xl border border-slate-100 bg-white shadow-sm ${compact ? "space-y-3 p-2" : "space-y-6 p-4 sm:p-6"}`}>
         
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
@@ -1472,147 +1472,38 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           </div>
         </div>
 
-        {/* Inputs row - horizontal, spacious, full layout width */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">
-          
-          {/* Material selection (5 cols on desktop) */}
-          <div className="relative md:col-span-5">
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Buscar Material</label>
-            <div className="flex items-center bg-white border border-slate-200 rounded-xl focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all shadow-sm">
-              <input 
-                ref={produtoInputRef}
-                type="text"
-                placeholder="Código ou nome do tecido/material..."
-                value={produtoBusca}
-                onChange={(e) => {
-                  setProdutoBusca(e.target.value);
-                  setShowProdutoDropdown(true);
-                }}
-                onFocus={() => setShowProdutoDropdown(true)}
-                className="w-full text-slate-900 bg-transparent py-2.5 px-3.5 text-sm outline-none font-bold placeholder-slate-400"
-              />
-            </div>
-
-            {showProdutoDropdown && produtoBusca.trim() !== "" && (
-              <div className="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-52 overflow-y-auto divide-y divide-slate-50">
-                {filteredProdutos.length === 0 ? (
-                  <div className="p-3 text-slate-400 text-xs">Produto não cadastrado</div>
-                ) : (
-                  filteredProdutos.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => handleSelectProduto(p)}
-                      className="w-full p-3 hover:bg-slate-50 text-left text-xs flex justify-between items-center transition-colors"
-                    >
-                      <div>
-                        <p className="font-bold text-slate-800">{p.nome}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          Código: {p.codigo || "Sem"} • Venda: {getUnidadesVendaPermitidas(p).join(" ou ")}
-                          {dadosAdmVisiveis ? ` • Custo: ${formatCurrency(p.custoPadrao)}` : ""}
-                        </p>
-                      </div>
-                      <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 rounded px-2 py-0.5">{formatCurrency(p.precoVendaPadrao)}</span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Quantidade */}
-          <div className="md:col-span-1">
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Quant.</label>
-            <input 
-              ref={quantidadeRef}
-              type="text" 
-              value={itemQtd}
-              onChange={(e) => setItemQtd(e.target.value)}
-              onKeyDown={(e) => handleKeyDown(e, precoUnitarioRef)}
-              placeholder="1.0"
-              className="w-full bg-white border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-extrabold text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm"
-            />
-          </div>
-
-          {/* Unidade */}
-          <div className="md:col-span-3">
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Unidade</label>
-            <select 
-              value={itemUnidade}
-              onChange={(e) => handleUnidadeChange(e.target.value)}
-              disabled={!produtoSelecionado || getUnidadesVendaPermitidas(produtoSelecionado).length === 1}
-              className="w-full bg-white border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-bold text-slate-700 outline-none shadow-sm disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
-            >
-              {!produtoSelecionado ? (
-                <option value="">Selecione um produto</option>
-              ) : (
-                getUnidadesVendaPermitidas(produtoSelecionado).map((unidadePermitida) => (
-                  <option key={unidadePermitida} value={unidadePermitida}>
-                    {unidadePermitida === "metro" ? "Metro (m)" :
-                     unidadePermitida === "unidade" ? "Unidade (un)" :
-                     unidadePermitida === "quilograma" ? "Quilo (kg)" :
-                     unidadePermitida === "rolo" ? "Rolo" : "Peça"}
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
-
-          {/* Preço Unitário & Botão Adicionar (3 cols on desktop) */}
-          <div className="md:col-span-3">
-            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5 tracking-wider">Preço Unit (R$)</label>
-            <div className="flex gap-2">
-              <input 
-                ref={precoUnitarioRef}
-                type="text" 
-                value={itemPreco}
-                onChange={(e) => setItemPreco(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    handleAddItem();
-                  }
-                }}
-                placeholder="0,00"
-                className="w-full bg-white border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-extrabold text-slate-900 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none shadow-sm"
-              />
-              
-              <button 
-                ref={addBtnRef}
-                type="button"
-                onClick={handleAddItem}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-sm transition-all shadow-md shadow-emerald-950/10 flex items-center justify-center shrink-0"
-                title="Adicionar Item"
-              >
-                <Plus size={18} />
-              </button>
-            </div>
-          </div>
-
-        </div>
-
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
-        <div className="border border-slate-150 rounded-2xl overflow-x-auto mt-6 shadow-sm">
-          <table className="min-w-[820px] w-full text-sm text-left">
+        <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
+          <table className={`${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-sm text-left`}>
+            <colgroup>
+              <col className="w-[8%]" /><col className="w-[32%]" /><col className="w-[10%]" />
+              <col className="w-[10%]" /><col className="w-[14%]" /><col className="w-[16%]" /><col className="w-[10%]" />
+            </colgroup>
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-extrabold text-xs uppercase border-b border-slate-100">
-                <th className="p-4 w-20">Cód</th>
-                <th className="p-4">Material</th>
-                <th className="p-4 text-center w-36">Quantidade</th>
-                <th className="p-4 text-center w-32">Unidade</th>
-                <th className="p-4 text-right w-40">Preço Unit</th>
-                <th className="p-4 text-right w-44">Total</th>
-                <th className="p-4 text-center w-24">Remover</th>
+                <th className="px-2 py-2 w-16">Cód</th>
+                <th className="px-2 py-2">Material</th>
+                <th className="px-2 py-2 text-center w-28">Qtd.</th>
+                <th className="px-2 py-2 text-center w-24">Unid.</th>
+                <th className="px-2 py-2 text-right w-32">V. unit.</th>
+                <th className="px-2 py-2 text-right w-28">Total</th>
+                <th className="px-2 py-2 text-center w-16">Ação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {itensVenda.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="p-16 text-center text-slate-400 text-sm font-semibold">
-                    Carrinho vazio. Adicione os tecidos e materiais no formulário acima.
-                  </td>
-                </tr>
-              ) : (
+              <tr className="bg-emerald-50/70">
+                <td className="px-2 py-2 text-center font-black text-emerald-700">+</td>
+                <td className="relative px-2 py-2">
+                  <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full border-0 bg-transparent px-1 py-1.5 text-xs font-bold outline-none" />
+                  {showProdutoDropdown && produtoBusca.trim() && <div className="absolute left-1 right-1 top-full z-30 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{filteredProdutos.length ? filteredProdutos.map((produto) => <button key={produto.id} type="button" onClick={() => handleSelectProduto(produto)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left text-xs hover:bg-emerald-50"><span><strong className="block">{produto.nome}</strong><small className="text-slate-400">{produto.codigo || "Sem código"} • {produto.unidade}</small></span><strong className="text-emerald-700">{formatCurrency(Number(produtosCliente.find((item) => item.produtoId === produto.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produto.id)?.ultimoPreco ?? produto.precoVendaPadrao))}</strong></button>) : <p className="p-3 text-xs font-bold text-slate-400">Produto não encontrado.</p>}</div>}
+                </td>
+                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} className="w-full border-0 bg-transparent px-1 py-1.5 text-right text-xs font-black outline-none" /></td>
+                <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
+                <td className="px-2 py-2"><input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleAddItem(); } }} placeholder="0,00" className="w-full border-0 bg-transparent px-1 py-1.5 text-right text-xs font-black outline-none" /></td>
+                <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
+                <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar nova linha" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
+              </tr>
+              {itensVenda.length === 0 ? <tr><td colSpan={7} className="p-6 text-center text-xs font-semibold text-slate-400">Use a linha verde para adicionar o primeiro item.</td></tr> : (
                 itensVenda.map((it, idx) => {
                   const qty = parseBrazilianNumber(it.quantidade);
                   const price = parseBrazilianNumber(it.precoUnitario);
@@ -1624,8 +1515,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
                   return (
                     <tr key={`${it.produtoId}-${idx}`} className={`${exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} hover:bg-slate-50/70 text-slate-700 transition-colors`}>
-                      <td className="p-4 font-mono text-xs text-slate-400 font-bold">{it.codigo || "-"}</td>
-                      <td className="p-4 font-bold text-slate-900">
+                      <td className="px-2 py-2 font-mono text-[11px] text-slate-400 font-bold">{it.codigo || "-"}</td>
+                      <td className="px-2 py-2 text-xs font-bold text-slate-900">
                         {it.nome}
                         {it.precoAutorizado != null && (
                           <span className="mt-1 flex w-fit items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-emerald-700">
@@ -1641,7 +1532,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           onChange={(event) => handleUpdateItem(idx, { quantidade: event.target.value })}
                           placeholder="Quantidade"
                           aria-label={`Quantidade de ${it.nome}`}
-                          className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-right text-sm font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                          className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
                         />
                       </td>
                       <td className="p-2 text-center">
@@ -1649,7 +1540,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           value={it.unidade}
                           onChange={(event) => handleUpdateItem(idx, { unidade: event.target.value })}
                           aria-label={`Unidade de ${it.nome}`}
-                          className="w-28 rounded-lg border border-slate-300 bg-slate-100 px-2 py-2 text-xs font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
+                          className="w-full min-w-0 rounded-md border border-slate-300 bg-slate-100 px-1 py-1.5 text-[11px] font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
                         >
                           {unidadesPermitidas.map((unidade) => (
                             <option key={unidade} value={unidade}>{unidade}</option>
@@ -1663,7 +1554,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           value={it.precoUnitario}
                           onChange={(event) => handleUpdateItem(idx, { precoUnitario: event.target.value })}
                           aria-label={`Preço unitário de ${it.nome}`}
-                          className={`w-32 rounded-lg border px-3 py-2 text-right text-sm font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
+                          className={`w-full min-w-0 rounded-md border px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
                             exigeAutorizacao
                               ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100"
                               : "border-sky-300 bg-sky-50 focus:border-emerald-600 focus:ring-emerald-100"
@@ -1675,15 +1566,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           </span>
                         )}
                       </td>
-                      <td className="p-4 text-right font-mono font-extrabold text-slate-900">{formatCurrency(totalItem)}</td>
-                      <td className="p-4 text-center">
+                      <td className="px-2 py-2 text-right font-mono text-xs font-extrabold text-slate-900">{formatCurrency(totalItem)}</td>
+                      <td className="px-2 py-2 text-center">
                         <button 
                           type="button" 
                           onClick={() => handleRemoveItem(idx)}
-                          className="px-2.5 py-1.5 text-red-600 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg inline-flex items-center gap-1 text-xs font-bold transition-all"
+                          className="rounded-md border border-red-200 p-1.5 text-red-600 transition-all hover:border-red-600 hover:bg-red-600 hover:text-white"
                           title="Remover somente desta venda"
                         >
-                          <Trash2 size={13} /> Remover
+                          <Trash2 size={13} />
                         </button>
                       </td>
                     </tr>

@@ -103,6 +103,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ preco })
     }).then(r => handleResponse<{ precoAutorizado: number | null }>(r)),
+  removeClienteProduto: (clienteId: string, produtoId: string) =>
+    fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}`, {
+      method: "DELETE"
+    }).then(r => handleResponse<{ success: boolean }>(r)),
   getCarteiraCliente: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira`).then(r => handleResponse<CarteiraCliente>(r)),
   createRecebimentoCliente: (clienteId: string, dados: {

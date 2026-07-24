@@ -2,9 +2,12 @@ import React, { useState, useEffect } from "react";
 import { 
   Search, Plus, Edit2, Trash2, X, Eye, Phone, MapPin, FileText, TrendingUp, AlertCircle, RefreshCw, MessageCircle 
 } from "lucide-react";
-import { Cliente, Venda, Pagamento } from "../types";
+import { Cliente, Venda, Pagamento, ProdutoHabitual } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { paginate, Pagination } from "./Pagination";
+
+const PAGE_SIZE = 10;
 
 interface ClientesViewProps {
   onRefreshStats?: () => void;
@@ -13,6 +16,7 @@ interface ClientesViewProps {
 export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,6 +37,9 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   // Customer History Modal State
   const [activeHistory, setActiveHistory] = useState<any | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
+  const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
+  const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -50,6 +57,10 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   useEffect(() => {
     fetchClientes();
   }, []);
+
+  useEffect(() => {
+    setPage(1);
+  }, [busca]);
 
   const handleOpenForm = (cli?: Cliente) => {
     if (cli) {
@@ -124,8 +135,16 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const handleViewHistory = async (cli: Cliente) => {
     setLoadingHistory(true);
     try {
-      const data = await api.getClienteHistorico(cli.id);
+      const [data, produtosHabituais] = await Promise.all([
+        api.getClienteHistorico(cli.id),
+        api.getClienteProdutosHabituais(cli.id)
+      ]);
       setActiveHistory(data);
+      setProdutosCliente(produtosHabituais);
+      setPrecosCliente(Object.fromEntries(produtosHabituais.map((item) => [
+        item.produtoId,
+        Number(item.precoAutorizado ?? item.ultimoPreco).toFixed(2).replace(".", ",")
+      ])));
     } catch (err: any) {
       alert(err.message || "Erro ao carregar perfil do cliente.");
     } finally {
@@ -138,6 +157,30 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
     (c.telefone && c.telefone.includes(busca)) ||
     (c.documento && c.documento.includes(busca))
   );
+  const clientesPagina = paginate<Cliente>(filteredClientes, page, PAGE_SIZE);
+
+  const salvarPrecoCliente = async (produto: ProdutoHabitual, usarBase = false) => {
+    if (!activeHistory) return;
+    const preco = usarBase ? null : parseBrazilianNumber(precosCliente[produto.produtoId] || "");
+    if (!usarBase && (!Number.isFinite(preco) || preco < 0)) {
+      alert("Informe um preço válido para o cliente.");
+      return;
+    }
+    setSalvandoPrecoProduto(produto.produtoId);
+    try {
+      await api.updateClienteProdutoPreco(activeHistory.cliente.id, produto.produtoId, preco);
+      const atualizados = await api.getClienteProdutosHabituais(activeHistory.cliente.id);
+      setProdutosCliente(atualizados);
+      setPrecosCliente((atuais) => ({
+        ...atuais,
+        [produto.produtoId]: Number(usarBase ? produto.precoVendaPadrao : preco).toFixed(2).replace(".", ",")
+      }));
+    } catch (err: any) {
+      alert(err.message || "Não foi possível atualizar o preço do cliente.");
+    } finally {
+      setSalvandoPrecoProduto("");
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -200,7 +243,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     </td>
                   </tr>
                 ) : (
-                  filteredClientes.map((c) => (
+                  clientesPagina.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4">
                         <p className="font-bold text-slate-900 text-sm">{c.nome}</p>
@@ -271,6 +314,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filteredClientes.length} onPageChange={setPage} />
         </div>
       )}
 
@@ -390,7 +434,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       {/* Customer Full History Modal ("Ficha do Cliente") */}
       {activeHistory && (
         <div className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-4xl border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-6xl border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
             
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -438,6 +482,41 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                   <p className="text-base font-extrabold text-teal-600 mt-1">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
                 </div>
 
+              </div>
+
+              {/* Customer-specific pricing */}
+              <div className="space-y-3">
+                <div>
+                  <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                    <TrendingUp size={14} />
+                    Preços praticados para este cliente
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">Compare o preço-base, o último preço vendido e o preço personalizado. A margem usa o custo atual do produto.</p>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full min-w-[920px] text-left text-xs">
+                    <thead><tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-500"><th className="p-3">Produto</th><th className="p-3 text-right">Preço-base</th><th className="p-3 text-right">Último praticado</th><th className="p-3 text-right">Custo atual</th><th className="p-3 text-right">Preço do cliente</th><th className="p-3 text-right">Lucro unit.</th><th className="p-3 text-right">Margem</th><th className="p-3 text-center">Ações</th></tr></thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {produtosCliente.length === 0 ? <tr><td colSpan={8} className="p-8 text-center font-semibold text-slate-400">Este cliente ainda não possui produtos no histórico.</td></tr> :
+                      produtosCliente.map((produto) => {
+                        const precoPraticado = Number(produto.precoAutorizado ?? produto.ultimoPreco);
+                        const custo = Number(produto.custoPadrao || 0);
+                        const lucro = precoPraticado - custo;
+                        const margem = precoPraticado > 0 ? (lucro / precoPraticado) * 100 : 0;
+                        return <tr key={produto.produtoId} className="bg-white">
+                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p><p className="text-[10px] text-slate-500">{produto.vezesComprado} compra(s) • última em {formatDate(produto.ultimaCompraEm)}</p></td>
+                          <td className="p-3 text-right font-mono font-bold">{formatCurrency(produto.precoVendaPadrao)}</td>
+                          <td className="p-3 text-right font-mono">{formatCurrency(produto.ultimoPreco)}</td>
+                          <td className="p-3 text-right font-mono text-slate-600">{formatCurrency(custo)}</td>
+                          <td className="p-3"><input aria-label={`Preço de ${produto.nome} para o cliente`} value={precosCliente[produto.produtoId] || ""} onChange={(event) => setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: event.target.value }))} inputMode="decimal" className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
+                          <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
+                          <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto)} className="rounded-lg bg-emerald-600 px-2.5 py-2 font-bold text-white disabled:bg-slate-300">Salvar</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto, true)} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button></div></td>
+                        </tr>;
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Products Ranking */}

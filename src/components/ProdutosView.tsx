@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { Edit2, Plus, Search, Tag, Trash2, TrendingUp, Truck, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Edit2, Plus, Search, Tag, Trash2, Truck, X } from "lucide-react";
 import { FornecedorProduto, Produto } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { paginate, Pagination } from "./Pagination";
 
+const PAGE_SIZE = 10;
 const UNIDADES = [
   { value: "metro", label: "Metro (m)" },
   { value: "unidade", label: "Unidade (un)" },
@@ -15,6 +17,7 @@ const UNIDADES = [
 export function ProdutosView() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -32,18 +35,13 @@ export function ProdutosView() {
   const fetchProdutos = async () => {
     setLoading(true);
     setError(null);
-    try {
-      setProdutos(await api.getProdutos());
-    } catch (err: any) {
-      setError(err.message || "Erro ao carregar materiais/produtos.");
-    } finally {
-      setLoading(false);
-    }
+    try { setProdutos(await api.getProdutos()); }
+    catch (err: any) { setError(err.message || "Erro ao carregar materiais/produtos."); }
+    finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchProdutos();
-  }, []);
+  useEffect(() => { fetchProdutos(); }, []);
+  useEffect(() => { setPage(1); }, [busca]);
 
   const handleOpenForm = (produto?: Produto) => {
     setEditingProd(produto || null);
@@ -61,8 +59,7 @@ export function ProdutosView() {
     setFormError("");
     const preco = parseBrazilianNumber(precoVendaPadrao);
     if (!nome.trim()) return setFormError("O nome é obrigatório.");
-    if (!unidade) return setFormError("A unidade é obrigatória.");
-    if (!Number.isFinite(preco) || preco < 0) return setFormError("Informe um preço de venda válido.");
+    if (!Number.isFinite(preco) || preco < 0) return setFormError("Informe um preço-base válido.");
 
     const payload = {
       nome: nome.trim(),
@@ -75,7 +72,7 @@ export function ProdutosView() {
 
     try {
       if (editingProd) await api.updateProduto(editingProd.id, payload);
-      else await api.createProduto(payload as any);
+      else await api.createProduto(payload);
       setFormOpen(false);
       await fetchProdutos();
     } catch (err: any) {
@@ -85,135 +82,83 @@ export function ProdutosView() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Deseja realmente arquivar este material?")) return;
-    try {
-      await api.deleteProduto(id);
-      await fetchProdutos();
-    } catch (err: any) {
-      alert(err.message || "Erro ao arquivar o material.");
-    }
+    try { await api.deleteProduto(id); await fetchProdutos(); }
+    catch (err: any) { alert(err.message || "Erro ao arquivar o material."); }
   };
 
   const handleOpenFornecedores = async (produto: Produto) => {
     setHistoricoProduto(produto);
     setFornecedoresProduto([]);
     setLoadingFornecedores(true);
-    try {
-      setFornecedoresProduto(await api.getProdutoFornecedores(produto.id));
-    } finally {
-      setLoadingFornecedores(false);
-    }
+    try { setFornecedoresProduto(await api.getProdutoFornecedores(produto.id)); }
+    finally { setLoadingFornecedores(false); }
   };
 
-  const filtrados = produtos.filter((produto) =>
+  const filtrados = useMemo(() => produtos.filter((produto) =>
     produto.nome.toLowerCase().includes(busca.toLowerCase()) ||
     (produto.codigo || "").toLowerCase().includes(busca.toLowerCase())
-  );
-
-  const custoAtual = Number(editingProd?.custoPadrao || 0);
-  const precoAtual = parseBrazilianNumber(precoVendaPadrao);
-  const margem = precoAtual > 0 ? ((precoAtual - custoAtual) / precoAtual) * 100 : 0;
-
-  const resumoCusto = (produto: Produto) => (
-    <div>
-      <p className="font-mono font-extrabold text-slate-900">{formatCurrency(produto.custoPadrao)}</p>
-      <p className="mt-0.5 text-[10px] text-slate-400">
-        {produto.ultimaCompraEm ? `Compra de ${formatDate(produto.ultimaCompraEm)}` : "Sem compra registrada"}
-      </p>
-      {produto.ultimoFornecedorNome && <p className="text-[10px] font-semibold text-slate-500">{produto.ultimoFornecedorNome}</p>}
-    </div>
-  );
+  ), [produtos, busca]);
+  const paginaProdutos = paginate<Produto>(filtrados, page, PAGE_SIZE);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-950">Materiais e Produtos</h2>
-          <p className="mt-0.5 text-sm text-slate-500">Uma única unidade para compra e venda. O custo vem sempre da última compra válida.</p>
+          <p className="mt-0.5 text-sm text-slate-500">Catálogo-base do sistema. Preços especiais e estratégia comercial são definidos por cliente.</p>
         </div>
-        <button onClick={() => handleOpenForm()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 sm:w-auto sm:py-2.5">
-          <Plus size={16} /> Novo Material
+        <button onClick={() => handleOpenForm()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 sm:w-auto">
+          <Plus size={16} /> Novo material
         </button>
       </div>
 
       <div className="flex items-center rounded-xl border border-slate-200 bg-white focus-within:border-emerald-500">
         <Search size={16} className="ml-3.5 text-slate-400" />
-        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar por nome ou referência..." className="w-full bg-transparent px-3 py-3 text-sm font-medium text-slate-900 outline-none" />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Pesquisar por nome ou referência..." className="w-full bg-transparent px-3 py-3 text-sm font-medium outline-none" />
       </div>
 
-      {loading ? (
-        <div className="py-20 text-center text-sm font-medium text-slate-500">Carregando materiais...</div>
-      ) : error ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">{error}</div>
-      ) : filtrados.length === 0 ? (
-        <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center text-sm text-slate-400">Nenhum material localizado.</div>
-      ) : (
-        <>
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm md:block">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-100 bg-slate-50 text-xs font-bold uppercase text-slate-400">
-                <tr><th className="p-4">Material / Referência</th><th className="p-4">Unidade</th><th className="p-4 text-right">Último custo</th><th className="p-4 text-right">Preço de venda</th><th className="p-4 text-center">Situação</th><th className="p-4 text-center">Ações</th></tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtrados.map((produto) => (
-                  <tr key={produto.id} className="hover:bg-slate-50/60">
-                    <td className="p-4"><p className="font-bold text-slate-900">{produto.nome}</p><p className="mt-0.5 font-mono text-[10px] text-slate-400">REF: {produto.codigo || "SEM REFERÊNCIA"}</p></td>
-                    <td className="p-4 text-xs font-bold uppercase text-slate-600">{produto.unidade}</td>
-                    <td className="p-4 text-right">{resumoCusto(produto)}</td>
-                    <td className="p-4 text-right font-mono font-extrabold text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</td>
-                    <td className="p-4 text-center"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${produto.ativo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{produto.ativo ? "ATIVO" : "ARQUIVADO"}</span></td>
-                    <td className="p-4 text-center"><div className="flex justify-center gap-1"><button aria-label={`Ver fornecedores de ${produto.nome}`} title="Fornecedores e custos" onClick={() => handleOpenFornecedores(produto)} className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50"><Truck size={15} /></button><button aria-label={`Editar ${produto.nome}`} onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      {loading ? <div className="py-20 text-center text-sm font-medium text-slate-500">Carregando materiais...</div> :
+      error ? <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">{error}</div> :
+      filtrados.length === 0 ? <div className="rounded-2xl border border-slate-100 bg-white p-12 text-center text-sm text-slate-400">Nenhum material localizado.</div> :
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-left text-sm">
+            <thead className="border-b border-slate-100 bg-slate-50 text-xs font-bold uppercase text-slate-400">
+              <tr><th className="p-4">Material / referência</th><th className="p-4">Unidade</th><th className="p-4 text-right">Custo atual</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Último fornecedor</th><th className="p-4 text-center">Ações</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginaProdutos.map((produto) => <tr key={produto.id} className="hover:bg-slate-50/60">
+                <td className="p-4"><p className="font-bold text-slate-900">{produto.nome}</p><p className="mt-0.5 font-mono text-[10px] text-slate-400">REF: {produto.codigo || "SEM REFERÊNCIA"}</p></td>
+                <td className="p-4 text-xs font-bold uppercase text-slate-600">{produto.unidade}</td>
+                <td className="p-4 text-right"><p className="font-mono font-extrabold text-slate-900">{formatCurrency(produto.custoPadrao)}</p><p className="text-[10px] text-slate-400">{produto.ultimaCompraEm ? formatDate(produto.ultimaCompraEm) : "Sem compra"}</p></td>
+                <td className="p-4 text-right font-mono font-extrabold text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</td>
+                <td className="p-4 text-xs font-semibold text-slate-600">{produto.ultimoFornecedorNome || "Não informado"}</td>
+                <td className="p-4"><div className="flex justify-center gap-1"><button title="Fornecedores e custos" onClick={() => handleOpenFornecedores(produto)} className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50"><Truck size={15} /></button><button title="Editar" onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button title="Arquivar" onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
+              </tr>)}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filtrados.length} onPageChange={setPage} />
+      </div>}
 
-          <div className="space-y-3 md:hidden">
-            {filtrados.map((produto) => (
-              <article key={produto.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="font-extrabold text-slate-900">{produto.nome}</h3><p className="mt-1 font-mono text-[10px] text-slate-400">REF: {produto.codigo || "SEM REFERÊNCIA"}</p></div><span className="rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase text-slate-600">{produto.unidade}</span></div>
-                <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3"><div><p className="text-[9px] font-bold uppercase text-slate-400">Último custo</p>{resumoCusto(produto)}</div><div className="text-right"><p className="text-[9px] font-bold uppercase text-slate-400">Preço de venda</p><p className="font-mono font-black text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</p></div></div>
-                <div className="mt-3 flex gap-2"><button onClick={() => handleOpenFornecedores(produto)} className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2.5 text-xs font-bold text-indigo-800"><Truck size={14} /> Fornecedores</button><button onClick={() => handleOpenForm(produto)} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white"><Edit2 size={14} /> Editar</button><button aria-label={`Arquivar ${produto.nome}`} onClick={() => handleDelete(produto.id)} className="rounded-xl border border-red-200 px-3 text-red-600"><Trash2 size={15} /></button></div>
-              </article>
-            ))}
-          </div>
-        </>
-      )}
-
-      {formOpen && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center overflow-y-auto bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="produto-form-titulo" className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
-              <h3 id="produto-form-titulo" className="font-extrabold text-slate-900">{editingProd ? "Editar material" : "Cadastrar material"}</h3>
-              <button aria-label="Fechar cadastro" onClick={() => setFormOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+      {formOpen && <div className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/60 backdrop-blur-sm sm:items-center sm:p-4">
+        <div className="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-2xl sm:rounded-2xl">
+          <div className="sticky top-0 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4"><div><h3 className="font-extrabold text-slate-900">{editingProd ? "Editar material" : "Cadastrar material"}</h3><p className="text-xs text-slate-500">Dados-base usados em todos os clientes.</p></div><button onClick={() => setFormOpen(false)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18} /></button></div>
+          <form onSubmit={handleSave} className="space-y-5 p-5 sm:p-6">
+            <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Nome / descrição *</span><input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold outline-none focus:border-emerald-500" required /></label>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Referência</span><span className="flex items-center rounded-xl border border-slate-200 bg-slate-50"><Tag size={15} className="ml-3 text-slate-400" /><input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: NAPA-FLY-01" className="w-full bg-transparent px-3 py-3 text-sm font-bold uppercase outline-none" /></span></label>
+              <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Unidade *</span><select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold">{UNIDADES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
-            <form onSubmit={handleSave} className="space-y-5 p-5 sm:p-6">
-              <div><label className="mb-1 block text-xs font-bold uppercase text-slate-500">Nome / descrição *</label><input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold outline-none focus:border-emerald-500" required /></div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div><label className="mb-1 block text-xs font-bold uppercase text-slate-500">Referência</label><div className="flex items-center rounded-xl border border-slate-200 bg-slate-50"><Tag size={15} className="ml-3 text-slate-400" /><input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: NAPA-FLY-01" className="w-full bg-transparent px-3 py-3 text-sm font-bold uppercase outline-none" /></div></div>
-                <div><label className="mb-1 block text-xs font-bold uppercase text-slate-500">Unidade de compra e venda *</label><select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold outline-none">{UNIDADES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div><label className="mb-1 block text-xs font-bold uppercase text-slate-500">Preço padrão de venda *</label><input value={precoVendaPadrao} inputMode="decimal" onChange={(e) => setPrecoVendaPadrao(e.target.value)} placeholder="0,00" className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-lg font-black text-emerald-800 outline-none focus:border-emerald-500" required /></div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5"><p className="text-[10px] font-bold uppercase text-slate-400">Último custo comprado</p><p className="mt-1 text-lg font-black text-slate-900">{formatCurrency(custoAtual)}</p><p className="text-[10px] text-slate-500">{editingProd?.ultimaCompraEm ? `${formatDate(editingProd.ultimaCompraEm)} • ${editingProd.ultimoFornecedorNome || "Fornecedor não informado"}` : "Será definido ao registrar a primeira compra."}</p></div>
-              </div>
-              {editingProd && custoAtual > 0 && precoAtual > 0 && <div className={`flex items-center justify-between rounded-xl border p-3 ${margem < 15 ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}><span className="flex items-center gap-2 text-xs font-bold"><TrendingUp size={15} /> Margem sobre o último custo</span><strong>{margem.toFixed(1)}%</strong></div>}
-              <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"><input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} className="h-4 w-4 accent-emerald-600" /><span className="text-xs font-bold text-slate-700">Material ativo para novas vendas e compras</span></label>
-              {formError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{formError}</p>}
-              <div className="flex gap-3 border-t border-slate-100 pt-4"><button type="button" onClick={() => setFormOpen(false)} className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-xs font-bold text-slate-600">Cancelar</button><button type="submit" className="flex-[1.4] rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white">{editingProd ? "Salvar alterações" : "Cadastrar material"}</button></div>
-            </form>
-          </div>
+            <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Preço-base do produto *</span><input value={precoVendaPadrao} inputMode="decimal" onChange={(e) => setPrecoVendaPadrao(e.target.value)} placeholder="0,00" className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-lg font-black text-emerald-800 outline-none" required /><span className="mt-1 block text-[11px] text-slate-500">É a referência geral. O preço praticado pode ser personalizado no perfil de cada cliente.</span></label>
+            <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3"><input type="checkbox" checked={ativo} onChange={(e) => setAtivo(e.target.checked)} className="h-4 w-4 accent-emerald-600" /><span className="text-xs font-bold text-slate-700">Material ativo</span></label>
+            {formError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{formError}</p>}
+            <div className="flex gap-3 border-t border-slate-100 pt-4"><button type="button" onClick={() => setFormOpen(false)} className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-xs font-bold text-slate-600">Cancelar</button><button type="submit" className="flex-[1.4] rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white">{editingProd ? "Salvar alterações" : "Cadastrar material"}</button></div>
+          </form>
         </div>
-      )}
+      </div>}
 
-      {historicoProduto && (
-        <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div role="dialog" aria-modal="true" aria-labelledby="historico-fornecedores-titulo" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white p-5"><div><h3 id="historico-fornecedores-titulo" className="font-black text-slate-950">Fornecedores e custos</h3><p className="text-xs font-bold text-slate-600">{historicoProduto.nome}</p></div><button aria-label="Fechar histórico" onClick={() => setHistoricoProduto(null)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100"><X size={18} /></button></div>
-            {loadingFornecedores ? <div className="p-12 text-center font-bold text-slate-600">Carregando histórico...</div> : fornecedoresProduto.length === 0 ? <div className="p-12 text-center"><Truck className="mx-auto text-slate-400" /><p className="mt-3 font-bold text-slate-700">Produto ainda sem fornecedor associado.</p><p className="mt-1 text-xs text-slate-600">Ele continua disponível para venda normalmente.</p></div> : <div className="overflow-x-auto p-5"><table className="w-full min-w-[650px] text-sm"><thead><tr><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-left">Código</th><th className="p-3 text-right">Último custo</th><th className="p-3 text-left">Última compra</th><th className="p-3 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{fornecedoresProduto.map((item) => <tr key={item.fornecedorId}><td className="p-3"><p className="font-extrabold text-slate-950">{item.fornecedorNome}</p><p className="text-xs text-slate-600">{item.fornecedorTelefone || "Sem telefone"}</p></td><td className="p-3 font-mono font-bold">{item.codigoFornecedor || "—"}</td><td className="p-3 text-right font-mono font-black">{item.ultimoCusto == null ? "Ainda não comprado" : formatCurrency(item.ultimoCusto)}</td><td className="p-3 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-3 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}
-          </div>
-        </div>
-      )}
+      {historicoProduto && <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white p-5"><div><h3 className="font-black text-slate-950">Fornecedores e custos</h3><p className="text-xs font-bold text-slate-600">{historicoProduto.nome}</p></div><button onClick={() => setHistoricoProduto(null)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100"><X size={18} /></button></div>{loadingFornecedores ? <div className="p-12 text-center font-bold text-slate-600">Carregando histórico...</div> : fornecedoresProduto.length === 0 ? <div className="p-12 text-center text-sm font-bold text-slate-600">Produto ainda sem fornecedor associado.</div> : <div className="overflow-x-auto p-5"><table className="w-full min-w-[650px] text-sm"><thead><tr><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-right">Último custo</th><th className="p-3 text-left">Última compra</th><th className="p-3 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{fornecedoresProduto.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-extrabold">{item.fornecedorNome}</td><td className="p-3 text-right font-mono font-black">{item.ultimoCusto == null ? "Ainda não comprado" : formatCurrency(item.ultimoCusto)}</td><td className="p-3 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-3 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}</div></div>}
     </div>
   );
 }

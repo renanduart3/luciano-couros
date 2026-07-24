@@ -3,6 +3,9 @@ import { Search, Plus, Trash2, Save, ShoppingBag, X, Calendar, Filter } from "lu
 import { Fornecedor, Produto, Compra } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
+import { paginate, Pagination } from "./Pagination";
+
+const PAGE_SIZE = 12;
 
 export function ComprasView() {
   const [compras, setCompras] = useState<Compra[]>([]);
@@ -10,6 +13,7 @@ export function ComprasView() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   // Toggle register screen vs list screen
@@ -107,6 +111,7 @@ export function ComprasView() {
   const subtotalCompra = itensRascunho.reduce((acc, it) => acc + it.total, 0);
   const descGeral = parseBrazilianNumber(descontoGeral);
   const totalCompra = Math.max(0, subtotalCompra - descGeral);
+  const comprasPagina = paginate<Compra>(compras, page, PAGE_SIZE);
 
   const handleSaveCompra = async () => {
     if (!fornecedorId) {
@@ -412,7 +417,7 @@ export function ComprasView() {
                     </td>
                   </tr>
                 ) : (
-                  compras.map((c) => (
+                  comprasPagina.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4 text-slate-500 font-mono text-xs">{formatDate(c.data)}</td>
                       <td className="p-4 font-bold text-slate-900">{c.fornecedorNome}</td>
@@ -432,6 +437,7 @@ export function ComprasView() {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={compras.length} onPageChange={setPage} />
         </div>
       )}
 

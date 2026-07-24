@@ -408,12 +408,14 @@ textarea {
 
   /* Print only the active receipt; the screen behind the modal must not create extra pages. */
   #quick-sale-view:has(#print-receipt) > *:not(#print-receipt),
-  #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay) {
+  #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay),
+  #orcamento-view:has(#print-orcamento) > *:not(#print-orcamento) {
     display: none !important;
   }
 
   #print-receipt,
-  #print-sale-detail-overlay {
+  #print-sale-detail-overlay,
+  #print-orcamento {
     position: static !important;
     inset: auto !important;
     display: block !important;
@@ -428,7 +430,8 @@ textarea {
   }
 
   #print-receipt > div,
-  #print-sale-detail-overlay > div {
+  #print-sale-detail-overlay > div,
+  #print-orcamento > div {
     position: static !important;
     width: 100% !important;
     max-width: 100% !important;

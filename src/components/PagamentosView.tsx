@@ -3,6 +3,9 @@ import { Search, Plus, Trash2, DollarSign, X, Check, Calendar, ChevronDown } fro
 import { Cliente, Venda, Pagamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { paginate, Pagination } from "./Pagination";
+
+const PAGE_SIZE = 12;
 
 interface PagamentosViewProps {
   onRefreshStats?: () => void;
@@ -14,6 +17,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
   const [vendasPendentes, setVendasPendentes] = useState<Venda[]>([]);
   
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   // Toggle register screen vs list
@@ -126,6 +130,8 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
     c.nome.toLowerCase().includes(clienteBusca.toLowerCase()) || 
     (c.telefone && c.telefone.includes(clienteBusca))
   );
+
+  const pagamentosPagina = paginate<Pagamento>(pagamentos, page, PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -339,7 +345,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                     </td>
                   </tr>
                 ) : (
-                  pagamentos.map((p) => (
+                  pagamentosPagina.map((p) => (
                     <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4 text-slate-500 font-mono text-xs">{formatDate(p.data)}</td>
                       <td className="p-4 font-bold text-slate-900">{p.clienteNome}</td>
@@ -368,6 +374,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={pagamentos.length} onPageChange={setPage} />
         </div>
       )}
 

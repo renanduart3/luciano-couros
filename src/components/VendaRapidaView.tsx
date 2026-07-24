@@ -2,9 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import { 
   Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
   TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare, KeyRound, ShieldCheck,
-  Lock, Unlock, TableProperties, History, ListChecks
+  Lock, Unlock, TableProperties, History, ListChecks, CalendarRange, ShoppingCart
 } from "lucide-react";
-import { Cliente, Produto, SegurancaStatus, Venda } from "../types";
+import { Cliente, Orcamento, Produto, ProdutoHabitual, SegurancaStatus, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -12,6 +12,8 @@ import { VendaComprovante } from "./VendaComprovante";
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
   onNavigateToView: (view: string) => void;
+  orcamentoInicial?: Orcamento | null;
+  onOrcamentoCarregado?: () => void;
 }
 
 interface ItemRascunho {
@@ -52,7 +54,7 @@ const FORMAS_COM_INSTRUMENTO = new Set([
   "duplicata_terceiro",
 ]);
 
-export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaViewProps) {
+export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -79,12 +81,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
 
   // Cart
   const [itensVenda, setItensVenda] = useState<ItemRascunho[]>([]);
-  const [quantidadeHabituaisCarregados, setQuantidadeHabituaisCarregados] = useState(0);
-  const [carregandoHabituais, setCarregandoHabituais] = useState(false);
+  const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
+  const [orcamentoOrigemId, setOrcamentoOrigemId] = useState<string | null>(null);
   const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
   const [showAutorizacaoPreco, setShowAutorizacaoPreco] = useState(false);
   const [adminPin, setAdminPin] = useState("");
-  const [salvarPrecoCliente, setSalvarPrecoCliente] = useState(true);
   const [autorizacaoErro, setAutorizacaoErro] = useState("");
   const [dadosAdmVisiveis, setDadosAdmVisiveis] = useState(false);
   const [showAnalisePin, setShowAnalisePin] = useState(false);
@@ -106,6 +107,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   } | null>(null);
   const [vendaAnteriorId, setVendaAnteriorId] = useState("");
   const [itensVendaAnteriorSelecionados, setItensVendaAnteriorSelecionados] = useState<string[]>([]);
+  const [historicoVendasOpen, setHistoricoVendasOpen] = useState(false);
+  const [historicoDataInicial, setHistoricoDataInicial] = useState(() => {
+    const data = new Date();
+    data.setDate(data.getDate() - 90);
+    return data.toISOString().split("T")[0];
+  });
+  const [historicoDataFinal, setHistoricoDataFinal] = useState(() => new Date().toISOString().split("T")[0]);
+  const [historicoPage, setHistoricoPage] = useState(1);
 
   // Checkout Fields
   const [descontoGeral, setDescontoGeral] = useState("0");
@@ -121,6 +130,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   const [loading, setLoading] = useState(false);
   const [vendaNumero, setVendaNumero] = useState(1);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
   
   // Printing support
   const [vendaSalvaParaImpressao, setVendaSalvaParaImpressao] = useState<any | null>(null);
@@ -165,12 +175,17 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
   }, []);
 
   useEffect(() => {
+    if (!toastMsg) return;
+    const timer = window.setTimeout(() => setToastMsg(null), 3500);
+    return () => window.clearTimeout(timer);
+  }, [toastMsg]);
+
+  useEffect(() => {
     let active = true;
 
     if (clienteSelecionado) {
       setVendaAnteriorId("");
       setItensVendaAnteriorSelecionados([]);
-      setCarregandoHabituais(true);
       Promise.all([
         api.getClienteHistorico(clienteSelecionado.id),
         api.getClienteProdutosHabituais(clienteSelecionado.id)
@@ -178,40 +193,27 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
         .then(([historico, habituais]) => {
           if (!active) return;
           setClienteHistorico(historico);
-          setItensVenda(habituais.map((item) => ({
-            produtoId: item.produtoId,
-            codigo: item.codigo,
-            nome: item.nome,
-            quantidade: "",
-            unidade: item.unidade,
-            precoUnitario: Number(item.ultimoPreco).toString().replace(".", ","),
-            desconto: "0",
-            precoPadrao: Number(item.precoVendaPadrao),
-            precoAutorizado: item.precoAutorizado == null ? undefined : Number(item.precoAutorizado)
+          setProdutosCliente(habituais);
+          const precosAtuais = new Map(habituais.map((item) => [
+            item.produtoId,
+            Number(item.precoAutorizado ?? item.ultimoPreco)
+          ]));
+          setItensVenda((atuais) => atuais.map((item) => ({
+            ...item,
+            precoAutorizado: precosAtuais.get(item.produtoId)
           })));
-          setQuantidadeHabituaisCarregados(habituais.length);
-          if (habituais.length > 0) {
-            setFeedbackMsg({
-              type: "success",
-              text: `${habituais.length} ${habituais.length === 1 ? "produto habitual carregado" : "produtos habituais carregados"}. Preencha somente as quantidades desta venda.`
-            });
-          }
         })
         .catch(err => {
           if (!active) return;
-          console.error("Erro ao carregar dados habituais do cliente:", err);
+          console.error("Erro ao carregar dados do cliente:", err);
           setClienteHistorico(null);
-          setItensVenda([]);
-          setQuantidadeHabituaisCarregados(0);
-          setFeedbackMsg({ type: "error", text: "Não foi possível carregar o padrão de compra deste cliente." });
-        })
-        .finally(() => {
-          if (active) setCarregandoHabituais(false);
+          setProdutosCliente([]);
+          setFeedbackMsg({ type: "error", text: "Não foi possível carregar o histórico de preços deste cliente." });
         });
     } else {
       setClienteHistorico(null);
       setItensVenda([]);
-      setQuantidadeHabituaisCarregados(0);
+      setProdutosCliente([]);
       setVendaAnteriorId("");
       setItensVendaAnteriorSelecionados([]);
     }
@@ -220,6 +222,42 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       active = false;
     };
   }, [clienteSelecionado]);
+
+  useEffect(() => {
+    if (!orcamentoInicial || clientes.length === 0 || produtos.length === 0) return;
+    const cliente = clientes.find((item) => item.id === orcamentoInicial.clienteId);
+    if (!cliente) {
+      setFeedbackMsg({ type: "error", text: "O cliente do orçamento não está disponível para venda." });
+      onOrcamentoCarregado?.();
+      return;
+    }
+    setClienteSelecionado(cliente);
+    setClienteBusca(cliente.nome);
+    setItensVenda(orcamentoInicial.items.map((item) => {
+      const produto = produtos.find((registro) => registro.id === item.produtoId);
+      return {
+        produtoId: item.produtoId,
+        codigo: item.referencia || produto?.codigo,
+        nome: item.descricao || produto?.nome || "Produto",
+        quantidade: Number(item.quantidade).toString().replace(".", ","),
+        unidade: item.unidade,
+        precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+        desconto: "0",
+        precoPadrao: Number(produto?.precoVendaPadrao || item.precoUnitario)
+      };
+    }));
+    const percentualDesconto = Number(orcamentoInicial.subtotal) > 0
+      ? (Number(orcamentoInicial.desconto) / Number(orcamentoInicial.subtotal)) * 100
+      : 0;
+    setDescontoGeral(percentualDesconto.toFixed(2).replace(".", ","));
+    setObservacoes(orcamentoInicial.observacoes || `Originada do orçamento #${orcamentoInicial.numeroSequencial}.`);
+    setOrcamentoOrigemId(orcamentoInicial.id);
+    setFeedbackMsg({
+      type: "success",
+      text: `Orçamento #${orcamentoInicial.numeroSequencial} carregado. Confira recebimento e finalize a venda.`
+    });
+    onOrcamentoCarregado?.();
+  }, [orcamentoInicial, clientes, produtos, onOrcamentoCarregado]);
 
   // Filter clients based on query
   const filteredClientes = clientes.filter(c => 
@@ -309,11 +347,21 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     (v) => v.status === "pendente" && !!v.vencimento && v.vencimento < hoje
   );
   const overdueDebt = overdueSales.reduce((total, venda) => total + Number(venda.saldoRestante || 0), 0);
-  const ultimasVendasCliente = (clienteHistorico?.vendas || []).slice(0, 7);
-  const vendaAnteriorSelecionada = ultimasVendasCliente.find((venda) => venda.id === vendaAnteriorId) || null;
+  const vendasFiltradasHistorico = (clienteHistorico?.vendas || []).filter((venda) =>
+    (!historicoDataInicial || venda.data >= historicoDataInicial) &&
+    (!historicoDataFinal || venda.data <= historicoDataFinal)
+  );
+  const historicoPageSize = 8;
+  const historicoTotalPages = Math.max(1, Math.ceil(vendasFiltradasHistorico.length / historicoPageSize));
+  const vendasPaginaHistorico = vendasFiltradasHistorico.slice((historicoPage - 1) * historicoPageSize, historicoPage * historicoPageSize);
+  const vendaAnteriorSelecionada = vendasFiltradasHistorico.find((venda) => venda.id === vendaAnteriorId) || null;
   
   // Handlers
   const handleSelectCliente = (cli: Cliente) => {
+    if (clienteSelecionado?.id && clienteSelecionado.id !== cli.id) {
+      setItensVenda([]);
+      setOrcamentoOrigemId(null);
+    }
     setClienteSelecionado(cli);
     setClienteBusca(cli.nome);
     setShowClienteDropdown(false);
@@ -325,10 +373,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
 
   const handleSelectProduto = (prod: Produto) => {
     const unidadePrincipal = getUnidadeVendaPrincipal(prod);
+    const historicoCliente = produtosCliente.find((item) => item.produtoId === prod.id);
+    const precoCliente = Number(historicoCliente?.precoAutorizado ?? historicoCliente?.ultimoPreco ?? prod.precoVendaPadrao);
     setProdutoSelecionado(prod);
     setProdutoBusca(prod.nome);
     setItemUnidade(unidadePrincipal);
-    setItemPreco(prod.precoVendaPadrao.toString().replace(".", ","));
+    setItemPreco(precoCliente.toString().replace(".", ","));
     setItemQtd("1");
     setItemDesconto("0");
     setShowProdutoDropdown(false);
@@ -410,7 +460,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       unidade: itemUnidade,
       precoUnitario: itemPreco,
       desconto: "0",
-      precoPadrao: produtoSelecionado.precoVendaPadrao
+      precoPadrao: produtoSelecionado.precoVendaPadrao,
+      precoAutorizado: produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)
+        ? Number(produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.precoAutorizado
+          ?? produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.ultimoPreco)
+        : undefined
     };
 
     setItensVenda(prev => {
@@ -455,12 +509,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
 
   const handleSelecionarVendaAnterior = (vendaId: string) => {
     setVendaAnteriorId(vendaId);
-    const venda = ultimasVendasCliente.find((item) => item.id === vendaId);
-    setItensVendaAnteriorSelecionados(
-      (venda?.items || [])
-        .filter((item) => produtos.some((produto) => produto.id === item.produtoId))
-        .map((item) => item.id)
-    );
+    setItensVendaAnteriorSelecionados([]);
   };
 
   const handleAlternarItemVendaAnterior = (itemId: string) => {
@@ -493,7 +542,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           unidade: itemHistorico.unidade || produto.unidade,
           precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ","),
           desconto: "0",
-          precoPadrao: Number(produto.precoVendaPadrao)
+          precoPadrao: Number(produto.precoVendaPadrao),
+          precoAutorizado: produtosCliente.find((registro) => registro.produtoId === produto.id)
+            ? Number(produtosCliente.find((registro) => registro.produtoId === produto.id)?.precoAutorizado
+              ?? produtosCliente.find((registro) => registro.produtoId === produto.id)?.ultimoPreco)
+            : undefined
         };
         const existenteIndex = resultado.findIndex((item) => item.produtoId === produto.id);
         if (existenteIndex >= 0) {
@@ -508,10 +561,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       return resultado;
     });
 
-    setFeedbackMsg({
-      type: "success",
-      text: `${itensSelecionados.length} ${itensSelecionados.length === 1 ? "item importado" : "itens importados"} da venda #${vendaAnteriorSelecionada.numeroSequencial}. Quantidades e preços continuam editáveis.`
-    });
+    const mensagem = `${itensSelecionados.length} ${itensSelecionados.length === 1 ? "item adicionado" : "itens adicionados"} da venda #${vendaAnteriorSelecionada.numeroSequencial}.`;
+    setFeedbackMsg({ type: "success", text: `${mensagem} Quantidades e preços continuam editáveis.` });
+    setToastMsg(mensagem);
   };
 
   // Quick keyboard focus skip helper on ENTER
@@ -525,7 +577,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     }
   };
 
-  const executarSalvamentoVenda = async (autorizacaoPreco?: { pin: string; salvarParaCliente: boolean }) => {
+  const executarSalvamentoVenda = async (autorizacaoPreco?: { pin: string }) => {
     if (!clienteSelecionado) return;
     const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
 
@@ -555,7 +607,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           numeroDocumento: instrumentoNumero.trim(),
           vencimento: instrumentoVencimento
         } : undefined,
-        autorizacaoPreco
+        autorizacaoPreco,
+        orcamentoId: orcamentoOrigemId || undefined
       };
 
       const result = await api.createVenda(vendaData);
@@ -627,7 +680,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     if (itensQueExigemAutorizacao.length > 0) {
       setAdminPin("");
       setAutorizacaoErro("");
-      setSalvarPrecoCliente(true);
       setShowAutorizacaoPreco(true);
       return;
     }
@@ -641,7 +693,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
       setAutorizacaoErro("Informe o PIN administrativo de 4 a 8 números.");
       return;
     }
-    await executarSalvamentoVenda({ pin: adminPin, salvarParaCliente: salvarPrecoCliente });
+    await executarSalvamentoVenda({ pin: adminPin });
   };
 
   const handleDesbloquearAnalise = async (e: React.FormEvent) => {
@@ -667,9 +719,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
     setProdutoSelecionado(null);
     setProdutoBusca("");
     setItensVenda([]);
-    setQuantidadeHabituaisCarregados(0);
+    setProdutosCliente([]);
+    setOrcamentoOrigemId(null);
     setVendaAnteriorId("");
     setItensVendaAnteriorSelecionados([]);
+    setHistoricoVendasOpen(false);
+    setHistoricoPage(1);
     setDescontoGeral("0");
     setValorPago("");
     setVencimento("");
@@ -840,19 +895,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
                       className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                     />
                   </div>
-
-                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <input
-                      type="checkbox"
-                      checked={salvarPrecoCliente}
-                      onChange={(e) => setSalvarPrecoCliente(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 accent-emerald-600"
-                    />
-                    <span className="text-xs leading-relaxed text-emerald-900">
-                      <strong>Manter estes preços para {clienteSelecionado?.nome}</strong><br />
-                      Nas próximas vendas, valores iguais ou maiores não pedirão o PIN novamente.
-                    </span>
-                  </label>
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900">
+                    O preço autorizado passará a ser automaticamente o preço atual de <strong>{clienteSelecionado?.nome}</strong>. As vendas anteriores continuarão preservadas no histórico.
+                  </p>
                 </>
               )}
 
@@ -870,6 +915,49 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
               </div>
             )}
           </form>
+        </div>
+      )}
+
+      {historicoVendasOpen && (
+        <div className="fixed inset-0 z-[68] flex items-center justify-center bg-slate-950/65 p-2 backdrop-blur-sm sm:p-5">
+          <div role="dialog" aria-modal="true" aria-labelledby="historico-vendas-titulo" className="flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4">
+              <div><h3 id="historico-vendas-titulo" className="flex items-center gap-2 font-black text-slate-950"><History size={18} className="text-emerald-600" /> Histórico de vendas de {clienteSelecionado?.nome}</h3><p className="mt-1 text-xs text-slate-500">Escolha uma venda à direita e adicione os itens exibidos à esquerda.</p></div>
+              <button type="button" aria-label="Fechar histórico de vendas" onClick={() => setHistoricoVendasOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={19} /></button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 border-b border-slate-200 bg-white p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+              <label><span className="mb-1 block text-[10px] font-extrabold uppercase text-slate-500">Data inicial</span><input type="date" value={historicoDataInicial} onChange={(event) => { setHistoricoDataInicial(event.target.value); setHistoricoPage(1); setVendaAnteriorId(""); }} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold" /></label>
+              <label><span className="mb-1 block text-[10px] font-extrabold uppercase text-slate-500">Data final</span><input type="date" value={historicoDataFinal} onChange={(event) => { setHistoricoDataFinal(event.target.value); setHistoricoPage(1); setVendaAnteriorId(""); }} className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold" /></label>
+              <span className="rounded-xl bg-slate-100 px-4 py-2.5 text-center text-xs font-black text-slate-700">{vendasFiltradasHistorico.length} venda(s)</span>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-12 lg:overflow-hidden">
+              <section className="min-h-[300px] border-b border-slate-200 p-4 lg:col-span-7 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+                {!vendaAnteriorSelecionada ? <div className="flex h-full min-h-[280px] flex-col items-center justify-center text-center text-slate-400"><ShoppingCart size={34} /><p className="mt-3 font-bold">Selecione uma venda na lista ao lado.</p><p className="mt-1 text-xs">Os produtos, quantidades e preços aparecerão aqui.</p></div> :
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="font-black text-slate-950">Venda #{vendaAnteriorSelecionada.numeroSequencial}</h4><p className="text-xs text-slate-500">{formatDate(vendaAnteriorSelecionada.data)} • {formatCurrency(vendaAnteriorSelecionada.totalLiquido)}</p></div><div className="flex gap-2"><button type="button" onClick={() => setItensVendaAnteriorSelecionados((vendaAnteriorSelecionada.items || []).filter((item) => produtos.some((produto) => produto.id === item.produtoId)).map((item) => item.id))} className="rounded-lg border border-emerald-200 px-3 py-2 text-[11px] font-bold text-emerald-700">Selecionar todos</button><button type="button" disabled={itensVendaAnteriorSelecionados.length === 0} onClick={() => { handleImportarItensVendaAnterior(); setHistoricoVendasOpen(false); }} className="rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-bold text-white disabled:bg-slate-300"><ListChecks size={14} className="mr-1 inline" /> Adicionar selecionados</button></div></div>
+                  <div className="space-y-2">
+                    {(vendaAnteriorSelecionada.items || []).map((item) => {
+                      const produtoDisponivel = produtos.some((produto) => produto.id === item.produtoId);
+                      const selecionado = itensVendaAnteriorSelecionados.includes(item.id);
+                      return <div key={item.id} className={`flex items-center gap-3 rounded-xl border p-3 ${selecionado ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"} ${!produtoDisponivel ? "opacity-50" : ""}`}>
+                        <input type="checkbox" disabled={!produtoDisponivel} checked={selecionado} onChange={() => handleAlternarItemVendaAnterior(item.id)} className="h-4 w-4 accent-emerald-600" />
+                        <div className="min-w-0 flex-1"><p className="truncate text-sm font-extrabold text-slate-900">{item.descricao}</p><p className="mt-0.5 text-xs text-slate-500">{formatDecimal(item.quantidade)} {item.unidade} • preço praticado <strong className="text-slate-800">{formatCurrency(item.precoUnitario)}</strong> • total {formatCurrency(item.total)}</p></div>
+                      </div>;
+                    })}
+                  </div>
+                </div>}
+              </section>
+
+              <aside className="min-h-[280px] bg-slate-50 p-4 lg:col-span-5 lg:overflow-y-auto">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-500">Vendas no período</h4>
+                {vendasPaginaHistorico.length === 0 ? <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-xs font-bold text-slate-400">Nenhuma venda encontrada nesse período.</div> :
+                <div className="space-y-2">{vendasPaginaHistorico.map((venda) => <button key={venda.id} type="button" onClick={() => handleSelecionarVendaAnterior(venda.id)} className={`w-full rounded-xl border p-3 text-left transition-colors ${venda.id === vendaAnteriorId ? "border-emerald-500 bg-emerald-50 shadow-sm" : "border-slate-200 bg-white hover:border-emerald-300"}`}><div className="flex items-center justify-between gap-3"><strong className="text-sm text-slate-900">{formatDate(venda.data)}</strong><span className="font-mono text-xs font-black text-emerald-700">{formatCurrency(venda.totalLiquido)}</span></div><div className="mt-1 flex items-center justify-between text-[11px] font-semibold text-slate-500"><span>Venda #{venda.numeroSequencial}</span><span>{(venda.items || []).length} item(ns)</span></div></button>)}</div>}
+                {vendasFiltradasHistorico.length > historicoPageSize && <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs"><button type="button" disabled={historicoPage <= 1} onClick={() => { setHistoricoPage((atual) => atual - 1); setVendaAnteriorId(""); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold disabled:opacity-40">Anterior</button><strong>{historicoPage} / {historicoTotalPages}</strong><button type="button" disabled={historicoPage >= historicoTotalPages} onClick={() => { setHistoricoPage((atual) => atual + 1); setVendaAnteriorId(""); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 font-bold disabled:opacity-40">Próxima</button></div>}
+              </aside>
+            </div>
+          </div>
         </div>
       )}
 
@@ -985,6 +1073,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
           <button onClick={() => setFeedbackMsg(null)} className="p-1 hover:bg-slate-200/30 rounded">
             <X size={14} />
           </button>
+        </div>
+      )}
+
+      {toastMsg && (
+        <div role="status" className="fixed bottom-5 right-5 z-[90] flex max-w-sm items-center gap-3 rounded-xl border border-emerald-300 bg-emerald-700 px-4 py-3 text-sm font-bold text-white shadow-2xl">
+          <CheckCircle2 size={19} className="shrink-0" />
+          <span>{toastMsg}</span>
+          <button type="button" aria-label="Fechar aviso" onClick={() => setToastMsg(null)} className="rounded p-1 hover:bg-emerald-600"><X size={14} /></button>
         </div>
       )}
 
@@ -1152,31 +1248,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
             {dadosAdmVisiveis ? <button type="button" onClick={() => setDadosAdmVisiveis(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setAnalisePinErro(""); setAnalisePin(""); setShowAnalisePin(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}
           </div>
           <div className="border-b border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-              <label className="min-w-0 flex-1">
-                <span className="mb-1.5 flex items-center gap-2 text-xs font-extrabold text-slate-700"><History size={15} className="text-emerald-600" /> Repetir itens de uma das últimas 7 vendas</span>
-                <select data-testid="venda-anterior-select" value={vendaAnteriorId} disabled={!clienteSelecionado || ultimasVendasCliente.length === 0} onChange={(event) => handleSelecionarVendaAnterior(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-bold text-slate-900 disabled:bg-slate-100 disabled:text-slate-500">
-                  <option value="">{!clienteSelecionado ? "Selecione primeiro o cliente" : ultimasVendasCliente.length === 0 ? "Cliente sem vendas anteriores" : "Escolha uma venda anterior..."}</option>
-                  {ultimasVendasCliente.map((venda) => <option key={venda.id} value={venda.id}>{formatDate(venda.data)} — Venda #{venda.numeroSequencial} — {(venda.items || []).length} itens — {formatCurrency(venda.totalLiquido)}</option>)}
-                </select>
-              </label>
-              {vendaAnteriorSelecionada && <button data-testid="importar-venda-anterior" type="button" disabled={itensVendaAnteriorSelecionados.length === 0} onClick={handleImportarItensVendaAnterior} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:bg-slate-300"><ListChecks size={16} /> Adicionar selecionados</button>}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div><p className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><History size={16} className="text-emerald-600" /> Reaproveitar uma venda anterior</p><p className="mt-1 text-[11px] text-slate-500">Consulte por período e traga produtos com quantidade e preço praticado.</p></div>
+              <button type="button" disabled={!clienteSelecionado || (clienteHistorico?.vendas || []).length === 0} onClick={() => { setHistoricoPage(1); setVendaAnteriorId(""); setItensVendaAnteriorSelecionados([]); setHistoricoVendasOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white disabled:bg-slate-300"><CalendarRange size={16} /> Abrir histórico de vendas</button>
             </div>
-
-            {vendaAnteriorSelecionada && (
-              <div className="mt-3 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-3 py-2">
-                  <span className="text-xs font-bold text-slate-700">Marque os itens que deseja levar para a venda atual.</span>
-                  <button type="button" onClick={() => setItensVendaAnteriorSelecionados((vendaAnteriorSelecionada.items || []).filter((item) => produtos.some((produto) => produto.id === item.produtoId)).map((item) => item.id))} className="rounded-lg px-2 py-1 text-[11px] font-extrabold text-emerald-700 hover:bg-emerald-100">Selecionar todos</button>
-                </div>
-                <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-2 md:divide-y-0">
-                  {(vendaAnteriorSelecionada.items || []).map((item) => {
-                    const produtoDisponivel = produtos.some((produto) => produto.id === item.produtoId);
-                    return <label key={item.id} className={`flex cursor-pointer items-center gap-3 border-slate-200 px-3 py-2.5 md:border-b ${produtoDisponivel ? "bg-white" : "cursor-not-allowed bg-slate-100 opacity-60"}`}><input type="checkbox" disabled={!produtoDisponivel} checked={itensVendaAnteriorSelecionados.includes(item.id)} onChange={() => handleAlternarItemVendaAnterior(item.id)} className="h-4 w-4 shrink-0 accent-emerald-600" /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-extrabold text-slate-900">{item.descricao}</span><span className="block text-[11px] font-semibold text-slate-500">{formatDecimal(item.quantidade)} {item.unidade} • {formatCurrency(item.precoUnitario)} / un.</span></span>{!produtoDisponivel && <span className="text-[10px] font-bold text-red-600">Indisponível</span>}</label>;
-                  })}
-                </div>
-              </div>
-            )}
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
@@ -1368,19 +1443,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView }: VendaRapidaVi
             {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}
           </div>
         </div>
-
-        {(carregandoHabituais || quantidadeHabituaisCarregados > 0) && (
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900">
-            <span className="font-bold">
-              {carregandoHabituais
-                ? "Carregando o padrão de compra do cliente..."
-                : `${quantidadeHabituaisCarregados} ${quantidadeHabituaisCarregados === 1 ? "produto habitual foi carregado" : "produtos habituais foram carregados"}.`}
-            </span>
-            {!carregandoHabituais && (
-              <span className="text-emerald-700">Preencha as quantidades usadas hoje; linhas vazias não serão vendidas.</span>
-            )}
-          </div>
-        )}
 
         {/* Inputs row - horizontal, spacious, full layout width */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end bg-slate-50/50 p-4 border border-slate-100 rounded-2xl">

@@ -6,6 +6,9 @@ import { Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
+import { paginate, Pagination } from "./Pagination";
+
+const PAGE_SIZE = 12;
 
 interface VendasListaViewProps {
   onRefreshStats?: () => void;
@@ -17,6 +20,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("todas");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +56,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
   useEffect(() => {
     fetchVendas();
   }, [selectedSaleId]);
+  useEffect(() => { setPage(1); }, [busca, statusFiltro]);
 
   // Filter sales
   const filteredVendas = vendas.filter(v => {
@@ -66,6 +71,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
 
     return matchesBusca && matchesStatus;
   });
+  const vendasPagina = paginate<Venda>(filteredVendas, page, PAGE_SIZE);
 
   const handleCancelVenda = async (id: string) => {
     setCanceling(true);
@@ -164,7 +170,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                     </td>
                   </tr>
                 ) : (
-                  filteredVendas.map((v) => (
+                  vendasPagina.map((v) => (
                     <tr key={v.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4 text-center">
                         <p className="font-extrabold text-slate-900">#{v.numeroSequencial}</p>
@@ -204,6 +210,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filteredVendas.length} onPageChange={setPage} />
         </div>
       )}
 

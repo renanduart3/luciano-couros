@@ -584,6 +584,43 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
   }
 });
 
+app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
+  try {
+    const { clienteId, produtoId } = req.params;
+    const relacionamento = queryOne(
+      `SELECT clienteId, produtoId
+       FROM cliente_produtos_habituais
+       WHERE clienteId = ? AND produtoId = ?`,
+      [clienteId, produtoId]
+    );
+    if (!relacionamento) {
+      return res.status(404).json({ error: "Este cliente ainda não comprou o produto informado." });
+    }
+
+    const valorInformado = req.body?.preco;
+    const preco = valorInformado === null || valorInformado === "" ? null : Number(valorInformado);
+    if (preco !== null && (!Number.isFinite(preco) || preco < 0)) {
+      return res.status(400).json({ error: "Informe um preço personalizado válido." });
+    }
+
+    execute(
+      `UPDATE cliente_produtos_habituais
+       SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE clienteId = ? AND produtoId = ?`,
+      [preco, clienteId, produtoId]
+    );
+    const atualizado = queryOne(
+      `SELECT precoAutorizado
+       FROM cliente_produtos_habituais
+       WHERE clienteId = ? AND produtoId = ?`,
+      [clienteId, produtoId]
+    );
+    res.json(atualizado);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // 4. FORNECEDORES
 app.get("/api/fornecedores", (req, res) => {
@@ -778,11 +815,11 @@ app.post("/api/produtos", (req, res) => {
       `INSERT INTO produtos (id, nome, codigo, unidade, precoVendaPadrao, custoPadrao, unidadeCompra, unidadeVenda, fatorConversao, venderUnidadeCompra, ativo)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        id, 
-        nome, 
-        codigo || null, 
+        id,
+        nome,
+        codigo || null,
         unidade,
-        Number(precoVendaPadrao), 
+        Number(precoVendaPadrao),
         0,
         unidade,
         unidade,
@@ -792,7 +829,7 @@ app.post("/api/produtos", (req, res) => {
       ]
     );
     const product = queryOne("SELECT * FROM produtos WHERE id = ?", [id]);
-    res.status(210).json(product);
+    res.status(201).json(product);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -813,13 +850,13 @@ app.put("/api/produtos/:id", (req, res) => {
        SET nome = ?, codigo = ?, unidade = ?, precoVendaPadrao = ?, unidadeCompra = ?, unidadeVenda = ?, fatorConversao = 1, venderUnidadeCompra = 0, ativo = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ? AND deletedAt IS NULL`,
       [
-        nome, 
-        codigo || null, 
+        nome,
+        codigo || null,
         unidade,
-        Number(precoVendaPadrao), 
+        Number(precoVendaPadrao),
         unidade,
         unidade,
-        ativo ? 1 : 0, 
+        ativo ? 1 : 0,
         id
       ]
     );
@@ -836,6 +873,194 @@ app.delete("/api/produtos/:id", (req, res) => {
     const nowStr = new Date().toISOString();
     execute("UPDATE produtos SET deletedAt = ?, ativo = 0 WHERE id = ?", [nowStr, id]);
     res.json({ success: true, message: "Produto excluído logicamente." });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5.1 ORÇAMENTOS
+function carregarOrcamentoCompleto(id: string) {
+  const orcamento = queryOne<any>(
+    `SELECT o.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.documento AS clienteDocumento
+     FROM orcamentos o
+     JOIN clientes c ON c.id = o.clienteId
+     WHERE o.id = ? AND o.deletedAt IS NULL`,
+    [id]
+  );
+  if (!orcamento) return null;
+  orcamento.items = queryAll(
+    `SELECT io.*, p.codigo AS referencia
+     FROM itens_orcamento io
+     LEFT JOIN produtos p ON p.id = io.produtoId
+     WHERE io.orcamentoId = ?
+     ORDER BY io.rowid ASC`,
+    [id]
+  );
+  return orcamento;
+}
+
+app.get("/api/orcamentos", (_req, res) => {
+  try {
+    const registros = queryAll<any>(
+      `SELECT id
+       FROM orcamentos
+       WHERE deletedAt IS NULL
+       ORDER BY numeroSequencial DESC`
+    );
+    res.json(registros.map((item) => carregarOrcamentoCompleto(item.id)));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/orcamentos/aberto", (_req, res) => {
+  try {
+    const aberto = queryOne<{ id: string }>(
+      `SELECT id
+       FROM orcamentos
+       WHERE status = 'aberto' AND deletedAt IS NULL
+       ORDER BY createdAt DESC
+       LIMIT 1`
+    );
+    res.json(aberto ? carregarOrcamentoCompleto(aberto.id) : null);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/orcamentos/proximo-numero", (_req, res) => {
+  try {
+    const resultado = queryOne<{ maxSeq: number }>(
+      "SELECT COALESCE(MAX(numeroSequencial), 0) AS maxSeq FROM orcamentos"
+    );
+    res.json({ proximoNumero: Number(resultado?.maxSeq || 0) + 1 });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/orcamentos", (req, res) => {
+  try {
+    const { id: idInformado, clienteId, data, validade, desconto, observacoes, items } = req.body;
+    if (!clienteId || !data || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Informe cliente, data e ao menos um item para o orçamento." });
+    }
+    if (!queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [clienteId])) {
+      return res.status(404).json({ error: "Cliente não encontrado." });
+    }
+
+    const resultado = runInTransaction(() => {
+      const aberto = queryOne<{ id: string }>(
+        "SELECT id FROM orcamentos WHERE status = 'aberto' AND deletedAt IS NULL LIMIT 1"
+      );
+      const orcamentoId = String(idInformado || aberto?.id || ("orc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16)));
+
+      if (aberto && aberto.id !== orcamentoId) {
+        throw erroHttp("Já existe um orçamento aberto. Conclua ou cancele antes de iniciar outro.", 409);
+      }
+
+      const existente = queryOne<any>("SELECT * FROM orcamentos WHERE id = ? AND deletedAt IS NULL", [orcamentoId]);
+      if (existente && existente.status !== "aberto") {
+        throw erroHttp("Somente um orçamento aberto pode ser alterado.", 409);
+      }
+
+      let subtotal = 0;
+      const itensResolvidos = items.map((item: any) => {
+        const produto = queryOne<any>("SELECT * FROM produtos WHERE id = ? AND deletedAt IS NULL", [item.produtoId]);
+        if (!produto) throw erroHttp(`Produto não encontrado: ${item.produtoId}`, 404);
+        const quantidade = Number(item.quantidade);
+        const precoUnitario = Number(item.precoUnitario);
+        const descontoItem = Number(item.desconto || 0);
+        const unidade = String(item.unidade || produto.unidade);
+        if (unidade !== produto.unidade) throw erroHttp(`${produto.nome} deve usar a unidade ${produto.unidade}.`, 400);
+        if (!Number.isFinite(quantidade) || quantidade <= 0 || !Number.isFinite(precoUnitario) || precoUnitario < 0 || !Number.isFinite(descontoItem) || descontoItem < 0) {
+          throw erroHttp(`Quantidade, preço ou desconto inválido para ${produto.nome}.`, 400);
+        }
+        const total = (quantidade * precoUnitario) - descontoItem;
+        if (total < 0) throw erroHttp(`O desconto de ${produto.nome} é maior que o valor do item.`, 400);
+        subtotal += total;
+        return {
+          id: "ito_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+          produtoId: produto.id,
+          descricao: String(item.descricao || produto.nome),
+          quantidade,
+          unidade,
+          precoUnitario,
+          desconto: descontoItem,
+          total
+        };
+      });
+
+      const descontoGeral = Number(desconto || 0);
+      if (!Number.isFinite(descontoGeral) || descontoGeral < 0 || descontoGeral > subtotal) {
+        throw erroHttp("O desconto do orçamento deve estar entre zero e o subtotal.", 400);
+      }
+      const totalLiquido = subtotal - descontoGeral;
+
+      if (existente) {
+        execute(
+          `UPDATE orcamentos
+           SET clienteId = ?, data = ?, validade = ?, subtotal = ?, desconto = ?, totalLiquido = ?,
+               observacoes = ?, updatedAt = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [clienteId, data, validade || null, subtotal, descontoGeral, totalLiquido, observacoes || null, orcamentoId]
+        );
+        execute("DELETE FROM itens_orcamento WHERE orcamentoId = ?", [orcamentoId]);
+      } else {
+        const sequencia = queryOne<{ maxSeq: number }>(
+          "SELECT COALESCE(MAX(numeroSequencial), 0) AS maxSeq FROM orcamentos"
+        );
+        execute(
+          `INSERT INTO orcamentos
+             (id, numeroSequencial, clienteId, data, validade, subtotal, desconto, totalLiquido, status, observacoes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'aberto', ?)`,
+          [
+            orcamentoId,
+            Number(sequencia?.maxSeq || 0) + 1,
+            clienteId,
+            data,
+            validade || null,
+            subtotal,
+            descontoGeral,
+            totalLiquido,
+            observacoes || null
+          ]
+        );
+      }
+
+      for (const item of itensResolvidos) {
+        execute(
+          `INSERT INTO itens_orcamento
+             (id, orcamentoId, produtoId, descricao, quantidade, unidade, precoUnitario, desconto, total)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [item.id, orcamentoId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total]
+        );
+      }
+
+      return orcamentoId;
+    });
+
+    res.status(201).json(carregarOrcamentoCompleto(resultado));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/orcamentos/:id/cancelar", (req, res) => {
+  try {
+    const orcamento = queryOne<any>(
+      "SELECT id, status FROM orcamentos WHERE id = ? AND deletedAt IS NULL",
+      [req.params.id]
+    );
+    if (!orcamento) return res.status(404).json({ error: "Orçamento não encontrado." });
+    if (orcamento.status !== "aberto") {
+      return res.status(409).json({ error: "Somente o orçamento aberto pode ser cancelado." });
+    }
+    execute(
+      "UPDATE orcamentos SET status = 'cancelado', updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+      [req.params.id]
+    );
+    res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -909,7 +1134,8 @@ app.post("/api/vendas", (req, res) => {
       vencimento,    // YYYY-MM-DD
       observacoes,
       autorizacaoPreco,
-      instrumentoRecebimento
+      instrumentoRecebimento,
+      orcamentoId
     } = req.body;
 
     if (!clienteId || !data || !items || !Array.isArray(items) || items.length === 0) {
@@ -923,6 +1149,16 @@ app.post("/api/vendas", (req, res) => {
 
     // Atomically execute inside transaction
     const resultVenda = runInTransaction(() => {
+      if (orcamentoId) {
+        const orcamento = queryOne<any>(
+          "SELECT clienteId, status FROM orcamentos WHERE id = ? AND deletedAt IS NULL",
+          [orcamentoId]
+        );
+        if (!orcamento || orcamento.status !== "aberto" || orcamento.clienteId !== clienteId) {
+          throw erroHttp("O orçamento informado não está aberto para este cliente.", 409);
+        }
+      }
+
       let subtotal = 0;
       let custoTotalAcumulado = 0;
       let lucroBrutoAcumulado = 0;
@@ -1080,34 +1316,42 @@ app.post("/api/vendas", (req, res) => {
 
       rebuildClienteProdutosHabituais(clienteId);
 
-      if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
-        const salvarParaCliente = autorizacaoPreco?.salvarParaCliente === true;
-        if (salvarParaCliente) {
-          for (const item of itensQueExigemAutorizacao) {
-            execute(
-              `UPDATE cliente_produtos_habituais
-               SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
-               WHERE clienteId = ? AND produtoId = ?`,
-              [item.precoEfetivo, clienteId, item.produtoId]
-            );
-          }
-        }
+      // O preço do cliente é sempre incremental: cada venda passa a ser a
+      // referência atual, enquanto o preço praticado permanece preservado no item.
+      for (const item of resolvedItems) {
+        const precoEfetivo = item.precoUnitario * fatorPrecoEfetivo;
+        execute(
+          `UPDATE cliente_produtos_habituais
+           SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
+           WHERE clienteId = ? AND produtoId = ?`,
+          [precoEfetivo, clienteId, item.produtoId]
+        );
+      }
 
+      if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
         registrarAuditoria(
           administradorAutorizador.id,
-          salvarParaCliente ? "preco_cliente_autorizado" : "preco_venda_autorizado",
+          "preco_cliente_atualizado",
           "venda",
           vendaId,
           {
             clienteId,
             numeroSequencial: nextSeq,
-            salvarParaCliente,
             itens: itensQueExigemAutorizacao.map((item) => ({
               produtoId: item.produtoId,
               precoAnteriorPermitido: item.precoMinimoSemPin,
               precoAutorizado: item.precoEfetivo
             }))
           }
+        );
+      }
+
+      if (orcamentoId) {
+        execute(
+          `UPDATE orcamentos
+           SET status = 'convertido', vendaId = ?, updatedAt = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [vendaId, orcamentoId]
         );
       }
 

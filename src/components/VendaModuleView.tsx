@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { History, ShoppingCart } from "lucide-react";
+import { FileText, History, ShoppingCart } from "lucide-react";
 import { VendaRapidaView } from "./VendaRapidaView";
 import { VendasListaView } from "./VendasListaView";
+import { OrcamentoView } from "./OrcamentoView";
+import { Orcamento } from "../types";
 
 interface VendaModuleViewProps {
   onSaleSaved: () => void;
@@ -12,9 +14,10 @@ interface VendaModuleViewProps {
 }
 
 export function VendaModuleView(props: VendaModuleViewProps) {
-  const [tab, setTab] = useState<"nova" | "historico">(
+  const [tab, setTab] = useState<"nova" | "orcamento" | "historico">(
     props.selectedSaleId ? "historico" : "nova"
   );
+  const [orcamentoParaVenda, setOrcamentoParaVenda] = useState<Orcamento | null>(null);
 
   return (
     <section className="space-y-5">
@@ -22,13 +25,26 @@ export function VendaModuleView(props: VendaModuleViewProps) {
         <button type="button" onClick={() => setTab("nova")} className={`module-tab ${tab === "nova" ? "module-tab-active" : ""}`}>
           <ShoppingCart size={17} /> Nova venda
         </button>
+        <button type="button" onClick={() => setTab("orcamento")} className={`module-tab ${tab === "orcamento" ? "module-tab-active" : ""}`}>
+          <FileText size={17} /> Orçamento
+        </button>
         <button type="button" onClick={() => setTab("historico")} className={`module-tab ${tab === "historico" ? "module-tab-active" : ""}`}>
           <History size={17} /> Histórico e comprovantes
         </button>
       </div>
 
       {tab === "nova" ? (
-        <VendaRapidaView onSaleSaved={props.onSaleSaved} onNavigateToView={props.onNavigateToView} />
+        <VendaRapidaView
+          onSaleSaved={props.onSaleSaved}
+          onNavigateToView={props.onNavigateToView}
+          orcamentoInicial={orcamentoParaVenda}
+          onOrcamentoCarregado={() => setOrcamentoParaVenda(null)}
+        />
+      ) : tab === "orcamento" ? (
+        <OrcamentoView onLevarParaVenda={(orcamento) => {
+          setOrcamentoParaVenda(orcamento);
+          setTab("nova");
+        }} />
       ) : (
         <VendasListaView
           onRefreshStats={props.onRefreshStats}

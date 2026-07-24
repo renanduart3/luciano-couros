@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, Venda, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, Venda, Orcamento, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
 } from "../types";
 
 const API_BASE = "/api";
@@ -87,6 +87,12 @@ export const api = {
     }>(r)),
   getClienteProdutosHabituais: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
+  updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number | null) =>
+    fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}/preco`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preco })
+    }).then(r => handleResponse<{ precoAutorizado: number | null }>(r)),
   getCarteiraCliente: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira`).then(r => handleResponse<CarteiraCliente>(r)),
   createRecebimentoCliente: (clienteId: string, dados: {
@@ -142,13 +148,13 @@ export const api = {
 
   // PRODUTOS
   getProdutos: () => fetch(`${API_BASE}/produtos`).then(r => handleResponse<Produto[]>(r)),
-  createProduto: (produto: Omit<Produto, "id" | "createdAt" | "updatedAt">) => 
+  createProduto: (produto: Omit<Produto, "id" | "createdAt" | "updatedAt">) =>
     fetch(`${API_BASE}/produtos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(produto)
     }).then(r => handleResponse<Produto>(r)),
-  updateProduto: (id: string, produto: Partial<Produto>) => 
+  updateProduto: (id: string, produto: Partial<Produto>) =>
     fetch(`${API_BASE}/produtos/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -186,8 +192,8 @@ export const api = {
     };
     autorizacaoPreco?: {
       pin: string;
-      salvarParaCliente: boolean;
     };
+    orcamentoId?: string;
   }) => 
     fetch(`${API_BASE}/vendas`, {
       method: "POST",
@@ -196,6 +202,33 @@ export const api = {
     }).then(r => handleResponse<Venda>(r)),
   cancelarVenda: (id: string) => 
     fetch(`${API_BASE}/vendas/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+
+  // ORÇAMENTOS
+  getOrcamentos: () => fetch(`${API_BASE}/orcamentos`).then(r => handleResponse<Orcamento[]>(r)),
+  getOrcamentoAberto: () => fetch(`${API_BASE}/orcamentos/aberto`).then(r => handleResponse<Orcamento | null>(r)),
+  getProximoNumeroOrcamento: () => fetch(`${API_BASE}/orcamentos/proximo-numero`).then(r => handleResponse<{ proximoNumero: number }>(r)),
+  saveOrcamento: (orcamento: {
+    id?: string;
+    clienteId: string;
+    data: string;
+    validade?: string;
+    desconto: number;
+    observacoes?: string;
+    items: Array<{
+      produtoId: string;
+      descricao: string;
+      quantidade: number;
+      unidade: string;
+      precoUnitario: number;
+      desconto: number;
+    }>;
+  }) => fetch(`${API_BASE}/orcamentos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(orcamento)
+  }).then(r => handleResponse<Orcamento>(r)),
+  cancelarOrcamento: (id: string) =>
+    fetch(`${API_BASE}/orcamentos/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // COMPRAS
   getCompras: () => fetch(`${API_BASE}/compras`).then(r => handleResponse<Compra[]>(r)),

@@ -149,6 +149,50 @@ export function initDatabase() {
     // Index on sequential number and client
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_seq ON vendas (numeroSequencial)`).run();
 
+    // 4.1 Orçamentos — somente um orçamento pode permanecer aberto por vez.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS orcamentos (
+        id TEXT PRIMARY KEY,
+        numeroSequencial INTEGER NOT NULL,
+        clienteId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        validade TEXT,
+        subtotal REAL NOT NULL,
+        desconto REAL NOT NULL,
+        totalLiquido REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'aberto',
+        observacoes TEXT,
+        vendaId TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_seq ON orcamentos (numeroSequencial)`).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_unico_aberto
+      ON orcamentos ((1))
+      WHERE status = 'aberto' AND deletedAt IS NULL
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS itens_orcamento (
+        id TEXT PRIMARY KEY,
+        orcamentoId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        descricao TEXT NOT NULL,
+        quantidade REAL NOT NULL,
+        unidade TEXT NOT NULL,
+        precoUnitario REAL NOT NULL,
+        desconto REAL NOT NULL DEFAULT 0,
+        total REAL NOT NULL,
+        FOREIGN KEY (orcamentoId) REFERENCES orcamentos (id) ON DELETE CASCADE,
+        FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+
     // 5. ItemVenda
     db.prepare(`
       CREATE TABLE IF NOT EXISTS itens_venda (

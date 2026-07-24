@@ -120,6 +120,39 @@ export interface Venda {
   updatedAt: string;
 }
 
+export interface ItemOrcamento {
+  id: string;
+  orcamentoId: string;
+  produtoId: string;
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  precoUnitario: number;
+  desconto: number;
+  total: number;
+  referencia?: string;
+}
+
+export interface Orcamento {
+  id: string;
+  numeroSequencial: number;
+  clienteId: string;
+  clienteNome?: string;
+  clienteTelefone?: string;
+  clienteDocumento?: string;
+  data: string;
+  validade?: string;
+  subtotal: number;
+  desconto: number;
+  totalLiquido: number;
+  status: "aberto" | "convertido" | "cancelado";
+  observacoes?: string;
+  vendaId?: string;
+  items: ItemOrcamento[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Pagamento {
   id: string;
   clienteId: string;

@@ -4,6 +4,23 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.5.0 — 2026-07-24
+
+- Novo módulo de Orçamentos com somente um orçamento aberto por vez.
+- Orçamento com cliente, validade, produtos, preços, desconto, observações e impressão/PDF.
+- Conversão do orçamento em venda sem redigitar cliente, itens, quantidades, preços ou desconto.
+- Preço atual do cliente atualizado automaticamente após cada venda, preservando os valores das vendas anteriores.
+- Produtos habituais deixam de ser inseridos automaticamente na venda.
+- Reaproveitamento de vendas anteriores passa a usar somente seleção em grupo, com aviso visual dos itens adicionados.
+
+## 1.4.0 — 2026-07-24
+
+- Cadastro de produtos simplificado como catálogo-base do sistema.
+- Preço personalizado transferido para o perfil de cada cliente, com comparação ao preço-base e ao último preço praticado.
+- Visão de custo, lucro unitário, margem e frequência de compra por cliente e produto.
+- Consulta sobreposta de vendas anteriores durante a venda, com filtro por período e reaproveitamento de itens e preços.
+- Paginação padronizada nas principais listagens operacionais.
+
 ## 1.3.0 — 2026-07-22
 
 - Relatórios reorganizados em Visão geral, Clientes, Fornecedores e Vales.

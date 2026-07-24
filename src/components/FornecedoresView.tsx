@@ -2,10 +2,14 @@ import React, { useState, useEffect } from "react";
 import { Search, Plus, Edit2, Trash2, X, Phone, FileText, ShoppingCart, MessageCircle } from "lucide-react";
 import { Fornecedor } from "../types";
 import { api } from "../lib/api";
+import { paginate, Pagination } from "./Pagination";
+
+const PAGE_SIZE = 10;
 
 export function FornecedoresView() {
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [busca, setBusca] = useState("");
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +40,7 @@ export function FornecedoresView() {
   useEffect(() => {
     fetchFornecedores();
   }, []);
+  useEffect(() => { setPage(1); }, [busca]);
 
   const handleOpenForm = (forn?: Fornecedor) => {
     if (forn) {
@@ -107,6 +112,7 @@ export function FornecedoresView() {
     (f.telefone && f.telefone.includes(busca)) ||
     (f.documento && f.documento.includes(busca))
   );
+  const fornecedoresPagina = paginate<Fornecedor>(filtered, page, PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -170,7 +176,7 @@ export function FornecedoresView() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((f) => (
+                  fornecedoresPagina.map((f) => (
                     <tr key={f.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4">
                         <p className="font-bold text-slate-900 text-sm">{f.nome}</p>
@@ -237,6 +243,7 @@ export function FornecedoresView() {
               </tbody>
             </table>
           </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filtered.length} onPageChange={setPage} />
         </div>
       )}
 

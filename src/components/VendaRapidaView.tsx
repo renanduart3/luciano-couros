@@ -14,6 +14,7 @@ interface VendaRapidaViewProps {
   onNavigateToView: (view: string) => void;
   orcamentoInicial?: Orcamento | null;
   onOrcamentoCarregado?: () => void;
+  compact?: boolean;
 }
 
 interface ItemRascunho {
@@ -54,7 +55,7 @@ const FORMAS_COM_INSTRUMENTO = new Set([
   "duplicata_terceiro",
 ]);
 
-export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado }: VendaRapidaViewProps) {
+export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -233,7 +234,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }
     setClienteSelecionado(cliente);
     setClienteBusca(cliente.nome);
-    setItensVenda(orcamentoInicial.items.map((item) => {
+    setItensVenda(orcamentoInicial.items.filter((item) => item.faltante !== 1).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         produtoId: item.produtoId,
@@ -803,7 +804,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   };
 
   return (
-    <div id="quick-sale-view" className="flex flex-col gap-6">
+    <div id="quick-sale-view" className={`flex flex-col ${compact ? "gap-3" : "gap-6"}`}>
       {showAnalisePin && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <form onSubmit={handleDesbloquearAnalise} role="dialog" aria-modal="true" aria-labelledby="analise-pin-titulo" className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -968,9 +969,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           role="dialog"
           aria-modal="true"
           aria-labelledby="venda-finalizada-titulo"
-          className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6 print:absolute print:inset-0 print:block print:bg-white print:p-0"
+          className="fixed inset-0 z-50 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6 print:absolute print:inset-0 print:block print:bg-white print:p-0"
         >
-          <div className="mx-auto w-full max-w-[230mm] rounded-2xl bg-slate-200 p-3 shadow-2xl print:max-w-none print:bg-white print:p-0 print:shadow-none">
+          <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl bg-slate-200 p-3 shadow-2xl sm:max-w-[calc(100vw-3rem)] print:max-w-none print:overflow-visible print:bg-white print:p-0 print:shadow-none">
             <div className="mb-3 flex items-start justify-between gap-4 rounded-xl bg-white p-4 print:hidden">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
@@ -995,7 +996,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               </button>
             </div>
 
-            <VendaComprovante venda={vendaSalvaParaImpressao} />
+            <div className="max-w-full overflow-x-auto pb-2 print:overflow-visible print:pb-0"><VendaComprovante venda={vendaSalvaParaImpressao} /></div>
 
             {/* Print action bar */}
             <div className="mt-3 space-y-3 rounded-xl bg-white p-4 print:hidden">
@@ -1242,7 +1243,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </div>
 
         {/* Análise por item, inspirada na planilha histórica do cliente. */}
-        <section className="order-2 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <section className="hidden">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div><h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-900"><TableProperties size={17} className="text-emerald-600" /> Análise durante a venda</h3><p className="mt-1 text-xs font-medium text-slate-500">Uma linha para cada material. Desconto geral rateado proporcionalmente.</p></div>
             {dadosAdmVisiveis ? <button type="button" onClick={() => setDadosAdmVisiveis(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setAnalisePinErro(""); setAnalisePin(""); setShowAnalisePin(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}

@@ -11,6 +11,7 @@ import { OrcamentoComprovante } from "./OrcamentoComprovante";
 
 interface OrcamentoViewProps {
   onLevarParaVenda: (orcamento: Orcamento) => void;
+  compact?: boolean;
 }
 
 interface ItemRascunhoOrcamento {
@@ -20,6 +21,7 @@ interface ItemRascunhoOrcamento {
   quantidade: string;
   unidade: string;
   precoUnitario: string;
+  faltante: boolean;
 }
 
 function dataFutura(dias: number) {
@@ -28,7 +30,7 @@ function dataFutura(dias: number) {
   return data.toISOString().split("T")[0];
 }
 
-export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
+export function OrcamentoView({ onLevarParaVenda, compact = false }: OrcamentoViewProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
@@ -152,7 +154,8 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
       descricao: item.descricao,
       quantidade: Number(item.quantidade).toString().replace(".", ","),
       unidade: item.unidade,
-      precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ",")
+      precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+      faltante: item.faltante === 1
     })));
     setProdutoBusca("");
     setProdutoSelecionado(null);
@@ -181,7 +184,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
       registro.status.toLowerCase().includes(termo)
     );
   }, [orcamentos, buscaOrcamentos]);
-  const orcamentosPageSize = 8;
+  const orcamentosPageSize = compact ? 4 : 8;
   const orcamentosPagina = paginate<Orcamento>(orcamentosFiltrados, orcamentosPage, orcamentosPageSize);
 
   const subtotal = items.reduce((total, item) =>
@@ -190,6 +193,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
   const descontoPercentualValor = parseBrazilianNumber(descontoPercentual);
   const descontoValor = subtotal * Math.max(0, descontoPercentualValor) / 100;
   const totalLiquido = Math.max(0, subtotal - descontoValor);
+  const quantidadeFaltantes = items.filter((item) => item.faltante).length;
   const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
   const itensAbaixoDoPrecoCliente = items.filter((item) => {
     const produto = produtos.find((registro) => registro.id === item.produtoId);
@@ -214,7 +218,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
   );
   const vendaHistoricoSelecionada = vendasFiltradasHistorico.find((venda) => venda.id === vendaHistoricoId) || null;
 
-  const selecionarCliente = (selecionado: Cliente) => {
+  const selecionarCliente = async (selecionado: Cliente) => {
     if (cliente?.id && cliente.id !== selecionado.id && items.length > 0) {
       if (!confirm("Alterar o cliente manterá os itens, mas atualizará apenas os próximos preços adicionados. Continuar?")) return;
     }
@@ -223,6 +227,23 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
     setHistoricoPage(1);
+    try {
+      const listaPadrao = await api.getClienteOrcamentoPadrao(selecionado.id);
+      if (listaPadrao.length > 0) {
+        setItems(listaPadrao.map((item) => ({
+          produtoId: item.produtoId,
+          codigo: item.codigo,
+          descricao: item.nome,
+          quantidade: Number(item.quantidade).toString().replace(".", ","),
+          unidade: item.unidade,
+          precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+          faltante: item.faltante === 1
+        })));
+        setMensagem({ tipo: "ok", texto: `${listaPadrao.length} item(ns) habituais carregados para conferência.` });
+      }
+    } catch {
+      setMensagem({ tipo: "erro", texto: "O cliente foi selecionado, mas a lista habitual não pôde ser carregada." });
+    }
   };
 
   const selecionarProduto = (produto: Produto) => {
@@ -246,7 +267,8 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
       descricao: produtoSelecionado.nome,
       quantidade,
       unidade: produtoSelecionado.unidade,
-      precoUnitario: preco
+      precoUnitario: preco,
+      faltante: false
     };
     setItems((atuais) => {
       const indice = atuais.findIndex((item) => item.produtoId === novo.produtoId);
@@ -282,7 +304,8 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
           descricao: itemHistorico.descricao || produto.nome,
           quantidade: Number(itemHistorico.quantidade).toString().replace(".", ","),
           unidade: itemHistorico.unidade || produto.unidade,
-          precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ",")
+          precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ","),
+          faltante: false
         };
         const existente = resultado.findIndex((item) => item.produtoId === produto.id);
         resultado = existente >= 0
@@ -313,7 +336,8 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
       quantidade: parseBrazilianNumber(item.quantidade),
       unidade: item.unidade,
       precoUnitario: parseBrazilianNumber(item.precoUnitario),
-      desconto: 0
+      desconto: 0,
+      faltante: item.faltante
     }))
   });
 
@@ -335,7 +359,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
 
   const salvar = async (levarParaVenda = false, pin?: string) => {
     if (!validar()) return;
-    if (itensAbaixoDoPrecoCliente.length > 0 && !pin) {
+    if ((orcamento || itensAbaixoDoPrecoCliente.length > 0) && !pin) {
       setLevarParaVendaAposPin(levarParaVenda);
       setAdminPin("");
       setPinErro("");
@@ -394,15 +418,15 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
   if (loading) return <div className="rounded-2xl bg-white p-16 text-center font-bold text-slate-500">Abrindo orçamento...</div>;
 
   return (
-    <div id="orcamento-view" className="space-y-5">
+    <div id="orcamento-view" className={compact ? "space-y-3" : "space-y-5"}>
       {previewOpen && orcamento && (
-        <div id="print-orcamento" className="fixed inset-0 z-[80] overflow-y-auto bg-slate-950/70 p-4 print:absolute print:bg-white print:p-0">
-          <div className="mx-auto max-w-4xl rounded-2xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
+        <div id="print-orcamento" className="fixed inset-0 z-[80] overflow-x-hidden overflow-y-auto bg-slate-950/70 p-3 sm:p-6 print:absolute print:bg-white print:p-0">
+          <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-w-[calc(100vw-3rem)] print:max-w-none print:overflow-visible print:rounded-none print:shadow-none">
             <div className="flex items-center justify-between border-b border-slate-200 p-4 print:hidden">
               <div><h3 className="font-black">Prévia do orçamento #{orcamento.numeroSequencial}</h3><p className="text-xs text-slate-500">Confira antes de imprimir ou salvar em PDF.</p></div>
               <button type="button" aria-label="Fechar prévia" onClick={() => setPreviewOpen(false)} className="rounded-lg p-2 hover:bg-slate-100"><X size={18} /></button>
             </div>
-            <OrcamentoComprovante orcamento={orcamento} />
+            <div className="max-w-full overflow-x-auto print:overflow-visible"><OrcamentoComprovante orcamento={orcamento} /></div>
             <div className="flex gap-3 border-t border-slate-200 p-4 print:hidden"><button type="button" onClick={() => window.print()} className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"><Printer size={16} className="mr-2 inline" /> Imprimir / salvar PDF</button><button type="button" onClick={() => setPreviewOpen(false)} className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold">Fechar</button></div>
           </div>
         </div>
@@ -423,7 +447,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
             <div className="flex items-start justify-between border-b border-slate-200 bg-amber-50 p-5">
               <div className="flex gap-3">
                 <span className="rounded-xl bg-amber-100 p-2 text-amber-700"><KeyRound size={21} /></span>
-                <div><h3 id="pin-orcamento-titulo" className="font-black text-slate-950">Autorizar preço do orçamento</h3><p className="mt-1 text-xs text-slate-600">{itensAbaixoDoPrecoCliente.length} item(ns) abaixo do preço atual do cliente.</p></div>
+                <div><h3 id="pin-orcamento-titulo" className="font-black text-slate-950">{orcamento ? "Autorizar alteração do orçamento" : "Autorizar preço do orçamento"}</h3><p className="mt-1 text-xs text-slate-600">{orcamento ? "A lista, quantidades, faltantes ou preços serão atualizados." : `${itensAbaixoDoPrecoCliente.length} item(ns) abaixo do preço atual do cliente.`}</p></div>
               </div>
               <button type="button" aria-label="Fechar autorização" onClick={() => setPinOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={18} /></button>
             </div>
@@ -551,7 +575,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
             <div><h3 className="font-black text-slate-950">Orçamentos por cliente</h3><p className="text-xs text-slate-500">{orcamentosFiltrados.length} encontrado(s)</p></div>
             <div className="flex w-full max-w-md items-center rounded-xl border border-slate-300 bg-slate-50"><Search size={16} className="ml-3 text-slate-400" /><input value={buscaOrcamentos} onChange={(event) => { setBuscaOrcamentos(event.target.value); setOrcamentosPage(1); }} placeholder="Cliente, número ou status..." className="w-full rounded-xl bg-transparent px-3 py-2.5 text-sm font-bold outline-none" /></div>
           </div>
-          <div className="space-y-3 p-3 md:hidden">
+          <div className={compact ? "space-y-3 p-3" : "space-y-3 p-3 md:hidden"}>
             {orcamentosPagina.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-10 text-center text-sm font-bold text-slate-400">Nenhum orçamento encontrado.</div>
             ) : orcamentosPagina.map((registro) => (
@@ -577,7 +601,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
               </article>
             ))}
           </div>
-          <div className="hidden overflow-x-auto md:block">
+          <div className={compact ? "hidden" : "hidden overflow-x-auto md:block"}>
             <table className="w-full min-w-[900px] text-sm">
               <thead><tr className="bg-slate-100 text-xs uppercase text-slate-500"><th className="p-3 text-left">Número</th><th className="p-3 text-left">Cliente</th><th className="p-3 text-left">Emissão</th><th className="p-3 text-left">Validade</th><th className="p-3 text-right">Total</th><th className="p-3 text-center">Status</th><th className="p-3 text-right">Ações</th></tr></thead>
               <tbody className="divide-y divide-slate-200">
@@ -674,7 +698,7 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
         )}
       </section>
 
-      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className={compact ? "grid min-w-0 gap-4" : "grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]"}>
         <section className="min-w-0 space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
           <div className="grid gap-4 sm:grid-cols-2">
             <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Emissão</span><input type="date" value={data} onChange={(event) => setData(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-bold" /></label>
@@ -688,11 +712,11 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
             <button type="button" onClick={adicionarItem} className="min-h-11 w-full rounded-xl bg-blue-700 px-4 text-sm font-black text-white"><Plus size={17} className="mr-1 inline" /> Adicionar</button>
           </div>
 
-          <div className="space-y-3 md:hidden">
+          <div className={compact ? "space-y-3" : "space-y-3 md:hidden"}>
             {items.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm font-bold text-slate-400">Adicione os produtos deste orçamento.</div>
             ) : items.map((item, index) => (
-              <article key={item.produtoId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <article key={item.produtoId} className={`rounded-2xl border p-4 shadow-sm ${item.faltante ? "border-red-300 bg-red-50" : "border-slate-200 bg-white"}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0"><h4 className="font-black text-slate-950">{item.descricao}</h4><p className="mt-0.5 text-xs font-bold text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</p></div>
                   <button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="shrink-0 rounded-xl border border-red-200 p-2.5 text-red-600"><Trash2 size={17} /></button>
@@ -701,20 +725,21 @@ export function OrcamentoView({ onLevarParaVenda }: OrcamentoViewProps) {
                   <label><span className="mb-1 block text-[11px] font-black uppercase text-slate-500">Quantidade</span><input aria-label={`Quantidade de ${item.descricao} no orçamento`} inputMode="decimal" value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-full rounded-xl border border-slate-300 px-3 py-3 text-right text-base font-black" /></label>
                   <label><span className="mb-1 block text-[11px] font-black uppercase text-slate-500">Preço unitário</span><input aria-label={`Preço de ${item.descricao} no orçamento`} inputMode="decimal" value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-right text-base font-black" /></label>
                 </div>
+                <label className={`mt-4 flex cursor-pointer items-center justify-between rounded-xl border px-3 py-3 text-xs font-black uppercase ${item.faltante ? "border-red-300 bg-red-100 text-red-800" : "border-slate-200 bg-slate-50 text-slate-600"}`}><span>{item.faltante ? "Faltante no estoque" : "Disponível"}</span><input type="checkbox" checked={item.faltante} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, faltante: event.target.checked } : registro))} className="h-5 w-5 accent-red-600" /></label>
                 <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3"><span className="text-xs font-black uppercase text-slate-500">Total do item</span><strong className="font-mono text-lg text-blue-800">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</strong></div>
               </article>
             ))}
           </div>
-          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 md:block">
-            <table className="w-full min-w-[700px] text-sm"><thead><tr className="bg-slate-100 text-xs uppercase text-slate-500"><th className="p-3 text-left">Produto</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Total</th><th className="p-3 text-center">Remover</th></tr></thead><tbody className="divide-y divide-slate-200">{items.length === 0 ? <tr><td colSpan={5} className="p-12 text-center font-bold text-slate-400">Adicione os produtos deste orçamento.</td></tr> : items.map((item, index) => <tr key={item.produtoId}><td className="p-3"><strong>{item.descricao}</strong><span className="ml-2 text-xs text-slate-500">{item.unidade}</span></td><td className="p-2 text-right"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-right font-black" /></td><td className="p-2 text-right"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-28 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-right font-black" /></td><td className="p-3 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="p-3 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg p-2 text-red-600 hover:bg-red-50"><Trash2 size={16} /></button></td></tr>)}</tbody></table>
+          <div className={compact ? "hidden" : "hidden overflow-x-auto rounded-2xl border border-slate-200 md:block"}>
+            <table className="w-full min-w-[780px] text-sm"><thead><tr className="bg-slate-100 text-xs uppercase text-slate-500"><th className="p-3 text-left">Produto</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-center">Estoque</th><th className="p-3 text-right">Total</th><th className="p-3 text-center">Remover</th></tr></thead><tbody className="divide-y divide-slate-200">{items.length === 0 ? <tr><td colSpan={6} className="p-12 text-center font-bold text-slate-400">Adicione os produtos deste orçamento.</td></tr> : items.map((item, index) => <tr key={item.produtoId} className={item.faltante ? "bg-red-50" : ""}><td className="p-3"><strong>{item.descricao}</strong><span className="ml-2 text-xs text-slate-500">{item.unidade}</span></td><td className="p-2 text-right"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-24 rounded-lg border border-slate-300 px-2 py-2 text-right font-black" /></td><td className="p-2 text-right"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-28 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-right font-black" /></td><td className="p-2 text-center"><label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-red-200 px-2 py-2 text-[10px] font-black uppercase text-red-700"><input type="checkbox" checked={item.faltante} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, faltante: event.target.checked } : registro))} className="h-4 w-4 accent-red-600" /> Faltante</label></td><td className="p-3 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="p-3 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="rounded-lg p-2 text-red-600 hover:bg-red-50"><Trash2 size={16} /></button></td></tr>)}</tbody></table>
           </div>
         </section>
 
         <aside className="min-w-0 h-fit space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.length} item(ns)</p></div></div>
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.length} item(ns) • {quantidadeFaltantes} faltante(s)</p></div></div>
           <div className="space-y-3"><div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatCurrency(subtotal)}</strong></div><label><span className="mb-1 flex items-center gap-1 text-xs font-black uppercase text-slate-500"><Percent size={13} /> Desconto percentual</span><div className="relative"><input aria-label="Desconto percentual" value={descontoPercentual} onChange={(event) => setDescontoPercentual(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-3 pr-9 text-right font-black" /><span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-500">%</span></div><span className="mt-1 block text-right text-xs font-bold text-slate-500">Desconto: {formatCurrency(descontoValor)}</span></label><div className="flex justify-between border-t-2 border-slate-900 pt-3 text-lg"><span className="font-black">Total</span><strong className="text-blue-800">{formatCurrency(totalLiquido)}</strong></div></div>
           <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Observações e condições</span><textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={4} placeholder="Prazo, condições de pagamento ou observações..." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500" /></label>
-          {itensAbaixoDoPrecoCliente.length > 0 && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> PIN necessário para {itensAbaixoDoPrecoCliente.length} item(ns).</p>}
+          {(orcamento || itensAbaixoDoPrecoCliente.length > 0) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> {orcamento ? "PIN necessário para alterar este orçamento." : `PIN necessário para ${itensAbaixoDoPrecoCliente.length} item(ns).`}</p>}
           <div className="space-y-2 border-t border-slate-200 pt-4">
             <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : "Salvar orçamento"}</button>
             <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> Salvar e levar para venda</button>

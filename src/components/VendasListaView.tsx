@@ -216,9 +216,9 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
 
       {/* Sale Detail / Receipt Printable Overlay Modal */}
       {vendaDetalhada && (
-        <div id="print-sale-detail-overlay" className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+        <div id="print-sale-detail-overlay" className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6">
           {/* Main modal container */}
-          <div className="w-full max-w-[230mm] rounded-2xl bg-slate-200 p-3 shadow-2xl animate-fade-in print:max-w-none print:bg-white print:p-0 print:shadow-none">
+          <div className="w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl bg-slate-200 p-3 shadow-2xl animate-fade-in sm:max-w-[calc(100vw-3rem)] print:max-w-none print:overflow-visible print:bg-white print:p-0 print:shadow-none">
             
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 print:hidden">
@@ -240,7 +240,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
             </div>
 
             {/* Modal Body / Receipt Printable content */}
-            <div id="print-receipt-detail" className="space-y-3 print:space-y-0">
+            <div id="print-receipt-detail" className="max-w-full space-y-3 overflow-x-auto print:space-y-0 print:overflow-visible">
               <VendaComprovante venda={vendaDetalhada} />
 
               {/* Confirm Cancellation Dialog Box */}

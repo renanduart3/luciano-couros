@@ -584,6 +584,94 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
   }
 });
 
+app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
+  try {
+    const cliente = queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+    if (!cliente) {
+      return res.status(404).json({ error: "Cliente não encontrado." });
+    }
+
+    const itens = queryAll<any>(
+      `SELECT
+         cph.produtoId,
+         p.nome,
+         p.codigo,
+         p.unidade,
+         COALESCE(coi.quantidade, cph.ultimaQuantidade, 1) AS quantidade,
+         COALESCE(coi.precoUnitario, cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
+         COALESCE(coi.faltante, 0) AS faltante,
+         CASE WHEN coi.produtoId IS NULL THEN 0 ELSE 1 END AS personalizado
+       FROM cliente_produtos_habituais cph
+       JOIN produtos p ON p.id = cph.produtoId
+       LEFT JOIN cliente_orcamento_itens coi
+         ON coi.clienteId = cph.clienteId AND coi.produtoId = cph.produtoId
+       WHERE cph.clienteId = ?
+         AND cph.oculto = 0
+         AND p.ativo = 1
+         AND p.deletedAt IS NULL
+       ORDER BY COALESCE(coi.updatedAt, cph.ultimaCompraEm) DESC, p.nome ASC`,
+      [req.params.id]
+    );
+
+    res.json(itens);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/clientes/:id/orcamento-padrao", (req, res) => {
+  try {
+    const { id } = req.params;
+    const cliente = queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [id]);
+    if (!cliente) return res.status(404).json({ error: "Cliente não encontrado." });
+
+    const administrador = getUsuarioAdministrador();
+    if (!administrador?.pinHash) {
+      return res.status(428).json({ error: "Configure o PIN administrativo antes de alterar a lista do cliente." });
+    }
+    const autorizador = validarPinAdministrador(req.body?.pin);
+    if (!autorizador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. A lista não foi alterada." });
+    }
+    const itens = req.body?.items;
+    if (!Array.isArray(itens)) {
+      return res.status(400).json({ error: "Informe os itens da lista do cliente." });
+    }
+
+    runInTransaction(() => {
+      execute("DELETE FROM cliente_orcamento_itens WHERE clienteId = ?", [id]);
+      for (const item of itens) {
+        const produto = queryOne<any>(
+          `SELECT p.id, p.precoVendaPadrao
+           FROM produtos p
+           JOIN cliente_produtos_habituais cph ON cph.produtoId = p.id AND cph.clienteId = ?
+           WHERE p.id = ? AND p.deletedAt IS NULL`,
+          [id, item.produtoId]
+        );
+        if (!produto) throw erroHttp("Produto inválido para a lista habitual do cliente.", 400);
+        const quantidade = Number(item.quantidade);
+        const precoUnitario = Number(item.precoUnitario);
+        if (!Number.isFinite(quantidade) || quantidade <= 0 || !Number.isFinite(precoUnitario) || precoUnitario < 0) {
+          throw erroHttp("Quantidade ou preço inválido na lista do cliente.", 400);
+        }
+        execute(
+          `INSERT INTO cliente_orcamento_itens
+             (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+          [id, item.produtoId, quantidade, precoUnitario, item.faltante ? 1 : 0]
+        );
+      }
+    });
+
+    registrarAuditoria(autorizador.id, "orcamento_padrao_cliente_atualizado", "cliente", id, {
+      quantidadeItens: itens.length
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
   try {
     const { clienteId, produtoId } = req.params;
@@ -960,6 +1048,18 @@ app.post("/api/orcamentos", (req, res) => {
         throw erroHttp("Somente um orçamento aberto pode ser alterado.", 409);
       }
       const orcamentoId = existente?.id || ("orc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16));
+      let administradorAutorizador: UsuarioAdministrador | null = null;
+
+      if (existente) {
+        const administrador = getUsuarioAdministrador();
+        if (!administrador?.pinHash) {
+          throw erroHttp("Configure o PIN administrativo antes de alterar um orçamento.", 428);
+        }
+        administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
+        if (!administradorAutorizador) {
+          throw erroHttp("PIN administrativo inválido. O orçamento não foi alterado.", 403);
+        }
+      }
 
       let subtotal = 0;
       const itensResolvidos = items.map((item: any) => {
@@ -997,6 +1097,7 @@ app.post("/api/orcamentos", (req, res) => {
           precoUnitario,
           desconto: descontoItem,
           total,
+          faltante: item.faltante ? 1 : 0,
           precoMinimoSemPin
         };
       });
@@ -1010,8 +1111,6 @@ app.post("/api/orcamentos", (req, res) => {
       const itensQueExigemAutorizacao = itensResolvidos
         .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
         .filter((item) => item.precoEfetivo < item.precoMinimoSemPin - 0.005);
-      let administradorAutorizador: UsuarioAdministrador | null = null;
-
       if (itensQueExigemAutorizacao.length > 0) {
         const administrador = getUsuarioAdministrador();
         if (!administrador?.pinHash) {
@@ -1057,9 +1156,19 @@ app.post("/api/orcamentos", (req, res) => {
       for (const item of itensResolvidos) {
         execute(
           `INSERT INTO itens_orcamento
-             (id, orcamentoId, produtoId, descricao, quantidade, unidade, precoUnitario, desconto, total)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [item.id, orcamentoId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total]
+             (id, orcamentoId, produtoId, descricao, quantidade, unidade, precoUnitario, desconto, total, faltante)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [item.id, orcamentoId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total, item.faltante]
+        );
+      }
+
+      if (existente && administradorAutorizador) {
+        registrarAuditoria(
+          administradorAutorizador.id,
+          "orcamento_alterado",
+          "orcamento",
+          orcamentoId,
+          { clienteId, quantidadeItens: itensResolvidos.length }
         );
       }
 
@@ -2067,7 +2176,26 @@ app.get("/api/relatorios", (req, res) => {
 
     const itemWhere = "WHERE " + itemFilters.join(" AND ");
     const itensVendidos = queryAll<any>(
-      `SELECT iv.*, v.data, v.numeroSequencial, c.nome as clienteNome
+      `SELECT
+         iv.*,
+         v.data,
+         v.numeroSequencial,
+         v.subtotal AS vendaSubtotal,
+         v.desconto AS descontoVenda,
+         c.nome as clienteNome,
+         (
+           iv.total
+           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+         ) AS valorVendaLiquido,
+         (
+           SELECT f.nome
+           FROM itens_compra ic
+           JOIN compras cp ON cp.id = ic.compraId
+           JOIN fornecedores f ON f.id = cp.fornecedorId
+           WHERE ic.produtoId = iv.produtoId AND cp.deletedAt IS NULL
+           ORDER BY cp.data DESC, cp.createdAt DESC, ic.id DESC
+           LIMIT 1
+         ) AS fornecedorNome
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
        JOIN clientes c ON v.clienteId = c.id

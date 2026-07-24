@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, Venda, Orcamento, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
 } from "../types";
 
 const API_BASE = "/api";
@@ -87,6 +87,16 @@ export const api = {
     }>(r)),
   getClienteProdutosHabituais: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
+  getClienteOrcamentoPadrao: (id: string) =>
+    fetch(`${API_BASE}/clientes/${id}/orcamento-padrao`).then(r => handleResponse<OrcamentoPadraoClienteItem[]>(r)),
+  updateClienteOrcamentoPadrao: (id: string, dados: {
+    pin: string;
+    items: Array<{ produtoId: string; quantidade: number; precoUnitario: number; faltante: boolean }>;
+  }) => fetch(`${API_BASE}/clientes/${id}/orcamento-padrao`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<{ success: boolean }>(r)),
   updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number | null) =>
     fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}/preco`, {
       method: "PUT",
@@ -179,6 +189,7 @@ export const api = {
       unidade: string;
       precoUnitario: number;
       desconto: number;
+      faltante?: boolean;
     }>;
     valorPago: number;
     formaPagamento: string;

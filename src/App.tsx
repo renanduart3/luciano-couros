@@ -102,7 +102,7 @@ export default function App() {
 
         {/* Dynamic Content Viewport */}
         <div key={statsKey} className="flex-1 overflow-y-auto px-4 pb-6 pt-20 sm:px-5 md:p-8 print:p-0 print:bg-white">
-          <div className="max-w-7xl mx-auto">
+          <div className={`mx-auto w-full ${currentView === "venda" ? "max-w-[1800px]" : "max-w-7xl"}`}>
             {renderActiveView()}
           </div>
         </div>

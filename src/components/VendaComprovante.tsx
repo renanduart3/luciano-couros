@@ -43,6 +43,7 @@ const FORMAS: Record<string, string> = {
 const ITENS_POR_FOLHA = 18;
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
+  const quantidadeTotal = itens.reduce((total, item) => total + Number(item.quantidade), 0);
   const quantidadeMetros = itens
     .filter((item) => item.unidade.toLowerCase().includes("metro"))
     .reduce((total, item) => total + Number(item.quantidade), 0);
@@ -55,10 +56,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       ? "VENDA / VALE"
       : "VENDA";
   const vencimento = instrumento?.vencimento || venda.vencimento;
+  const viaCurta = via.startsWith("1ª") ? "1ª VIA" : "2ª VIA";
 
   return (
     <section className="receipt-copy">
-      <div className="receipt-copy-label">{via}</div>
       <header className="receipt-header">
         <img src={logo} alt={loja.nome} className="receipt-logo" />
         <div className="receipt-store">
@@ -67,7 +68,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
           <span>E-mail: <em>{loja.email}</em></span>
         </div>
         <div className="receipt-document-meta">
-          <strong>{titulo}</strong>
+          <strong>{titulo} • {viaCurta}</strong>
           <span>Data: {formatDate(venda.data)}</span>
           <span>Nº {String(venda.numeroSequencial).padStart(6, "0")}</span>
         </div>
@@ -98,12 +99,13 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
 
       <div className="receipt-payment-line">
         <span><b>Forma:</b> {FORMAS[forma] || forma || "Não informada"}</span>
+        {Number(venda.desconto) > 0 && <span><b>Desconto:</b> {formatCurrency(venda.desconto)}</span>}
         {instrumento && <span><b>Nº:</b> {instrumento.numeroDocumento} • <b>Emitente:</b> {instrumento.emitente}</span>}
         {venda.saldoRestante > 0 && <span><b>Saldo do Vale:</b> {formatCurrency(venda.saldoRestante)}</span>}
       </div>
 
       <footer className="receipt-footer">
-        <div className="receipt-counts"><span>Nº Itens: <b>{itens.length}</b></span><span>Metros: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS.CLIENTE:</span></div>
+        <div className="receipt-counts"><span>Itens: <b>{itens.length}</b> • Qtd. total: <b>{formatDecimal(quantidadeTotal)}</b> • Metros: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS.CLIENTE:</span></div>
         <div className="receipt-total"><span>TOTAL R$</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
         <div className="receipt-due"><span>VENCIMENTO:</span><strong>{vencimento ? formatDate(vencimento) : "À VISTA"}</strong></div>
       </footer>

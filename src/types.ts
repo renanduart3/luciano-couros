@@ -71,6 +71,17 @@ export interface ProdutoHabitual {
   custoPadrao: number;
 }
 
+export interface OrcamentoPadraoClienteItem {
+  produtoId: string;
+  nome: string;
+  codigo?: string;
+  unidade: string;
+  quantidade: number;
+  precoUnitario: number;
+  faltante: number;
+  personalizado: number;
+}
+
 export interface ItemVenda {
   id: string;
   vendaId: string;
@@ -130,6 +141,7 @@ export interface ItemOrcamento {
   precoUnitario: number;
   desconto: number;
   total: number;
+  faltante: number;
   referencia?: string;
 }
 

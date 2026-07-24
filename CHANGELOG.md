@@ -4,6 +4,17 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.6.0 — 2026-07-24
+
+- Venda e orçamento reunidos em uma operação dividida no desktop e alternável no celular.
+- Tela de venda simplificada, com a análise detalhada transferida para Relatórios de Clientes.
+- Relatório por cliente e período com todos os itens vendidos, quantidades, desconto, valores, custo, lucro, fornecedor e margem protegidos por PIN.
+- Orçamento com lista habitual do cliente e marcação dos materiais faltantes no estoque.
+- Lista habitual do orçamento disponível na ficha do cliente, com alterações protegidas por PIN.
+- Orçamentos alterados protegidos por PIN e itens faltantes excluídos ao levar o orçamento para venda.
+- Comprovantes com quantidade total e desconto concedido.
+- Pré-visualizações de venda, histórico e orçamento contidas na largura do navegador.
+
 ## 1.5.1 — 2026-07-24
 
 - Orçamentos organizados por cliente em uma lista própria, com criação, edição, conversão em venda e exclusão.

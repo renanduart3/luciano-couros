@@ -186,8 +186,23 @@ export function initDatabase() {
         precoUnitario REAL NOT NULL,
         desconto REAL NOT NULL DEFAULT 0,
         total REAL NOT NULL,
+        faltante INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (orcamentoId) REFERENCES orcamentos (id) ON DELETE CASCADE,
         FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS cliente_orcamento_itens (
+        clienteId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        quantidade REAL NOT NULL DEFAULT 1,
+        precoUnitario REAL NOT NULL,
+        faltante INTEGER NOT NULL DEFAULT 0,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (clienteId, produtoId),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id) ON DELETE CASCADE,
+        FOREIGN KEY (produtoId) REFERENCES produtos (id) ON DELETE CASCADE
       )
     `).run();
 
@@ -455,6 +470,7 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
 
   // A partir desta versão compra e venda usam a mesma unidade. Mantemos as

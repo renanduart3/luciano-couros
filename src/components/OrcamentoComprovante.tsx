@@ -78,7 +78,7 @@ function ViaOrcamento({
             <tr key={item.id || index}>
               <td>{item.referencia || ""}</td>
               <td className="receipt-number">{formatDecimal(item.quantidade)}</td>
-              <td>{item.descricao}</td>
+              <td>{item.descricao}{item.faltante === 1 ? " — FALTANTE" : ""}</td>
               <td className="receipt-number">{formatCurrency(item.precoUnitario)}</td>
               <td className="receipt-number">{formatCurrency(item.total)}</td>
             </tr>

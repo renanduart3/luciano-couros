@@ -4,6 +4,17 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.2 — 2026-07-24
+
+- Quantidades do orçamento iniciadas em zero.
+- Orçamento pode carregar todos os produtos acumulados do cliente ou uma das últimas sete vendas.
+- Itens com quantidade informada podem ser incluídos diretamente na venda atual.
+- Coluna de falta removida do orçamento.
+- Campos editáveis destacados com fundos diferentes da grade.
+- Alterações e remoções no orçamento deixam de modificar produtos ou preços permanentes do cliente.
+- Preço do cliente atualizado somente após a conclusão da venda com o último preço praticado.
+- Textos e indicadores redundantes removidos da tela de venda.
+
 ## 1.7.1 — 2026-07-24
 
 - Itens da venda e do orçamento reorganizados em grades compactas no estilo planilha.

@@ -46,7 +46,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [clienteBusca, setClienteBusca] = useState("");
   const [produtoBusca, setProdutoBusca] = useState("");
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
-  const [quantidade, setQuantidade] = useState("1");
+  const [quantidade, setQuantidade] = useState("0");
   const [preco, setPreco] = useState("");
   const [items, setItems] = useState<ItemRascunhoOrcamento[]>([]);
   const [data, setData] = useState(() => new Date().toISOString().split("T")[0]);
@@ -64,6 +64,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [historicoPage, setHistoricoPage] = useState(1);
   const [vendaHistoricoId, setVendaHistoricoId] = useState("");
   const [itensHistoricoSelecionados, setItensHistoricoSelecionados] = useState<string[]>([]);
+  const [origemItens, setOrigemItens] = useState("todos");
   const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
   const [adminPin, setAdminPin] = useState("");
@@ -115,7 +116,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setClienteBusca("");
     setProdutoBusca("");
     setProdutoSelecionado(null);
-    setQuantidade("1");
+    setQuantidade("0");
     setPreco("");
     setItems([]);
     setData(new Date().toISOString().split("T")[0]);
@@ -124,6 +125,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setObservacoes("");
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
+    setOrigemItens("todos");
   };
 
   const abrirNovoOrcamento = async () => {
@@ -195,9 +197,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const descontoPercentualValor = parseBrazilianNumber(descontoPercentual);
   const descontoValor = subtotal * Math.max(0, descontoPercentualValor) / 100;
   const totalLiquido = Math.max(0, subtotal - descontoValor);
-  const quantidadeFaltantes = items.filter((item) => item.faltante).length;
   const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
   const itensAbaixoDoPrecoCliente = items.filter((item) => {
+    if (parseBrazilianNumber(item.quantidade) <= 0) return false;
     const produto = produtos.find((registro) => registro.id === item.produtoId);
     const referenciaCliente = produtosCliente.find((registro) => registro.produtoId === item.produtoId);
     const precoAtualCliente = Number(
@@ -229,6 +231,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
     setHistoricoPage(1);
+    setOrigemItens("todos");
     try {
       const listaPadrao = await api.getClienteOrcamentoPadrao(selecionado.id);
       if (listaPadrao.length > 0) {
@@ -236,16 +239,53 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           produtoId: item.produtoId,
           codigo: item.codigo,
           descricao: item.nome,
-          quantidade: Number(item.quantidade).toString().replace(".", ","),
+          quantidade: "0",
           unidade: item.unidade,
           precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
-          faltante: item.faltante === 1
+          faltante: false
         })));
-        setMensagem({ tipo: "ok", texto: `${listaPadrao.length} item(ns) habituais carregados para conferência.` });
+        setMensagem({ tipo: "ok", texto: `${listaPadrao.length} produto(s) acumulado(s) carregado(s).` });
       }
     } catch {
-      setMensagem({ tipo: "erro", texto: "O cliente foi selecionado, mas a lista habitual não pôde ser carregada." });
+      setMensagem({ tipo: "erro", texto: "O cliente foi selecionado, mas os produtos acumulados não puderam ser carregados." });
     }
+  };
+
+  const carregarOrigemItens = async (origem: string) => {
+    if (!cliente) return;
+    setOrigemItens(origem);
+    setMensagem(null);
+    if (origem === "todos") {
+      try {
+        const acumulados = await api.getClienteOrcamentoPadrao(cliente.id);
+        setItems(acumulados.map((item) => ({
+          produtoId: item.produtoId,
+          codigo: item.codigo,
+          descricao: item.nome,
+          quantidade: "0",
+          unidade: item.unidade,
+          precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+          faltante: false
+        })));
+      } catch (error: any) {
+        setMensagem({ tipo: "erro", texto: error.message || "Não foi possível carregar os produtos do cliente." });
+      }
+      return;
+    }
+    const venda = historicoVendas.find((registro) => registro.id === origem);
+    if (!venda) return;
+    setItems((venda.items || []).filter((item) => produtos.some((produto) => produto.id === item.produtoId)).map((item) => {
+      const produto = produtos.find((registro) => registro.id === item.produtoId);
+      return {
+        produtoId: item.produtoId,
+        codigo: item.referencia || produto?.codigo,
+        descricao: item.descricao || produto?.nome || "Produto",
+        quantidade: Number(item.quantidade).toString().replace(".", ","),
+        unidade: item.unidade || produto?.unidade || "unidade",
+        precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+        faltante: false
+      };
+    }));
   };
 
   useEffect(() => {
@@ -255,13 +295,6 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       setClienteBusca("");
       setOrcamento(null);
       setItems([]);
-      return;
-    }
-    const aberto = orcamentos.find((registro) =>
-      registro.clienteId === clienteExterno.id && registro.status === "aberto"
-    );
-    if (aberto) {
-      abrirEdicaoOrcamento(aberto);
       return;
     }
     setItems([]);
@@ -277,14 +310,14 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setProdutoSelecionado(produto);
     setProdutoBusca(produto.nome);
     setPreco(precoAtual.toFixed(2).replace(".", ","));
-    setQuantidade("1");
+    setQuantidade("0");
   };
 
   const adicionarItem = () => {
     if (!produtoSelecionado) return setMensagem({ tipo: "erro", texto: "Selecione um produto." });
     const qtd = parseBrazilianNumber(quantidade);
     const valor = parseBrazilianNumber(preco);
-    if (qtd <= 0 || valor < 0) return setMensagem({ tipo: "erro", texto: "Informe quantidade e preço válidos." });
+    if (qtd < 0 || valor < 0) return setMensagem({ tipo: "erro", texto: "Informe quantidade e preço válidos." });
 
     const novo: ItemRascunhoOrcamento = {
       produtoId: produtoSelecionado.id,
@@ -304,7 +337,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setProdutoSelecionado(null);
     setProdutoBusca("");
     setPreco("");
-    setQuantidade("1");
+    setQuantidade("0");
     setMensagem({ tipo: "ok", texto: `${novo.descricao} adicionado ao orçamento.` });
   };
 
@@ -355,14 +388,14 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     desconto: descontoValor,
     observacoes: observacoes.trim() || undefined,
     autorizacaoPreco: pin ? { pin } : undefined,
-    items: items.map((item) => ({
+    items: items.filter((item) => parseBrazilianNumber(item.quantidade) > 0).map((item) => ({
       produtoId: item.produtoId,
       descricao: item.descricao,
       quantidade: parseBrazilianNumber(item.quantidade),
       unidade: item.unidade,
       precoUnitario: parseBrazilianNumber(item.precoUnitario),
       desconto: 0,
-      faltante: item.faltante
+      faltante: false
     }))
   });
 
@@ -371,8 +404,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       setMensagem({ tipo: "erro", texto: "Selecione o cliente do orçamento." });
       return false;
     }
-    if (items.length === 0 || items.some((item) => parseBrazilianNumber(item.quantidade) <= 0 || parseBrazilianNumber(item.precoUnitario) < 0)) {
-      setMensagem({ tipo: "erro", texto: "Adicione ao menos um item com quantidade e preço válidos." });
+    const itensSelecionados = items.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
+    if (itensSelecionados.length === 0 || itensSelecionados.some((item) => parseBrazilianNumber(item.precoUnitario) < 0)) {
+      setMensagem({ tipo: "erro", texto: "Informe a quantidade de pelo menos um item do orçamento." });
       return false;
     }
     if (descontoPercentualValor < 0 || descontoPercentualValor > 100) {
@@ -472,7 +506,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
             <div className="flex items-start justify-between border-b border-slate-200 bg-amber-50 p-5">
               <div className="flex gap-3">
                 <span className="rounded-xl bg-amber-100 p-2 text-amber-700"><KeyRound size={21} /></span>
-                <div><h3 id="pin-orcamento-titulo" className="font-black text-slate-950">{orcamento ? "Autorizar alteração do orçamento" : "Autorizar preço do orçamento"}</h3><p className="mt-1 text-xs text-slate-600">{orcamento ? "A lista, quantidades, faltantes ou preços serão atualizados." : `${itensAbaixoDoPrecoCliente.length} item(ns) abaixo do preço atual do cliente.`}</p></div>
+                <div><h3 id="pin-orcamento-titulo" className="font-black text-slate-950">{orcamento ? "Autorizar alteração do orçamento" : "Autorizar preço do orçamento"}</h3><p className="mt-1 text-xs text-slate-600">{orcamento ? "Os itens, quantidades ou preços serão atualizados." : `${itensAbaixoDoPrecoCliente.length} item(ns) abaixo do preço atual do cliente.`}</p></div>
               </div>
               <button type="button" aria-label="Fechar autorização" onClick={() => setPinOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={18} /></button>
             </div>
@@ -725,43 +759,39 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
 
       <div className={compact ? "grid min-w-0 gap-4" : "grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]"}>
         <section className="min-w-0 space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Emissão</span><input type="date" value={data} onChange={(event) => setData(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-bold" /></label>
-            <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Validade</span><input type="date" value={validade} onChange={(event) => setValidade(event.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2.5 font-bold" /></label>
-          </div>
+          <label className="block"><span className="mb-1 block text-xs font-black uppercase text-slate-500">Carregar itens</span><select value={origemItens} onChange={(event) => carregarOrigemItens(event.target.value)} className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-black text-slate-800 outline-none focus:border-blue-600"><option value="todos">Todos os produtos que o cliente já comprou</option>{historicoVendas.slice(0, 7).map((venda) => <option key={venda.id} value={venda.id}>Venda #{venda.numeroSequencial} — {formatDate(venda.data)} — {formatCurrency(venda.totalLiquido)}</option>)}</select></label>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className={`w-full text-xs ${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[720px]"}`}>
               <colgroup>
-                <col className="w-[8%]" /><col className="w-[27%]" /><col className="w-[9%]" /><col className="w-[9%]" />
-                <col className="w-[12%]" /><col className="w-[14%]" /><col className="w-[13%]" /><col className="w-[8%]" />
+                <col className="w-[8%]" /><col className="w-[30%]" /><col className="w-[10%]" /><col className="w-[10%]" />
+                <col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[8%]" />
               </colgroup>
-              <thead><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-center">Falta</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
+              <thead><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
               <tbody className="divide-y divide-slate-200">
                 <tr className="bg-blue-50/60">
                   <td className="px-2 py-2 text-center font-black text-blue-700">+</td>
-                  <td className="relative px-2 py-2"><input value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); }} placeholder="Digite código ou material..." className="w-full border-0 bg-transparent px-1 py-1.5 font-bold outline-none" />{produtoBusca && !produtoSelecionado && <div className="absolute left-1 right-1 top-full z-30 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{produtosFiltrados.map((item) => <button key={item.id} type="button" onClick={() => selecionarProduto(item)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left hover:bg-blue-50"><span><strong className="block">{item.nome}</strong><small className="text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</small></span><strong className="text-blue-700">{formatCurrency(Number(produtosCliente.find((registro) => registro.produtoId === item.id)?.precoAutorizado ?? produtosCliente.find((registro) => registro.produtoId === item.id)?.ultimoPreco ?? item.precoVendaPadrao))}</strong></button>)}</div>}</td>
-                  <td className="px-2 py-2"><input value={quantidade} onChange={(event) => setQuantidade(event.target.value)} className="w-full border-0 bg-transparent px-1 py-1.5 text-right font-black outline-none" /></td>
+                  <td className="relative px-2 py-2"><input value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); }} placeholder="Digite código ou material..." className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 font-bold outline-none" />{produtoBusca && !produtoSelecionado && <div className="absolute left-1 right-1 top-full z-30 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{produtosFiltrados.map((item) => <button key={item.id} type="button" onClick={() => selecionarProduto(item)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left hover:bg-blue-50"><span><strong className="block">{item.nome}</strong><small className="text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</small></span><strong className="text-blue-700">{formatCurrency(Number(produtosCliente.find((registro) => registro.produtoId === item.id)?.precoAutorizado ?? produtosCliente.find((registro) => registro.produtoId === item.id)?.ultimoPreco ?? item.precoVendaPadrao))}</strong></button>)}</div>}</td>
+                  <td className="px-2 py-2"><input value={quantidade} onChange={(event) => setQuantidade(event.target.value)} className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /></td>
                   <td className="px-2 py-2 font-bold text-slate-600">{produtoSelecionado?.unidade || "—"}</td>
-                  <td className="px-2 py-2"><input value={preco} onChange={(event) => setPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); adicionarItem(); } }} placeholder="0,00" className="w-full border-0 bg-transparent px-1 py-1.5 text-right font-black outline-none" /></td>
-                  <td className="px-2 py-2 text-center text-slate-400">—</td>
+                  <td className="px-2 py-2"><input value={preco} onChange={(event) => setPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); adicionarItem(); } }} placeholder="0,00" className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /></td>
                   <td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(quantidade) * parseBrazilianNumber(preco))}</td>
                   <td className="px-2 py-2 text-center"><button type="button" onClick={adicionarItem} title="Adicionar nova linha" className="rounded-md bg-blue-700 p-2 text-white hover:bg-blue-800"><Plus size={14} /></button></td>
                 </tr>
-                {items.length === 0 ? <tr><td colSpan={8} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => <tr key={item.produtoId} className={item.faltante ? "bg-red-50" : "bg-white"}><td className="px-2 py-2 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-2 font-black text-slate-900">{item.descricao}</td><td className="px-2 py-2"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-full border-0 bg-transparent px-1 py-1.5 text-right font-black outline-none" /></td><td className="px-2 py-2 font-bold">{item.unidade}</td><td className="px-2 py-2"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full border-0 bg-transparent px-1 py-1.5 text-right font-black outline-none" /></td><td className="px-2 py-2 text-center"><label className={`inline-flex cursor-pointer items-center gap-1 rounded px-2 py-1 font-black uppercase ${item.faltante ? "bg-red-100 text-red-800" : "text-slate-500"}`}><input type="checkbox" checked={item.faltante} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, faltante: event.target.checked } : registro))} className="h-4 w-4 accent-red-600" /> {item.faltante ? "Faltante" : "OK"}</label></td><td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-2 py-2 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="rounded-md border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></td></tr>)}
+                {items.length === 0 ? <tr><td colSpan={7} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => <tr key={item.produtoId} className="bg-white"><td className="px-2 py-2 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-2 font-black text-slate-900">{item.descricao}</td><td className="px-2 py-2"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-right font-black outline-none focus:border-amber-500" /></td><td className="px-2 py-2 font-bold">{item.unidade}</td><td className="px-2 py-2"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-right font-black outline-none focus:border-sky-500" /></td><td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-2 py-2 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="rounded-md border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></td></tr>)}
               </tbody>
             </table>
           </div>
         </section>
 
         <aside className="min-w-0 h-fit space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.length} item(ns) • {quantidadeFaltantes} faltante(s)</p></div></div>
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length} item(ns) selecionado(s)</p></div></div>
           <div className="space-y-3"><div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatCurrency(subtotal)}</strong></div><label><span className="mb-1 flex items-center gap-1 text-xs font-black uppercase text-slate-500"><Percent size={13} /> Desconto percentual</span><div className="relative"><input aria-label="Desconto percentual" value={descontoPercentual} onChange={(event) => setDescontoPercentual(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-3 pr-9 text-right font-black" /><span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-500">%</span></div><span className="mt-1 block text-right text-xs font-bold text-slate-500">Desconto: {formatCurrency(descontoValor)}</span></label><div className="flex justify-between border-t-2 border-slate-900 pt-3 text-lg"><span className="font-black">Total</span><strong className="text-blue-800">{formatCurrency(totalLiquido)}</strong></div></div>
           <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Observações e condições</span><textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={4} placeholder="Prazo, condições de pagamento ou observações..." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500" /></label>
           {(orcamento || itensAbaixoDoPrecoCliente.length > 0) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> {orcamento ? "PIN necessário para alterar este orçamento." : `PIN necessário para ${itensAbaixoDoPrecoCliente.length} item(ns).`}</p>}
           <div className="space-y-2 border-t border-slate-200 pt-4">
             <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : "Salvar orçamento"}</button>
-            <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> {compact ? "Levar itens disponíveis à venda" : "Salvar e levar para venda"}</button>
+            <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> Incluir na venda atual</button>
             {orcamento && <button type="button" onClick={() => setPreviewOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
             {orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
           </div>

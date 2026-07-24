@@ -247,7 +247,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }
     setClienteSelecionado(cliente);
     setClienteBusca(cliente.nome);
-    setItensVenda(orcamentoInicial.items.filter((item) => item.faltante !== 1).map((item) => {
+    setItensVenda(orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         produtoId: item.produtoId,
@@ -1071,7 +1071,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               Número Sequencial: #{vendaNumero}
             </span>
           </div>
-          <p className="text-slate-500 text-sm mt-0.5">Operação ágil com checkout assistido por teclado.</p>
         </div>
         <div className="flex gap-2">
           <button 
@@ -1476,8 +1475,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
           <table className={`${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-sm text-left`}>
             <colgroup>
-              <col className="w-[8%]" /><col className="w-[32%]" /><col className="w-[10%]" />
-              <col className="w-[10%]" /><col className="w-[14%]" /><col className="w-[16%]" /><col className="w-[10%]" />
+              <col className="w-[8%]" /><col className="w-[28%]" /><col className="w-[10%]" />
+              <col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[10%]" />
             </colgroup>
             <thead>
               <tr className="bg-slate-50/80 text-slate-500 font-extrabold text-xs uppercase border-b border-slate-100">
@@ -1494,12 +1493,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               <tr className="bg-emerald-50/70">
                 <td className="px-2 py-2 text-center font-black text-emerald-700">+</td>
                 <td className="relative px-2 py-2">
-                  <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full border-0 bg-transparent px-1 py-1.5 text-xs font-bold outline-none" />
+                  <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
                   {showProdutoDropdown && produtoBusca.trim() && <div className="absolute left-1 right-1 top-full z-30 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{filteredProdutos.length ? filteredProdutos.map((produto) => <button key={produto.id} type="button" onClick={() => handleSelectProduto(produto)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left text-xs hover:bg-emerald-50"><span><strong className="block">{produto.nome}</strong><small className="text-slate-400">{produto.codigo || "Sem código"} • {produto.unidade}</small></span><strong className="text-emerald-700">{formatCurrency(Number(produtosCliente.find((item) => item.produtoId === produto.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produto.id)?.ultimoPreco ?? produto.precoVendaPadrao))}</strong></button>) : <p className="p-3 text-xs font-bold text-slate-400">Produto não encontrado.</p>}</div>}
                 </td>
-                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} className="w-full border-0 bg-transparent px-1 py-1.5 text-right text-xs font-black outline-none" /></td>
+                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
-                <td className="px-2 py-2"><input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleAddItem(); } }} placeholder="0,00" className="w-full border-0 bg-transparent px-1 py-1.5 text-right text-xs font-black outline-none" /></td>
+                <td className="px-2 py-2"><input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleAddItem(); } }} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
                 <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar nova linha" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
               </tr>
@@ -1518,11 +1517,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       <td className="px-2 py-2 font-mono text-[11px] text-slate-400 font-bold">{it.codigo || "-"}</td>
                       <td className="px-2 py-2 text-xs font-bold text-slate-900">
                         {it.nome}
-                        {it.precoAutorizado != null && (
-                          <span className="mt-1 flex w-fit items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold uppercase text-emerald-700">
-                            <ShieldCheck size={10} /> preço especial: {formatCurrency(it.precoAutorizado)}
-                          </span>
-                        )}
                       </td>
                       <td className="p-2 text-center font-extrabold">
                         <input

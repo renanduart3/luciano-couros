@@ -100,7 +100,6 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           <section className={`${painelMobile === "venda" ? "block" : "hidden"} min-w-0 overflow-hidden rounded-2xl border border-emerald-200 bg-slate-50 shadow-sm xl:block`}>
             <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-700 px-4 py-3 text-white">
               <div className="flex items-center gap-2"><ShoppingCart size={18} /><strong className="text-sm uppercase tracking-wide">Venda</strong></div>
-              <span className="rounded-lg bg-white/15 px-2 py-1 text-[10px] font-black uppercase">Itens disponíveis</span>
             </div>
             <div className="p-3">
               <VendaRapidaView
@@ -118,7 +117,6 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           <section className={`${painelMobile === "orcamento" ? "block" : "hidden"} min-w-0 overflow-hidden rounded-2xl border border-blue-200 bg-slate-50 shadow-sm xl:block`}>
             <div className="flex items-center justify-between border-b border-blue-200 bg-blue-700 px-4 py-3 text-white">
               <div className="flex items-center gap-2"><FileText size={18} /><strong className="text-sm uppercase tracking-wide">Orçamento</strong></div>
-              <span className="rounded-lg bg-white/15 px-2 py-1 text-[10px] font-black uppercase">Marque somente faltantes</span>
             </div>
             <div className="p-3">
               <OrcamentoView

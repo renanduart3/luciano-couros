@@ -592,30 +592,23 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
     }
 
     const itens = queryAll<any>(
-      `WITH produtos_cliente AS (
-         SELECT produtoId FROM cliente_produtos_habituais WHERE clienteId = ? AND oculto = 0
-         UNION
-         SELECT produtoId FROM cliente_orcamento_itens WHERE clienteId = ?
-       )
-       SELECT
-         pc.produtoId,
+      `SELECT
+         cph.produtoId,
          p.nome,
          p.codigo,
          p.unidade,
-         COALESCE(coi.quantidade, cph.ultimaQuantidade, 1) AS quantidade,
-         COALESCE(coi.precoUnitario, cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
-         COALESCE(coi.faltante, 0) AS faltante,
-         CASE WHEN coi.produtoId IS NULL THEN 0 ELSE 1 END AS personalizado
-       FROM produtos_cliente pc
-       JOIN produtos p ON p.id = pc.produtoId
-       LEFT JOIN cliente_produtos_habituais cph
-         ON cph.clienteId = ? AND cph.produtoId = pc.produtoId
-       LEFT JOIN cliente_orcamento_itens coi
-         ON coi.clienteId = ? AND coi.produtoId = pc.produtoId
-       WHERE p.ativo = 1
+         0 AS quantidade,
+         COALESCE(cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
+         0 AS faltante,
+         CASE WHEN cph.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado
+       FROM cliente_produtos_habituais cph
+       JOIN produtos p ON p.id = cph.produtoId
+       WHERE cph.clienteId = ?
+         AND cph.oculto = 0
+         AND p.ativo = 1
          AND p.deletedAt IS NULL
-       ORDER BY COALESCE(coi.updatedAt, cph.ultimaCompraEm) DESC, p.nome ASC`,
-      [req.params.id, req.params.id, req.params.id, req.params.id]
+       ORDER BY cph.ultimaCompraEm DESC, p.nome ASC`,
+      [req.params.id]
     );
 
     res.json(itens);
@@ -1240,17 +1233,6 @@ app.post("/api/orcamentos", (req, res) => {
              (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
           [clienteId, item.produtoId, item.quantidade, item.precoUnitario, item.faltante]
-        );
-        execute(
-          `INSERT INTO cliente_produtos_habituais
-             (clienteId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade,
-              vezesComprado, ultimaCompraEm, precoAutorizado, oculto)
-           VALUES (?, ?, ?, ?, ?, 0, ?, ?, 0)
-           ON CONFLICT(clienteId, produtoId) DO UPDATE SET
-             precoAutorizado = excluded.precoAutorizado,
-             oculto = 0,
-             updatedAt = CURRENT_TIMESTAMP`,
-          [clienteId, item.produtoId, item.precoUnitario, item.quantidade, item.unidade, data, item.precoUnitario]
         );
       }
 

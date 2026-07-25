@@ -1332,6 +1332,39 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 });
 
 
+const carregarDetalhesVenda = (venda: any) => {
+  venda.items = queryAll(
+    `SELECT iv.*, p.codigo as referencia,
+            COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
+            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
+     FROM itens_venda iv
+     LEFT JOIN produtos p ON p.id = iv.produtoId
+     WHERE iv.vendaId = ?`,
+    [venda.id]
+  );
+  venda.devolucoes = queryAll<any>(
+    `SELECT * FROM devolucoes_venda WHERE vendaId = ? ORDER BY createdAt DESC`,
+    [venda.id]
+  );
+  for (const devolucao of venda.devolucoes) {
+    devolucao.items = queryAll(
+      `SELECT idv.*, iv.descricao, iv.unidade
+       FROM itens_devolucao idv
+       JOIN itens_venda iv ON iv.id = idv.itemVendaId
+       WHERE idv.devolucaoId = ?`,
+      [devolucao.id]
+    );
+  }
+  venda.instrumentoRecebimento = queryOne(
+    `SELECT tipo, emitente, numeroDocumento, valor, vencimento, status, observacao
+     FROM instrumentos_recebimento
+     WHERE vendaId = ? AND deletedAt IS NULL
+     ORDER BY createdAt DESC LIMIT 1`,
+    [venda.id]
+  ) || null;
+  return venda;
+};
+
 // 6. VENDAS
 app.get("/api/vendas", (req, res) => {
   try {
@@ -1351,38 +1384,7 @@ app.get("/api/vendas", (req, res) => {
        ORDER BY v.numeroSequencial DESC`
     );
     
-    // Fetch items for each sale
-    for (const v of rows) {
-      v.items = queryAll(
-        `SELECT iv.*, p.codigo as referencia,
-                COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
-                iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
-         FROM itens_venda iv
-         LEFT JOIN produtos p ON p.id = iv.produtoId
-         WHERE iv.vendaId = ?`,
-        [v.id]
-      );
-      v.devolucoes = queryAll<any>(
-        `SELECT * FROM devolucoes_venda WHERE vendaId = ? ORDER BY createdAt DESC`,
-        [v.id]
-      );
-      for (const devolucao of v.devolucoes) {
-        devolucao.items = queryAll(
-          `SELECT idv.*, iv.descricao, iv.unidade
-           FROM itens_devolucao idv
-           JOIN itens_venda iv ON iv.id = idv.itemVendaId
-           WHERE idv.devolucaoId = ?`,
-          [devolucao.id]
-        );
-      }
-      v.instrumentoRecebimento = queryOne(
-        `SELECT tipo, emitente, numeroDocumento, valor, vencimento, status, observacao
-         FROM instrumentos_recebimento
-         WHERE vendaId = ? AND deletedAt IS NULL
-         ORDER BY createdAt DESC LIMIT 1`,
-        [v.id]
-      ) || null;
-    }
+    rows.forEach(carregarDetalhesVenda);
     
     res.json(rows);
   } catch (error: any) {
@@ -2606,9 +2608,12 @@ app.get("/api/relatorios", (req, res) => {
     if (valeStatus === "quitados") valeFilters.push("v.status = 'paga'");
     const vales = queryAll<any>(
       `SELECT
-         v.id, v.numeroSequencial, v.clienteId, c.nome as clienteNome,
-         c.telefone as clienteTelefone, v.data, v.vencimento, v.totalLiquido,
-         v.valorPago, v.saldoRestante, v.status,
+         v.*, c.nome as clienteNome, c.telefone as clienteTelefone,
+         c.endereco as clienteEndereco, c.documento as clienteDocumento,
+         COALESCE(
+           (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
+           CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
+         ) as formaPagamento,
          CASE WHEN v.status = 'pendente' AND v.vencimento < ?
            THEN CAST(julianday(?) - julianday(v.vencimento) AS INTEGER) ELSE 0 END as diasAtraso
        FROM vendas v
@@ -2618,6 +2623,7 @@ app.get("/api/relatorios", (req, res) => {
                 v.vencimento ASC, v.numeroSequencial DESC`,
       [hoje, hoje, ...valeParams]
     );
+    vales.forEach(carregarDetalhesVenda);
 
     res.json({
       vendas,

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer, RefreshCw, TrendingUp, Truck, Unlock, Users, X } from "lucide-react";
+import { AlertTriangle, Eye, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer, RefreshCw, TrendingUp, Truck, Unlock, Users, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
-import { Cliente, Fornecedor, Produto, SegurancaStatus } from "../types";
+import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
 import { formatCurrency, formatDate } from "../lib/utils";
 import { Pagination, paginate } from "./Pagination";
+import { ValeDetalhesModal } from "./ValeDetalhesModal";
 
 type AbaRelatorio = "geral" | "clientes" | "fornecedores" | "vales";
 
@@ -37,6 +38,7 @@ export function RelatoriosView() {
   const [pin, setPin] = useState("");
   const [pinErro, setPinErro] = useState("");
   const [itensClientePage, setItensClientePage] = useState(1);
+  const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
 
   useEffect(() => {
     Promise.all([api.getClientes(), api.getFornecedores(), api.getProdutos(), api.getSegurancaStatus()])
@@ -185,6 +187,12 @@ export function RelatoriosView() {
     } else if (aba === "vales") {
       csv += "DOCUMENTO;CLIENTE;EMISSÃO;VENCIMENTO;TOTAL;PAGO;SALDO;SITUAÇÃO;DIAS EM ATRASO\n";
       (dados.vales || []).forEach((item: any) => { csv += `${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.data};${item.vencimento};${item.totalLiquido};${item.valorPago};${item.saldoRestante};${item.status};${item.diasAtraso}\n`; });
+      csv += "\nITENS DOS VALES\nDOCUMENTO;CLIENTE;REFERÊNCIA;MATERIAL;QUANTIDADE;UNIDADE;PREÇO UNITÁRIO;TOTAL DO ITEM\n";
+      (dados.vales || []).forEach((vale: any) => {
+        (vale.items || []).forEach((item: any) => {
+          csv += `${vale.numeroSequencial};${csvCelula(vale.clienteNome)};${csvCelula(item.referencia)};${csvCelula(item.descricao)};${item.quantidade};${csvCelula(item.unidade)};${item.precoUnitario};${item.total}\n`;
+        });
+      });
     } else {
       csv += "MÉTRICA;VALOR\n";
       csv += `FATURAMENTO;${geral?.faturamento || 0}\nRECEBIDO;${geral?.recebido || 0}\nCUSTO;${geral?.custo || 0}\nLUCRO;${geral?.lucro || 0}\nMARGEM;${geral?.margem || 0}\n`;
@@ -201,7 +209,8 @@ export function RelatoriosView() {
   const Card = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><p className="text-xs font-black text-slate-600">{titulo}</p><p className={`mt-2 text-xl font-black ${destaque}`}>{valor}</p></div>;
 
   return (
-    <section className="space-y-5">
+    <section id="relatorios-view" className="space-y-5">
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} onClose={() => setValeDetalhado(null)} />}
       {pinOpen && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
           <form onSubmit={desbloquearAnaliseCliente} role="dialog" aria-modal="true" aria-labelledby="pin-relatorio-cliente" className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -266,7 +275,7 @@ export function RelatoriosView() {
 
         {aba === "fornecedores" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Card titulo="FORNECEDORES COM COMPRA" valor={String(linhasFornecedores.length)} /><Card titulo="COMPRAS REGISTRADAS" valor={String(linhasFornecedores.reduce((t: number, i: any) => t + i.quantidadeCompras, 0))} /><Card titulo="TOTAL COMPRADO" valor={formatCurrency(linhasFornecedores.reduce((t: number, i: any) => t + i.totalComprado, 0))} destaque="text-blue-800" /></div><TabelaFornecedores linhas={linhasFornecedores} /></div>}
 
-        {aba === "vales" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="VALES LISTADOS" valor={String(resumoVales.quantidade)} /><Card titulo="VALOR ORIGINAL" valor={formatCurrency(resumoVales.totalOriginal)} /><Card titulo="SALDO EM ABERTO" valor={formatCurrency(resumoVales.saldo)} destaque="text-amber-800" /><Card titulo="SALDO VENCIDO" valor={formatCurrency(resumoVales.vencido)} destaque="text-red-800" /></div><TabelaVales linhas={dados.vales || []} /></div>}
+        {aba === "vales" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="VALES LISTADOS" valor={String(resumoVales.quantidade)} /><Card titulo="VALOR ORIGINAL" valor={formatCurrency(resumoVales.totalOriginal)} /><Card titulo="SALDO EM ABERTO" valor={formatCurrency(resumoVales.saldo)} destaque="text-amber-800" /><Card titulo="SALDO VENCIDO" valor={formatCurrency(resumoVales.vencido)} destaque="text-red-800" /></div><TabelaVales linhas={dados.vales || []} onDetalhes={setValeDetalhado} /></div>}
       </>}
     </section>
   );
@@ -290,6 +299,6 @@ function TabelaFornecedores({ linhas }: { linhas: any[] }) {
   return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">FORNECEDOR</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">COMPRAS</th><th className="p-3 text-right">PRODUTOS</th><th className="p-3 text-right">TOTAL COMPRADO</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-black">{item.fornecedorNome}</td><td className="p-3 font-bold text-slate-600">{item.telefone || "—"}</td><td className="p-3 text-right">{item.quantidadeCompras}</td><td className="p-3 text-right">{item.quantidadeProdutos}</td><td className="p-3 text-right font-black text-blue-800">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right">{formatDate(item.ultimaCompra)}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA COMPRA DE FORNECEDOR NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }
 
-function TabelaVales({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[950px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">DOCUMENTO</th><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">EMISSÃO</th><th className="p-3 text-left">VENCIMENTO</th><th className="p-3 text-right">TOTAL</th><th className="p-3 text-right">PAGO</th><th className="p-3 text-right">SALDO</th><th className="p-3 text-center">SITUAÇÃO</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.id}><td className="p-3 font-mono font-black">#{item.numeroSequencial}</td><td className="p-3 font-black">{item.clienteNome}</td><td className="p-3">{formatDate(item.data)}</td><td className="p-3">{formatDate(item.vencimento)}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalLiquido)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.valorPago)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoRestante)}</td><td className="p-3 text-center">{item.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-800">QUITADO</span> : item.diasAtraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-black text-red-800">{item.diasAtraso} DIAS ATRASADO</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-black text-amber-800">EM ABERTO</span>}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM VALE NESTE FILTRO.</td></tr>}</tbody></table></div>;
+function TabelaVales({ linhas, onDetalhes }: { linhas: Venda[]; onDetalhes: (vale: Venda) => void }) {
+  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[1040px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">DOCUMENTO</th><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">EMISSÃO</th><th className="p-3 text-left">VENCIMENTO</th><th className="p-3 text-right">TOTAL</th><th className="p-3 text-right">PAGO</th><th className="p-3 text-right">SALDO</th><th className="p-3 text-center">SITUAÇÃO</th><th className="p-3 text-center print:hidden">AÇÕES</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item: any) => <tr key={item.id}><td className="p-3 font-mono font-black">#{item.numeroSequencial}</td><td className="p-3 font-black">{item.clienteNome}</td><td className="p-3">{formatDate(item.data)}</td><td className="p-3">{formatDate(item.vencimento)}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalLiquido)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.valorPago)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoRestante)}</td><td className="p-3 text-center">{item.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-800">QUITADO</span> : item.diasAtraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-black text-red-800">{item.diasAtraso} DIAS ATRASADO</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-black text-amber-800">EM ABERTO</span>}</td><td className="p-3 text-center print:hidden"><button type="button" onClick={() => onDetalhes(item)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>) : <tr><td colSpan={9} className="p-10 text-center font-bold text-slate-500">NENHUM VALE NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }

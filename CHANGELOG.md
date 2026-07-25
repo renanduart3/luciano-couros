@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.7 — 2026-07-24
+
+- Vales passam a exibir os produtos, quantidades, unidades, preços e totais da venda original.
+- Detalhe financeiro mostra valor original, valor pago, saldo atual e vencimento.
+- Mesmo comprovante de venda em duas vias disponível para visualização e impressão no vale.
+- Relatório de vales recebe a mesma visão de detalhes e comprovante.
+- Exportação CSV de vales complementada com os itens de cada documento.
+- Consulta de vendas e relatório unificada para impedir divergências de itens e valores.
+
 ## 1.7.6 — 2026-07-24
 
 - Seletor de produtos da venda removido do limite vertical da grade.

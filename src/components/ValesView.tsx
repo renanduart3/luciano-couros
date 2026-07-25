@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, HandCoins, History, WalletCards } from "lucide-react";
+import { AlertCircle, CalendarClock, Eye, HandCoins, History, WalletCards } from "lucide-react";
 import { Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
 import { CarteiraClienteView } from "./CarteiraClienteView";
+import { ValeDetalhesModal } from "./ValeDetalhesModal";
 
 interface ValesViewProps {
   onRefreshStats?: () => void;
@@ -23,6 +24,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [vales, setVales] = useState<Venda[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -51,7 +53,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   }, [vales]);
 
   return (
-    <section className="space-y-5">
+    <section id="vales-view" className="space-y-5">
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} onClose={() => setValeDetalhado(null)} />}
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Vales</h1>
@@ -83,11 +86,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-left text-sm">
-                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase text-slate-500"><tr><th className="p-4">Documento</th><th className="p-4">Cliente</th><th className="p-4">Emissão</th><th className="p-4">Vencimento</th><th className="p-4">Situação</th><th className="p-4 text-right">Saldo</th></tr></thead>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase text-slate-500"><tr><th className="p-4">Documento</th><th className="p-4">Cliente</th><th className="p-4">Emissão</th><th className="p-4">Vencimento</th><th className="p-4">Situação</th><th className="p-4 text-right">Saldo</th><th className="p-4 text-center">Ações</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {vales.map((vale) => {
                       const atraso = diasEmAtraso(vale.vencimento);
-                      return <tr key={vale.id} className="hover:bg-slate-50"><td className="p-4 font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</td><td className="p-4 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-4 text-slate-600">{formatDate(vale.data)}</td><td className="p-4 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-4">{atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">Em aberto</span>}</td><td className="p-4 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td></tr>;
+                      return <tr key={vale.id} className="hover:bg-slate-50"><td className="p-4 font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</td><td className="p-4 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-4 text-slate-600">{formatDate(vale.data)}</td><td className="p-4 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-4">{atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">Em aberto</span>}</td><td className="p-4 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td><td className="p-4 text-center"><button type="button" onClick={() => setValeDetalhado(vale)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>;
                     })}
                   </tbody>
                 </table>
@@ -96,7 +99,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
               <div className="divide-y divide-slate-100 md:hidden">
                 {vales.map((vale) => {
                   const atraso = diasEmAtraso(vale.vencimento);
-                  return <article key={vale.id} className="space-y-3 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p><h2 className="mt-1 text-base font-black text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">Em aberto</span>}</div></article>;
+                  return <article key={vale.id} className="space-y-3 p-4"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p><h2 className="mt-1 text-base font-black text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">Em aberto</span>}</div><button type="button" onClick={() => setValeDetalhado(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
                 })}
               </div>
             </div>

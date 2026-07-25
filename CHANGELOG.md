@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.8 — 2026-07-24
+
+- Módulo Vales definido como área operacional de cobrança e recebimento.
+- Filtros adicionados por cliente, situação e período de vencimento.
+- Consulta ampliada para débitos em aberto, vencidos, a vencer, quitados ou todos.
+- Seleção conjunta de todos os débitos em aberto de um cliente.
+- Envio pelo WhatsApp com itens, vencimentos, saldos individuais e total consolidado.
+- Telefone do WhatsApp preenchido automaticamente pelo cadastro do cliente.
+- Paginação e tabela compacta adicionadas à listagem de vales.
+
 ## 1.7.7 — 2026-07-24
 
 - Vales passam a exibir os produtos, quantidades, unidades, preços e totais da venda original.

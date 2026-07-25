@@ -113,6 +113,8 @@ export function initDatabase() {
         unidade TEXT NOT NULL, -- metro, unidade, quilograma, rolo, peca
         precoVendaPadrao REAL NOT NULL,
         custoPadrao REAL NOT NULL,
+        custoManual REAL,
+        custoOrigem TEXT NOT NULL DEFAULT 'manual',
         unidadeCompra TEXT,
         unidadeVenda TEXT,
         fatorConversao REAL DEFAULT 1.0,
@@ -390,7 +392,53 @@ export function initDatabase() {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_auditoria_entidade ON auditoria (entidade, entidadeId, createdAt DESC)`).run();
 
-    // 13. Cheques e duplicatas recebidos em vendas. O título permanece em
+    // 13. Planejamento flexível dos vales. Cada venda a prazo pode possuir
+    // quantas parcelas forem necessárias, sem perder o vínculo contábil.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS vale_parcelas (
+        id TEXT PRIMARY KEY,
+        vendaId TEXT NOT NULL,
+        numero INTEGER NOT NULL,
+        vencimento TEXT NOT NULL,
+        valor REAL NOT NULL,
+        valorPago REAL NOT NULL DEFAULT 0,
+        saldo REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vale_parcelas_numero ON vale_parcelas (vendaId, numero) WHERE deletedAt IS NULL`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_vale_parcelas_vencimento ON vale_parcelas (status, vencimento, deletedAt)`).run();
+
+    // Vales criados antes do parcelamento continuam válidos como uma parcela.
+    db.prepare(`
+      INSERT INTO vale_parcelas (id, vendaId, numero, vencimento, valor, valorPago, saldo, status)
+      SELECT
+        'vpar_' || lower(hex(randomblob(8))),
+        v.id,
+        1,
+        v.vencimento,
+        v.totalLiquido,
+        MIN(v.valorPago, v.totalLiquido),
+        MAX(0, v.saldoRestante),
+        CASE
+          WHEN v.status = 'cancelada' THEN 'cancelada'
+          WHEN v.saldoRestante <= 0.005 THEN 'paga'
+          ELSE 'pendente'
+        END
+      FROM vendas v
+      WHERE v.vencimento IS NOT NULL
+        AND v.deletedAt IS NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM vale_parcelas vp
+          WHERE vp.vendaId = v.id AND vp.deletedAt IS NULL
+        )
+    `).run();
+
+    // 14. Cheques e duplicatas recebidos em vendas. O título permanece em
     // carteira até uma baixa explícita; o vencimento, por si só, não o recebe.
     db.prepare(`
       CREATE TABLE IF NOT EXISTS instrumentos_recebimento (
@@ -414,7 +462,7 @@ export function initDatabase() {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_instrumentos_vencimento ON instrumentos_recebimento (status, vencimento)`).run();
 
-    // 14. Carteira do cliente. Um recebimento representa o dinheiro que
+    // 15. Carteira do cliente. Um recebimento representa o dinheiro que
     // efetivamente entrou; as alocações registram exatamente quais vendas
     // foram baixadas e os movimentos mantêm o bônus auditável.
     db.prepare(`
@@ -473,7 +521,7 @@ export function initDatabase() {
     `).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_saldo ON cliente_bonus_movimentos (clienteId, deletedAt)`).run();
 
-    // 15. Devoluções preservam a venda original e geram crédito rastreável
+    // 16. Devoluções preservam a venda original e geram crédito rastreável
     // na carteira do cliente.
     db.prepare(`
       CREATE TABLE IF NOT EXISTS devolucoes_venda (
@@ -530,6 +578,26 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeVenda TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE produtos ADD COLUMN custoManual REAL`).run(); } catch (e) {}
+  let custoOrigemAdicionada = false;
+  try {
+    db.prepare(`ALTER TABLE produtos ADD COLUMN custoOrigem TEXT NOT NULL DEFAULT 'manual'`).run();
+    custoOrigemAdicionada = true;
+  } catch (e) {}
+  if (custoOrigemAdicionada) {
+    db.prepare(`
+      UPDATE produtos
+      SET custoOrigem = CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM itens_compra ic
+          JOIN compras c ON c.id = ic.compraId
+          WHERE ic.produtoId = produtos.id AND c.deletedAt IS NULL
+        ) THEN 'compra'
+        ELSE 'manual'
+      END
+    `).run();
+  }
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE cliente_bonus_movimentos ADD COLUMN vendaId TEXT`).run(); } catch (e) {}
@@ -543,6 +611,7 @@ export function initDatabase() {
     SET unidade = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
         unidadeCompra = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
         unidadeVenda = COALESCE(NULLIF(unidadeVenda, ''), NULLIF(unidadeCompra, ''), unidade),
+        custoManual = COALESCE(custoManual, custoPadrao),
         fatorConversao = 1,
         venderUnidadeCompra = 0
   `).run();
@@ -798,10 +867,20 @@ function seedDemoData() {
 
 export function rebuildClienteProdutosHabituais(clienteId: string) {
   const existentes = db.prepare(`
-    SELECT produtoId, oculto, precoAutorizado
+    SELECT produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade, vezesComprado,
+           ultimaCompraEm, oculto, precoAutorizado
     FROM cliente_produtos_habituais
     WHERE clienteId = ?
-  `).all(clienteId) as Array<{ produtoId: string; oculto: number; precoAutorizado: number | null }>;
+  `).all(clienteId) as Array<{
+    produtoId: string;
+    ultimoPreco: number;
+    ultimaQuantidade: number | null;
+    ultimaUnidade: string;
+    vezesComprado: number;
+    ultimaCompraEm: string;
+    oculto: number;
+    precoAutorizado: number | null;
+  }>;
 
   const preferencias = new Map(existentes.map((item) => [item.produtoId, item]));
   const historico = db.prepare(`
@@ -876,6 +955,23 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
       item.ultimaCompraEm,
       preferencia?.precoAutorizado ?? null,
       preferencia?.oculto ?? 0,
+    );
+  }
+
+  // Preços autorizados em orçamentos também pertencem à base do cliente,
+  // mesmo antes de o produto aparecer em uma venda concluída.
+  for (const preferencia of existentes) {
+    if (agregados.has(preferencia.produtoId)) continue;
+    insert.run(
+      clienteId,
+      preferencia.produtoId,
+      preferencia.ultimoPreco,
+      preferencia.ultimaQuantidade,
+      preferencia.ultimaUnidade,
+      preferencia.vezesComprado,
+      preferencia.ultimaCompraEm,
+      preferencia.precoAutorizado,
+      preferencia.oculto,
     );
   }
 }

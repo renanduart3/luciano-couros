@@ -4,6 +4,23 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.0 — 2026-07-25
+
+- Cadastro de materiais passa a aceitar custo manual e vínculo pesquisável com vários fornecedores.
+- Campos numéricos da venda e do orçamento iniciam vazios, mantendo apenas o placeholder.
+- Produtos repetidos são bloqueados na venda, no orçamento e também pela API.
+- Preços da venda e do orçamento ficam bloqueados por padrão.
+- Alteração de preço exige validação real do PIN no servidor, libera uma única edição e bloqueia novamente após salvar.
+- Último preço autorizado passa a ser a referência atual do produto para cada cliente.
+- Vales recebem planejamento flexível em parcelas com prazos rápidos de 30 a 150 dias.
+- Períodos de pagamento aparecem no detalhe do vale com valor, vencimento, situação e edição inline protegida por PIN.
+- Listagem de vales ordenada da venda mais recente para a mais antiga e paginada.
+- Exclusão de vale preserva o histórico e retira o documento da contabilidade ativa.
+- Devoluções parciais abatem primeiro o vale e convertem eventual excedente pago em bônus.
+- Carteira de bônus adicionada à ficha do cliente.
+- Venda vinculada pode ser alterada diretamente pelo vale com PIN e preservação das devoluções existentes.
+- Impressão isolada da tela e limitada ao comprovante atual com duas vias.
+
 ## 1.7.8 — 2026-07-24
 
 - Módulo Vales definido como área operacional de cobrança e recebimento.

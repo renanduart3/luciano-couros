@@ -1,13 +1,31 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle
+  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards
 } from "lucide-react";
-import { Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
+import { CarteiraCliente, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
+import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 
 const PAGE_SIZE = 10;
+
+function calcularResumoVales(vendas: Venda[]) {
+  const vales = vendas.filter((venda) =>
+    venda.status === "pendente" && Number(venda.saldoRestante) > 0.005 && Boolean(venda.vencimento)
+  );
+  const vencimentos = vales.flatMap((vale) => {
+    const parcelasAbertas = (vale.parcelas || []).filter((parcela) => parcela.status === "pendente" && Number(parcela.saldo) > 0.005);
+    return parcelasAbertas.length > 0 ? parcelasAbertas.map((parcela) => parcela.vencimento) : [vale.vencimento!];
+  });
+  const timestamps = vencimentos
+    .map((data) => new Date(`${data}T12:00:00`).getTime())
+    .filter(Number.isFinite);
+  const media = timestamps.length > 0
+    ? new Date(Math.round(timestamps.reduce((soma, valor) => soma + valor, 0) / timestamps.length)).toISOString().slice(0, 10)
+    : null;
+  return { quantidade: vales.length, parcelas: timestamps.length, dataMedia: media };
+}
 
 interface ClientesViewProps {
   onRefreshStats?: () => void;
@@ -41,6 +59,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
   const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
   const [orcamentoVigente, setOrcamentoVigente] = useState<Orcamento | null>(null);
+  const [carteiraCliente, setCarteiraCliente] = useState<CarteiraCliente | null>(null);
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -136,14 +155,16 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const handleViewHistory = async (cli: Cliente) => {
     setLoadingHistory(true);
     try {
-      const [data, produtosHabituais, orcamentoCliente] = await Promise.all([
+      const [data, produtosHabituais, orcamentoCliente, carteira] = await Promise.all([
         api.getClienteHistorico(cli.id),
         api.getClienteProdutosHabituais(cli.id),
-        api.getClienteOrcamentoVigente(cli.id)
+        api.getClienteOrcamentoVigente(cli.id),
+        api.getCarteiraCliente(cli.id)
       ]);
       setActiveHistory(data);
       setProdutosCliente(produtosHabituais);
       setOrcamentoVigente(orcamentoCliente);
+      setCarteiraCliente(carteira);
       setPrecosCliente(Object.fromEntries(produtosHabituais.map((item) => [
         item.produtoId,
         Number(item.precoAutorizado ?? item.ultimoPreco).toFixed(2).replace(".", ",")
@@ -161,29 +182,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
     (c.documento && c.documento.includes(busca))
   );
   const clientesPagina = paginate<Cliente>(filteredClientes, page, PAGE_SIZE);
-
-  const salvarPrecoCliente = async (produto: ProdutoHabitual, usarBase = false) => {
-    if (!activeHistory) return;
-    const preco = usarBase ? null : parseBrazilianNumber(precosCliente[produto.produtoId] || "");
-    if (!usarBase && (!Number.isFinite(preco) || preco < 0)) {
-      alert("Informe um preço válido para o cliente.");
-      return;
-    }
-    setSalvandoPrecoProduto(produto.produtoId);
-    try {
-      await api.updateClienteProdutoPreco(activeHistory.cliente.id, produto.produtoId, preco);
-      const atualizados = await api.getClienteProdutosHabituais(activeHistory.cliente.id);
-      setProdutosCliente(atualizados);
-      setPrecosCliente((atuais) => ({
-        ...atuais,
-        [produto.produtoId]: Number(usarBase ? produto.precoVendaPadrao : preco).toFixed(2).replace(".", ",")
-      }));
-    } catch (err: any) {
-      alert(err.message || "Não foi possível atualizar o preço do cliente.");
-    } finally {
-      setSalvandoPrecoProduto("");
-    }
-  };
+  const resumoVales = calcularResumoVales(activeHistory?.vendas || []);
 
   const removerProdutoCliente = async (produto: ProdutoHabitual) => {
     if (!activeHistory || !confirm(`Remover ${produto.nome} dos preços e do orçamento deste cliente?`)) return;
@@ -484,7 +483,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
               
               {/* Profile statistics cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4">
                 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Comprado</p>
@@ -511,6 +510,23 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lucro Gerado</p>
                   <p className="text-base font-extrabold text-teal-600 mt-1">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Vales ativos</p>
+                  <p className="mt-1 text-base font-extrabold text-amber-950">{resumoVales.quantidade}</p>
+                  <p className="text-[9px] font-bold text-amber-700">{resumoVales.parcelas} vencimento(s)</p>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Data média dos vales</p>
+                  <p className="mt-1 text-base font-extrabold text-blue-950">{resumoVales.dataMedia ? formatDate(resumoVales.dataMedia) : "Sem vales"}</p>
+                </div>
+
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-center">
+                  <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-violet-700"><WalletCards size={13} /> Bônus disponível</p>
+                  <p className="mt-1 text-base font-extrabold text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
+                  <p className="text-[9px] font-bold text-violet-700">Carteira do cliente</p>
                 </div>
 
               </div>
@@ -564,10 +580,10 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           <td className="p-3 text-right font-mono font-bold">{formatCurrency(produto.precoVendaPadrao)}</td>
                           <td className="p-3 text-right font-mono">{formatCurrency(produto.ultimoPreco)}</td>
                           <td className="p-3 text-right font-mono text-slate-600">{formatCurrency(custo)}</td>
-                          <td className="p-3"><input aria-label={`Preço de ${produto.nome} para o cliente`} value={precosCliente[produto.produtoId] || ""} onChange={(event) => setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: event.target.value }))} inputMode="decimal" className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
+                          <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} value={precosCliente[produto.produtoId] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => item.produtoId === produto.produtoId ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
                           <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
                           <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
-                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto)} className="rounded-lg bg-emerald-600 px-2.5 py-2 font-bold text-white disabled:bg-slate-300">Salvar</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => salvarPrecoCliente(produto, true)} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
                         </tr>;
                       })}
                     </tbody>

@@ -43,16 +43,19 @@ const FORMAS: Record<string, string> = {
 const ITENS_POR_FOLHA = 18;
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
-  const todosItens = venda.items || itens;
+  const todosItens = (venda.items || itens)
+    .map((item) => ({ ...item, quantidade: Number(item.quantidadeDisponivel ?? item.quantidade) }))
+    .filter((item) => item.quantidade > 0.005);
   const quantidadeMetros = todosItens
     .filter((item) => item.unidade.toLowerCase().includes("metro"))
     .reduce((total, item) => total + Number(item.quantidade), 0);
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
   const instrumento = venda.instrumentoRecebimento;
-  const forma = instrumento?.tipo || venda.formaPagamento || (venda.saldoRestante > 0 ? "vale" : "");
+  const ehVale = Boolean(venda.vencimento);
+  const forma = instrumento?.tipo || (ehVale ? "vale" : venda.formaPagamento || "");
   const titulo = instrumento?.tipo?.startsWith("cheque")
     ? "VENDA / CHEQUE"
-    : venda.saldoRestante > 0
+    : ehVale
       ? "VENDA / VALE"
       : "VENDA";
   const vencimento = instrumento?.vencimento || venda.vencimento;
@@ -99,6 +102,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
 
       <div className="receipt-payment-line">
         <span><b>Forma:</b> {FORMAS[forma] || forma || "Não informada"}</span>
+        {(venda.devolucoes || []).length > 0 && <span><b>Atualizado após devolução:</b> {(venda.devolucoes || []).length} registro(s)</span>}
         {Number(venda.desconto) > 0 && <span><b>Desconto:</b> {formatCurrency(venda.desconto)}</span>}
         {instrumento && <span><b>Nº:</b> {instrumento.numeroDocumento} • <b>Emitente:</b> {instrumento.emitente}</span>}
         {venda.saldoRestante > 0 && <span><b>Saldo do Vale:</b> {formatCurrency(venda.saldoRestante)}</span>}
@@ -132,15 +136,26 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
   }, []);
 
   const chave = useMemo(() => `${venda.id}-${venda.updatedAt || venda.data}`, [venda]);
+  const itensAtuais = useMemo(() => (venda.items || [])
+    .map((item) => {
+      const quantidade = Number(item.quantidadeDisponivel ?? item.quantidade);
+      const proporcao = Number(item.quantidade) > 0 ? quantidade / Number(item.quantidade) : 0;
+      return {
+        ...item,
+        quantidade,
+        total: Math.round(Number(item.total) * proporcao * 100) / 100
+      };
+    })
+    .filter((item) => item.quantidade > 0.005), [venda.items]);
   const paginas = useMemo(() => {
-    const itens = venda.items || [];
+    const itens = itensAtuais;
     if (itens.length === 0) return [[]];
     const resultado: Venda["items"][] = [];
     for (let inicio = 0; inicio < itens.length; inicio += ITENS_POR_FOLHA) {
       resultado.push(itens.slice(inicio, inicio + ITENS_POR_FOLHA));
     }
     return resultado;
-  }, [venda.items]);
+  }, [itensAtuais]);
 
   return (
     <div className="receipt-pages" data-receipt={chave}>

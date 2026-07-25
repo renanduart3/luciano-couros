@@ -476,6 +476,10 @@ textarea {
   }
 
   /* Print only the active receipt; the screen behind the modal must not create extra pages. */
+  body:has(> #print-receipt) > *:not(#print-receipt) {
+    display: none !important;
+  }
+
   #quick-sale-view:has(#print-receipt) > *:not(#print-receipt),
   #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay),
   #orcamento-view:has(#print-orcamento) > *:not(#print-orcamento),
@@ -524,6 +528,13 @@ textarea {
     display: block !important;
   }
 
+  #print-receipt .receipt-pages {
+    width: 210mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+  }
+
   .receipt-sheet-a4,
   .budget-sheet-a4 {
     width: 210mm !important;
@@ -541,6 +552,12 @@ textarea {
   .budget-sheet-a4:not(:last-child) {
     break-after: page;
     page-break-after: always;
+  }
+
+  .receipt-sheet-a4:last-child,
+  .budget-sheet-a4:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
   }
 
   #print-receipt-detail {

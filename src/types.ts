@@ -30,6 +30,9 @@ export interface Produto {
   unidade: string;
   precoVendaPadrao: number;
   custoPadrao: number;
+  custoManual?: number;
+  custoOrigem?: "manual" | "compra";
+  fornecedorIds?: string[];
   ultimaCompraEm?: string;
   ultimoFornecedorNome?: string;
   quantidadeFornecedores?: number;
@@ -141,6 +144,7 @@ export interface Venda {
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
   formaPagamento?: string;
+  parcelas?: ValeParcela[];
   instrumentoRecebimento?: {
     tipo: string;
     emitente: string;
@@ -155,6 +159,19 @@ export interface Venda {
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ValeParcela {
+  id: string;
+  vendaId: string;
+  numero: number;
+  vencimento: string;
+  valor: number;
+  valorPago: number;
+  saldo: number;
+  status: "pendente" | "paga" | "cancelada";
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ItemOrcamento {

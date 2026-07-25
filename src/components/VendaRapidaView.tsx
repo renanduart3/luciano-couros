@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { 
   Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
-  TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare, KeyRound, ShieldCheck,
+  TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, MessageSquare, KeyRound, ShieldCheck,
   Lock, Unlock, TableProperties, History, ListChecks, CalendarRange, ShoppingCart
 } from "lucide-react";
 import { Cliente, Orcamento, Produto, ProdutoHabitual, SegurancaStatus, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
+import { dataComPrazo, ParcelaValeRascunho, ParcelasValeEditor } from "./ParcelasValeEditor";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -87,10 +89,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   } | null>(null);
 
   // Active Item Form
-  const [itemQtd, setItemQtd] = useState("1");
+  const [itemQtd, setItemQtd] = useState("");
   const [itemUnidade, setItemUnidade] = useState("");
   const [itemPreco, setItemPreco] = useState("");
-  const [itemDesconto, setItemDesconto] = useState("0");
 
   // Cart
   const [itensVenda, setItensVenda] = useState<ItemRascunho[]>([]);
@@ -131,10 +132,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [historicoPage, setHistoricoPage] = useState(1);
 
   // Checkout Fields
-  const [descontoGeral, setDescontoGeral] = useState("0");
+  const [descontoGeral, setDescontoGeral] = useState("");
   const [valorPago, setValorPago] = useState("");
-  const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [formaPagamento, setFormaPagamento] = useState("vale");
   const [vencimento, setVencimento] = useState("");
+  const [parcelasVale, setParcelasVale] = useState<ParcelaValeRascunho[]>([]);
   const [observacoes, setObservacoes] = useState("");
   const [instrumentoEmitente, setInstrumentoEmitente] = useState("");
   const [instrumentoNumero, setInstrumentoNumero] = useState("");
@@ -150,7 +152,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [vendaSalvaParaImpressao, setVendaSalvaParaImpressao] = useState<any | null>(null);
 
   // Copy to clipboard success state
-  const [copiado, setCopiado] = useState(false);
 
   // Focus Refs
   const clienteInputRef = useRef<HTMLInputElement>(null);
@@ -376,6 +377,25 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
   const saldoRestante = Math.max(0, totalLiquido - vPago);
 
+  useEffect(() => {
+    if (!vendaNoVale || totalLiquido <= 0) return;
+    setParcelasVale((atuais) => {
+      if (atuais.length === 0) {
+        return [{ vencimento: dataComPrazo(30), valor: totalLiquido.toFixed(2).replace(".", ",") }];
+      }
+      if (atuais.length === 1) {
+        return [{ ...atuais[0], valor: totalLiquido.toFixed(2).replace(".", ",") }];
+      }
+      return atuais;
+    });
+  }, [vendaNoVale, totalLiquido]);
+
+  useEffect(() => {
+    if (!vendaNoVale) return;
+    const primeiro = [...parcelasVale].filter((parcela) => parcela.vencimento).sort((a, b) => a.vencimento.localeCompare(b.vencimento))[0];
+    setVencimento(primeiro?.vencimento || "");
+  }, [vendaNoVale, parcelasVale]);
+
   const analiseLinhas = itensVenda
     .map((item) => {
       const quantidade = parseBrazilianNumber(item.quantidade);
@@ -459,8 +479,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setProdutoBusca(prod.nome);
     setItemUnidade(unidadePrincipal);
     setItemPreco(precoCliente.toString().replace(".", ","));
-    setItemQtd("1");
-    setItemDesconto("0");
+    setItemQtd("");
     setShowProdutoDropdown(false);
     
     // Crucial rule: Após selecionar um material, posicionar o cursor automaticamente no campo de quantidade
@@ -468,6 +487,32 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       quantidadeRef.current?.focus();
       quantidadeRef.current?.select();
     }, 50);
+  };
+
+  const registrarPrecoAutorizadoLocal = (produtoId: string, novoPreco: number) => {
+    const produto = produtos.find((item) => item.id === produtoId);
+    if (!clienteSelecionado || !produto) return;
+    setProdutosCliente((atuais) => {
+      const existente = atuais.find((item) => item.produtoId === produtoId);
+      if (existente) {
+        return atuais.map((item) => item.produtoId === produtoId ? { ...item, precoAutorizado: novoPreco } : item);
+      }
+      return [...atuais, {
+        clienteId: clienteSelecionado.id,
+        produtoId,
+        nome: produto.nome,
+        codigo: produto.codigo,
+        ultimoPreco: novoPreco,
+        ultimaQuantidade: 0,
+        ultimaUnidade: produto.unidade,
+        vezesComprado: 0,
+        ultimaCompraEm: new Date().toISOString().split("T")[0],
+        precoAutorizado: novoPreco,
+        unidade: produto.unidade,
+        precoVendaPadrao: produto.precoVendaPadrao,
+        custoPadrao: produto.custoPadrao,
+      }];
+    });
   };
 
   const handleUnidadeChange = (novaUnidade: string) => {
@@ -530,6 +575,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       precoUnitarioRef.current?.focus();
       return;
     }
+    const itemExistente = itensVenda.find((item) =>
+      item.produtoId === produtoSelecionado.id && parseBrazilianNumber(item.quantidade) > 0
+    );
+    if (itemExistente) {
+      setFeedbackMsg({ type: "error", text: `${produtoSelecionado.nome} já está nesta venda.` });
+      return;
+    }
 
     // Add item (item-level discount retired, set to "0")
     const novoItem: ItemRascunho = {
@@ -566,9 +618,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setProdutoSelecionado(null);
     setProdutoBusca("");
     setItemUnidade("");
-    setItemQtd("1");
+    setItemQtd("");
     setItemPreco("");
-    setItemDesconto("0");
     setFeedbackMsg(null);
 
     // Focus product search for next item
@@ -710,6 +761,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         valorPago: vPago,
         formaPagamento,
         vencimento: vencimento || undefined,
+        parcelas: vendaNoVale ? parcelasVale.map((parcela) => ({
+          vencimento: parcela.vencimento,
+          valor: parseBrazilianNumber(parcela.valor)
+        })) : undefined,
         observacoes: observacoes || undefined,
         instrumentoRecebimento: formaExigeInstrumento ? {
           emitente: instrumentoEmitente.trim(),
@@ -780,6 +835,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       vencimentoRef.current?.focus();
       return;
     }
+    if (vendaNoVale) {
+      const somaParcelas = parcelasVale.reduce((total, parcela) => total + parseBrazilianNumber(parcela.valor), 0);
+      if (parcelasVale.length === 0 || parcelasVale.some((parcela) => !parcela.vencimento || parseBrazilianNumber(parcela.valor) <= 0) || Math.abs(somaParcelas - totalLiquido) > 0.01) {
+        setFeedbackMsg({ type: "error", text: "Confira as datas e os valores das condições do vale. A soma deve ser igual ao total da venda." });
+        return;
+      }
+    }
 
     if (formaExigeInstrumento && (!instrumentoEmitente.trim() || !instrumentoNumero.trim() || !instrumentoVencimento)) {
       setFeedbackMsg({ type: "error", text: "Informe emitente, número e vencimento do cheque ou duplicata." });
@@ -838,11 +900,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setItensVendaAnteriorSelecionados([]);
     setHistoricoVendasOpen(false);
     setHistoricoPage(1);
-    setDescontoGeral("0");
+    setDescontoGeral("");
     setValorPago("");
     setVencimento("");
+    setParcelasVale([]);
     setObservacoes("");
-    setFormaPagamento("pix");
+    setFormaPagamento("vale");
     setInstrumentoEmitente("");
     setInstrumentoNumero("");
     setInstrumentoVencimento("");
@@ -883,26 +946,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       `*Valor Recebido:* ${formatCurrency(v.valorPago)} (${formaPagamento.toUpperCase()})\n` +
       (v.saldoRestante > 0 ? `*Saldo Restante:* ${formatCurrency(v.saldoRestante)} (Venc: ${v.vencimento ? formatDate(v.vencimento) : 'A definir'})\n` : '') +
       `\nObrigado pela preferência!`;
-  };
-
-  const handleCompartilhar = () => {
-    if (!vendaSalvaParaImpressao) return;
-    const text = gerarTextoComprovante(vendaSalvaParaImpressao);
-    if (navigator.share) {
-      navigator.share({
-        title: `Comprovante Venda #${vendaSalvaParaImpressao.numeroSequencial}`,
-        text: text
-      }).catch(err => {
-        console.log("Erro ao compartilhar:", err);
-      });
-    } else {
-      navigator.clipboard.writeText(text)
-        .then(() => {
-          setCopiado(true);
-          setTimeout(() => setCopiado(false), 2000);
-        })
-        .catch(err => console.error("Erro ao copiar:", err));
-    }
   };
 
   const handleAbrirWhatsapp = () => {
@@ -1075,7 +1118,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       )}
 
       {/* Pré-visualização e impressão: duas vias na mesma folha A4 */}
-      {vendaSalvaParaImpressao && (
+      {vendaSalvaParaImpressao && createPortal((
         <div
           id="print-receipt"
           role="dialog"
@@ -1094,65 +1137,18 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   <p className="text-xs text-slate-500">A prévia abaixo já contém as duas vias na mesma folha A4.</p>
                 </div>
               </div>
-              <button
-                type="button"
-                aria-label="Fechar comprovante"
-                onClick={() => {
-                  setVendaSalvaParaImpressao(null);
-                  resetForm();
-                  onSaleSaved();
-                }}
-                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={executePrint} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Printer size={15} /> Imprimir</button>
+                <button type="button" onClick={() => { setVendaSalvaParaImpressao(null); resetForm(); onSaleSaved(); }} className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-100"><X size={15} /> Fechar</button>
+              </div>
             </div>
 
             <div className="max-w-full overflow-x-auto pb-2 print:overflow-visible print:pb-0"><VendaComprovante venda={vendaSalvaParaImpressao} /></div>
 
-            {/* Print action bar */}
-            <div className="mt-3 space-y-3 rounded-xl bg-white p-4 print:hidden">
-              <div className="flex gap-3">
-                <button 
-                  onClick={executePrint}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
-                >
-                  <Printer size={15} /> Imprimir
-                </button>
-
-                {vendaSalvaParaImpressao.clienteTelefone && vendaSalvaParaImpressao.clienteIsWhatsapp === 1 && (
-                  <button 
-                    onClick={handleAbrirWhatsapp}
-                    className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors"
-                  >
-                    <MessageSquare size={15} /> Enviar WhatsApp
-                  </button>
-                )}
-              </div>
-
-              <div className="flex gap-3">
-                <button 
-                  onClick={handleCompartilhar}
-                  className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all border border-indigo-100"
-                >
-                  <Share2 size={15} /> {copiado ? "Copiado!" : "Compartilhar Texto"}
-                </button>
-
-                <button 
-                  onClick={() => {
-                    setVendaSalvaParaImpressao(null);
-                    resetForm();
-                    onSaleSaved();
-                  }}
-                  className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
-                >
-                  Fechar
-                </button>
-              </div>
-            </div>
+            {vendaSalvaParaImpressao.clienteTelefone && vendaSalvaParaImpressao.clienteIsWhatsapp === 1 && <div className="mt-3 rounded-xl bg-white p-4 print:hidden"><button onClick={handleAbrirWhatsapp} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-bold text-white hover:bg-emerald-700"><MessageSquare size={15} /> Enviar WhatsApp</button></div>}
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* Screen Area */}
       <div className={`${compact ? "hidden" : "flex"} flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4`}>
@@ -1407,6 +1403,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       value={descontoGeral}
                       onChange={(e) => setDescontoGeral(e.target.value)}
                       onKeyDown={(e) => handleKeyDown(e, valorPagoRef)}
+                      placeholder="0"
                       className="w-full text-right bg-slate-50 border border-slate-200 text-xs font-bold pl-2 pr-5 py-1 rounded-lg text-slate-900 focus:border-emerald-500 outline-none"
                     />
                     <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] font-bold text-slate-400">%</span>
@@ -1427,10 +1424,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <input 
                   ref={valorPagoRef}
                   type="text" 
-                  value={vendaNoVale ? "0,00" : vendaComCredito ? vPago.toFixed(2).replace(".", ",") : valorPago}
+                  value={vendaNoVale ? "" : vendaComCredito ? vPago.toFixed(2).replace(".", ",") : valorPago}
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
-                  placeholder={totalLiquido.toFixed(2).replace(".", ",")}
+                  placeholder="0,00"
                   disabled={vendaNoVale || vendaComCredito}
                   className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
@@ -1456,7 +1453,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   onChange={(e) => {
                     const novaForma = e.target.value;
                     setFormaPagamento(novaForma);
-                    if (novaForma === "vale") setValorPago("0");
+                    if (novaForma === "vale") setValorPago("");
                     else if (formaPagamento === "vale") setValorPago("");
                     if (!FORMAS_COM_INSTRUMENTO.has(novaForma)) {
                       setInstrumentoEmitente("");
@@ -1484,13 +1481,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               )}
 
-              {vendaNoVale && (
-                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
-                  <p className="font-extrabold">Esta venda será lançada como Vale.</p>
-                  <p className="mt-1 font-medium">A venda será concluída normalmente e o valor integral ficará em aberto no módulo Vales.</p>
-                </div>
-              )}
-
               {formaExigeInstrumento && (
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-3">
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Emitente *</label><input type="text" value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value)} placeholder={formaPagamento.includes("terceiro") ? "Nome do terceiro" : clienteSelecionado?.nome || "Nome do emitente"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
@@ -1500,8 +1490,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               )}
 
-              {/* Date Vencimento if there is Remaining Balance */}
-              {saldoRestante > 0 && (
+              {vendaNoVale && saldoRestante > 0 && <ParcelasValeEditor total={totalLiquido} parcelas={parcelasVale} onChange={setParcelasVale} compacto={compact} />}
+
+              {/* Vencimento único para outras formas com saldo a prazo */}
+              {!vendaNoVale && saldoRestante > 0 && (
                 <div className="bg-amber-50/50 p-2.5 rounded-xl border border-amber-200/30 space-y-1.5 animate-fade-in text-[10px]">
                   <div className="flex justify-between items-center">
                     <label className="font-bold text-amber-800 uppercase">Vencimento do Saldo</label>
@@ -1586,7 +1578,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
             </thead>
             <tbody className="divide-y divide-slate-100">
               <tr className="bg-emerald-50/70">
-                <td className="px-2 py-2 text-center font-black text-emerald-700">+</td>
+                <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar item à venda" aria-label="Adicionar item à venda" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
                 <td className="relative px-2 py-2">
                   <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
                   {showProdutoDropdown && produtoBusca.trim() && produtoDropdownPosition && createPortal(
@@ -1608,11 +1600,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                     document.body
                   )}
                 </td>
-                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
+                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
-                <td className="px-2 py-2"><input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); handleAddItem(); } }} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
+                <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} value={itemPreco} precoAutorizado={Number(produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
-                <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar nova linha" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
+                <td className="px-2 py-2 text-center text-slate-300">—</td>
               </tr>
               {itensVenda.length === 0 ? <tr><td colSpan={7} className="p-6 text-center text-xs font-semibold text-slate-400">Use a linha verde para adicionar o primeiro item.</td></tr> : (
                 itensVenda.map((it, idx) => {
@@ -1636,7 +1628,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           inputMode="decimal"
                           value={it.quantidade}
                           onChange={(event) => handleUpdateItem(idx, { quantidade: event.target.value })}
-                          placeholder="Quantidade"
+                          placeholder="0"
                           aria-label={`Quantidade de ${it.nome}`}
                           className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
                         />
@@ -1654,23 +1646,23 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                         </select>
                       </td>
                       <td className="p-2 text-right font-mono font-bold text-slate-600">
-                        <input
-                          type="text"
-                          inputMode="decimal"
+                        <PrecoAutorizadoInput
+                          clienteId={clienteSelecionado!.id}
+                          produtoId={it.produtoId}
                           value={it.precoUnitario}
-                          onChange={(event) => handleUpdateItem(idx, { precoUnitario: event.target.value })}
-                          aria-label={`Preço unitário de ${it.nome}`}
-                          className={`w-full min-w-0 rounded-md border px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
+                          precoAutorizado={Number(it.precoAutorizado ?? it.precoPadrao)}
+                          origem="venda"
+                          ariaLabel={`Preço unitário de ${it.nome}`}
+                          onAuthorized={(valorFormatado, valor) => {
+                            handleUpdateItem(idx, { precoUnitario: valorFormatado, precoAutorizado: valor });
+                            registrarPrecoAutorizadoLocal(it.produtoId, valor);
+                          }}
+                          className={`w-full min-w-16 rounded-md border px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
                             exigeAutorizacao
                               ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100"
                               : "border-sky-300 bg-sky-50 focus:border-emerald-600 focus:ring-emerald-100"
                           }`}
                         />
-                        {exigeAutorizacao && (
-                          <span className="mt-1 flex items-center justify-end gap-1 text-[9px] font-extrabold uppercase text-red-700">
-                            <KeyRound size={9} /> exige PIN
-                          </span>
-                        )}
                       </td>
                       <td className="px-2 py-2 text-right font-mono text-xs font-extrabold text-slate-900">{formatCurrency(totalItem)}</td>
                       <td className="px-2 py-2 text-center">

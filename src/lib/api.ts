@@ -99,12 +99,12 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<{ success: boolean }>(r)),
-  updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number | null) =>
+  updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number, pin: string, origem = "cadastro_cliente", documentoId?: string) =>
     fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}/preco`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preco })
-    }).then(r => handleResponse<{ precoAutorizado: number | null }>(r)),
+      body: JSON.stringify({ preco, pin, origem, documentoId })
+    }).then(r => handleResponse<{ precoAutorizado: number; precoAnterior: number; autorizador: string }>(r)),
   removeClienteProduto: (clienteId: string, produtoId: string) =>
     fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}`, {
       method: "DELETE"
@@ -200,6 +200,7 @@ export const api = {
     valorPago: number;
     formaPagamento: string;
     vencimento?: string;
+    parcelas?: Array<{ vencimento: string; valor: number }>;
     observacoes?: string;
     instrumentoRecebimento?: {
       emitente: string;
@@ -219,6 +220,29 @@ export const api = {
     }).then(r => handleResponse<Venda>(r)),
   cancelarVenda: (id: string) => 
     fetch(`${API_BASE}/vendas/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+  updateVale: (id: string, dados: { pin: string; observacoes?: string; parcelas: Array<{ vencimento: string; valor: number }> }) =>
+    fetch(`${API_BASE}/vales/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<Venda>(r)),
+  updateVendaVale: (id: string, dados: {
+    pin: string;
+    data: string;
+    desconto: number;
+    observacoes?: string;
+    items: Array<{ id: string; produtoId: string; quantidade: number; precoUnitario: number; desconto: number }>;
+  }) => fetch(`${API_BASE}/vales/${id}/venda`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<Venda>(r)),
+  cancelarVale: (id: string, pin: string, motivo?: string) =>
+    fetch(`${API_BASE}/vales/${id}/cancelar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, motivo })
+    }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
   createDevolucaoVenda: (id: string, dados: {
     data: string;
     observacoes?: string;
@@ -228,7 +252,14 @@ export const api = {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
-  }).then(r => handleResponse<{ success: boolean; id: string; valorCredito: number }>(r)),
+  }).then(r => handleResponse<{
+    success: boolean;
+    id: string;
+    valorCredito: number;
+    abatimentoVale: number;
+    bonusGerado: number;
+    venda: Venda;
+  }>(r)),
 
   // ORÇAMENTOS
   getOrcamentos: () => fetch(`${API_BASE}/orcamentos`).then(r => handleResponse<Orcamento[]>(r)),

@@ -90,6 +90,128 @@ function erroHttp(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
 }
 
+function salvarPrecoAutorizadoCliente(clienteId: string, produtoId: string, preco: number) {
+  const produto = queryOne<{ unidade: string }>(
+    "SELECT unidade FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
+    [produtoId]
+  );
+  if (!produto) throw erroHttp("Produto não encontrado ou inativo.", 404);
+
+  execute(
+    `INSERT INTO cliente_produtos_habituais
+       (clienteId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade, vezesComprado, ultimaCompraEm, precoAutorizado, oculto)
+     VALUES (?, ?, ?, NULL, ?, 0, date('now', 'localtime'), ?, 0)
+     ON CONFLICT(clienteId, produtoId) DO UPDATE SET
+       precoAutorizado = excluded.precoAutorizado,
+       oculto = 0,
+       updatedAt = CURRENT_TIMESTAMP`,
+    [clienteId, produtoId, preco, produto.unidade, preco]
+  );
+}
+
+type ParcelaValeInformada = { vencimento: string; valor: number };
+
+function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): ParcelaValeInformada[] {
+  if (!Array.isArray(parcelas) || parcelas.length === 0) {
+    throw erroHttp("Informe ao menos uma condição de pagamento para o vale.", 400);
+  }
+  if (parcelas.length > 24) {
+    throw erroHttp("O vale pode possuir no máximo 24 parcelas.", 400);
+  }
+  const normalizadas = parcelas.map((item: any) => ({
+    vencimento: String(item?.vencimento || ""),
+    valor: Math.round(Number(item?.valor) * 100) / 100,
+  }));
+  for (const parcela of normalizadas) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0) {
+      throw erroHttp("Todas as parcelas precisam de uma data e um valor maior que zero.", 400);
+    }
+  }
+  normalizadas.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+  const soma = Math.round(normalizadas.reduce((total, parcela) => total + parcela.valor, 0) * 100) / 100;
+  if (Math.abs(soma - totalEsperado) > 0.01) {
+    throw erroHttp(`A soma das parcelas deve ser ${totalEsperado.toFixed(2).replace(".", ",")}.`, 400);
+  }
+  return normalizadas;
+}
+
+function inserirParcelasVale(vendaId: string, parcelas: ParcelaValeInformada[]) {
+  execute("UPDATE vale_parcelas SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [vendaId]);
+  parcelas.forEach((parcela, index) => {
+    execute(
+      `INSERT INTO vale_parcelas (id, vendaId, numero, vencimento, valor, valorPago, saldo, status)
+       VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente')`,
+      [
+        "vpar_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+        vendaId,
+        index + 1,
+        parcela.vencimento,
+        parcela.valor,
+        parcela.valor
+      ]
+    );
+  });
+}
+
+function recalcularParcelasVale(vendaId: string) {
+  const venda = queryOne<{ valorPago: number; status: string }>("SELECT valorPago, status FROM vendas WHERE id = ?", [vendaId]);
+  if (!venda) return;
+  const parcelas = queryAll<any>(
+    "SELECT * FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento ASC, numero ASC",
+    [vendaId]
+  );
+  let pagoDisponivel = Math.max(0, Number(venda.valorPago || 0));
+  for (const parcela of parcelas) {
+    const valor = Number(parcela.valor);
+    const pago = Math.round(Math.min(valor, pagoDisponivel) * 100) / 100;
+    const saldo = Math.round(Math.max(0, valor - pago) * 100) / 100;
+    pagoDisponivel = Math.max(0, pagoDisponivel - pago);
+    execute(
+      `UPDATE vale_parcelas
+       SET valorPago = ?, saldo = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [pago, saldo, venda.status === "cancelada" ? "cancelada" : saldo <= 0.005 ? "paga" : "pendente", parcela.id]
+    );
+  }
+}
+
+function reduzirParcelasValePorDevolucao(vendaId: string, valorCredito: number) {
+  const parcelas = queryAll<any>(
+    "SELECT * FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento DESC, numero DESC",
+    [vendaId]
+  );
+  let restante = Math.round(Math.max(0, valorCredito) * 100) / 100;
+
+  for (const parcela of parcelas) {
+    if (restante <= 0.005) break;
+    const valorAtual = Number(parcela.valor);
+    const reducao = Math.round(Math.min(valorAtual, restante) * 100) / 100;
+    const novoValor = Math.round(Math.max(0, valorAtual - reducao) * 100) / 100;
+    restante = Math.round(Math.max(0, restante - reducao) * 100) / 100;
+
+    if (novoValor <= 0.005) {
+      execute(
+        "UPDATE vale_parcelas SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [parcela.id]
+      );
+    } else {
+      execute(
+        "UPDATE vale_parcelas SET valor = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [novoValor, parcela.id]
+      );
+    }
+  }
+
+  const ativas = queryAll<any>(
+    "SELECT id, vencimento FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento ASC, numero ASC",
+    [vendaId]
+  );
+  ativas.forEach((parcela, index) => {
+    execute("UPDATE vale_parcelas SET numero = ? WHERE id = ?", [index + 1, parcela.id]);
+  });
+  return ativas[0]?.vencimento || null;
+}
+
 // --- BACKUP & RESTORATION UTILITIES ---
 if (!fs.existsSync(BACKUP_DIR)) {
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
@@ -251,6 +373,11 @@ app.post("/api/seguranca/verificar-pin", (req, res) => {
 
     if (req.body?.finalidade === "visualizar_analise_venda") {
       registrarAuditoria(usuario.id, "analise_venda_desbloqueada", "venda_em_edicao", null, {
+        origem: req.ip || null
+      });
+    }
+    if (req.body?.finalidade === "alterar_preco") {
+      registrarAuditoria(usuario.id, "edicao_preco_desbloqueada", "preco_em_edicao", null, {
         origem: req.ip || null
       });
     }
@@ -467,7 +594,7 @@ app.get("/api/clientes/:id/historico", (req, res) => {
 
     // 1. Total comprado (soma do totalLiquido das vendas ativas)
     const totalCompradoRow = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE clienteId = ? AND deletedAt IS NULL",
+      "SELECT COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE clienteId = ? AND status <> 'cancelada' AND deletedAt IS NULL",
       [id]
     );
 
@@ -492,7 +619,7 @@ app.get("/api/clientes/:id/historico", (req, res) => {
        ), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.clienteId = ? AND v.deletedAt IS NULL`,
+        WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL`,
       [id]
     );
 
@@ -501,7 +628,7 @@ app.get("/api/clientes/:id/historico", (req, res) => {
       `SELECT iv.produtoId, iv.descricao, COALESCE(SUM(iv.total), 0) as totalValor
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.clienteId = ? AND v.deletedAt IS NULL
+        WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL
        GROUP BY iv.produtoId, iv.descricao
        ORDER BY totalValor DESC
        LIMIT 5`,
@@ -517,6 +644,11 @@ app.get("/api/clientes/:id/historico", (req, res) => {
     // For each sale, get its items
     for (const v of vendas) {
       v.items = queryAll("SELECT * FROM itens_venda WHERE vendaId = ?", [v.id]);
+      v.parcelas = queryAll(
+        `SELECT id, vendaId, numero, vencimento, valor, valorPago, saldo, status, createdAt, updatedAt
+         FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento, numero`,
+        [v.id]
+      );
     }
 
     // 7. Histórico de pagamentos
@@ -673,37 +805,45 @@ app.put("/api/clientes/:id/orcamento-padrao", (req, res) => {
 app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
   try {
     const { clienteId, produtoId } = req.params;
-    const relacionamento = queryOne(
-      `SELECT clienteId, produtoId
-       FROM cliente_produtos_habituais
-       WHERE clienteId = ? AND produtoId = ?`,
-      [clienteId, produtoId]
-    );
-    if (!relacionamento) {
-      return res.status(404).json({ error: "Este cliente ainda não comprou o produto informado." });
+    if (!queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL AND ativo = 1", [clienteId])) {
+      return res.status(404).json({ error: "Cliente não encontrado ou inativo." });
     }
-
-    const valorInformado = req.body?.preco;
-    const preco = valorInformado === null || valorInformado === "" ? null : Number(valorInformado);
-    if (preco !== null && (!Number.isFinite(preco) || preco < 0)) {
+    const preco = Number(req.body?.preco);
+    if (!Number.isFinite(preco) || preco < 0) {
       return res.status(400).json({ error: "Informe um preço personalizado válido." });
     }
-
-    execute(
-      `UPDATE cliente_produtos_habituais
-       SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE clienteId = ? AND produtoId = ?`,
-      [preco, clienteId, produtoId]
+    const administrador = getUsuarioAdministrador();
+    if (!administrador?.pinHash) {
+      return res.status(428).json({ error: "Configure o PIN administrativo antes de alterar preços." });
+    }
+    const autorizador = validarPinAdministrador(req.body?.pin);
+    if (!autorizador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. O preço não foi alterado." });
+    }
+    const produto = queryOne<{ precoVendaPadrao: number }>(
+      "SELECT precoVendaPadrao FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
+      [produtoId]
     );
-    const atualizado = queryOne(
-      `SELECT precoAutorizado
+    if (!produto) return res.status(404).json({ error: "Produto não encontrado ou inativo." });
+    const relacionamento = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
+      `SELECT precoAutorizado, ultimoPreco
        FROM cliente_produtos_habituais
        WHERE clienteId = ? AND produtoId = ?`,
       [clienteId, produtoId]
     );
-    res.json(atualizado);
+    const precoAnterior = Number(relacionamento?.precoAutorizado ?? relacionamento?.ultimoPreco ?? produto.precoVendaPadrao);
+
+    salvarPrecoAutorizadoCliente(clienteId, produtoId, preco);
+    registrarAuditoria(autorizador.id, "preco_cliente_atualizado", "cliente", clienteId, {
+      produtoId,
+      precoAnterior,
+      precoAutorizado: preco,
+      origem: String(req.body?.origem || "cadastro_cliente"),
+      documentoId: req.body?.documentoId || null
+    });
+    res.json({ precoAutorizado: preco, precoAnterior, autorizador: autorizador.nome });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -948,31 +1088,57 @@ app.get("/api/produtos/:id/fornecedores", (req, res) => {
 
 app.post("/api/produtos", (req, res) => {
   try {
-    const { nome, codigo, unidade, precoVendaPadrao, ativo } = req.body;
+    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, fornecedorIds } = req.body;
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
     if (!Number.isFinite(Number(precoVendaPadrao)) || Number(precoVendaPadrao) < 0) {
       return res.status(400).json({ error: "O preço de venda não pode ser negativo." });
     }
+    if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
+      return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
+    }
+    const fornecedoresSelecionados = [...new Set(
+      Array.isArray(fornecedorIds) ? fornecedorIds.filter((id): id is string => typeof id === "string" && id.trim() !== "") : []
+    )];
+    if (fornecedoresSelecionados.length > 0) {
+      const fornecedoresValidos = queryAll<{ id: string }>(
+        `SELECT id FROM fornecedores WHERE id IN (${fornecedoresSelecionados.map(() => "?").join(",")}) AND deletedAt IS NULL AND ativo = 1`,
+        fornecedoresSelecionados
+      );
+      if (fornecedoresValidos.length !== fornecedoresSelecionados.length) {
+        return res.status(400).json({ error: "Um ou mais fornecedores selecionados são inválidos." });
+      }
+    }
     const id = "prod_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
-    execute(
-      `INSERT INTO produtos (id, nome, codigo, unidade, precoVendaPadrao, custoPadrao, unidadeCompra, unidadeVenda, fatorConversao, venderUnidadeCompra, ativo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        nome,
-        codigo || null,
-        unidade,
-        Number(precoVendaPadrao),
-        0,
-        unidade,
-        unidade,
-        1,
-        0,
-        ativo !== undefined ? (ativo ? 1 : 0) : 1
-      ]
-    );
+    runInTransaction(() => {
+      execute(
+        `INSERT INTO produtos (id, nome, codigo, unidade, precoVendaPadrao, custoPadrao, custoManual, custoOrigem, unidadeCompra, unidadeVenda, fatorConversao, venderUnidadeCompra, ativo)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?, ?, ?)`,
+        [
+          id,
+          nome,
+          codigo || null,
+          unidade,
+          Number(precoVendaPadrao),
+          Number(custoPadrao),
+          Number(custoPadrao),
+          unidade,
+          unidade,
+          1,
+          0,
+          ativo !== undefined ? (ativo ? 1 : 0) : 1
+        ]
+      );
+      for (const fornecedorId of fornecedoresSelecionados) {
+        execute(
+          `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
+           VALUES (?, ?, 1)
+           ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
+          [fornecedorId, id]
+        );
+      }
+    });
     const product = queryOne("SELECT * FROM produtos WHERE id = ?", [id]);
     res.status(201).json(product);
   } catch (error: any) {
@@ -983,28 +1149,60 @@ app.post("/api/produtos", (req, res) => {
 app.put("/api/produtos/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, codigo, unidade, precoVendaPadrao, ativo } = req.body;
+    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, fornecedorIds } = req.body;
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
     if (!Number.isFinite(Number(precoVendaPadrao)) || Number(precoVendaPadrao) < 0) {
       return res.status(400).json({ error: "O preço de venda não pode ser negativo." });
     }
-    execute(
-      `UPDATE produtos
-       SET nome = ?, codigo = ?, unidade = ?, precoVendaPadrao = ?, unidadeCompra = ?, unidadeVenda = ?, fatorConversao = 1, venderUnidadeCompra = 0, ativo = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE id = ? AND deletedAt IS NULL`,
-      [
-        nome,
-        codigo || null,
-        unidade,
-        Number(precoVendaPadrao),
-        unidade,
-        unidade,
-        ativo ? 1 : 0,
-        id
-      ]
-    );
+    if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
+      return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
+    }
+    const sincronizarFornecedores = Array.isArray(fornecedorIds);
+    const fornecedoresSelecionados = [...new Set(
+      sincronizarFornecedores ? fornecedorIds.filter((fornecedorId): fornecedorId is string => typeof fornecedorId === "string" && fornecedorId.trim() !== "") : []
+    )];
+    if (fornecedoresSelecionados.length > 0) {
+      const fornecedoresValidos = queryAll<{ id: string }>(
+        `SELECT id FROM fornecedores WHERE id IN (${fornecedoresSelecionados.map(() => "?").join(",")}) AND deletedAt IS NULL AND ativo = 1`,
+        fornecedoresSelecionados
+      );
+      if (fornecedoresValidos.length !== fornecedoresSelecionados.length) {
+        return res.status(400).json({ error: "Um ou mais fornecedores selecionados são inválidos." });
+      }
+    }
+    runInTransaction(() => {
+      execute(
+        `UPDATE produtos
+         SET nome = ?, codigo = ?, unidade = ?, precoVendaPadrao = ?, custoPadrao = ?, custoManual = ?, custoOrigem = 'manual',
+             unidadeCompra = ?, unidadeVenda = ?, fatorConversao = 1, venderUnidadeCompra = 0, ativo = ?, updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ? AND deletedAt IS NULL`,
+        [
+          nome,
+          codigo || null,
+          unidade,
+          Number(precoVendaPadrao),
+          Number(custoPadrao),
+          Number(custoPadrao),
+          unidade,
+          unidade,
+          ativo ? 1 : 0,
+          id
+        ]
+      );
+      if (sincronizarFornecedores) {
+        execute("UPDATE fornecedor_produtos SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE produtoId = ?", [id]);
+        for (const fornecedorId of fornecedoresSelecionados) {
+          execute(
+            `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
+             VALUES (?, ?, 1)
+             ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
+            [fornecedorId, id]
+          );
+        }
+      }
+    });
     const updated = queryOne("SELECT * FROM produtos WHERE id = ?", [id]);
     res.json(updated);
   } catch (error: any) {
@@ -1106,6 +1304,10 @@ app.post("/api/orcamentos", (req, res) => {
     if (!clienteId || !data || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Informe cliente, data e ao menos um item para o orçamento." });
     }
+    const produtosDoOrcamento = items.map((item: any) => String(item?.produtoId || ""));
+    if (produtosDoOrcamento.some((produtoId: string) => !produtoId) || new Set(produtosDoOrcamento).size !== produtosDoOrcamento.length) {
+      return res.status(400).json({ error: "O mesmo produto não pode ser adicionado duas vezes no orçamento." });
+    }
     if (!queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [clienteId])) {
       return res.status(404).json({ error: "Cliente não encontrado." });
     }
@@ -1130,17 +1332,6 @@ app.post("/api/orcamentos", (req, res) => {
       }
       const orcamentoId = existente?.id || ("orc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16));
       let administradorAutorizador: UsuarioAdministrador | null = null;
-
-      if (existente) {
-        const administrador = getUsuarioAdministrador();
-        if (!administrador?.pinHash) {
-          throw erroHttp("Configure o PIN administrativo antes de alterar um orçamento.", 428);
-        }
-        administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
-        if (!administradorAutorizador) {
-          throw erroHttp("PIN administrativo inválido. O orçamento não foi alterado.", 403);
-        }
-      }
 
       let subtotal = 0;
       const itensResolvidos = items.map((item: any) => {
@@ -1191,15 +1382,15 @@ app.post("/api/orcamentos", (req, res) => {
       const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
       const itensQueExigemAutorizacao = itensResolvidos
         .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
-        .filter((item) => item.precoEfetivo < item.precoMinimoSemPin - 0.005);
+        .filter((item) => Math.abs(item.precoEfetivo - item.precoMinimoSemPin) > 0.005);
       if (itensQueExigemAutorizacao.length > 0) {
         const administrador = getUsuarioAdministrador();
         if (!administrador?.pinHash) {
-          throw erroHttp("Configure o PIN administrativo antes de autorizar preços menores.", 428);
+          throw erroHttp("Configure o PIN administrativo antes de alterar preços.", 428);
         }
         administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
         if (!administradorAutorizador) {
-          throw erroHttp("PIN administrativo inválido. O orçamento não foi salvo.", 403);
+          throw erroHttp("Autorize o novo preço no campo do item antes de salvar o orçamento.", 403);
         }
       }
 
@@ -1241,6 +1432,7 @@ app.post("/api/orcamentos", (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [item.id, orcamentoId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total, item.faltante]
         );
+        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, item.precoUnitario * fatorPrecoEfetivo);
       }
 
       // O orçamento operacional é também a lista de pedido permanente deste
@@ -1362,6 +1554,13 @@ const carregarDetalhesVenda = (venda: any) => {
      ORDER BY createdAt DESC LIMIT 1`,
     [venda.id]
   ) || null;
+  venda.parcelas = queryAll(
+    `SELECT id, vendaId, numero, vencimento, valor, valorPago, saldo, status, createdAt, updatedAt
+     FROM vale_parcelas
+     WHERE vendaId = ? AND deletedAt IS NULL
+     ORDER BY vencimento ASC, numero ASC`,
+    [venda.id]
+  );
   return venda;
 };
 
@@ -1414,6 +1613,7 @@ app.post("/api/vendas", (req, res) => {
       valorPago,     // Amount paid immediately
       formaPagamento,// e.g. "pix", "dinheiro"
       vencimento,    // YYYY-MM-DD
+      parcelas,
       observacoes,
       autorizacaoPreco,
       instrumentoRecebimento,
@@ -1422,6 +1622,10 @@ app.post("/api/vendas", (req, res) => {
 
     if (!clienteId || !data || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Dados da venda incompletos ou vazios." });
+    }
+    const produtosDaVenda = items.map((item: any) => String(item?.produtoId || ""));
+    if (produtosDaVenda.some((produtoId: string) => !produtoId) || new Set(produtosDaVenda).size !== produtosDaVenda.length) {
+      return res.status(400).json({ error: "O mesmo produto não pode ser adicionado duas vezes na venda." });
     }
 
     const nextSeqRow = queryOne<{ maxSeq: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) as maxSeq FROM vendas");
@@ -1551,29 +1755,42 @@ app.post("/api/vendas", (req, res) => {
       const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
       const itensQueExigemAutorizacao = resolvedItems
         .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
-        .filter((item) => item.precoEfetivo < item.precoMinimoSemPin - 0.005);
+        .filter((item) => Math.abs(item.precoEfetivo - item.precoMinimoSemPin) > 0.005);
       let administradorAutorizador: UsuarioAdministrador | null = null;
 
       if (itensQueExigemAutorizacao.length > 0) {
         const administrador = getUsuarioAdministrador();
         if (!administrador?.pinHash) {
-          throw erroHttp("Configure o PIN administrativo em Ajustes & Backups antes de autorizar preços menores.", 428);
+          throw erroHttp("Configure o PIN administrativo em Ajustes & Backups antes de alterar preços.", 428);
         }
 
         administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
         if (!administradorAutorizador) {
-          throw erroHttp("PIN administrativo inválido. A venda não foi registrada.", 403);
+          throw erroHttp("Autorize o novo preço no campo do item antes de registrar a venda.", 403);
         }
       }
 
       const status = saldoRestante <= 0 ? "paga" : "pendente";
+      const parcelasResolvidas = saldoRestante > 0
+        ? normalizarParcelasVale(
+            Array.isArray(parcelas) && parcelas.length > 0
+              ? parcelas
+              : [{ vencimento, valor: totalLiquido }],
+            totalLiquido
+          )
+        : [];
+      const vencimentoPrincipal = parcelasResolvidas[0]?.vencimento || vencimento || null;
 
       // Insert Venda
       execute(
         `INSERT INTO vendas (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante, status, vencimento, observacoes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [vendaId, nextSeq, clienteId, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimento || null, observacoes || null]
+        [vendaId, nextSeq, clienteId, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimentoPrincipal, observacoes || null]
       );
+      if (parcelasResolvidas.length > 0) {
+        inserirParcelasVale(vendaId, parcelasResolvidas);
+        recalcularParcelasVale(vendaId);
+      }
 
       // Insert Itens Venda
       for (const it of resolvedItems) {
@@ -1634,12 +1851,7 @@ app.post("/api/vendas", (req, res) => {
       // referência atual, enquanto o preço praticado permanece preservado no item.
       for (const item of resolvedItems) {
         const precoEfetivo = item.precoUnitario * fatorPrecoEfetivo;
-        execute(
-          `UPDATE cliente_produtos_habituais
-           SET precoAutorizado = ?, updatedAt = CURRENT_TIMESTAMP
-           WHERE clienteId = ? AND produtoId = ?`,
-          [precoEfetivo, clienteId, item.produtoId]
-        );
+        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, precoEfetivo);
       }
 
       if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
@@ -1747,22 +1959,49 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
           ]
         );
       }
+      const totalAnterior = Number(venda.totalLiquido);
+      const pagoAnterior = Number(venda.valorPago);
+      const saldoAnterior = Number(venda.saldoRestante);
+      const novoTotal = Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
+      const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
+      const novoSaldo = Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const abatimentoVale = Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
+      const bonusGerado = Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
+      const primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, valorCredito);
+
       execute(
-        `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
-         VALUES (?, ?, NULL, ?, ?, 'credito', ?, ?)`,
-        [
-          "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
-          venda.clienteId,
-          vendaId,
-          data,
-          valorCredito,
-          `Devolução da venda #${venda.numeroSequencial}`
-        ]
+        `UPDATE vendas
+         SET totalLiquido = ?, valorPago = ?, saldoRestante = ?, status = ?,
+             vencimento = COALESCE(?, vencimento), updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [novoTotal, novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", primeiroVencimento, vendaId]
       );
+      recalcularParcelasVale(vendaId);
+
+      if (bonusGerado > 0.005) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, NULL, ?, ?, 'credito', ?, ?)`,
+          [
+            "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            venda.clienteId,
+            vendaId,
+            data,
+            bonusGerado,
+            `Crédito excedente da devolução da venda #${venda.numeroSequencial}`
+          ]
+        );
+      }
       registrarAuditoria(administrador.id, "devolucao_venda_registrada", "venda", vendaId, {
         devolucaoId,
         clienteId: venda.clienteId,
         valorCredito,
+        abatimentoVale,
+        bonusGerado,
+        totalAnterior,
+        totalAtual: novoTotal,
+        saldoAnterior,
+        saldoAtual: novoSaldo,
         itens: resolvidos.map((item) => ({
           itemVendaId: item.id,
           produtoId: item.produtoId,
@@ -1770,10 +2009,311 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
           totalCredito: item.totalCredito
         }))
       });
-      return { id: devolucaoId, valorCredito };
+      rebuildClienteProdutosHabituais(venda.clienteId);
+      return { id: devolucaoId, valorCredito, abatimentoVale, bonusGerado };
     });
 
-    res.status(201).json({ success: true, ...resultado });
+    const atualizada = queryOne<any>(
+      `SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone,
+              c.endereco AS clienteEndereco, c.documento AS clienteDocumento
+       FROM vendas v JOIN clientes c ON c.id = v.clienteId
+       WHERE v.id = ?`,
+      [vendaId]
+    );
+    res.status(201).json({
+      success: true,
+      ...resultado,
+      venda: carregarDetalhesVenda(atualizada)
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.put("/api/vales/:id/venda", (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi alterada." });
+    }
+    const vendaId = req.params.id;
+    const itensInformados = Array.isArray(req.body?.items) ? req.body.items : [];
+    if (itensInformados.length === 0) {
+      return res.status(400).json({ error: "A venda deve manter ao menos um item." });
+    }
+
+    runInTransaction(() => {
+      const venda = queryOne<any>(
+        "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND vencimento IS NOT NULL AND status <> 'cancelada'",
+        [vendaId]
+      );
+      if (!venda) throw erroHttp("Vale não encontrado ou cancelado.", 404);
+
+      const itensAtuais = queryAll<any>(
+        `SELECT iv.*,
+                COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) AS quantidadeDevolvida
+         FROM itens_venda iv WHERE iv.vendaId = ?`,
+        [vendaId]
+      );
+      const atuaisPorId = new Map(itensAtuais.map((item) => [item.id, item]));
+      const idsInformados = new Set<string>();
+      const chavesInformadas = new Set<string>();
+      const produtosInformados = new Set<string>();
+      const resolvidos = itensInformados.map((entrada: any) => {
+        const chave = String(entrada.id || "");
+        if (!chave || chavesInformadas.has(chave)) {
+          throw erroHttp("A alteração contém item inválido ou repetido.", 400);
+        }
+        chavesInformadas.add(chave);
+        let atual = atuaisPorId.get(chave) as any;
+        const itemNovo = !atual;
+        if (itemNovo) {
+          const produto = queryOne<any>(
+            "SELECT * FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
+            [entrada.produtoId]
+          );
+          if (!produto) throw erroHttp("Um produto adicionado não existe ou está inativo.", 400);
+          atual = {
+            id: "iv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            vendaId,
+            produtoId: produto.id,
+            descricao: produto.nome,
+            unidade: produto.unidade,
+            custoUnitario: Number(produto.custoPadrao || 0),
+            desconto: 0,
+            quantidadeDevolvida: 0,
+            itemNovo: true
+          };
+        } else {
+          idsInformados.add(atual.id);
+        }
+        if (produtosInformados.has(atual.produtoId)) {
+          throw erroHttp(`O produto ${atual.descricao} não pode aparecer duas vezes na mesma venda.`, 400);
+        }
+        produtosInformados.add(atual.produtoId);
+        const quantidade = Number(entrada.quantidade);
+        const precoUnitario = Number(entrada.precoUnitario);
+        const descontoItem = Number(entrada.desconto ?? atual.desconto ?? 0);
+        if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade + 0.000001 < Number(atual.quantidadeDevolvida || 0)) {
+          throw erroHttp(`A quantidade de ${atual.descricao} não pode ser menor que a quantidade já devolvida.`, 400);
+        }
+        if (!Number.isFinite(precoUnitario) || precoUnitario < 0 || !Number.isFinite(descontoItem) || descontoItem < 0) {
+          throw erroHttp(`Preço ou desconto inválido para ${atual.descricao}.`, 400);
+        }
+        const totalBruto = quantidade * precoUnitario;
+        if (descontoItem > totalBruto) throw erroHttp(`O desconto de ${atual.descricao} excede o valor do item.`, 400);
+        const total = Math.round((totalBruto - descontoItem) * 100) / 100;
+        const custoTotal = Math.round(quantidade * Number(atual.custoUnitario) * 100) / 100;
+        return { ...atual, quantidade, precoUnitario, desconto: descontoItem, total, custoTotal, lucroBruto: Math.round((total - custoTotal) * 100) / 100 };
+      });
+
+      for (const atual of itensAtuais) {
+        if (!idsInformados.has(atual.id) && Number(atual.quantidadeDevolvida || 0) > 0.005) {
+          throw erroHttp(`O item ${atual.descricao} possui devolução e precisa permanecer no histórico da venda.`, 409);
+        }
+      }
+
+      const subtotal = Math.round(resolvidos.reduce((soma, item) => soma + item.total, 0) * 100) / 100;
+      const desconto = Number(req.body?.desconto || 0);
+      if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal) {
+        throw erroHttp("O desconto geral informado é inválido.", 400);
+      }
+      const novoTotal = Math.round((subtotal - desconto) * 100) / 100;
+      const totalAnterior = Number(venda.totalLiquido);
+      const pagoAnterior = Number(venda.valorPago);
+      const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
+      const novoSaldo = Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const bonusGerado = Math.round(Math.max(0, pagoAnterior - novoTotal) * 100) / 100;
+      const diferencaTotal = Math.round((novoTotal - totalAnterior) * 100) / 100;
+
+      for (const item of resolvidos) {
+        if (item.itemNovo) {
+          execute(
+            `INSERT INTO itens_venda
+               (id, vendaId, produtoId, descricao, quantidade, unidade, precoUnitario, custoUnitario, desconto, total, custoTotal, lucroBruto)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [item.id, vendaId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.custoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto]
+          );
+        } else {
+          execute(
+            `UPDATE itens_venda SET quantidade = ?, precoUnitario = ?, desconto = ?, total = ?,
+               custoTotal = ?, lucroBruto = ? WHERE id = ?`,
+            [item.quantidade, item.precoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto, item.id]
+          );
+        }
+        salvarPrecoAutorizadoCliente(venda.clienteId, item.produtoId, item.precoUnitario);
+      }
+      for (const atual of itensAtuais) {
+        if (!idsInformados.has(atual.id)) execute("DELETE FROM itens_venda WHERE id = ?", [atual.id]);
+      }
+
+      let primeiroVencimento: string | null = venda.vencimento;
+      if (diferencaTotal < -0.005) {
+        primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, Math.abs(diferencaTotal)) || venda.vencimento;
+      } else if (diferencaTotal > 0.005) {
+        const ultimaParcela = queryOne<any>(
+          "SELECT * FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento DESC, numero DESC LIMIT 1",
+          [vendaId]
+        );
+        if (ultimaParcela) {
+          execute("UPDATE vale_parcelas SET valor = valor + ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [diferencaTotal, ultimaParcela.id]);
+        } else {
+          inserirParcelasVale(vendaId, [{ vencimento: venda.vencimento || req.body?.data || venda.data, valor: novoTotal }]);
+        }
+      }
+
+      execute(
+        `UPDATE vendas SET data = ?, subtotal = ?, desconto = ?, totalLiquido = ?, valorPago = ?,
+           saldoRestante = ?, status = ?, vencimento = ?, observacoes = ?, updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [
+          /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.data || "")) ? req.body.data : venda.data,
+          subtotal,
+          desconto,
+          novoTotal,
+          novoPago,
+          novoSaldo,
+          novoSaldo <= 0.005 ? "paga" : "pendente",
+          primeiroVencimento,
+          String(req.body?.observacoes || "").trim() || null,
+          vendaId
+        ]
+      );
+      recalcularParcelasVale(vendaId);
+      if (bonusGerado > 0.005) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, NULL, ?, date('now', 'localtime'), 'credito', ?, ?)`,
+          [
+            "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            venda.clienteId,
+            vendaId,
+            bonusGerado,
+            `Crédito excedente da alteração da venda #${venda.numeroSequencial}`
+          ]
+        );
+      }
+      registrarAuditoria(administrador.id, "venda_vale_alterada", "venda", vendaId, {
+        clienteId: venda.clienteId,
+        numeroSequencial: venda.numeroSequencial,
+        totalAnterior,
+        totalAtual: novoTotal,
+        saldoAnterior: venda.saldoRestante,
+        saldoAtual: novoSaldo,
+        bonusGerado,
+        itensAnteriores: itensAtuais,
+        itensAtuais: resolvidos
+      });
+      rebuildClienteProdutosHabituais(venda.clienteId);
+    });
+
+    const atualizada = queryOne<any>(
+      `SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone,
+              c.endereco AS clienteEndereco, c.documento AS clienteDocumento
+       FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?`,
+      [vendaId]
+    );
+    res.json(carregarDetalhesVenda(atualizada));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.put("/api/vales/:id", (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi alterado." });
+    }
+    const { id } = req.params;
+    const venda = queryOne<any>(
+      "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND vencimento IS NOT NULL",
+      [id]
+    );
+    if (!venda) return res.status(404).json({ error: "Vale não encontrado." });
+    if (venda.status === "cancelada") {
+      return res.status(409).json({ error: "Um vale cancelado não pode ser alterado." });
+    }
+
+    const parcelasAnteriores = queryAll<any>(
+      "SELECT numero, vencimento, valor, valorPago, saldo, status FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY numero",
+      [id]
+    );
+    const parcelas = normalizarParcelasVale(req.body?.parcelas, Number(venda.totalLiquido));
+
+    runInTransaction(() => {
+      inserirParcelasVale(id, parcelas);
+      execute(
+        "UPDATE vendas SET vencimento = ?, observacoes = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [parcelas[0].vencimento, String(req.body?.observacoes || "").trim() || null, id]
+      );
+      recalcularParcelasVale(id);
+      registrarAuditoria(administrador.id, "vale_replanejado", "venda", id, {
+        clienteId: venda.clienteId,
+        numeroSequencial: venda.numeroSequencial,
+        parcelasAnteriores,
+        parcelasNovas: parcelas,
+        observacoesAnteriores: venda.observacoes || null,
+        observacoesNovas: String(req.body?.observacoes || "").trim() || null
+      });
+    });
+
+    const atualizado = queryOne<any>(
+      `SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone,
+              c.endereco AS clienteEndereco, c.documento AS clienteDocumento
+       FROM vendas v JOIN clientes c ON c.id = v.clienteId
+       WHERE v.id = ?`,
+      [id]
+    );
+    res.json(carregarDetalhesVenda(atualizado));
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/vales/:id/cancelar", (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi cancelado." });
+    }
+    const { id } = req.params;
+    runInTransaction(() => {
+      const venda = queryOne<any>(
+        "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND vencimento IS NOT NULL",
+        [id]
+      );
+      if (!venda) throw erroHttp("Vale não encontrado.", 404);
+      if (venda.status === "cancelada") throw erroHttp("Este vale já está cancelado.", 409);
+
+      execute("UPDATE vendas SET status = 'cancelada', saldoRestante = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [id]);
+      execute("UPDATE vale_parcelas SET status = 'cancelada', saldo = 0, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
+      execute("UPDATE instrumentos_recebimento SET status = 'cancelado', deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
+      const bonusRestituido = Math.round(Math.max(0, Number(venda.valorPago || 0)) * 100) / 100;
+      if (bonusRestituido > 0.005) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, NULL, ?, date('now', 'localtime'), 'credito', ?, ?)`,
+          [
+            "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            venda.clienteId,
+            id,
+            bonusRestituido,
+            `Restituição pelo cancelamento do vale #${venda.numeroSequencial}`
+          ]
+        );
+      }
+      registrarAuditoria(administrador.id, "vale_cancelado", "venda", id, {
+        clienteId: venda.clienteId,
+        numeroSequencial: venda.numeroSequencial,
+        totalLiquido: venda.totalLiquido,
+        valorPago: venda.valorPago,
+        bonusRestituido,
+        motivo: String(req.body?.motivo || "").trim() || null
+      });
+      rebuildClienteProdutosHabituais(venda.clienteId);
+    });
+    res.json({ success: true, message: "Vale cancelado e removido da contabilidade ativa. O histórico foi preservado." });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -1822,6 +2362,10 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
         [nowStr, id]
       );
       execute(
+        "UPDATE vale_parcelas SET status = 'cancelada', saldo = 0, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL",
+        [id]
+      );
+      execute(
         "UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE vendaId = ? AND deletedAt IS NULL",
         [nowStr, id]
       );
@@ -1849,8 +2393,17 @@ function recalcularUltimoCustoProduto(produtoId: string) {
   );
 
   execute(
-    "UPDATE produtos SET custoPadrao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-    [ultimaCompra ? Number(ultimaCompra.custoUnitario) : 0, produtoId]
+    `UPDATE produtos
+     SET custoPadrao = CASE WHEN ? IS NULL THEN COALESCE(custoManual, 0) ELSE ? END,
+         custoOrigem = CASE WHEN ? IS NULL THEN 'manual' ELSE 'compra' END,
+         updatedAt = CURRENT_TIMESTAMP
+     WHERE id = ?`,
+    [
+      ultimaCompra ? Number(ultimaCompra.custoUnitario) : null,
+      ultimaCompra ? Number(ultimaCompra.custoUnitario) : null,
+      ultimaCompra ? Number(ultimaCompra.custoUnitario) : null,
+      produtoId
+    ]
   );
 }
 
@@ -2131,6 +2684,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
           `UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
           [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", item.vendaId]
         );
+        recalcularParcelasVale(item.vendaId);
         execute(
           `INSERT INTO recebimento_alocacoes (id, recebimentoId, vendaId, valor) VALUES (?, ?, ?, ?)`,
           ["alo_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), recebimentoId, item.vendaId, item.valor]
@@ -2196,6 +2750,7 @@ app.post("/api/recebimentos-cliente/:id/cancelar", (req, res) => {
           "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
           [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]
         );
+        recalcularParcelasVale(venda.id);
       }
 
       execute("UPDATE recebimento_alocacoes SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);
@@ -2259,6 +2814,7 @@ app.post("/api/pagamentos", (req, res) => {
           "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
           [novoValorPago, novoSaldo, novoStatus, vendaId]
         );
+        recalcularParcelasVale(vendaId);
 
         // Insert pagamento
         execute(
@@ -2289,6 +2845,7 @@ app.post("/api/pagamentos", (req, res) => {
             "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
             [nPago, nSaldo, nStatus, v.id]
           );
+          recalcularParcelasVale(v.id);
 
           valorDisponivel -= amortizar;
         }
@@ -2337,6 +2894,7 @@ app.post("/api/pagamentos/:id/cancelar", (req, res) => {
             "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
             [nPago, nSaldo, nStatus, v.id]
           );
+          recalcularParcelasVale(v.id);
         }
       } else {
         // Se foi um pagamento avulso que amortizou múltiplas contas, precisamos recalcular
@@ -2369,6 +2927,7 @@ app.post("/api/pagamentos/:id/cancelar", (req, res) => {
             "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
             [nPago, nSaldo, nStatus, v.id]
           );
+          recalcularParcelasVale(v.id);
 
           saldoDisponivel -= amortizar;
         }

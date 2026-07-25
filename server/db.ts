@@ -173,6 +173,31 @@ export function initDatabase() {
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_seq ON orcamentos (numeroSequencial)`).run();
     // Migração: versões anteriores limitavam o sistema a um orçamento aberto global.
     db.prepare(`DROP INDEX IF EXISTS idx_orcamentos_unico_aberto`).run();
+    // Cada cliente mantém somente um orçamento vigente. Em instalações que
+    // chegaram a criar duplicados, preservamos o mais recente e encerramos os demais.
+    db.prepare(`
+      UPDATE orcamentos
+      SET status = 'cancelado', updatedAt = CURRENT_TIMESTAMP
+      WHERE status = 'aberto'
+        AND deletedAt IS NULL
+        AND id NOT IN (
+          SELECT o1.id
+          FROM orcamentos o1
+          WHERE o1.status = 'aberto' AND o1.deletedAt IS NULL
+            AND o1.numeroSequencial = (
+              SELECT MAX(o2.numeroSequencial)
+              FROM orcamentos o2
+              WHERE o2.clienteId = o1.clienteId
+                AND o2.status = 'aberto'
+                AND o2.deletedAt IS NULL
+            )
+        )
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_cliente_vigente
+      ON orcamentos (clienteId)
+      WHERE status = 'aberto' AND deletedAt IS NULL
+    `).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_orcamentos_cliente ON orcamentos (clienteId, numeroSequencial DESC)`).run();
 
     db.prepare(`

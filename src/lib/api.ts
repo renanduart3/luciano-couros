@@ -89,6 +89,8 @@ export const api = {
     fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
   getClienteOrcamentoPadrao: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/orcamento-padrao`).then(r => handleResponse<OrcamentoPadraoClienteItem[]>(r)),
+  getClienteOrcamentoVigente: (id: string) =>
+    fetch(`${API_BASE}/clientes/${id}/orcamento-vigente`).then(r => handleResponse<Orcamento | null>(r)),
   updateClienteOrcamentoPadrao: (id: string, dados: {
     pin: string;
     items: Array<{ produtoId: string; quantidade: number; precoUnitario: number; faltante: boolean }>;

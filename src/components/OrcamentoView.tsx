@@ -70,6 +70,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [adminPin, setAdminPin] = useState("");
   const [pinErro, setPinErro] = useState("");
   const [levarParaVendaAposPin, setLevarParaVendaAposPin] = useState(false);
+  const [itensSelecionadosVenda, setItensSelecionadosVenda] = useState<string[]>([]);
+  const [itensParaVendaAposPin, setItensParaVendaAposPin] = useState<string[]>([]);
 
   const carregar = async () => {
     setLoading(true);
@@ -125,6 +127,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setObservacoes("");
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
+    setItensSelecionadosVenda([]);
     setOrigemItens("todos");
   };
 
@@ -165,6 +168,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setProdutoSelecionado(null);
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
+    setItensSelecionadosVenda([]);
     setMensagem(null);
     setAba("formulario");
   };
@@ -194,6 +198,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const subtotal = items.reduce((total, item) =>
     total + parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario), 0
   );
+  const itensDisponiveisVenda = items.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
   const descontoPercentualValor = parseBrazilianNumber(descontoPercentual);
   const descontoValor = subtotal * Math.max(0, descontoPercentualValor) / 100;
   const totalLiquido = Math.max(0, subtotal - descontoValor);
@@ -232,7 +237,16 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setItensHistoricoSelecionados([]);
     setHistoricoPage(1);
     setOrigemItens("todos");
+    setItensSelecionadosVenda([]);
     try {
+      const vigente = await api.getClienteOrcamentoVigente(selecionado.id);
+      if (vigente) {
+        abrirEdicaoOrcamento(vigente);
+        setCliente(selecionado);
+        setClienteBusca(selecionado.nome);
+        setMensagem({ tipo: "ok", texto: `Orçamento #${vigente.numeroSequencial} carregado.` });
+        return;
+      }
       const listaPadrao = await api.getClienteOrcamentoPadrao(selecionado.id);
       if (listaPadrao.length > 0) {
         setItems(listaPadrao.map((item) => ({
@@ -257,8 +271,11 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setMensagem(null);
     if (origem === "todos") {
       try {
-        const acumulados = await api.getClienteOrcamentoPadrao(cliente.id);
-        setItems(acumulados.map((item) => ({
+        const [acumulados, vigente] = await Promise.all([
+          api.getClienteOrcamentoPadrao(cliente.id),
+          api.getClienteOrcamentoVigente(cliente.id)
+        ]);
+        const lista = acumulados.map((item) => ({
           produtoId: item.produtoId,
           codigo: item.codigo,
           descricao: item.nome,
@@ -266,7 +283,24 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           unidade: item.unidade,
           precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
           faltante: false
-        })));
+        }));
+        for (const item of vigente?.items || []) {
+          const indice = lista.findIndex((registro) => registro.produtoId === item.produtoId);
+          const produto = produtos.find((registro) => registro.id === item.produtoId);
+          const itemVigente = {
+            produtoId: item.produtoId,
+            codigo: item.referencia || produto?.codigo,
+            descricao: item.descricao || produto?.nome || "Produto",
+            quantidade: Number(item.quantidade).toString().replace(".", ","),
+            unidade: item.unidade,
+            precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+            faltante: false
+          };
+          if (indice >= 0) lista[indice] = itemVigente;
+          else lista.push(itemVigente);
+        }
+        setItems(lista);
+        setItensSelecionadosVenda([]);
       } catch (error: any) {
         setMensagem({ tipo: "erro", texto: error.message || "Não foi possível carregar os produtos do cliente." });
       }
@@ -274,6 +308,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     }
     const venda = historicoVendas.find((registro) => registro.id === origem);
     if (!venda) return;
+    setItensSelecionadosVenda([]);
     setItems((venda.items || []).filter((item) => produtos.some((produto) => produto.id === item.produtoId)).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
@@ -416,10 +451,63 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     return true;
   };
 
-  const salvar = async (levarParaVenda = false, pin?: string) => {
+  const incluirItensNaVenda = (produtosSelecionados: string[]) => {
+    if (!cliente) {
+      setMensagem({ tipo: "erro", texto: "Selecione o cliente do orçamento." });
+      return;
+    }
+    const selecionados = new Set(produtosSelecionados);
+    const itensParaVenda = items
+      .filter((item) => selecionados.has(item.produtoId) && parseBrazilianNumber(item.quantidade) > 0)
+      .map((item, index) => ({
+        id: `item-transferencia-${index}`,
+        orcamentoId: orcamento?.id || "",
+        produtoId: item.produtoId,
+        descricao: item.descricao,
+        quantidade: parseBrazilianNumber(item.quantidade),
+        unidade: item.unidade,
+        precoUnitario: parseBrazilianNumber(item.precoUnitario),
+        desconto: 0,
+        total: parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario),
+        faltante: 0,
+        referencia: item.codigo
+      }));
+    if (itensParaVenda.length === 0) {
+      setMensagem({ tipo: "erro", texto: "Selecione ao menos um item com quantidade maior que zero." });
+      return;
+    }
+    onLevarParaVenda({
+      id: orcamento?.id || "",
+      numeroSequencial: orcamento?.numeroSequencial || numero,
+      clienteId: cliente.id,
+      clienteNome: cliente.nome,
+      clienteTelefone: cliente.telefone,
+      clienteEndereco: cliente.endereco,
+      clienteDocumento: cliente.documento,
+      data,
+      validade,
+      subtotal,
+      desconto: descontoValor,
+      totalLiquido,
+      status: "aberto",
+      observacoes,
+      items: itensParaVenda,
+      createdAt: orcamento?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    setItensSelecionadosVenda([]);
+    setMensagem({ tipo: "ok", texto: `${itensParaVenda.length} item(ns) incluído(s) na venda atual.` });
+  };
+
+  const salvar = async (levarParaVenda = false, pin?: string, produtosParaVenda: string[] = itensSelecionadosVenda) => {
     if (!validar()) return;
+    if (levarParaVenda && produtosParaVenda.length === 0) {
+      setMensagem({ tipo: "erro", texto: "Selecione pelo menos um item para incluir na venda." });
+      return;
+    }
     if ((orcamento || itensAbaixoDoPrecoCliente.length > 0) && !pin) {
       setLevarParaVendaAposPin(levarParaVenda);
+      setItensParaVendaAposPin(produtosParaVenda);
       setAdminPin("");
       setPinErro("");
       setPinOpen(true);
@@ -439,7 +527,12 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       setAdminPin("");
       setPinErro("");
       if (levarParaVenda) {
-        onLevarParaVenda(salvo);
+        const selecionados = new Set(produtosParaVenda);
+        onLevarParaVenda({
+          ...salvo,
+          items: salvo.items.filter((item) => selecionados.has(item.produtoId))
+        });
+        setItensSelecionadosVenda([]);
       } else if (!compact) {
         setAba("lista");
       }
@@ -448,6 +541,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       if (pin || texto.toLowerCase().includes("pin")) {
         setPinErro(texto);
         setLevarParaVendaAposPin(levarParaVenda);
+        setItensParaVendaAposPin(produtosParaVenda);
         setPinOpen(true);
       } else {
         setMensagem({ tipo: "erro", texto });
@@ -499,7 +593,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
             aria-labelledby="pin-orcamento-titulo"
             onSubmit={(event) => {
               event.preventDefault();
-              salvar(levarParaVendaAposPin, adminPin);
+              salvar(levarParaVendaAposPin, adminPin, itensParaVendaAposPin);
             }}
             className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl"
           >
@@ -764,12 +858,13 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className={`w-full text-xs ${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[720px]"}`}>
               <colgroup>
-                <col className="w-[8%]" /><col className="w-[30%]" /><col className="w-[10%]" /><col className="w-[10%]" />
-                <col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[8%]" />
+                <col className="w-[5%]" /><col className="w-[8%]" /><col className="w-[29%]" /><col className="w-[10%]" />
+                <col className="w-[8%]" /><col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[10%]" />
               </colgroup>
-              <thead><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
+              <thead><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-center"><input aria-label="Selecionar todos os itens do orçamento" type="checkbox" checked={itensDisponiveisVenda.length > 0 && itensDisponiveisVenda.every((item) => itensSelecionadosVenda.includes(item.produtoId))} onChange={(event) => setItensSelecionadosVenda(event.target.checked ? itensDisponiveisVenda.map((item) => item.produtoId) : [])} /></th><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
               <tbody className="divide-y divide-slate-200">
                 <tr className="bg-blue-50/60">
+                  <td></td>
                   <td className="px-2 py-2 text-center font-black text-blue-700">+</td>
                   <td className="relative px-2 py-2"><input value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); }} placeholder="Digite código ou material..." className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 font-bold outline-none" />{produtoBusca && !produtoSelecionado && <div className="absolute left-1 right-1 top-full z-30 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{produtosFiltrados.map((item) => <button key={item.id} type="button" onClick={() => selecionarProduto(item)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left hover:bg-blue-50"><span><strong className="block">{item.nome}</strong><small className="text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</small></span><strong className="text-blue-700">{formatCurrency(Number(produtosCliente.find((registro) => registro.produtoId === item.id)?.precoAutorizado ?? produtosCliente.find((registro) => registro.produtoId === item.id)?.ultimoPreco ?? item.precoVendaPadrao))}</strong></button>)}</div>}</td>
                   <td className="px-2 py-2"><input value={quantidade} onChange={(event) => setQuantidade(event.target.value)} className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /></td>
@@ -778,7 +873,11 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
                   <td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(quantidade) * parseBrazilianNumber(preco))}</td>
                   <td className="px-2 py-2 text-center"><button type="button" onClick={adicionarItem} title="Adicionar nova linha" className="rounded-md bg-blue-700 p-2 text-white hover:bg-blue-800"><Plus size={14} /></button></td>
                 </tr>
-                {items.length === 0 ? <tr><td colSpan={7} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => <tr key={item.produtoId} className="bg-white"><td className="px-2 py-2 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-2 font-black text-slate-900">{item.descricao}</td><td className="px-2 py-2"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: event.target.value } : registro))} className="w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-right font-black outline-none focus:border-amber-500" /></td><td className="px-2 py-2 font-bold">{item.unidade}</td><td className="px-2 py-2"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-right font-black outline-none focus:border-sky-500" /></td><td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-2 py-2 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index))} className="rounded-md border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></td></tr>)}
+                {items.length === 0 ? <tr><td colSpan={8} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => {
+                  const disponivel = parseBrazilianNumber(item.quantidade) > 0;
+                  const selecionado = itensSelecionadosVenda.includes(item.produtoId);
+                  return <tr key={item.produtoId} className="bg-white"><td className="px-1 py-2 text-center"><input aria-label={`Selecionar ${item.descricao} para venda`} type="checkbox" disabled={!disponivel} checked={selecionado} onChange={(event) => setItensSelecionadosVenda((atuais) => event.target.checked ? [...new Set([...atuais, item.produtoId])] : atuais.filter((id) => id !== item.produtoId))} /></td><td className="px-2 py-2 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-2 font-black text-slate-900">{item.descricao}</td><td className="px-2 py-2"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => { const valor = event.target.value; setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: valor } : registro)); if (parseBrazilianNumber(valor) <= 0) setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-right font-black outline-none focus:border-amber-500" /></td><td className="px-2 py-2 font-bold">{item.unidade}</td><td className="px-2 py-2"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-right font-black outline-none focus:border-sky-500" /></td><td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-1 py-2"><div className="flex justify-center gap-1"><button type="button" disabled={!disponivel || salvando} title="Incluir este item na venda" onClick={() => incluirItensNaVenda([item.produtoId])} className="rounded-md border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-30"><ShoppingCart size={13} /></button><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => { setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index)); setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="rounded-md border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></div></td></tr>;
+                })}
               </tbody>
             </table>
           </div>
@@ -791,7 +890,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           {(orcamento || itensAbaixoDoPrecoCliente.length > 0) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> {orcamento ? "PIN necessário para alterar este orçamento." : `PIN necessário para ${itensAbaixoDoPrecoCliente.length} item(ns).`}</p>}
           <div className="space-y-2 border-t border-slate-200 pt-4">
             <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : "Salvar orçamento"}</button>
-            <button type="button" disabled={salvando} onClick={() => salvar(true)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ArrowRight size={17} /> Incluir na venda atual</button>
+            <button type="button" disabled={salvando || itensSelecionadosVenda.length === 0} onClick={() => incluirItensNaVenda(itensSelecionadosVenda)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ListChecks size={17} /> Incluir seleção na venda ({itensSelecionadosVenda.length})</button>
             {orcamento && <button type="button" onClick={() => setPreviewOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
             {orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
           </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { 
   Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle
 } from "lucide-react";
-import { Cliente, Venda, Pagamento, ProdutoHabitual } from "../types";
+import { Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
@@ -40,6 +40,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
   const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
   const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
+  const [orcamentoVigente, setOrcamentoVigente] = useState<Orcamento | null>(null);
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -135,12 +136,14 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const handleViewHistory = async (cli: Cliente) => {
     setLoadingHistory(true);
     try {
-      const [data, produtosHabituais] = await Promise.all([
+      const [data, produtosHabituais, orcamentoCliente] = await Promise.all([
         api.getClienteHistorico(cli.id),
-        api.getClienteProdutosHabituais(cli.id)
+        api.getClienteProdutosHabituais(cli.id),
+        api.getClienteOrcamentoVigente(cli.id)
       ]);
       setActiveHistory(data);
       setProdutosCliente(produtosHabituais);
+      setOrcamentoVigente(orcamentoCliente);
       setPrecosCliente(Object.fromEntries(produtosHabituais.map((item) => [
         item.produtoId,
         Number(item.precoAutorizado ?? item.ultimoPreco).toFixed(2).replace(".", ",")
@@ -197,6 +200,16 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       alert(err.message || "Não foi possível remover o produto deste cliente.");
     } finally {
       setSalvandoPrecoProduto("");
+    }
+  };
+
+  const apagarOrcamentoVigente = async () => {
+    if (!orcamentoVigente || !confirm(`Apagar o orçamento #${orcamentoVigente.numeroSequencial} deste cliente?`)) return;
+    try {
+      await api.deleteOrcamento(orcamentoVigente.id);
+      setOrcamentoVigente(null);
+    } catch (err: any) {
+      alert(err.message || "Não foi possível apagar o orçamento.");
     }
   };
 
@@ -500,6 +513,31 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                   <p className="text-base font-extrabold text-teal-600 mt-1">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
                 </div>
 
+              </div>
+
+              {/* Current customer budget */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                    <FileText size={14} />
+                    Orçamento vigente
+                  </h4>
+                  {orcamentoVigente && <button type="button" onClick={apagarOrcamentoVigente} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 size={14} /> Apagar orçamento</button>}
+                </div>
+                {!orcamentoVigente ? (
+                  <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-xs font-semibold text-slate-400">Nenhum orçamento vigente para este cliente.</div>
+                ) : (
+                  <div className="overflow-x-auto rounded-xl border border-blue-200">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs">
+                      <strong className="text-blue-900">Orçamento #{orcamentoVigente.numeroSequencial}</strong>
+                      <span className="font-mono font-black text-blue-800">{formatCurrency(orcamentoVigente.totalLiquido)}</span>
+                    </div>
+                    <table className="w-full min-w-[620px] text-left text-xs">
+                      <thead><tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-500"><th className="p-3">Material</th><th className="p-3 text-right">Quantidade</th><th className="p-3">Unidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Total</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">{orcamentoVigente.items.map((item) => <tr key={item.id}><td className="p-3 font-bold text-slate-900">{item.descricao}</td><td className="p-3 text-right font-mono">{item.quantidade}</td><td className="p-3 font-bold">{item.unidade}</td><td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td><td className="p-3 text-right font-mono font-black">{formatCurrency(item.total)}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* Customer-specific pricing */}

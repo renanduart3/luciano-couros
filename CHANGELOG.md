@@ -4,6 +4,18 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.3 — 2026-07-24
+
+- Orçamento vigente persistido e carregado automaticamente por cliente.
+- Garantia de apenas um orçamento aberto por cliente.
+- Orçamento mantido após sua utilização em uma venda.
+- Orçamento vigente exibido na ficha do cliente, com opção de exclusão.
+- Lista acumulada do cliente complementada pelos itens do orçamento vigente.
+- Inclusão individual ou por seleção dos itens do orçamento na venda atual.
+- Ação direta para carregar o orçamento vigente na grade da venda.
+- Orçamento e venda reorganizados em blocos horizontais, um abaixo do outro.
+- Seção “Produtos por fornecedor” removida do módulo de fornecedores.
+
 ## 1.7.2 — 2026-07-24
 
 - Quantidades do orçamento iniciadas em zero.

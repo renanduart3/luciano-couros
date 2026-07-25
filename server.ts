@@ -1044,6 +1044,22 @@ function carregarOrcamentoCompleto(id: string) {
   return orcamento;
 }
 
+app.get("/api/clientes/:id/orcamento-vigente", (req, res) => {
+  try {
+    const vigente = queryOne<{ id: string }>(
+      `SELECT id
+       FROM orcamentos
+       WHERE clienteId = ? AND status = 'aberto' AND deletedAt IS NULL
+       ORDER BY numeroSequencial DESC
+       LIMIT 1`,
+      [req.params.id]
+    );
+    res.json(vigente ? carregarOrcamentoCompleto(vigente.id) : null);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/orcamentos", (_req, res) => {
   try {
     const registros = queryAll<any>(
@@ -1105,6 +1121,9 @@ app.post("/api/orcamentos", (req, res) => {
           );
       if (idInformado && !existente) {
         throw erroHttp("Orçamento não encontrado para edição.", 404);
+      }
+      if (existente && existente.clienteId !== clienteId) {
+        throw erroHttp("O orçamento informado pertence a outro cliente.", 409);
       }
       if (existente && existente.status !== "aberto") {
         throw erroHttp("Somente um orçamento aberto pode ser alterado.", 409);
@@ -1295,14 +1314,17 @@ app.post("/api/orcamentos/:id/cancelar", (req, res) => {
 app.delete("/api/orcamentos/:id", (req, res) => {
   try {
     const orcamento = queryOne<any>(
-      "SELECT id FROM orcamentos WHERE id = ? AND deletedAt IS NULL",
+      "SELECT id, clienteId FROM orcamentos WHERE id = ? AND deletedAt IS NULL",
       [req.params.id]
     );
     if (!orcamento) return res.status(404).json({ error: "Orçamento não encontrado." });
-    execute(
-      "UPDATE orcamentos SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-      [req.params.id]
-    );
+    runInTransaction(() => {
+      execute(
+        "UPDATE orcamentos SET deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [req.params.id]
+      );
+      execute("DELETE FROM cliente_orcamento_itens WHERE clienteId = ?", [orcamento.clienteId]);
+    });
     res.json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1639,7 +1661,7 @@ app.post("/api/vendas", (req, res) => {
       if (orcamentoId) {
         execute(
           `UPDATE orcamentos
-           SET status = 'convertido', vendaId = ?, updatedAt = CURRENT_TIMESTAMP
+           SET vendaId = ?, updatedAt = CURRENT_TIMESTAMP
            WHERE id = ?`,
           [vendaId, orcamentoId]
         );

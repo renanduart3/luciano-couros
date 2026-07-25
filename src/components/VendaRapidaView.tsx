@@ -86,6 +86,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   // Cart
   const [itensVenda, setItensVenda] = useState<ItemRascunho[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
+  const [orcamentoCliente, setOrcamentoCliente] = useState<Orcamento | null>(null);
   const [orcamentoOrigemId, setOrcamentoOrigemId] = useState<string | null>(null);
   const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
   const [showAutorizacaoPreco, setShowAutorizacaoPreco] = useState(false);
@@ -199,13 +200,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       Promise.all([
         api.getClienteHistorico(clienteSelecionado.id),
         api.getClienteProdutosHabituais(clienteSelecionado.id),
-        api.getCarteiraCliente(clienteSelecionado.id)
+        api.getCarteiraCliente(clienteSelecionado.id),
+        api.getClienteOrcamentoVigente(clienteSelecionado.id)
       ])
-        .then(([historico, habituais, carteira]) => {
+        .then(([historico, habituais, carteira, orcamentoVigente]) => {
           if (!active) return;
           setClienteHistorico(historico);
           setProdutosCliente(habituais);
           setSaldoCreditoCarteira(Number(carteira.saldoBonus || 0));
+          setOrcamentoCliente(orcamentoVigente);
           const precosAtuais = new Map(habituais.map((item) => [
             item.produtoId,
             Number(item.precoAutorizado ?? item.ultimoPreco)
@@ -221,6 +224,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           setClienteHistorico(null);
           setProdutosCliente([]);
           setSaldoCreditoCarteira(0);
+          setOrcamentoCliente(null);
           setFeedbackMsg({ type: "error", text: "Não foi possível carregar o histórico de preços deste cliente." });
         });
     } else {
@@ -228,6 +232,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       setItensVenda([]);
       setProdutosCliente([]);
       setSaldoCreditoCarteira(0);
+      setOrcamentoCliente(null);
       setVendaAnteriorId("");
       setItensVendaAnteriorSelecionados([]);
     }
@@ -581,6 +586,35 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const mensagem = `${itensSelecionados.length} ${itensSelecionados.length === 1 ? "item adicionado" : "itens adicionados"} da venda #${vendaAnteriorSelecionada.numeroSequencial}.`;
     setFeedbackMsg({ type: "success", text: `${mensagem} Quantidades e preços continuam editáveis.` });
     setToastMsg(mensagem);
+  };
+
+  const carregarOrcamentoClienteNaVenda = () => {
+    if (!orcamentoCliente) return;
+    setItensVenda((atuais) => {
+      let resultado = [...atuais];
+      for (const item of orcamentoCliente.items.filter((registro) => Number(registro.quantidade) > 0)) {
+        const produto = produtos.find((registro) => registro.id === item.produtoId);
+        if (!produto) continue;
+        const importado: ItemRascunho = {
+          produtoId: item.produtoId,
+          codigo: item.referencia || produto.codigo,
+          nome: item.descricao || produto.nome,
+          quantidade: Number(item.quantidade).toString().replace(".", ","),
+          unidade: item.unidade || produto.unidade,
+          precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+          desconto: "0",
+          precoPadrao: Number(produto.precoVendaPadrao),
+          precoAutorizado: produtosCliente.find((registro) => registro.produtoId === item.produtoId)?.precoAutorizado
+        };
+        const indice = resultado.findIndex((registro) => registro.produtoId === item.produtoId);
+        resultado = indice >= 0
+          ? resultado.map((registro, itemIndex) => itemIndex === indice ? importado : registro)
+          : [...resultado, importado];
+      }
+      return resultado;
+    });
+    setOrcamentoOrigemId(orcamentoCliente.id);
+    setToastMsg(`${orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length} item(ns) do orçamento carregado(s).`);
   };
 
   // Quick keyboard focus skip helper on ENTER
@@ -1460,14 +1494,17 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       <div className={`order-3 rounded-2xl border border-slate-100 bg-white shadow-sm ${compact ? "space-y-3 p-2" : "space-y-6 p-4 sm:p-6"}`}>
         
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
           <label className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
             <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
             Itens e Materiais do Pedido
           </label>
-          <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}
+          <div className="flex flex-wrap items-center gap-2">
+            {orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-black text-blue-800 hover:bg-blue-100"><FileText size={14} /> Carregar orçamento ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
+            <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}
+            </div>
           </div>
         </div>
 

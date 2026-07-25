@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Trash2, Printer, Eye, X, AlertTriangle, Filter, FileText, KeyRound, RotateCcw, WalletCards
+  Search, Trash2, Printer, Eye, X, AlertTriangle, Filter, FileText, KeyRound, Pencil, RotateCcw, WalletCards
 } from "lucide-react";
 import { Venda } from "../types";
 import { api } from "../lib/api";
@@ -14,9 +14,10 @@ interface VendasListaViewProps {
   onRefreshStats?: () => void;
   selectedSaleId?: string | null;
   onClearSelectedSaleId?: () => void;
+  onEditarVenda?: (venda: Venda) => void;
 }
 
-export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelectedSaleId }: VendasListaViewProps) {
+export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelectedSaleId, onEditarVenda }: VendasListaViewProps) {
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("todas");
@@ -249,12 +250,11 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                         )}
                       </td>
                       <td className="p-4 text-center">
-                        <button 
-                          onClick={() => setVendaDetalhada(v)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 rounded-lg inline-flex items-center gap-1.5 font-bold text-xs transition-colors"
-                        >
-                          <Eye size={14} /> Detalhes
-                        </button>
+                        <div className="flex flex-wrap justify-center gap-1.5">
+                          <button onClick={() => setVendaDetalhada(v)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-200 hover:text-slate-900"><Eye size={14} /> Detalhe</button>
+                          {v.status !== "cancelada" && <button onClick={() => onEditarVenda?.(v)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"><Pencil size={14} /> Editar</button>}
+                          {v.status !== "cancelada" && <button disabled={canceling} onClick={() => { if (window.confirm(`Excluir a venda #${v.numeroSequencial}? Ela permanecerá registrada como cancelada no histórico.`)) void handleCancelVenda(v.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -363,7 +363,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
               ) : (
                 vendaDetalhada.status !== "cancelada" && (
                   <div className="flex flex-wrap justify-between gap-2 print:hidden">
-                    <button type="button" onClick={() => { setDevolucaoOpen(true); setDevolucaoErro(""); }} className="flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-black text-white"><RotateCcw size={15} /> Alterar venda / devolver itens</button>
+                    <button type="button" onClick={() => { setDevolucaoOpen(true); setDevolucaoErro(""); }} className="flex items-center gap-2 rounded-xl bg-violet-700 px-4 py-2.5 text-xs font-black text-white"><RotateCcw size={15} /> Registrar devolução</button>
                     <button 
                       type="button"
                       onClick={() => setShowConfirmCancel(true)}

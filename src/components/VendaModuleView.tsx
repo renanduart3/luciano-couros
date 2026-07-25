@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, FileText, History, Search, ShoppingCart, UserRo
 import { VendaRapidaView } from "./VendaRapidaView";
 import { VendasListaView } from "./VendasListaView";
 import { OrcamentoView } from "./OrcamentoView";
-import { Cliente, Orcamento } from "../types";
+import { Cliente, Orcamento, Venda } from "../types";
 import { api } from "../lib/api";
 
 interface VendaModuleViewProps {
@@ -25,6 +25,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [clienteBusca, setClienteBusca] = useState("");
   const [clienteDropdown, setClienteDropdown] = useState(false);
+  const [vendaEmEdicao, setVendaEmEdicao] = useState<Venda | null>(null);
 
   useEffect(() => {
     api.getClientes()
@@ -36,20 +37,30 @@ export function VendaModuleView(props: VendaModuleViewProps) {
     (item.telefone || "").includes(clienteBusca)
   ).slice(0, 10), [clientes, clienteBusca]);
 
+  const iniciarEdicaoVenda = (venda: Venda) => {
+    const clienteDaVenda = clientes.find((item) => item.id === venda.clienteId);
+    if (!clienteDaVenda) return;
+    setCliente(clienteDaVenda);
+    setClienteBusca(clienteDaVenda.nome);
+    setOrcamentoParaVenda(null);
+    setVendaEmEdicao(venda);
+    setModo("operacao");
+  };
+
   return (
     <section className="space-y-2">
       <div className="sticky top-0 z-30 -mx-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-sm backdrop-blur print:hidden">
         {modo === "operacao" ? (
             <div className="flex min-w-0 flex-1 items-center gap-3 px-2">
               <ShoppingCart size={18} className="text-emerald-700" />
-              <strong className="text-sm text-slate-900">Venda e orçamento</strong>
+              <strong className="text-sm text-slate-900">{vendaEmEdicao ? `Editar venda #${vendaEmEdicao.numeroSequencial}` : "Venda e orçamento"}</strong>
             </div>
         ) : (
           <button type="button" onClick={() => setModo("operacao")} className="module-tab module-tab-active">
             <ShoppingCart size={17} /> Voltar à operação
           </button>
         )}
-        <button type="button" aria-label="Histórico" onClick={() => setModo("historico")} className={`module-tab shrink-0 ${modo === "historico" ? "module-tab-active" : ""}`}>
+        <button type="button" aria-label="Histórico" onClick={() => { setVendaEmEdicao(null); setModo("historico"); }} className={`module-tab shrink-0 ${modo === "historico" ? "module-tab-active" : ""}`}>
           <History size={17} /> <span className="hidden sm:inline">Histórico</span>
         </button>
       </div>
@@ -59,6 +70,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           onRefreshStats={props.onRefreshStats}
           selectedSaleId={props.selectedSaleId}
           onClearSelectedSaleId={props.onClearSelectedSaleId}
+          onEditarVenda={iniciarEdicaoVenda}
         />
       ) : (
         <>
@@ -69,7 +81,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           {cliente ? (
             <div className="flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
               <div className="min-w-0"><strong className="block truncate text-slate-950">{cliente.nome}</strong><span className="text-xs text-slate-600">{cliente.telefone || "Sem telefone"}</span></div>
-              <button type="button" aria-label="Trocar cliente" onClick={() => { setCliente(null); setClienteBusca(""); setClienteDropdown(true); setOrcamentoParaVenda(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={17} /></button>
+              {!vendaEmEdicao && <button type="button" aria-label="Trocar cliente" onClick={() => { setCliente(null); setClienteBusca(""); setClienteDropdown(true); setOrcamentoParaVenda(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={17} /></button>}
             </div>
           ) : (
             <div className="relative">
@@ -87,7 +99,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           )}
         </section>
         <div className={`min-w-0 space-y-2 ${cliente ? "" : "pointer-events-none opacity-45"}`}>
-          <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
+          {!vendaEmEdicao && <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
             <div className="flex items-center justify-between border-b border-blue-200 bg-blue-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><FileText size={18} /><strong className="text-sm uppercase tracking-wide">Orçamento</strong></div>
               <button type="button" onClick={() => setOrcamentoExpandido((atual) => !atual)} className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase hover:bg-white/20">{orcamentoExpandido ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{orcamentoExpandido ? "Recolher" : "Expandir"}</button>
@@ -103,7 +115,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 }}
               />
             </div>}
-          </section>
+          </section>}
 
           <section className="min-w-0 overflow-visible rounded-xl bg-slate-50 shadow-sm">
             <div className="flex items-center justify-between rounded-t-xl border-b border-emerald-200 bg-emerald-800 px-3 py-2 text-white">
@@ -119,6 +131,8 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 clienteExterno={cliente}
                 ocultarSeletorCliente
                 onItensChange={setProdutosNaVenda}
+                vendaEmEdicao={vendaEmEdicao}
+                onCancelarEdicao={() => setVendaEmEdicao(null)}
               />
             </div>
           </section>

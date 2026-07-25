@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { CalendarClock, FileText, List, Pencil, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
-import { Produto, Venda } from "../types";
+import { Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
@@ -14,7 +14,7 @@ interface ValeDetalhesModalProps {
 
 export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModalProps) {
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
-  const [modo, setModo] = useState<"editar" | "venda" | "devolver" | "cancelar" | null>(null);
+  const [modo, setModo] = useState<"editar" | "devolver" | "cancelar" | null>(null);
   const [parcelas, setParcelas] = useState<ParcelaValeRascunho[]>([]);
   const [observacoes, setObservacoes] = useState(vale.observacoes || "");
   const [pin, setPin] = useState("");
@@ -22,11 +22,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
   const [dataDevolucao, setDataDevolucao] = useState(new Date().toISOString().slice(0, 10));
   const [quantidadesDevolucao, setQuantidadesDevolucao] = useState<Record<string, string>>({});
   const [resultadoDevolucao, setResultadoDevolucao] = useState("");
-  const [dataVenda, setDataVenda] = useState(vale.data);
-  const [descontoVenda, setDescontoVenda] = useState(String(vale.desconto || ""));
-  const [itensVendaEdicao, setItensVendaEdicao] = useState<Array<{ id: string; produtoId: string; descricao: string; unidade: string; quantidade: string; precoUnitario: string; desconto: string; quantidadeDevolvida: number }>>([]);
-  const [produtos, setProdutos] = useState<Produto[]>([]);
-  const [produtoParaAdicionar, setProdutoParaAdicionar] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   const itens = vale.items || [];
@@ -37,23 +32,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
       valor: Number(parcela.valor).toFixed(2).replace(".", ",")
     })));
     setObservacoes(vale.observacoes || "");
-    setDataVenda(vale.data);
-    setDescontoVenda(vale.desconto ? String(vale.desconto).replace(".", ",") : "");
-    setItensVendaEdicao((vale.items || []).map((item) => ({
-      id: item.id,
-      produtoId: item.produtoId,
-      descricao: item.descricao,
-      unidade: item.unidade,
-      quantidade: String(item.quantidade).replace(".", ","),
-      precoUnitario: String(item.precoUnitario).replace(".", ","),
-      desconto: item.desconto ? String(item.desconto).replace(".", ",") : "",
-      quantidadeDevolvida: Number(item.quantidadeDevolvida || 0)
-    })));
   }, [vale]);
-
-  useEffect(() => {
-    api.getProdutos().then(setProdutos).catch(() => setProdutos([]));
-  }, []);
 
   const imprimir = () => {
     setAba("comprovante");
@@ -137,54 +116,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
     }
   };
 
-  const salvarVenda = async () => {
-    if (!/^\d{4,8}$/.test(pin)) return setErro("Informe o PIN administrativo de 4 a 8 números.");
-    if (itensVendaEdicao.length === 0) return setErro("A venda precisa manter ao menos um item.");
-    const numero = (valor: string) => Number(valor.replace(/\./g, "").replace(",", ".") || 0);
-    setSalvando(true);
-    setErro("");
-    try {
-      const atualizada = await api.updateVendaVale(vale.id, {
-        pin,
-        data: dataVenda,
-        desconto: numero(descontoVenda),
-        observacoes,
-        items: itensVendaEdicao.map((item) => ({
-          id: item.id,
-          produtoId: item.produtoId,
-          quantidade: numero(item.quantidade),
-          precoUnitario: numero(item.precoUnitario),
-          desconto: numero(item.desconto)
-        }))
-      });
-      setModo(null);
-      setPin("");
-      setResultadoDevolucao("Venda e vale atualizados. O comprovante já pode ser reimpresso.");
-      onUpdated?.(atualizada);
-    } catch (error: any) {
-      setPin("");
-      setErro(error.message || "Não foi possível alterar a venda.");
-    } finally {
-      setSalvando(false);
-    }
-  };
-
-  const adicionarProdutoVenda = () => {
-    const produto = produtos.find((item) => item.id === produtoParaAdicionar);
-    if (!produto || itensVendaEdicao.some((item) => item.produtoId === produto.id)) return;
-    setItensVendaEdicao((atuais) => [...atuais, {
-      id: `novo_${produto.id}`,
-      produtoId: produto.id,
-      descricao: produto.nome,
-      unidade: produto.unidade,
-      quantidade: "",
-      precoUnitario: String(produto.precoVendaPadrao || "").replace(".", ","),
-      desconto: "",
-      quantidadeDevolvida: 0
-    }]);
-    setProdutoParaAdicionar("");
-  };
-
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
       <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
@@ -199,7 +130,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setAba("itens")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "itens" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><List size={16} /> Detalhes</button>
             <button type="button" onClick={() => setAba("comprovante")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "comprovante" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><FileText size={16} /> Comprovante</button>
-            {onUpdated && vale.status !== "cancelada" && <button type="button" onClick={() => { setModo("venda"); setErro(""); setPin(""); setResultadoDevolucao(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-300 bg-cyan-50 px-3 text-xs font-black uppercase text-cyan-900 sm:flex-none"><Pencil size={15} /> Venda</button>}
             {onUpdated && vale.status !== "cancelada" && itens.some((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setModo("devolver"); setErro(""); setPin(""); setResultadoDevolucao(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 text-xs font-black uppercase text-violet-800 sm:flex-none"><RotateCcw size={15} /> Devolver</button>}
             {onUpdated && vale.status !== "cancelada" && <button type="button" onClick={() => { setModo("cancelar"); setErro(""); setPin(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3 text-xs font-black uppercase text-red-800 sm:flex-none"><Trash2 size={15} /> Cancelar</button>}
             <button type="button" onClick={imprimir} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 text-xs font-black uppercase text-white sm:flex-none"><Printer size={16} /> Imprimir</button>
@@ -210,32 +140,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
         {aba === "itens" ? (
           <div className="space-y-4 p-3 sm:p-5 print:hidden">
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
-
-            {modo === "venda" && <div className="space-y-3 rounded-2xl border border-cyan-300 bg-cyan-50 p-4">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-cyan-950">Alterar venda vinculada</h3><p className="text-xs font-semibold text-cyan-800">Quantidade, preço, desconto, data e observações serão atualizados somente após validar o PIN. Itens já devolvidos continuam no histórico.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-cyan-900"><X size={17} /></button></div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <select value={produtoParaAdicionar} onChange={(event) => setProdutoParaAdicionar(event.target.value)} className="min-h-11 flex-1 rounded-xl border border-cyan-200 bg-white px-3 text-sm font-bold">
-                  <option value="">Adicionar outro produto...</option>
-                  {produtos.filter((produto) => !itensVendaEdicao.some((item) => item.produtoId === produto.id)).map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} — {formatCurrency(produto.precoVendaPadrao)}</option>)}
-                </select>
-                <button type="button" disabled={!produtoParaAdicionar} onClick={adicionarProdutoVenda} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-cyan-300 bg-white px-4 text-xs font-black uppercase text-cyan-900 disabled:opacity-40">Adicionar item</button>
-              </div>
-              <div className="overflow-x-auto rounded-xl border border-cyan-200 bg-white">
-                <table className="w-full min-w-[760px] text-xs">
-                  <thead><tr className="border-b border-cyan-100 bg-cyan-50 font-black uppercase text-cyan-900"><th className="p-3 text-left">Material</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Desc. item</th><th className="w-12 p-3"></th></tr></thead>
-                  <tbody className="divide-y divide-slate-100">{itensVendaEdicao.map((item, index) => <tr key={item.id}>
-                    <td className="p-3"><strong className="text-slate-950">{item.descricao}</strong>{item.quantidadeDevolvida > 0 && <span className="block text-[9px] font-bold text-violet-700">{formatDecimal(item.quantidadeDevolvida)} {item.unidade} já devolvido(s)</span>}</td>
-                    <td className="p-2"><input type="text" inputMode="decimal" value={item.quantidade} onChange={(event) => setItensVendaEdicao((atuais) => atuais.map((atual, posicao) => posicao === index ? { ...atual, quantidade: event.target.value } : atual))} className="min-h-10 w-full rounded-lg border border-cyan-200 px-2 text-right font-mono font-black" /></td>
-                    <td className="p-2"><input type="text" inputMode="decimal" value={item.precoUnitario} onChange={(event) => setItensVendaEdicao((atuais) => atuais.map((atual, posicao) => posicao === index ? { ...atual, precoUnitario: event.target.value } : atual))} className="min-h-10 w-full rounded-lg border border-cyan-200 px-2 text-right font-mono font-black" /></td>
-                    <td className="p-2"><input type="text" inputMode="decimal" value={item.desconto} placeholder="0" onChange={(event) => setItensVendaEdicao((atuais) => atuais.map((atual, posicao) => posicao === index ? { ...atual, desconto: event.target.value } : atual))} className="min-h-10 w-full rounded-lg border border-cyan-200 px-2 text-right font-mono font-black" /></td>
-                    <td className="p-2 text-center"><button type="button" disabled={item.quantidadeDevolvida > 0} title={item.quantidadeDevolvida > 0 ? "Item com devolução deve permanecer no histórico" : "Remover item da venda"} onClick={() => setItensVendaEdicao((atuais) => atuais.filter((_, posicao) => posicao !== index))} className="rounded-lg p-2 text-red-700 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={16} /></button></td>
-                  </tr>)}</tbody>
-                </table>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-cyan-900">Data da venda<input type="date" value={dataVenda} onChange={(event) => setDataVenda(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-cyan-200 bg-white px-3 text-sm font-bold" /></label><label className="text-[10px] font-black uppercase text-cyan-900">Desconto geral<input type="text" inputMode="decimal" value={descontoVenda} onChange={(event) => setDescontoVenda(event.target.value)} placeholder="0" className="mt-1 min-h-11 w-full rounded-xl border border-cyan-200 bg-white px-3 text-right font-mono font-black" /></label><label className="text-[10px] font-black uppercase text-cyan-900">Observações<input value={observacoes} onChange={(event) => setObservacoes(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-cyan-200 bg-white px-3 text-sm font-bold normal-case" /></label></div>
-              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" inputMode="numeric" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, "").slice(0, 8)); setErro(""); }} placeholder="PIN administrativo" className="min-h-11 flex-1 rounded-xl border border-cyan-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={salvarVenda} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-cyan-900 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Validar e salvar venda</button></div>
-              {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
-            </div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
               <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-violet-950">Devolver itens do vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-violet-800">O valor abate primeiro o saldo do vale. Qualquer excedente pago entra como bônus na carteira do cliente.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-violet-800"><X size={17} /></button></div>

@@ -21,9 +21,12 @@ interface VendaRapidaViewProps {
   clienteExterno?: Cliente | null;
   ocultarSeletorCliente?: boolean;
   onItensChange?: (produtoIds: string[]) => void;
+  vendaEmEdicao?: Venda | null;
+  onCancelarEdicao?: () => void;
 }
 
 interface ItemRascunho {
+  id?: string;
   produtoId: string;
   codigo?: string;
   nome: string;
@@ -33,6 +36,7 @@ interface ItemRascunho {
   desconto: string;      // Keep as string for friendly typing
   precoPadrao: number;
   precoAutorizado?: number;
+  quantidadeDevolvida?: number;
 }
 
 type ProdutoComUnidades = Pick<Produto, "unidade">;
@@ -61,7 +65,7 @@ const FORMAS_COM_INSTRUMENTO = new Set([
   "duplicata_terceiro",
 ]);
 
-export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false, onItensChange }: VendaRapidaViewProps) {
+export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false, onItensChange, vendaEmEdicao, onCancelarEdicao }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -141,6 +145,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [instrumentoEmitente, setInstrumentoEmitente] = useState("");
   const [instrumentoNumero, setInstrumentoNumero] = useState("");
   const [instrumentoVencimento, setInstrumentoVencimento] = useState("");
+  const [pinEdicao, setPinEdicao] = useState("");
+  const [dataVendaEdicao, setDataVendaEdicao] = useState("");
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -194,6 +200,43 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setClienteSelecionado(clienteExterno || null);
     setClienteBusca(clienteExterno?.nome || "");
   }, [clienteExterno, ocultarSeletorCliente]);
+
+  useEffect(() => {
+    if (!vendaEmEdicao || produtos.length === 0) return;
+    const percentualDesconto = Number(vendaEmEdicao.subtotal) > 0
+      ? (Number(vendaEmEdicao.desconto || 0) / Number(vendaEmEdicao.subtotal)) * 100
+      : 0;
+    setItensVenda((vendaEmEdicao.items || []).map((item) => {
+      const produto = produtos.find((registro) => registro.id === item.produtoId);
+      return {
+        id: item.id,
+        produtoId: item.produtoId,
+        codigo: item.referencia || produto?.codigo,
+        nome: item.descricao || produto?.nome || "Produto",
+        quantidade: Number(item.quantidade).toString().replace(".", ","),
+        unidade: item.unidade,
+        precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
+        desconto: item.desconto ? Number(item.desconto).toFixed(2).replace(".", ",") : "",
+        precoPadrao: Number(produto?.precoVendaPadrao || item.precoUnitario),
+        quantidadeDevolvida: Number(item.quantidadeDevolvida || 0)
+      };
+    }));
+    setDescontoGeral(percentualDesconto ? percentualDesconto.toFixed(2).replace(".", ",") : "");
+    setValorPago(Number(vendaEmEdicao.valorPago || 0).toFixed(2).replace(".", ","));
+    setFormaPagamento(vendaEmEdicao.formaPagamento || ((vendaEmEdicao.parcelas || []).length > 0 ? "vale" : "avista_dinheiro"));
+    setVencimento(vendaEmEdicao.vencimento || "");
+    setParcelasVale((vendaEmEdicao.parcelas || []).map((parcela) => ({
+      vencimento: parcela.vencimento,
+      valor: Number(parcela.valor).toFixed(2).replace(".", ",")
+    })));
+    setObservacoes(vendaEmEdicao.observacoes || "");
+    setInstrumentoEmitente(vendaEmEdicao.instrumentoRecebimento?.emitente || "");
+    setInstrumentoNumero(vendaEmEdicao.instrumentoRecebimento?.numeroDocumento || "");
+    setInstrumentoVencimento(vendaEmEdicao.instrumentoRecebimento?.vencimento || "");
+    setDataVendaEdicao(vendaEmEdicao.data);
+    setPinEdicao("");
+    setFeedbackMsg(null);
+  }, [vendaEmEdicao, produtos]);
 
   useEffect(() => {
     if (!toastMsg) return;
@@ -369,10 +412,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const precoEfetivo = parseBrazilianNumber(item.precoUnitario) * fatorPrecoEfetivo;
     return precoEfetivo < pisoPermitido - 0.005;
   });
-  const vendaNoVale = formaPagamento === "vale";
+  const vendaNoVale = vendaEmEdicao
+    ? (vendaEmEdicao.parcelas || []).length > 0 || vendaEmEdicao.formaPagamento === "vale"
+    : formaPagamento === "vale";
   const vendaComCredito = formaPagamento === "bonus";
   const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
-  const vPago = vendaNoVale ? 0 : vendaComCredito
+  const vPago = vendaEmEdicao ? Math.min(totalLiquido, Number(vendaEmEdicao.valorPago || 0)) : vendaNoVale ? 0 : vendaComCredito
     ? Math.min(totalLiquido, saldoCreditoCarteira)
     : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
   const saldoRestante = Math.max(0, totalLiquido - vPago);
@@ -746,6 +791,26 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setAutorizacaoErro("");
 
     try {
+      if (vendaEmEdicao) {
+        const atualizada = await api.updateVenda(vendaEmEdicao.id, {
+          pin: pinEdicao,
+          data: dataVendaEdicao || vendaEmEdicao.data,
+          desconto: descGeral,
+          observacoes: observacoes || undefined,
+          items: itensPreenchidos.map((item) => ({
+            id: item.id || `novo_${item.produtoId}`,
+            produtoId: item.produtoId,
+            quantidade: parseBrazilianNumber(item.quantidade),
+            precoUnitario: parseBrazilianNumber(item.precoUnitario),
+            desconto: parseBrazilianNumber(item.desconto)
+          }))
+        });
+        setPinEdicao("");
+        setFeedbackMsg({ type: "success", text: `Venda #${atualizada.numeroSequencial} atualizada com sucesso.` });
+        onCancelarEdicao?.();
+        onSaleSaved();
+        return;
+      }
       const vendaData = {
         clienteId: clienteSelecionado.id,
         data: new Date().toISOString().split("T")[0],
@@ -827,6 +892,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     if (itensPreenchidos.length === 0) {
       setFeedbackMsg({ type: "error", text: "Preencha a quantidade de pelo menos um item da venda." });
       produtoInputRef.current?.focus();
+      return;
+    }
+
+    if (vendaEmEdicao) {
+      if (!/^\d{4,8}$/.test(pinEdicao)) {
+        setFeedbackMsg({ type: "error", text: "Informe o PIN administrativo de 4 a 8 números para salvar a alteração." });
+        return;
+      }
+      await executarSalvamentoVenda();
       return;
     }
 
@@ -928,38 +1002,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     loadInitialData();
   };
 
-  const gerarTextoComprovante = (v: any) => {
-    const itemsStr = v.items.map((it: any) => 
-      `• ${it.descricao} (${formatDecimal(it.quantidade)} ${it.unidade}) - ${formatCurrency(it.precoUnitario)}`
-    ).join("\n");
-    
-    return `*Comprovante de Venda - Central dos Tecidos*\n` +
-      `*Venda:* #${v.numeroSequencial}\n` +
-      `*Data:* ${formatDate(v.data)}\n` +
-      `*Cliente:* ${v.clienteNome}\n` +
-      `---------------------------------\n` +
-      `*Itens:*\n${itemsStr}\n` +
-      `---------------------------------\n` +
-      `*Subtotal:* ${formatCurrency(v.subtotal)}\n` +
-      (v.desconto > 0 ? `*Desconto Geral:* -${formatCurrency(v.desconto)}\n` : '') +
-      `*Total Líquido:* ${formatCurrency(v.totalLiquido)}\n` +
-      `*Valor Recebido:* ${formatCurrency(v.valorPago)} (${formaPagamento.toUpperCase()})\n` +
-      (v.saldoRestante > 0 ? `*Saldo Restante:* ${formatCurrency(v.saldoRestante)} (Venc: ${v.vencimento ? formatDate(v.vencimento) : 'A definir'})\n` : '') +
-      `\nObrigado pela preferência!`;
-  };
-
-  const handleAbrirWhatsapp = () => {
-    if (!vendaSalvaParaImpressao || !vendaSalvaParaImpressao.clienteTelefone) return;
-    const text = gerarTextoComprovante(vendaSalvaParaImpressao);
-    const phone = vendaSalvaParaImpressao.clienteTelefone;
-    const cleaned = phone.replace(/\D/g, "");
-    const withCountry = cleaned.startsWith("55") ? cleaned : "55" + cleaned;
-    const url = `https://api.whatsapp.com/send?phone=${withCountry}&text=${encodeURIComponent(text)}`;
-    window.open(url, "_blank");
-  };
-
   return (
     <div id="quick-sale-view" className={`flex flex-col ${compact ? "gap-3" : "gap-6"}`}>
+      {vendaEmEdicao && (
+        <div className="flex flex-col gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <strong className="text-sm text-blue-950">Editando venda #{vendaEmEdicao.numeroSequencial}</strong>
+            <p className="text-xs font-semibold text-blue-800">Itens, quantidades, preços, desconto e observação podem ser ajustados. O pagamento já registrado será preservado.</p>
+          </div>
+          <label className="flex items-center gap-2 text-[10px] font-black uppercase text-blue-900">
+            Data
+            <input type="date" value={dataVendaEdicao} onChange={(event) => setDataVendaEdicao(event.target.value)} className="min-h-10 rounded-lg border border-blue-300 bg-white px-3 text-sm font-bold normal-case" />
+          </label>
+        </div>
+      )}
       {showAnalisePin && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <form onSubmit={handleDesbloquearAnalise} role="dialog" aria-modal="true" aria-labelledby="analise-pin-titulo" className="w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -1145,7 +1201,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
             <div className="max-w-full overflow-x-auto pb-2 print:overflow-visible print:pb-0"><VendaComprovante venda={vendaSalvaParaImpressao} /></div>
 
-            {vendaSalvaParaImpressao.clienteTelefone && vendaSalvaParaImpressao.clienteIsWhatsapp === 1 && <div className="mt-3 rounded-xl bg-white p-4 print:hidden"><button onClick={handleAbrirWhatsapp} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-3 text-xs font-bold text-white hover:bg-emerald-700"><MessageSquare size={15} /> Enviar WhatsApp</button></div>}
           </div>
         </div>
       ), document.body)}
@@ -1428,7 +1483,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
                   placeholder="0,00"
-                  disabled={vendaNoVale || vendaComCredito}
+                  disabled={Boolean(vendaEmEdicao) || vendaNoVale || vendaComCredito}
                   className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
               </div>
@@ -1450,6 +1505,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <select 
                   ref={formaPagamentoRef}
                   value={formaPagamento}
+                  disabled={Boolean(vendaEmEdicao)}
                   onChange={(e) => {
                     const novaForma = e.target.value;
                     setFormaPagamento(novaForma);
@@ -1468,11 +1524,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       handleKeyDown(e, observacoesRef);
                     }
                   }}
-                  className="min-w-0 flex-1 bg-slate-50 border border-slate-200 text-xs px-3 py-2 rounded-lg font-bold text-slate-700 outline-none sm:max-w-xs"
+                  className="min-w-0 flex-1 bg-slate-50 border border-slate-200 text-xs px-3 py-2 rounded-lg font-bold text-slate-700 outline-none disabled:bg-slate-200 disabled:text-slate-500 sm:max-w-xs"
                 >
                   {FORMAS_RECEBIMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}
                 </select>
               </div>
+
+              {vendaEmEdicao && <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold text-slate-600">Forma de pagamento e recebimentos preservados nesta edição.</p>}
 
               {vendaComCredito && (
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
@@ -1481,7 +1539,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               )}
 
-              {formaExigeInstrumento && (
+              {!vendaEmEdicao && formaExigeInstrumento && (
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-3">
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Emitente *</label><input type="text" value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value)} placeholder={formaPagamento.includes("terceiro") ? "Nome do terceiro" : clienteSelecionado?.nome || "Nome do emitente"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque/documento *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="Número" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
@@ -1490,10 +1548,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               )}
 
-              {vendaNoVale && saldoRestante > 0 && <ParcelasValeEditor total={totalLiquido} parcelas={parcelasVale} onChange={setParcelasVale} compacto={compact} />}
+              {!vendaEmEdicao && vendaNoVale && saldoRestante > 0 && <ParcelasValeEditor total={totalLiquido} parcelas={parcelasVale} onChange={setParcelasVale} compacto={compact} />}
 
               {/* Vencimento único para outras formas com saldo a prazo */}
-              {!vendaNoVale && saldoRestante > 0 && (
+              {!vendaEmEdicao && !vendaNoVale && saldoRestante > 0 && (
                 <div className="bg-amber-50/50 p-2.5 rounded-xl border border-amber-200/30 space-y-1.5 animate-fade-in text-[10px]">
                   <div className="flex justify-between items-center">
                     <label className="font-bold text-amber-800 uppercase">Vencimento do Saldo</label>
@@ -1525,6 +1583,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           </div>
 
           <div className={compact ? "" : "pt-3 border-t border-slate-100"}>
+            {vendaEmEdicao && <div className="mb-2 flex flex-col gap-2 sm:flex-row"><input type="password" inputMode="numeric" autoComplete="off" value={pinEdicao} onChange={(event) => { setPinEdicao(event.target.value.replace(/\D/g, "").slice(0, 8)); setFeedbackMsg(null); }} placeholder="PIN administrativo para salvar" className="min-h-10 flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 text-center text-xs font-black tracking-widest outline-none focus:border-blue-600" /><button type="button" onClick={onCancelarEdicao} className="min-h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700">Cancelar edição</button></div>}
             <button 
               ref={salvarBtnRef}
               type="button"
@@ -1533,7 +1592,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               className="w-full flex items-center justify-center gap-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-black uppercase shadow-md shadow-emerald-950/10 transition-all active:scale-[0.98] disabled:opacity-50"
             >
               <CheckCircle2 size={15} />
-              {loading ? "FINALIZANDO..." : "FINALIZAR VENDA"}
+              {loading ? (vendaEmEdicao ? "SALVANDO..." : "FINALIZANDO...") : (vendaEmEdicao ? "SALVAR ALTERAÇÕES" : "FINALIZAR VENDA")}
             </button>
           </div>
         </div>
@@ -1668,9 +1727,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       <td className="px-2 py-2 text-center">
                         <button 
                           type="button" 
+                          disabled={Number(it.quantidadeDevolvida || 0) > 0}
                           onClick={() => handleRemoveItem(idx)}
-                          className="rounded-md border border-red-200 p-1.5 text-red-600 transition-all hover:border-red-600 hover:bg-red-600 hover:text-white"
-                          title="Remover somente desta venda"
+                          className="rounded-md border border-red-200 p-1.5 text-red-600 transition-all hover:border-red-600 hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                          title={Number(it.quantidadeDevolvida || 0) > 0 ? "Item com devolução deve permanecer no histórico" : "Remover somente desta venda"}
                         >
                           <Trash2 size={13} />
                         </button>

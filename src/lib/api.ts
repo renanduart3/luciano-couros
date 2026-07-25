@@ -226,13 +226,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
     }).then(r => handleResponse<Venda>(r)),
-  updateVendaVale: (id: string, dados: {
+  updateVenda: (id: string, dados: {
     pin: string;
     data: string;
     desconto: number;
     observacoes?: string;
     items: Array<{ id: string; produtoId: string; quantidade: number; precoUnitario: number; desconto: number }>;
-  }) => fetch(`${API_BASE}/vales/${id}/venda`, {
+  }) => fetch(`${API_BASE}/vendas/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)

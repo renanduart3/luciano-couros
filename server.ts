@@ -2030,7 +2030,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
   }
 });
 
-app.put("/api/vales/:id/venda", (req, res) => {
+app.put("/api/vendas/:id", (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
@@ -2044,10 +2044,10 @@ app.put("/api/vales/:id/venda", (req, res) => {
 
     runInTransaction(() => {
       const venda = queryOne<any>(
-        "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND vencimento IS NOT NULL AND status <> 'cancelada'",
+        "SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status <> 'cancelada'",
         [vendaId]
       );
-      if (!venda) throw erroHttp("Vale não encontrado ou cancelado.", 404);
+      if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
 
       const itensAtuais = queryAll<any>(
         `SELECT iv.*,
@@ -2158,7 +2158,8 @@ app.put("/api/vales/:id/venda", (req, res) => {
         if (ultimaParcela) {
           execute("UPDATE vale_parcelas SET valor = valor + ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [diferencaTotal, ultimaParcela.id]);
         } else {
-          inserirParcelasVale(vendaId, [{ vencimento: venda.vencimento || req.body?.data || venda.data, valor: novoTotal }]);
+          primeiroVencimento = venda.vencimento || req.body?.data || venda.data;
+          inserirParcelasVale(vendaId, [{ vencimento: primeiroVencimento, valor: novoTotal }]);
         }
       }
 
@@ -2193,7 +2194,7 @@ app.put("/api/vales/:id/venda", (req, res) => {
           ]
         );
       }
-      registrarAuditoria(administrador.id, "venda_vale_alterada", "venda", vendaId, {
+      registrarAuditoria(administrador.id, "venda_alterada", "venda", vendaId, {
         clienteId: venda.clienteId,
         numeroSequencial: venda.numeroSequencial,
         totalAnterior,

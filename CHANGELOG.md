@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.1 — 2026-07-25
+
+- Tela de finalização restaurada com somente as ações Imprimir e Fechar.
+- Parcelamento previsto mantido exclusivamente no detalhe do vale, com datas, valores, saldos e edição protegida por PIN.
+- Ação de alteração da venda removida do detalhe do vale.
+- Histórico de vendas passa a oferecer as ações diretas Detalhe, Editar e Excluir.
+- Edição reutiliza a própria tela de venda e funciona independentemente da forma de pagamento original.
+- Pagamentos já registrados são preservados durante a edição da venda.
+- Aumento do total de uma venda paga gera corretamente saldo e vencimento para acompanhamento em Vales.
+
 ## 1.8.0 — 2026-07-25
 
 - Cadastro de materiais passa a aceitar custo manual e vínculo pesquisável com vários fornecedores.

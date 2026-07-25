@@ -14,6 +14,7 @@ interface OrcamentoViewProps {
   compact?: boolean;
   clienteExterno?: Cliente | null;
   ocultarSeletorCliente?: boolean;
+  produtosNaVenda?: string[];
 }
 
 interface ItemRascunhoOrcamento {
@@ -32,7 +33,7 @@ function dataFutura(dias: number) {
   return data.toISOString().split("T")[0];
 }
 
-export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExterno, ocultarSeletorCliente = false }: OrcamentoViewProps) {
+export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExterno, ocultarSeletorCliente = false, produtosNaVenda = [] }: OrcamentoViewProps) {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
@@ -41,6 +42,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [buscaOrcamentos, setBuscaOrcamentos] = useState("");
   const [orcamentosPage, setOrcamentosPage] = useState(1);
   const [orcamento, setOrcamento] = useState<Orcamento | null>(null);
+  const [orcamentoVigente, setOrcamentoVigente] = useState<Orcamento | null>(null);
   const [numero, setNumero] = useState(1);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -113,6 +115,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
 
   const limparFormulario = (proximoNumero: number) => {
     setOrcamento(null);
+    setOrcamentoVigente(null);
     setNumero(proximoNumero);
     setCliente(null);
     setClienteBusca("");
@@ -145,6 +148,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const abrirEdicaoOrcamento = (registro: Orcamento) => {
     const clienteRegistro = clientes.find((item) => item.id === registro.clienteId) || null;
     setOrcamento(registro);
+    setOrcamentoVigente(registro);
     setNumero(registro.numeroSequencial);
     setCliente(clienteRegistro);
     setClienteBusca(clienteRegistro?.nome || registro.clienteNome || "");
@@ -198,7 +202,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const subtotal = items.reduce((total, item) =>
     total + parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario), 0
   );
-  const itensDisponiveisVenda = items.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
+  const itensDisponiveisVenda = items.filter((item) =>
+    parseBrazilianNumber(item.quantidade) > 0 && !produtosNaVenda.includes(item.produtoId)
+  );
   const descontoPercentualValor = parseBrazilianNumber(descontoPercentual);
   const descontoValor = subtotal * Math.max(0, descontoPercentualValor) / 100;
   const totalLiquido = Math.max(0, subtotal - descontoValor);
@@ -238,16 +244,14 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setHistoricoPage(1);
     setOrigemItens("todos");
     setItensSelecionadosVenda([]);
+    setOrcamento(null);
+    setMensagem(null);
     try {
-      const vigente = await api.getClienteOrcamentoVigente(selecionado.id);
-      if (vigente) {
-        abrirEdicaoOrcamento(vigente);
-        setCliente(selecionado);
-        setClienteBusca(selecionado.nome);
-        setMensagem({ tipo: "ok", texto: `Orçamento #${vigente.numeroSequencial} carregado.` });
-        return;
-      }
-      const listaPadrao = await api.getClienteOrcamentoPadrao(selecionado.id);
+      const [vigente, listaPadrao] = await Promise.all([
+        api.getClienteOrcamentoVigente(selecionado.id),
+        api.getClienteOrcamentoPadrao(selecionado.id)
+      ]);
+      setOrcamentoVigente(vigente);
       if (listaPadrao.length > 0) {
         setItems(listaPadrao.map((item) => ({
           produtoId: item.produtoId,
@@ -258,7 +262,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
           faltante: false
         })));
-        setMensagem({ tipo: "ok", texto: `${listaPadrao.length} produto(s) acumulado(s) carregado(s).` });
+      } else {
+        setItems([]);
       }
     } catch {
       setMensagem({ tipo: "erro", texto: "O cliente foi selecionado, mas os produtos acumulados não puderam ser carregados." });
@@ -269,12 +274,19 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     if (!cliente) return;
     setOrigemItens(origem);
     setMensagem(null);
+    setItensSelecionadosVenda([]);
+    if (origem === "orcamento") {
+      if (orcamentoVigente) {
+        abrirEdicaoOrcamento(orcamentoVigente);
+        setCliente(cliente);
+        setClienteBusca(cliente.nome);
+        setOrigemItens("orcamento");
+      }
+      return;
+    }
     if (origem === "todos") {
       try {
-        const [acumulados, vigente] = await Promise.all([
-          api.getClienteOrcamentoPadrao(cliente.id),
-          api.getClienteOrcamentoVigente(cliente.id)
-        ]);
+        const acumulados = await api.getClienteOrcamentoPadrao(cliente.id);
         const lista = acumulados.map((item) => ({
           produtoId: item.produtoId,
           codigo: item.codigo,
@@ -284,23 +296,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
           faltante: false
         }));
-        for (const item of vigente?.items || []) {
-          const indice = lista.findIndex((registro) => registro.produtoId === item.produtoId);
-          const produto = produtos.find((registro) => registro.id === item.produtoId);
-          const itemVigente = {
-            produtoId: item.produtoId,
-            codigo: item.referencia || produto?.codigo,
-            descricao: item.descricao || produto?.nome || "Produto",
-            quantidade: Number(item.quantidade).toString().replace(".", ","),
-            unidade: item.unidade,
-            precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
-            faltante: false
-          };
-          if (indice >= 0) lista[indice] = itemVigente;
-          else lista.push(itemVigente);
-        }
         setItems(lista);
-        setItensSelecionadosVenda([]);
+        setOrcamento(null);
       } catch (error: any) {
         setMensagem({ tipo: "erro", texto: error.message || "Não foi possível carregar os produtos do cliente." });
       }
@@ -321,6 +318,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         faltante: false
       };
     }));
+    setOrcamento(null);
   };
 
   useEffect(() => {
@@ -329,6 +327,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       setCliente(null);
       setClienteBusca("");
       setOrcamento(null);
+      setOrcamentoVigente(null);
       setItems([]);
       return;
     }
@@ -338,6 +337,10 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setAba("formulario");
     selecionarCliente(clienteExterno);
   }, [clienteExterno?.id, loading]);
+
+  useEffect(() => {
+    setItensSelecionadosVenda((atuais) => atuais.filter((produtoId) => !produtosNaVenda.includes(produtoId)));
+  }, [produtosNaVenda]);
 
   const selecionarProduto = (produto: Produto) => {
     const referenciaCliente = produtosCliente.find((item) => item.produtoId === produto.id);
@@ -416,7 +419,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   };
 
   const montarPayload = (pin?: string) => ({
-    id: orcamento?.id,
+    id: orcamento?.id || orcamentoVigente?.id,
     clienteId: cliente?.id || "",
     data,
     validade: validade || undefined,
@@ -505,7 +508,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       setMensagem({ tipo: "erro", texto: "Selecione pelo menos um item para incluir na venda." });
       return;
     }
-    if ((orcamento || itensAbaixoDoPrecoCliente.length > 0) && !pin) {
+    if ((orcamento || orcamentoVigente || itensAbaixoDoPrecoCliente.length > 0) && !pin) {
       setLevarParaVendaAposPin(levarParaVenda);
       setItensParaVendaAposPin(produtosParaVenda);
       setAdminPin("");
@@ -518,6 +521,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     try {
       const salvo = await api.saveOrcamento(montarPayload(pin));
       setOrcamento(salvo);
+      setOrcamentoVigente(salvo);
       setNumero(salvo.numeroSequencial);
       setOrcamentos((atuais) => [salvo, ...atuais.filter((item) => item.id !== salvo.id)]
         .sort((a, b) => b.numeroSequencial - a.numeroSequencial));
@@ -851,9 +855,12 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         )}
       </section>}
 
-      <div className={compact ? "grid min-w-0 gap-4" : "grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]"}>
-        <section className="min-w-0 space-y-5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
-          <label className="block"><span className="mb-1 block text-xs font-black uppercase text-slate-500">Carregar itens</span><select value={origemItens} onChange={(event) => carregarOrigemItens(event.target.value)} className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-black text-slate-800 outline-none focus:border-blue-600"><option value="todos">Todos os produtos que o cliente já comprou</option>{historicoVendas.slice(0, 7).map((venda) => <option key={venda.id} value={venda.id}>Venda #{venda.numeroSequencial} — {formatDate(venda.data)} — {formatCurrency(venda.totalLiquido)}</option>)}</select></label>
+      <div className={compact ? "grid min-w-0 gap-2" : "grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,320px)] xl:grid-cols-[minmax(0,1fr)_340px]"}>
+        <section className={`min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm ${compact ? "space-y-2 p-2" : "space-y-5 p-3 sm:p-5"}`}>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <label className="min-w-[260px] flex-1"><span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-600">CARREGAR ITENS</span><select value={origemItens} onChange={(event) => carregarOrigemItens(event.target.value)} className="w-full rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-2 text-xs font-black uppercase text-slate-900 outline-none focus:border-blue-700"><option value="todos">TODOS OS PRODUTOS JÁ COMPRADOS</option>{orcamentoVigente && <option value="orcamento">ORÇAMENTO DO CLIENTE #{orcamentoVigente.numeroSequencial}</option>}{historicoVendas.slice(0, 7).map((venda) => <option key={venda.id} value={venda.id}>VENDA #{venda.numeroSequencial} — {formatDate(venda.data)} — {formatCurrency(venda.totalLiquido)}</option>)}</select></label>
+            {itensSelecionadosVenda.length > 1 && <button type="button" onClick={() => incluirItensNaVenda(itensSelecionadosVenda)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-[11px] font-black uppercase text-white shadow-sm hover:bg-emerald-800"><ListChecks size={15} /> INSERIR TODOS SELECIONADOS ({itensSelecionadosVenda.length})</button>}
+          </div>
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className={`w-full text-xs ${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[720px]"}`}>
@@ -874,25 +881,25 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
                   <td className="px-2 py-2 text-center"><button type="button" onClick={adicionarItem} title="Adicionar nova linha" className="rounded-md bg-blue-700 p-2 text-white hover:bg-blue-800"><Plus size={14} /></button></td>
                 </tr>
                 {items.length === 0 ? <tr><td colSpan={8} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => {
-                  const disponivel = parseBrazilianNumber(item.quantidade) > 0;
+                  const jaEstaNaVenda = produtosNaVenda.includes(item.produtoId);
+                  const disponivel = parseBrazilianNumber(item.quantidade) > 0 && !jaEstaNaVenda;
                   const selecionado = itensSelecionadosVenda.includes(item.produtoId);
-                  return <tr key={item.produtoId} className="bg-white"><td className="px-1 py-2 text-center"><input aria-label={`Selecionar ${item.descricao} para venda`} type="checkbox" disabled={!disponivel} checked={selecionado} onChange={(event) => setItensSelecionadosVenda((atuais) => event.target.checked ? [...new Set([...atuais, item.produtoId])] : atuais.filter((id) => id !== item.produtoId))} /></td><td className="px-2 py-2 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-2 font-black text-slate-900">{item.descricao}</td><td className="px-2 py-2"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => { const valor = event.target.value; setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: valor } : registro)); if (parseBrazilianNumber(valor) <= 0) setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="w-full rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-right font-black outline-none focus:border-amber-500" /></td><td className="px-2 py-2 font-bold">{item.unidade}</td><td className="px-2 py-2"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded-md border border-sky-200 bg-sky-50 px-2 py-1.5 text-right font-black outline-none focus:border-sky-500" /></td><td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-1 py-2"><div className="flex justify-center gap-1"><button type="button" disabled={!disponivel || salvando} title="Incluir este item na venda" onClick={() => incluirItensNaVenda([item.produtoId])} className="rounded-md border border-emerald-200 p-1.5 text-emerald-700 hover:bg-emerald-50 disabled:opacity-30"><ShoppingCart size={13} /></button><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => { setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index)); setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="rounded-md border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></div></td></tr>;
+                  return <tr key={item.produtoId} className={jaEstaNaVenda ? "bg-emerald-50/70 text-slate-500" : "bg-white"}><td className="px-1 py-1 text-center"><input aria-label={`Selecionar ${item.descricao} para venda`} type="checkbox" disabled={!disponivel} checked={selecionado} onChange={(event) => setItensSelecionadosVenda((atuais) => event.target.checked ? [...new Set([...atuais, item.produtoId])] : atuais.filter((id) => id !== item.produtoId))} /></td><td className="px-2 py-1 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-1 font-black uppercase text-slate-900">{item.descricao}{jaEstaNaVenda && <span className="ml-2 rounded bg-emerald-700 px-1.5 py-0.5 text-[8px] font-black text-white">NA VENDA</span>}</td><td className="px-2 py-1"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => { const valor = event.target.value; setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: valor } : registro)); if (parseBrazilianNumber(valor) <= 0) setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="w-full rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-right font-black outline-none focus:border-amber-600" /></td><td className="px-2 py-1 font-bold uppercase">{item.unidade}</td><td className="px-2 py-1"><input aria-label={`Preço de ${item.descricao} no orçamento`} value={item.precoUnitario} onChange={(event) => setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: event.target.value } : registro))} className="w-full rounded border border-sky-300 bg-sky-50 px-1.5 py-1 text-right font-black outline-none focus:border-sky-600" /></td><td className="px-2 py-1 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-1 py-1"><div className="flex justify-center gap-1"><button type="button" disabled={!disponivel || salvando} title={jaEstaNaVenda ? "Item já inserido na venda" : "Incluir este item na venda"} onClick={() => incluirItensNaVenda([item.produtoId])} className="rounded border border-emerald-300 p-1.5 text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><ShoppingCart size={13} /></button><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => { setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index)); setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="rounded border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></div></td></tr>;
                 })}
               </tbody>
             </table>
           </div>
         </section>
 
-        <aside className="min-w-0 h-fit space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-200 pb-4"><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length} item(ns) selecionado(s)</p></div></div>
-          <div className="space-y-3"><div className="flex justify-between text-sm"><span>Subtotal</span><strong>{formatCurrency(subtotal)}</strong></div><label><span className="mb-1 flex items-center gap-1 text-xs font-black uppercase text-slate-500"><Percent size={13} /> Desconto percentual</span><div className="relative"><input aria-label="Desconto percentual" value={descontoPercentual} onChange={(event) => setDescontoPercentual(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-slate-50 py-2.5 pl-3 pr-9 text-right font-black" /><span className="absolute right-3 top-1/2 -translate-y-1/2 font-black text-slate-500">%</span></div><span className="mt-1 block text-right text-xs font-bold text-slate-500">Desconto: {formatCurrency(descontoValor)}</span></label><div className="flex justify-between border-t-2 border-slate-900 pt-3 text-lg"><span className="font-black">Total</span><strong className="text-blue-800">{formatCurrency(totalLiquido)}</strong></div></div>
-          <label><span className="mb-1 block text-xs font-black uppercase text-slate-500">Observações e condições</span><textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={4} placeholder="Prazo, condições de pagamento ou observações..." className="w-full resize-none rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-blue-500" /></label>
+        <aside className={`min-w-0 h-fit rounded-xl border border-slate-300 bg-slate-50 shadow-sm ${compact ? "grid gap-2 p-2 lg:grid-cols-[1fr_1.4fr_auto]" : "space-y-4 p-5"}`}>
+          <div className={compact ? "hidden" : "flex items-center gap-3 border-b border-slate-200 pb-4"}><span className="rounded-xl bg-blue-100 p-2 text-blue-700"><FileText size={20} /></span><div><p className="font-black uppercase">Resumo do orçamento</p><p className="text-xs text-slate-500">{items.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length} item(ns) selecionado(s)</p></div></div>
+          <div className={compact ? "grid grid-cols-3 gap-2 text-[10px]" : "space-y-3"}><div className="flex flex-col justify-center rounded-lg border border-slate-200 bg-white px-2 py-1"><span className="font-black uppercase text-slate-500">Subtotal</span><strong className="text-sm">{formatCurrency(subtotal)}</strong></div><label className="rounded-lg border border-slate-200 bg-white px-2 py-1"><span className="flex items-center gap-1 text-[9px] font-black uppercase text-slate-500"><Percent size={11} /> Desconto</span><div className="relative"><input aria-label="Desconto percentual" value={descontoPercentual} onChange={(event) => setDescontoPercentual(event.target.value)} className="w-full bg-transparent pr-4 text-right text-sm font-black outline-none" /><span className="absolute right-0 top-1/2 -translate-y-1/2 font-black text-slate-500">%</span></div></label><div className="flex flex-col justify-center rounded-lg bg-blue-900 px-2 py-1 text-white"><span className="font-black uppercase">Total</span><strong className="text-sm">{formatCurrency(totalLiquido)}</strong></div></div>
+          <label><span className="mb-1 block text-[9px] font-black uppercase tracking-wider text-slate-600">OBSERVAÇÕES</span><textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={compact ? 1 : 4} placeholder="Condições do orçamento..." className="w-full resize-none rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-blue-600" /></label>
           {(orcamento || itensAbaixoDoPrecoCliente.length > 0) && <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs font-black text-amber-800"><KeyRound size={15} className="mr-1.5 inline" /> {orcamento ? "PIN necessário para alterar este orçamento." : `PIN necessário para ${itensAbaixoDoPrecoCliente.length} item(ns).`}</p>}
-          <div className="space-y-2 border-t border-slate-200 pt-4">
-            <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17} /> {salvando ? "Salvando..." : "Salvar orçamento"}</button>
-            <button type="button" disabled={salvando || itensSelecionadosVenda.length === 0} onClick={() => incluirItensNaVenda(itensSelecionadosVenda)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ListChecks size={17} /> Incluir seleção na venda ({itensSelecionadosVenda.length})</button>
-            {orcamento && <button type="button" onClick={() => setPreviewOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
-            {orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
+          <div className={compact ? "flex items-end" : "space-y-2 border-t border-slate-200 pt-4"}>
+            <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-50"><Save size={15} /> {salvando ? "SALVANDO..." : "SALVAR ORÇAMENTO"}</button>
+            {!compact && orcamento && <button type="button" onClick={() => setPreviewOpen(true)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
+            {!compact && orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
           </div>
         </aside>
       </div>

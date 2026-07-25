@@ -4,6 +4,18 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.4 — 2026-07-24
+
+- Orçamento vigente carregado somente por escolha explícita no dropdown.
+- Seleção múltipla corrigida com ação contextual junto à grade.
+- Itens transferidos são acrescentados à venda atual sem substituir os anteriores.
+- Produtos já inseridos na venda ficam bloqueados no orçamento e identificados visualmente.
+- Disponibilidade restaurada ao remover o item da venda atual.
+- Ação coletiva removida do rodapé; mantido somente “Salvar orçamento”.
+- Orçamento pode ser recolhido ou expandido.
+- Grades, resumo e checkout redesenhados com maior densidade, contraste e títulos em caixa alta.
+- Espaçamentos, cabeçalhos e campos reduzidos para diminuir a rolagem.
+
 ## 1.7.3 — 2026-07-24
 
 - Orçamento vigente persistido e carregado automaticamente por cliente.

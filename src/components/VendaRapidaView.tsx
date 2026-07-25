@@ -17,6 +17,7 @@ interface VendaRapidaViewProps {
   compact?: boolean;
   clienteExterno?: Cliente | null;
   ocultarSeletorCliente?: boolean;
+  onItensChange?: (produtoIds: string[]) => void;
 }
 
 interface ItemRascunho {
@@ -57,7 +58,7 @@ const FORMAS_COM_INSTRUMENTO = new Set([
   "duplicata_terceiro",
 ]);
 
-export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false }: VendaRapidaViewProps) {
+export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false, onItensChange }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -192,6 +193,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   }, [toastMsg]);
 
   useEffect(() => {
+    onItensChange?.(itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).map((item) => item.produtoId));
+  }, [itensVenda, onItensChange]);
+
+  useEffect(() => {
     let active = true;
 
     if (clienteSelecionado) {
@@ -252,7 +257,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }
     setClienteSelecionado(cliente);
     setClienteBusca(cliente.nome);
-    setItensVenda(orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0).map((item) => {
+    const itensRecebidos = orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         produtoId: item.produtoId,
@@ -264,17 +269,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         desconto: "0",
         precoPadrao: Number(produto?.precoVendaPadrao || item.precoUnitario)
       };
-    }));
+    });
+    setItensVenda((atuais) => {
+      let resultado = [...atuais];
+      for (const recebido of itensRecebidos) {
+        const indice = resultado.findIndex((item) => item.produtoId === recebido.produtoId);
+        resultado = indice >= 0
+          ? resultado.map((item, itemIndex) => itemIndex === indice ? recebido : item)
+          : [...resultado, recebido];
+      }
+      return resultado;
+    });
     const percentualDesconto = Number(orcamentoInicial.subtotal) > 0
       ? (Number(orcamentoInicial.desconto) / Number(orcamentoInicial.subtotal)) * 100
       : 0;
     setDescontoGeral(percentualDesconto.toFixed(2).replace(".", ","));
-    setObservacoes(orcamentoInicial.observacoes || `Originada do orçamento #${orcamentoInicial.numeroSequencial}.`);
+    if (orcamentoInicial.observacoes) setObservacoes(orcamentoInicial.observacoes);
     setOrcamentoOrigemId(orcamentoInicial.id);
-    setFeedbackMsg({
-      type: "success",
-      text: `Orçamento #${orcamentoInicial.numeroSequencial} carregado. Confira recebimento e finalize a venda.`
-    });
+    setToastMsg(`${itensRecebidos.length} ${itensRecebidos.length === 1 ? "ITEM INSERIDO" : "ITENS INSERIDOS"} NA VENDA.`);
     onOrcamentoCarregado?.();
   }, [orcamentoInicial, clientes, produtos, onOrcamentoCarregado]);
 
@@ -1097,7 +1109,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       )}
 
       {/* Screen Area */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4">
+      <div className={`${compact ? "hidden" : "flex"} flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-4`}>
         <div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Nova Venda</h2>
@@ -1320,14 +1332,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </section>
 
         {/* Card 3: Resumo e Fechamento */}
-        <div className="order-4 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm space-y-4 flex flex-col justify-between">
-          <div>
-            <label className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-3">
+        <div className={`order-4 border border-slate-200 bg-white shadow-sm flex flex-col justify-between ${compact ? "space-y-2 rounded-xl p-2" : "space-y-4 rounded-2xl p-5"}`}>
+          <div className={compact ? "grid gap-2 xl:grid-cols-2" : ""}>
+            <label className={`${compact ? "hidden" : "flex"} text-xs font-extrabold text-slate-400 uppercase tracking-wider items-center gap-1.5 border-b border-slate-100 pb-3`}>
               <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
               Resumo & Fechamento
             </label>
 
-            <div className="space-y-2.5 text-xs mt-3">
+            <div className={`${compact ? "space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[11px]" : "mt-3 space-y-2.5 text-xs"}`}>
               <div className="flex justify-between text-slate-400 font-semibold">
                 <span>Subtotal Itens:</span>
                 <span className="font-bold text-slate-800">{formatCurrency(subtotalItens)}</span>
@@ -1356,7 +1368,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               </div>
 
-              <hr className="border-slate-100 my-1" />
+              <hr className={compact ? "hidden" : "border-slate-100 my-1"} />
 
               <div className="flex justify-between items-center text-sm py-0.5">
                 <span className="font-bold text-slate-900">Total Líquido:</span>
@@ -1386,10 +1398,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               </div>
             </div>
 
-            <hr className="border-slate-100 my-2.5" />
+            <hr className={compact ? "hidden" : "border-slate-100 my-2.5"} />
 
             {/* Formas de pagamento and extra data */}
-            <div className="space-y-2.5">
+            <div className={`${compact ? "space-y-1 rounded-lg border border-slate-200 bg-white p-2" : "space-y-2.5"}`}>
               <div className="flex items-center justify-between gap-2">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Recebimento</label>
                 <select 
@@ -1474,16 +1486,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
             </div>
           </div>
 
-          <div className="pt-3 border-t border-slate-100">
+          <div className={compact ? "" : "pt-3 border-t border-slate-100"}>
             <button 
               ref={salvarBtnRef}
               type="button"
               disabled={loading}
               onClick={handleSaveVenda}
-              className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-950/10 transition-all active:scale-[0.98] disabled:opacity-50"
+              className="w-full flex items-center justify-center gap-2 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-black uppercase shadow-md shadow-emerald-950/10 transition-all active:scale-[0.98] disabled:opacity-50"
             >
               <CheckCircle2 size={15} />
-              {loading ? "Finalizando..." : "Finalizar venda"}
+              {loading ? "FINALIZANDO..." : "FINALIZAR VENDA"}
             </button>
           </div>
         </div>
@@ -1491,16 +1503,16 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       </div>
 
       {/* Full Width Bottom Row: Adicionar Itens and Table Carrinho */}
-      <div className={`order-3 rounded-2xl border border-slate-100 bg-white shadow-sm ${compact ? "space-y-3 p-2" : "space-y-6 p-4 sm:p-6"}`}>
+      <div className={`order-3 border border-slate-200 bg-white shadow-sm ${compact ? "space-y-2 rounded-xl p-2" : "space-y-6 rounded-2xl p-4 sm:p-6"}`}>
         
         {/* Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3.5">
-          <label className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+          <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
             <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
-            Itens e Materiais do Pedido
+            ITENS DA VENDA
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            {orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-[11px] font-black text-blue-800 hover:bg-blue-100"><FileText size={14} /> Carregar orçamento ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
+            {orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase text-blue-900 hover:bg-blue-100"><FileText size={13} /> CARREGAR ORÇAMENTO ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
             <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}
@@ -1510,20 +1522,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
         <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
-          <table className={`${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-sm text-left`}>
+          <table className={`${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
             <colgroup>
               <col className="w-[8%]" /><col className="w-[28%]" /><col className="w-[10%]" />
               <col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[10%]" />
             </colgroup>
             <thead>
-              <tr className="bg-slate-50/80 text-slate-500 font-extrabold text-xs uppercase border-b border-slate-100">
-                <th className="px-2 py-2 w-16">Cód</th>
-                <th className="px-2 py-2">Material</th>
-                <th className="px-2 py-2 text-center w-28">Qtd.</th>
-                <th className="px-2 py-2 text-center w-24">Unid.</th>
-                <th className="px-2 py-2 text-right w-32">V. unit.</th>
-                <th className="px-2 py-2 text-right w-28">Total</th>
-                <th className="px-2 py-2 text-center w-16">Ação</th>
+              <tr className="bg-slate-100 text-slate-600 font-black text-[10px] uppercase border-b border-slate-200">
+                <th className="px-2 py-1.5 w-16">CÓD.</th>
+                <th className="px-2 py-1.5">MATERIAL</th>
+                <th className="px-2 py-1.5 text-center w-28">QTD.</th>
+                <th className="px-2 py-1.5 text-center w-24">UN.</th>
+                <th className="px-2 py-1.5 text-right w-32">PREÇO</th>
+                <th className="px-2 py-1.5 text-right w-28">TOTAL</th>
+                <th className="px-2 py-1.5 text-center w-16">AÇÃO</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { FileText, History, Search, ShoppingCart, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, History, Search, ShoppingCart, UserRound, X } from "lucide-react";
 import { VendaRapidaView } from "./VendaRapidaView";
 import { VendasListaView } from "./VendasListaView";
 import { OrcamentoView } from "./OrcamentoView";
@@ -19,6 +19,8 @@ export function VendaModuleView(props: VendaModuleViewProps) {
     props.selectedSaleId ? "historico" : "operacao"
   );
   const [orcamentoParaVenda, setOrcamentoParaVenda] = useState<Orcamento | null>(null);
+  const [produtosNaVenda, setProdutosNaVenda] = useState<string[]>([]);
+  const [orcamentoExpandido, setOrcamentoExpandido] = useState(true);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [clienteBusca, setClienteBusca] = useState("");
@@ -35,8 +37,8 @@ export function VendaModuleView(props: VendaModuleViewProps) {
   ).slice(0, 10), [clientes, clienteBusca]);
 
   return (
-    <section className="space-y-4">
-      <div className="sticky top-0 z-30 -mx-1 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur print:hidden">
+    <section className="space-y-2">
+      <div className="sticky top-0 z-30 -mx-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-white/95 p-1.5 shadow-sm backdrop-blur print:hidden">
         {modo === "operacao" ? (
             <div className="flex min-w-0 flex-1 items-center gap-3 px-2">
               <ShoppingCart size={18} className="text-emerald-700" />
@@ -60,12 +62,12 @@ export function VendaModuleView(props: VendaModuleViewProps) {
         />
       ) : (
         <>
-        <section className="relative rounded-2xl border-2 border-slate-300 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase tracking-wider text-slate-700">
+        <section className="relative rounded-xl border border-slate-300 bg-white p-2.5 shadow-sm">
+          <div className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-slate-700">
             <UserRound size={17} className="text-emerald-700" /> 1. Selecione o cliente
           </div>
           {cliente ? (
-            <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
               <div className="min-w-0"><strong className="block truncate text-slate-950">{cliente.nome}</strong><span className="text-xs text-slate-600">{cliente.telefone || "Sem telefone"}</span></div>
               <button type="button" aria-label="Trocar cliente" onClick={() => { setCliente(null); setClienteBusca(""); setClienteDropdown(true); setOrcamentoParaVenda(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={17} /></button>
             </div>
@@ -84,28 +86,30 @@ export function VendaModuleView(props: VendaModuleViewProps) {
             </div>
           )}
         </section>
-        <div className={`min-w-0 space-y-4 ${cliente ? "" : "pointer-events-none opacity-45"}`}>
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-blue-200 bg-slate-50 shadow-sm">
-            <div className="flex items-center justify-between border-b border-blue-200 bg-blue-700 px-4 py-3 text-white">
+        <div className={`min-w-0 space-y-2 ${cliente ? "" : "pointer-events-none opacity-45"}`}>
+          <section className="min-w-0 overflow-hidden rounded-xl border border-blue-200 bg-slate-50 shadow-sm">
+            <div className="flex items-center justify-between border-b border-blue-200 bg-blue-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><FileText size={18} /><strong className="text-sm uppercase tracking-wide">Orçamento</strong></div>
+              <button type="button" onClick={() => setOrcamentoExpandido((atual) => !atual)} className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase hover:bg-white/20">{orcamentoExpandido ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{orcamentoExpandido ? "Recolher" : "Expandir"}</button>
             </div>
-            <div className="p-3">
+            {orcamentoExpandido && <div className="p-2">
               <OrcamentoView
                 compact
                 clienteExterno={cliente}
                 ocultarSeletorCliente
+                produtosNaVenda={produtosNaVenda}
                 onLevarParaVenda={(orcamento) => {
                   setOrcamentoParaVenda(orcamento);
                 }}
               />
-            </div>
+            </div>}
           </section>
 
-          <section className="min-w-0 overflow-hidden rounded-2xl border border-emerald-200 bg-slate-50 shadow-sm">
-            <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-700 px-4 py-3 text-white">
+          <section className="min-w-0 overflow-hidden rounded-xl border border-emerald-200 bg-slate-50 shadow-sm">
+            <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><ShoppingCart size={18} /><strong className="text-sm uppercase tracking-wide">Venda</strong></div>
             </div>
-            <div className="p-3">
+            <div className="p-2">
               <VendaRapidaView
                 compact
                 onSaleSaved={props.onSaleSaved}
@@ -114,6 +118,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 onOrcamentoCarregado={() => setOrcamentoParaVenda(null)}
                 clienteExterno={cliente}
                 ocultarSeletorCliente
+                onItensChange={setProdutosNaVenda}
               />
             </div>
           </section>

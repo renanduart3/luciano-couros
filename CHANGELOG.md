@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.6 — 2026-07-24
+
+- Seletor de produtos da venda removido do limite vertical da grade.
+- Lista de resultados passa a ocupar dinamicamente o espaço disponível na tela.
+- Dropdown reposicionado automaticamente para cima quando não houver espaço abaixo.
+- Rolagem mantida somente quando a quantidade de produtos exceder a área visível.
+
 ## 1.7.5 — 2026-07-24
 
 - Logo reposicionada e ampliada nos comprovantes de venda e orçamento.

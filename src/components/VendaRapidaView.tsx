@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { 
   Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
   TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, Share2, MessageSquare, KeyRound, ShieldCheck,
@@ -77,6 +78,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [produtoBusca, setProdutoBusca] = useState("");
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
   const [showProdutoDropdown, setShowProdutoDropdown] = useState(false);
+  const [produtoDropdownPosition, setProdutoDropdownPosition] = useState<{
+    left: number;
+    width: number;
+    maxHeight: number;
+    top?: number;
+    bottom?: number;
+  } | null>(null);
 
   // Active Item Form
   const [itemQtd, setItemQtd] = useState("1");
@@ -191,6 +199,44 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const timer = window.setTimeout(() => setToastMsg(null), 3500);
     return () => window.clearTimeout(timer);
   }, [toastMsg]);
+
+  useEffect(() => {
+    if (!showProdutoDropdown || !produtoBusca.trim()) {
+      setProdutoDropdownPosition(null);
+      return;
+    }
+
+    const atualizarPosicao = () => {
+      const input = produtoInputRef.current;
+      if (!input) return;
+
+      const rect = input.getBoundingClientRect();
+      const margem = 8;
+      const espacoAbaixo = window.innerHeight - rect.bottom - margem;
+      const espacoAcima = rect.top - margem;
+      const abrirAcima = espacoAbaixo < 260 && espacoAcima > espacoAbaixo;
+      const espacoDisponivel = abrirAcima ? espacoAcima : espacoAbaixo;
+      const width = Math.min(Math.max(rect.width, 340), window.innerWidth - margem * 2);
+      const left = Math.min(Math.max(rect.left, margem), window.innerWidth - width - margem);
+
+      setProdutoDropdownPosition({
+        left,
+        width,
+        maxHeight: Math.max(96, Math.min(420, espacoDisponivel - 6)),
+        ...(abrirAcima
+          ? { bottom: window.innerHeight - rect.top + 4 }
+          : { top: rect.bottom + 4 }),
+      });
+    };
+
+    atualizarPosicao();
+    window.addEventListener("resize", atualizarPosicao);
+    window.addEventListener("scroll", atualizarPosicao, true);
+    return () => {
+      window.removeEventListener("resize", atualizarPosicao);
+      window.removeEventListener("scroll", atualizarPosicao, true);
+    };
+  }, [showProdutoDropdown, produtoBusca]);
 
   useEffect(() => {
     onItensChange?.(itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).map((item) => item.produtoId));
@@ -1543,7 +1589,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <td className="px-2 py-2 text-center font-black text-emerald-700">+</td>
                 <td className="relative px-2 py-2">
                   <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
-                  {showProdutoDropdown && produtoBusca.trim() && <div className="absolute left-1 right-1 top-full z-30 max-h-52 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{filteredProdutos.length ? filteredProdutos.map((produto) => <button key={produto.id} type="button" onClick={() => handleSelectProduto(produto)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left text-xs hover:bg-emerald-50"><span><strong className="block">{produto.nome}</strong><small className="text-slate-400">{produto.codigo || "Sem código"} • {produto.unidade}</small></span><strong className="text-emerald-700">{formatCurrency(Number(produtosCliente.find((item) => item.produtoId === produto.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produto.id)?.ultimoPreco ?? produto.precoVendaPadrao))}</strong></button>) : <p className="p-3 text-xs font-bold text-slate-400">Produto não encontrado.</p>}</div>}
+                  {showProdutoDropdown && produtoBusca.trim() && produtoDropdownPosition && createPortal(
+                    <div
+                      role="listbox"
+                      aria-label="Produtos encontrados"
+                      className="fixed z-[100] overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white shadow-2xl"
+                      style={produtoDropdownPosition}
+                    >
+                      {filteredProdutos.length
+                        ? filteredProdutos.map((produto) => (
+                          <button key={produto.id} type="button" role="option" aria-selected={produtoSelecionado?.id === produto.id} onClick={() => handleSelectProduto(produto)} className="flex w-full items-center justify-between gap-3 border-b border-slate-100 p-2.5 text-left text-xs hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none">
+                            <span className="min-w-0"><strong className="block truncate">{produto.nome}</strong><small className="text-slate-500">{produto.codigo || "Sem código"} • {produto.unidade}</small></span>
+                            <strong className="shrink-0 text-emerald-700">{formatCurrency(Number(produtosCliente.find((item) => item.produtoId === produto.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produto.id)?.ultimoPreco ?? produto.precoVendaPadrao))}</strong>
+                          </button>
+                        ))
+                        : <p className="p-3 text-xs font-bold text-slate-400">Produto não encontrado.</p>}
+                    </div>,
+                    document.body
+                  )}
                 </td>
                 <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>

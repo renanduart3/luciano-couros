@@ -105,8 +105,8 @@ export function VendaModuleView(props: VendaModuleViewProps) {
             </div>}
           </section>
 
-          <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
-            <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-800 px-3 py-2 text-white">
+          <section className="min-w-0 overflow-visible rounded-xl bg-slate-50 shadow-sm">
+            <div className="flex items-center justify-between rounded-t-xl border-b border-emerald-200 bg-emerald-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><ShoppingCart size={18} /><strong className="text-sm uppercase tracking-wide">Venda</strong></div>
             </div>
             <div className="p-2">

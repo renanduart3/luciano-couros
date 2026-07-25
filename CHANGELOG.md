@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.7.5 — 2026-07-24
+
+- Logo reposicionada e ampliada nos comprovantes de venda e orçamento.
+- Data e número do documento reorganizados em linhas alinhadas no cabeçalho.
+- Rodapé dos comprovantes corrigido com número de itens, total de metros e valor total.
+- Texto da ação após finalizar a venda simplificado para “Imprimir”.
+- Contêineres de venda e orçamento redesenhados com menos bordas e melhor hierarquia visual.
+
 ## 1.7.4 — 2026-07-24
 
 - Orçamento vigente carregado somente por escolha explícita no dropdown.

@@ -87,7 +87,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           )}
         </section>
         <div className={`min-w-0 space-y-2 ${cliente ? "" : "pointer-events-none opacity-45"}`}>
-          <section className="min-w-0 overflow-hidden rounded-xl border border-blue-200 bg-slate-50 shadow-sm">
+          <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
             <div className="flex items-center justify-between border-b border-blue-200 bg-blue-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><FileText size={18} /><strong className="text-sm uppercase tracking-wide">Orçamento</strong></div>
               <button type="button" onClick={() => setOrcamentoExpandido((atual) => !atual)} className="inline-flex items-center gap-1 rounded-md border border-white/25 bg-white/10 px-2.5 py-1 text-[10px] font-black uppercase hover:bg-white/20">{orcamentoExpandido ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{orcamentoExpandido ? "Recolher" : "Expandir"}</button>
@@ -105,7 +105,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
             </div>}
           </section>
 
-          <section className="min-w-0 overflow-hidden rounded-xl border border-emerald-200 bg-slate-50 shadow-sm">
+          <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
             <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><ShoppingCart size={18} /><strong className="text-sm uppercase tracking-wide">Venda</strong></div>
             </div>

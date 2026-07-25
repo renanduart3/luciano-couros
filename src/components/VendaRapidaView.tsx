@@ -1071,7 +1071,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   onClick={executePrint}
                   className="flex-1 flex items-center justify-center gap-2 px-5 py-3 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors"
                 >
-                  <Printer size={15} /> Imprimir 2 vias em A4
+                  <Printer size={15} /> Imprimir
                 </button>
 
                 {vendaSalvaParaImpressao.clienteTelefone && vendaSalvaParaImpressao.clienteIsWhatsapp === 1 && (
@@ -1332,7 +1332,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </section>
 
         {/* Card 3: Resumo e Fechamento */}
-        <div className={`order-4 border border-slate-200 bg-white shadow-sm flex flex-col justify-between ${compact ? "space-y-2 rounded-xl p-2" : "space-y-4 rounded-2xl p-5"}`}>
+        <div className={`order-4 bg-white flex flex-col justify-between ${compact ? "space-y-2 rounded-xl p-2" : "space-y-4 rounded-2xl border border-slate-200 p-5 shadow-sm"}`}>
           <div className={compact ? "grid gap-2 xl:grid-cols-2" : ""}>
             <label className={`${compact ? "hidden" : "flex"} text-xs font-extrabold text-slate-400 uppercase tracking-wider items-center gap-1.5 border-b border-slate-100 pb-3`}>
               <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
@@ -1503,7 +1503,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       </div>
 
       {/* Full Width Bottom Row: Adicionar Itens and Table Carrinho */}
-      <div className={`order-3 border border-slate-200 bg-white shadow-sm ${compact ? "space-y-2 rounded-xl p-2" : "space-y-6 rounded-2xl p-4 sm:p-6"}`}>
+      <div className={`order-3 bg-white ${compact ? "space-y-2 rounded-xl p-2" : "space-y-6 rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6"}`}>
         
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">

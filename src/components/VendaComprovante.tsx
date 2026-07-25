@@ -43,8 +43,8 @@ const FORMAS: Record<string, string> = {
 const ITENS_POR_FOLHA = 18;
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
-  const quantidadeTotal = itens.reduce((total, item) => total + Number(item.quantidade), 0);
-  const quantidadeMetros = itens
+  const todosItens = venda.items || itens;
+  const quantidadeMetros = todosItens
     .filter((item) => item.unidade.toLowerCase().includes("metro"))
     .reduce((total, item) => total + Number(item.quantidade), 0);
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
@@ -69,8 +69,8 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </div>
         <div className="receipt-document-meta">
           <strong>{titulo} • {viaCurta}</strong>
-          <span>Data: {formatDate(venda.data)}</span>
-          <span>Nº {String(venda.numeroSequencial).padStart(6, "0")}</span>
+          <span className="receipt-meta-row"><b>DATA:</b><span>{formatDate(venda.data)}</span></span>
+          <span className="receipt-meta-row"><b>Nº:</b><span>{String(venda.numeroSequencial).padStart(6, "0")}</span></span>
         </div>
       </header>
 
@@ -102,12 +102,12 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         {Number(venda.desconto) > 0 && <span><b>Desconto:</b> {formatCurrency(venda.desconto)}</span>}
         {instrumento && <span><b>Nº:</b> {instrumento.numeroDocumento} • <b>Emitente:</b> {instrumento.emitente}</span>}
         {venda.saldoRestante > 0 && <span><b>Saldo do Vale:</b> {formatCurrency(venda.saldoRestante)}</span>}
+        <span><b>Vencimento:</b> {vencimento ? formatDate(vencimento) : "À vista"}</span>
       </div>
 
       <footer className="receipt-footer">
-        <div className="receipt-counts"><span>Itens: <b>{itens.length}</b> • Qtd. total: <b>{formatDecimal(quantidadeTotal)}</b> • Metros: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS.CLIENTE:</span></div>
-        <div className="receipt-total"><span>TOTAL R$</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
-        <div className="receipt-due"><span>VENCIMENTO:</span><strong>{vencimento ? formatDate(vencimento) : "À VISTA"}</strong></div>
+        <div className="receipt-counts"><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></div>
+        <div className="receipt-total"><span>VALOR TOTAL</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
       </footer>
     </section>
   );

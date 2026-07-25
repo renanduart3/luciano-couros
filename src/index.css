@@ -80,18 +80,18 @@ textarea {
   }
 
   main .border-slate-100 {
-    border-color: #cbd5e1 !important;
+    border-color: #e2e8f0 !important;
   }
 
   main .border-slate-200 {
-    border-color: #94a3b8 !important;
+    border-color: #cbd5e1 !important;
   }
 
   main input,
   main select,
   main textarea {
     min-height: 44px;
-    border-color: #94a3b8 !important;
+    border-color: #cbd5e1 !important;
     background-color: #ffffff !important;
     color: #020617 !important;
     font-size: 0.9375rem !important;
@@ -135,6 +135,23 @@ textarea {
   main button {
     font-weight: 800;
     letter-spacing: 0.02em;
+  }
+
+  /* A prévia impressa preserva suas medidas tipográficas em milímetros/pontos. */
+  main .receipt-copy {
+    text-transform: uppercase;
+  }
+
+  main .receipt-copy :where(span, b, strong, em, td, th) {
+    font-size: inherit;
+  }
+
+  main .receipt-items-table {
+    font-size: 6.3pt !important;
+  }
+
+  main .receipt-items-table th {
+    font-size: 6.2pt !important;
   }
 
   :where(button, input, select, textarea):focus-visible {
@@ -186,16 +203,17 @@ textarea {
 
 .receipt-header {
   display: grid;
-  min-height: 15mm;
-  grid-template-columns: 36mm 1fr 25mm;
+  min-height: 18mm;
+  grid-template-columns: 22mm 1fr 31mm;
   align-items: center;
   border-bottom: 0.3mm solid #111827;
-  padding: 1mm 1.5mm;
+  padding: 0.5mm 1.5mm;
 }
 
 .receipt-logo {
-  width: 34mm;
-  height: 13mm;
+  width: 19mm;
+  height: 17mm;
+  justify-self: center;
   object-fit: contain;
 }
 
@@ -214,14 +232,32 @@ textarea {
 
 .receipt-document-meta {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 1mm;
+  gap: 0.6mm;
   text-align: right;
-  font-size: 6pt;
+  font-size: 6.2pt;
 }
 
 .receipt-document-meta strong {
   font-size: 6.8pt;
+}
+
+.receipt-meta-row {
+  display: grid;
+  grid-template-columns: 8mm minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 1mm;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.receipt-meta-row b {
+  text-align: left;
+}
+
+.receipt-meta-row > span {
+  text-align: right;
 }
 
 .receipt-client-grid {
@@ -293,11 +329,11 @@ textarea {
 
 .receipt-footer {
   display: grid;
-  min-height: 10mm;
-  grid-template-columns: 1fr 35mm;
-  grid-template-rows: 5mm 5mm;
+  min-height: 8mm;
+  grid-template-columns: 1fr 42mm;
   margin-top: auto;
   border-top: 0.3mm solid #111827;
+  background: #f8fafc;
 }
 
 .receipt-counts {
@@ -320,12 +356,12 @@ textarea {
   justify-content: space-between;
   border-left: 0.3mm solid #111827;
   padding: 0.6mm 1mm;
-  font-size: 6.2pt;
+  font-size: 6.4pt;
 }
 
-.receipt-total { grid-column: 2; grid-row: 1; }
-.receipt-due { grid-column: 2; grid-row: 2; border-top: 0.2mm solid #111827; }
-.receipt-total strong { font-size: 8pt; }
+.receipt-total { grid-column: 2; }
+.receipt-due { border-top: 0.2mm solid #111827; }
+.receipt-total strong { font-size: 8.5pt; }
 
 .receipt-cut {
   box-sizing: border-box;
@@ -509,8 +545,8 @@ textarea {
   }
 
   .receipt-logo {
-    width: 34mm !important;
-    height: 13mm !important;
+    width: 19mm !important;
+    height: 17mm !important;
     margin: 0 !important;
   }
 }

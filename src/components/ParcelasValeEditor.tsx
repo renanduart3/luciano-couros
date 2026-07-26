@@ -59,16 +59,34 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
         {PRAZOS_RAPIDOS.map((dias) => <button key={dias} type="button" onClick={() => adicionarPrazo(dias)} className="inline-flex items-center gap-1 rounded-lg bg-amber-700 px-2.5 py-1.5 text-[10px] font-black text-white"><CalendarPlus size={12} /> +{dias} dias</button>)}
       </div>
 
-      <div className="mt-3 space-y-2">
-        {parcelas.map((parcela, index) => (
-          <div key={`parcela-${index}`} className="grid grid-cols-[28px_minmax(130px,1fr)_minmax(90px,0.7fr)_32px] items-center gap-2 rounded-lg border border-amber-200 bg-white p-2">
-            <strong className="text-center text-xs text-amber-900">{index + 1}ª</strong>
-            <input type="date" value={parcela.vencimento} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, vencimento: event.target.value } : item))} aria-label={`Vencimento da parcela ${index + 1}`} className="min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-xs font-bold" />
-            <input inputMode="decimal" value={parcela.valor} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, valor: event.target.value } : item))} placeholder="0,00" aria-label={`Valor da parcela ${index + 1}`} className="min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-right text-xs font-black" />
-            <button type="button" onClick={() => remover(index)} aria-label={`Remover parcela ${index + 1}`} className="rounded-md border border-red-200 p-1.5 text-red-700"><Trash2 size={14} /></button>
-          </div>
-        ))}
-        {parcelas.length === 0 && <p className="rounded-lg border border-dashed border-amber-300 bg-white/60 p-3 text-center text-xs font-bold text-amber-800">Escolha ao menos um prazo acima.</p>}
+      <div className="mt-3 overflow-x-auto rounded-xl border border-amber-200 bg-white">
+        <table className="w-full min-w-[470px] text-xs">
+          <thead className="bg-amber-100 text-[10px] font-black uppercase text-amber-950">
+            <tr>
+              <th className="w-16 px-3 py-2 text-center">Parcela</th>
+              <th className="px-3 py-2 text-left">Data prevista</th>
+              <th className="px-3 py-2 text-right">Valor previsto</th>
+              <th className="w-14 px-3 py-2 text-center">Ação</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-amber-100">
+            {parcelas.map((parcela, index) => (
+              <tr key={`parcela-${index}`}>
+                <td className="px-3 py-2 text-center font-black text-amber-900">{index + 1}ª</td>
+                <td className="px-3 py-2">
+                  <input type="date" value={parcela.vencimento} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, vencimento: event.target.value } : item))} aria-label={`Vencimento da parcela ${index + 1}`} className="min-h-9 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs font-bold" />
+                </td>
+                <td className="px-3 py-2">
+                  <input inputMode="decimal" value={parcela.valor} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, valor: event.target.value } : item))} placeholder="0,00" aria-label={`Valor da parcela ${index + 1}`} className="min-h-9 w-full rounded-md border border-slate-300 px-2 py-1.5 text-right text-xs font-black" />
+                </td>
+                <td className="px-3 py-2 text-center">
+                  <button type="button" onClick={() => remover(index)} aria-label={`Remover parcela ${index + 1}`} className="rounded-md border border-red-200 p-2 text-red-700"><Trash2 size={14} /></button>
+                </td>
+              </tr>
+            ))}
+            {parcelas.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-xs font-bold text-amber-800">Escolha ao menos um prazo acima.</td></tr>}
+          </tbody>
+        </table>
       </div>
 
       <div className="mt-2 flex justify-between text-[10px] font-black uppercase">

@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.3 — 2026-07-26
+
+- Parcelamento do Vale exibido como tabela real dentro do detalhe.
+- Tabela apresenta parcela, data prevista, valor previsto, valor pago, saldo e situação.
+- Prazos de 30, 60, 90, 120 e 150 dias continuam gerando datas futuras a partir da data atual.
+- Edição do planejamento passa a ocorrer em uma tabela com datas e valores editáveis, protegida por PIN.
+- Fluxo completo validado pela interface, desde a venda com Vale até a reabertura das parcelas editadas.
+
 ## 1.8.2 — 2026-07-26
 
 - Menu lateral do desktop mantido permanentemente no formato compacto.

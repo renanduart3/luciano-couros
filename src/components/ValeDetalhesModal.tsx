@@ -204,7 +204,30 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
                 <label className="block text-[10px] font-black uppercase text-blue-900">Observações<textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value)} rows={2} className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-bold normal-case" /></label>
                 <div className="flex flex-col gap-2 sm:flex-row"><input type="password" inputMode="numeric" value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, "").slice(0, 8)); setErro(""); }} placeholder="PIN administrativo" className="min-h-11 flex-1 rounded-xl border border-blue-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={salvarPlanejamento} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Validar e salvar parcelas</button></div>
                 {erro && <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
-              </div> : <div className="divide-y divide-slate-100">{vale.parcelas!.map((parcela) => <div key={parcela.id} className="grid grid-cols-[42px_1fr_auto] items-center gap-3 p-3 text-xs"><strong className="text-amber-900">{parcela.numero}ª</strong><div><p className="font-black text-slate-900">{formatDate(parcela.vencimento)}</p><p className="text-[10px] font-bold text-slate-500">{parcela.status === "paga" ? "Quitada" : parcela.status === "cancelada" ? "Cancelada" : "Em aberto"}</p></div><div className="text-right"><strong className="font-mono text-sm text-slate-950">{formatCurrency(parcela.valor)}</strong><p className="text-[10px] font-bold text-slate-500">Saldo {formatCurrency(parcela.saldo)}</p></div></div>)}</div>}
+              </div> : <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-xs">
+                  <thead className="bg-amber-100 text-[10px] font-black uppercase text-amber-950">
+                    <tr>
+                      <th className="px-3 py-2 text-center">Parcela</th>
+                      <th className="px-3 py-2 text-left">Data prevista</th>
+                      <th className="px-3 py-2 text-right">Valor previsto</th>
+                      <th className="px-3 py-2 text-right">Pago</th>
+                      <th className="px-3 py-2 text-right">Saldo</th>
+                      <th className="px-3 py-2 text-center">Situação</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100 bg-white">
+                    {vale.parcelas!.map((parcela) => <tr key={parcela.id}>
+                      <td className="px-3 py-3 text-center font-black text-amber-900">{parcela.numero}ª</td>
+                      <td className="px-3 py-3 font-black text-slate-900">{formatDate(parcela.vencimento)}</td>
+                      <td className="px-3 py-3 text-right font-mono font-black text-slate-950">{formatCurrency(parcela.valor)}</td>
+                      <td className="px-3 py-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(parcela.valorPago)}</td>
+                      <td className="px-3 py-3 text-right font-mono font-black text-slate-950">{formatCurrency(parcela.saldo)}</td>
+                      <td className="px-3 py-3 text-center"><span className={`rounded-lg px-2 py-1 text-[10px] font-black uppercase ${parcela.status === "paga" ? "bg-emerald-100 text-emerald-800" : parcela.status === "cancelada" ? "bg-slate-200 text-slate-700" : "bg-amber-100 text-amber-800"}`}>{parcela.status === "paga" ? "Quitada" : parcela.status === "cancelada" ? "Cancelada" : "Em aberto"}</span></td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>}
             </div>}
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">

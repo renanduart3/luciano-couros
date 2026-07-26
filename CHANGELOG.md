@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.4 — 2026-07-26
+
+- Tabela de períodos garantida diretamente em Vale → Detalhes, abaixo dos cards financeiros e antes dos materiais.
+- Vales antigos sem parcelas detalhadas passam a exibir uma parcela inicial baseada no vencimento e saldo existentes.
+- Planejamento de Vales antigos pode ser refeito no próprio detalhe com prazos de 30, 60, 90, 120 e 150 dias.
+- Datas e valores são editáveis na tabela e o salvamento continua protegido por PIN.
+
 ## 1.8.3 — 2026-07-26
 
 - Parcelamento do Vale exibido como tabela real dentro do detalhe.

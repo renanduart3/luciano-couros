@@ -12,6 +12,25 @@ interface ValeDetalhesModalProps {
   onUpdated?: (vale: Venda | null) => void;
 }
 
+function obterParcelasDoVale(vale: Venda): NonNullable<Venda["parcelas"]> {
+  if ((vale.parcelas || []).length > 0) return vale.parcelas!;
+  if (!vale.vencimento) return [];
+
+  const valor = Number(vale.totalLiquido || 0);
+  const valorPago = Math.min(valor, Math.max(0, Number(vale.valorPago || 0)));
+  const saldo = Math.max(0, valor - valorPago);
+  return [{
+    id: `parcela-legada-${vale.id}`,
+    vendaId: vale.id,
+    numero: 1,
+    vencimento: vale.vencimento,
+    valor,
+    valorPago,
+    saldo,
+    status: vale.status === "cancelada" ? "cancelada" : saldo <= 0.005 ? "paga" : "pendente"
+  }];
+}
+
 export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModalProps) {
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
   const [modo, setModo] = useState<"editar" | "devolver" | "cancelar" | null>(null);
@@ -25,9 +44,10 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
   const itens = vale.items || [];
+  const parcelasSalvas = obterParcelasDoVale(vale);
 
   useEffect(() => {
-    setParcelas((vale.parcelas || []).map((parcela) => ({
+    setParcelas(obterParcelasDoVale(vale).map((parcela) => ({
       vencimento: parcela.vencimento,
       valor: Number(parcela.valor).toFixed(2).replace(".", ",")
     })));
@@ -174,12 +194,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
               <Resumo titulo="Vencimento" valor={vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} icone />
             </div>
 
-            {(vale.parcelas || []).length > 0 && <div className={`overflow-hidden rounded-xl border ${modo === "editar" ? "border-blue-300 bg-blue-50" : "border-amber-300 bg-white"}`}>
+            <div className={`overflow-hidden rounded-xl border ${modo === "editar" ? "border-blue-300 bg-blue-50" : "border-amber-300 bg-white"}`}>
               <div className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${modo === "editar" ? "border-blue-200 bg-blue-100" : "border-amber-200 bg-amber-50"}`}>
                 <h3 className={`text-xs font-black uppercase ${modo === "editar" ? "text-blue-950" : "text-amber-900"}`}>Períodos de pagamento</h3>
                 {onUpdated && vale.status !== "cancelada" && (modo === "editar"
                   ? <button type="button" onClick={() => {
-                      setParcelas((vale.parcelas || []).map((parcela) => ({
+                      setParcelas(parcelasSalvas.map((parcela) => ({
                         vencimento: parcela.vencimento,
                         valor: Number(parcela.valor).toFixed(2).replace(".", ",")
                       })));
@@ -189,7 +209,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
                       setPin("");
                     }} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-blue-900"><X size={13} /> Cancelar edição</button>
                   : <button type="button" onClick={() => {
-                      setParcelas((vale.parcelas || []).map((parcela) => ({
+                      setParcelas(parcelasSalvas.map((parcela) => ({
                         vencimento: parcela.vencimento,
                         valor: Number(parcela.valor).toFixed(2).replace(".", ",")
                       })));
@@ -217,7 +237,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-100 bg-white">
-                    {vale.parcelas!.map((parcela) => <tr key={parcela.id}>
+                    {parcelasSalvas.map((parcela) => <tr key={parcela.id}>
                       <td className="px-3 py-3 text-center font-black text-amber-900">{parcela.numero}ª</td>
                       <td className="px-3 py-3 font-black text-slate-900">{formatDate(parcela.vencimento)}</td>
                       <td className="px-3 py-3 text-right font-mono font-black text-slate-950">{formatCurrency(parcela.valor)}</td>
@@ -228,7 +248,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
                   </tbody>
                 </table>
               </div>}
-            </div>}
+            </div>
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">
               <table className="w-full min-w-[820px] text-sm">

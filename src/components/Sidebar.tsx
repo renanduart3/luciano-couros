@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  BarChart3, ChevronLeft, ChevronRight, FileClock,
+  BarChart3, FileClock,
   Menu, Package, Settings, ShoppingCart, Truck, Users, X
 } from "lucide-react";
 import logo from "../img/logo.png";
@@ -22,14 +22,7 @@ const menuItems = [
 ];
 
 export function Sidebar({ currentView, onViewChange }: SidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
-    try { return localStorage.getItem("sidebar_collapsed") === "true"; } catch { return false; }
-  });
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    try { localStorage.setItem("sidebar_collapsed", String(isCollapsed)); } catch {}
-  }, [isCollapsed]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -72,19 +65,16 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
         </div>
       )}
 
-      <aside className={`relative hidden h-screen shrink-0 select-none flex-col border-r border-slate-800 bg-slate-900 text-slate-100 transition-all duration-300 md:flex ${isCollapsed ? "w-20" : "w-64"}`}>
-        <button type="button" onClick={() => setIsCollapsed(!isCollapsed)} className="absolute -right-3 top-8 z-50 rounded-full border border-slate-700 bg-slate-800 p-1 text-slate-300 hover:bg-emerald-600" aria-label={isCollapsed ? "Expandir menu" : "Recolher menu"} aria-expanded={!isCollapsed}>
-          {isCollapsed ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
-        </button>
-        <div className={`flex items-center justify-center overflow-hidden border-b border-slate-200 bg-white ${isCollapsed ? "h-20 px-1" : "h-40 px-4"}`}><img src={logo} alt="Luciano Couros" className={`object-contain ${isCollapsed ? "h-14 w-14" : "h-36 w-52"}`} /></div>
-        <nav className={`flex-1 space-y-1.5 overflow-y-auto ${isCollapsed ? "px-1.5 py-3" : "p-4"}`}>
+      <aside className="relative hidden h-screen w-20 shrink-0 select-none flex-col border-r border-slate-800 bg-slate-900 text-slate-100 md:flex">
+        <div className="flex h-20 items-center justify-center overflow-hidden border-b border-slate-200 bg-white px-1"><img src={logo} alt="Luciano Couros" className="h-14 w-14 object-contain" /></div>
+        <nav className="flex-1 space-y-1.5 overflow-y-auto px-1.5 py-3">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const active = currentView === item.id;
-            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={isCollapsed ? item.label : undefined} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex w-full items-center rounded-lg text-sm font-medium transition-all ${isCollapsed ? "min-h-11 flex-col justify-center gap-1 px-1 py-2 text-center" : "gap-3 px-3 py-2.5 text-left"} ${active ? item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" />{isCollapsed ? <span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span> : <span className="truncate">{item.label}</span>}</button>;
+            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-center text-sm font-medium transition-all ${active ? item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
           })}
         </nav>
-        <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">{isCollapsed ? `v${APP_VERSION}` : `v${APP_VERSION} • Offline Autônomo`}</div>
+        <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">v{APP_VERSION}</div>
       </aside>
     </>
   );

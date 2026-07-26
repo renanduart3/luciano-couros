@@ -5,15 +5,20 @@ import {
 const API_BASE = "/api";
 
 async function handleResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let errMsg = "Erro de rede ou servidor";
-    try {
-      const errData = await response.json();
-      errMsg = errData.error || errMsg;
-    } catch {}
-    throw new Error(errMsg);
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error(
+      response.ok
+        ? "O servidor está desatualizado. Reinicie ou atualize o sistema e tente novamente."
+        : "O servidor devolveu uma resposta inválida."
+    );
   }
-  return response.json() as Promise<T>;
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || "Erro de rede ou servidor");
+  }
+  return data as T;
 }
 
 export const api = {
@@ -183,6 +188,7 @@ export const api = {
 
   // VENDAS
   getVendas: () => fetch(`${API_BASE}/vendas`).then(r => handleResponse<Venda[]>(r)),
+  getVenda: (id: string) => fetch(`${API_BASE}/vendas/${id}`).then(r => handleResponse<Venda>(r)),
   getProximoNumeroVenda: () => fetch(`${API_BASE}/vendas/proximo-numero`).then(r => handleResponse<{ proximoNumero: number }>(r)),
   createVenda: (vendaData: {
     clienteId: string;

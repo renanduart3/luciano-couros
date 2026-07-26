@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Edit2, Plus, Search, Tag, Trash2, Truck, X } from "lucide-react";
-import { Fornecedor, FornecedorProduto, Produto } from "../types";
+import { Edit2, Plus, Search, Tag, Trash2, X } from "lucide-react";
+import { Fornecedor, Produto } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
@@ -33,9 +33,6 @@ export function ProdutosView() {
   const [buscaFornecedor, setBuscaFornecedor] = useState("");
   const [fornecedorDropdownAberto, setFornecedorDropdownAberto] = useState(false);
   const [formError, setFormError] = useState("");
-  const [historicoProduto, setHistoricoProduto] = useState<Produto | null>(null);
-  const [fornecedoresProduto, setFornecedoresProduto] = useState<FornecedorProduto[]>([]);
-  const [loadingFornecedores, setLoadingFornecedores] = useState(false);
 
   const fetchProdutos = async () => {
     setLoading(true);
@@ -111,14 +108,6 @@ export function ProdutosView() {
     catch (err: any) { alert(err.message || "Erro ao arquivar o material."); }
   };
 
-  const handleOpenFornecedores = async (produto: Produto) => {
-    setHistoricoProduto(produto);
-    setFornecedoresProduto([]);
-    setLoadingFornecedores(true);
-    try { setFornecedoresProduto(await api.getProdutoFornecedores(produto.id)); }
-    finally { setLoadingFornecedores(false); }
-  };
-
   const filtrados = useMemo(() => produtos.filter((produto) =>
     produto.nome.toLowerCase().includes(busca.toLowerCase()) ||
     (produto.codigo || "").toLowerCase().includes(busca.toLowerCase())
@@ -162,7 +151,7 @@ export function ProdutosView() {
                 <td className="p-4 text-right"><p className="font-mono font-extrabold text-slate-900">{formatCurrency(produto.custoPadrao)}</p><p className="text-[10px] text-slate-400">{produto.custoOrigem === "compra" && produto.ultimaCompraEm ? `Compra em ${formatDate(produto.ultimaCompraEm)}` : "Informado manualmente"}</p></td>
                 <td className="p-4 text-right font-mono font-extrabold text-emerald-700">{formatCurrency(produto.precoVendaPadrao)}</td>
                 <td className="p-4 text-xs font-semibold text-slate-600">{produto.ultimoFornecedorNome || "Não informado"}</td>
-                <td className="p-4"><div className="flex justify-center gap-1"><button title="Fornecedores e custos" onClick={() => handleOpenFornecedores(produto)} className="rounded-lg p-2 text-indigo-600 hover:bg-indigo-50"><Truck size={15} /></button><button title="Editar" onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button title="Arquivar" onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
+                <td className="p-4"><div className="flex justify-center gap-1"><button title="Editar" onClick={() => handleOpenForm(produto)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"><Edit2 size={15} /></button><button title="Arquivar" onClick={() => handleDelete(produto.id)} className="rounded-lg p-2 text-red-500 hover:bg-red-50"><Trash2 size={15} /></button></div></td>
               </tr>)}
             </tbody>
           </table>
@@ -193,7 +182,7 @@ export function ProdutosView() {
                 <div className="relative">
                   <div className="flex items-center rounded-xl border border-slate-200 bg-slate-50"><Search size={15} className="ml-3 text-slate-400" /><input value={buscaFornecedor} onFocus={() => setFornecedorDropdownAberto(true)} onChange={(event) => { setBuscaFornecedor(event.target.value); setFornecedorDropdownAberto(true); }} placeholder="Digite o nome do fornecedor..." className="w-full bg-transparent px-3 py-3 text-sm font-bold outline-none" /></div>
                   {fornecedorDropdownAberto && <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-                    {fornecedoresFiltrados.length > 0 ? fornecedoresFiltrados.map((fornecedor) => <button key={fornecedor.id} type="button" onClick={() => { setFornecedorIds((atuais) => [...atuais, fornecedor.id]); setBuscaFornecedor(""); setFornecedorDropdownAberto(false); }} className="block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-emerald-50">{fornecedor.nome}</button>) : <p className="p-3 text-xs font-semibold text-slate-500">Nenhum fornecedor encontrado.</p>}
+                    {fornecedoresFiltrados.length > 0 ? fornecedoresFiltrados.map((fornecedor) => <button key={fornecedor.id} type="button" onClick={() => { setFornecedorIds((atuais) => atuais.includes(fornecedor.id) ? atuais : [...atuais, fornecedor.id]); setBuscaFornecedor(""); setFornecedorDropdownAberto(true); }} className="block w-full border-b border-slate-100 px-3 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-emerald-50">{fornecedor.nome}</button>) : <p className="p-3 text-xs font-semibold text-slate-500">Nenhum fornecedor encontrado.</p>}
                   </div>}
                 </div>
               </div>}
@@ -204,8 +193,6 @@ export function ProdutosView() {
           </form>
         </div>
       </div>}
-
-      {historicoProduto && <div className="fixed inset-0 z-[72] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"><div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl"><div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white p-5"><div><h3 className="font-black text-slate-950">Fornecedores e custos</h3><p className="text-xs font-bold text-slate-600">{historicoProduto.nome}</p></div><button onClick={() => setHistoricoProduto(null)} className="rounded-xl p-2 text-slate-600 hover:bg-slate-100"><X size={18} /></button></div>{loadingFornecedores ? <div className="p-12 text-center font-bold text-slate-600">Carregando histórico...</div> : fornecedoresProduto.length === 0 ? <div className="p-12 text-center text-sm font-bold text-slate-600">Produto ainda sem fornecedor associado.</div> : <div className="overflow-x-auto p-5"><table className="w-full min-w-[650px] text-sm"><thead><tr><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-right">Último custo</th><th className="p-3 text-left">Última compra</th><th className="p-3 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{fornecedoresProduto.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-extrabold">{item.fornecedorNome}</td><td className="p-3 text-right font-mono font-black">{item.ultimoCusto == null ? "Ainda não comprado" : formatCurrency(item.ultimoCusto)}</td><td className="p-3 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-3 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}</div></div>}
     </div>
   );
 }

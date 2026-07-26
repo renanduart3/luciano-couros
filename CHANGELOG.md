@@ -4,6 +4,18 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.2 — 2026-07-26
+
+- Menu lateral do desktop mantido permanentemente no formato compacto.
+- Vínculo de materiais corrigido para aceitar e preservar um ou vários fornecedores.
+- Ação redundante de fornecedores removida da listagem de materiais.
+- Detalhe do Vale passa a buscar o parcelamento atualizado e mantém compatibilidade com servidores ainda não reiniciados.
+- Tabela de parcelas do Vale garantida com datas, valores, saldos e edição protegida por PIN.
+- Cancelamento da edição das parcelas restaura corretamente o planejamento salvo.
+- Histórico de vendas simplificado, com comprovante no detalhe e edição retornando corretamente ao histórico ao cancelar.
+- Rotas desconhecidas da API passam a responder JSON e não são mais encaminhadas ao HTML da aplicação.
+- Tratamento de respostas inválidas impede a mensagem técnica `Unexpected token '<'`.
+
 ## 1.8.1 — 2026-07-25
 
 - Tela de finalização restaurada com somente as ações Imprimir e Fechar.

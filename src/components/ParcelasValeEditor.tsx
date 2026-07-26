@@ -61,7 +61,7 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
 
       <div className="mt-3 space-y-2">
         {parcelas.map((parcela, index) => (
-          <div key={`${parcela.vencimento}-${index}`} className="grid grid-cols-[28px_minmax(130px,1fr)_minmax(90px,0.7fr)_32px] items-center gap-2 rounded-lg border border-amber-200 bg-white p-2">
+          <div key={`parcela-${index}`} className="grid grid-cols-[28px_minmax(130px,1fr)_minmax(90px,0.7fr)_32px] items-center gap-2 rounded-lg border border-amber-200 bg-white p-2">
             <strong className="text-center text-xs text-amber-900">{index + 1}ª</strong>
             <input type="date" value={parcela.vencimento} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, vencimento: event.target.value } : item))} aria-label={`Vencimento da parcela ${index + 1}`} className="min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-xs font-bold" />
             <input inputMode="decimal" value={parcela.valor} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, valor: event.target.value } : item))} placeholder="0,00" aria-label={`Valor da parcela ${index + 1}`} className="min-w-0 rounded-md border border-slate-300 px-2 py-1.5 text-right text-xs font-black" />

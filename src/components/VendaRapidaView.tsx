@@ -1609,7 +1609,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
             ITENS DA VENDA
           </label>
           <div className="flex flex-wrap items-center gap-2">
-            {orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase text-blue-900 hover:bg-blue-100"><FileText size={13} /> CARREGAR ORÇAMENTO ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
+            {!vendaEmEdicao && orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase text-blue-900 hover:bg-blue-100"><FileText size={13} /> CARREGAR ORÇAMENTO ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
             <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
               {quantidadeItensPreenchidos} de {itensVenda.length} {itensVenda.length === 1 ? 'linha preenchida' : 'linhas preenchidas'}

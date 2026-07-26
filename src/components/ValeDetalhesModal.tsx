@@ -178,8 +178,26 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
               <div className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${modo === "editar" ? "border-blue-200 bg-blue-100" : "border-amber-200 bg-amber-50"}`}>
                 <h3 className={`text-xs font-black uppercase ${modo === "editar" ? "text-blue-950" : "text-amber-900"}`}>Períodos de pagamento</h3>
                 {onUpdated && vale.status !== "cancelada" && (modo === "editar"
-                  ? <button type="button" onClick={() => { setModo(null); setErro(""); setPin(""); }} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-blue-900"><X size={13} /> Cancelar edição</button>
-                  : <button type="button" onClick={() => { setModo("editar"); setErro(""); setPin(""); }} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-900"><Pencil size={13} /> Alterar parcelas</button>)}
+                  ? <button type="button" onClick={() => {
+                      setParcelas((vale.parcelas || []).map((parcela) => ({
+                        vencimento: parcela.vencimento,
+                        valor: Number(parcela.valor).toFixed(2).replace(".", ",")
+                      })));
+                      setObservacoes(vale.observacoes || "");
+                      setModo(null);
+                      setErro("");
+                      setPin("");
+                    }} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-blue-900"><X size={13} /> Cancelar edição</button>
+                  : <button type="button" onClick={() => {
+                      setParcelas((vale.parcelas || []).map((parcela) => ({
+                        vencimento: parcela.vencimento,
+                        valor: Number(parcela.valor).toFixed(2).replace(".", ",")
+                      })));
+                      setObservacoes(vale.observacoes || "");
+                      setModo("editar");
+                      setErro("");
+                      setPin("");
+                    }} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-900"><Pencil size={13} /> Alterar parcelas</button>)}
               </div>
               {modo === "editar" ? <div className="space-y-3 p-3">
                 <ParcelasValeEditor total={Number(vale.totalLiquido)} parcelas={parcelas} onChange={setParcelas} compacto />

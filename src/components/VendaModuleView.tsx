@@ -132,7 +132,13 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 ocultarSeletorCliente
                 onItensChange={setProdutosNaVenda}
                 vendaEmEdicao={vendaEmEdicao}
-                onCancelarEdicao={() => setVendaEmEdicao(null)}
+                onCancelarEdicao={() => {
+                  setVendaEmEdicao(null);
+                  setCliente(null);
+                  setClienteBusca("");
+                  setProdutosNaVenda([]);
+                  setModo("historico");
+                }}
               />
             </div>
           </section>

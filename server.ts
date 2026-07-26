@@ -1561,6 +1561,23 @@ const carregarDetalhesVenda = (venda: any) => {
      ORDER BY vencimento ASC, numero ASC`,
     [venda.id]
   );
+  if (venda.parcelas.length === 0 && venda.vencimento) {
+    const total = Number(venda.totalLiquido || 0);
+    const pago = Math.min(total, Math.max(0, Number(venda.valorPago || 0)));
+    const saldo = Math.max(0, total - pago);
+    venda.parcelas = [{
+      id: `parcela_legada_${venda.id}`,
+      vendaId: venda.id,
+      numero: 1,
+      vencimento: venda.vencimento,
+      valor: total,
+      valorPago: pago,
+      saldo,
+      status: venda.status === "cancelada" ? "cancelada" : saldo <= 0.005 ? "paga" : "pendente",
+      createdAt: venda.createdAt,
+      updatedAt: venda.updatedAt,
+    }];
+  }
   return venda;
 };
 
@@ -1598,6 +1615,30 @@ app.get("/api/vendas/proximo-numero", (req, res) => {
     );
     const nextSeq = (result?.maxSeq || 0) + 1;
     res.json({ proximoNumero: nextSeq });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/vendas/:id", (req, res) => {
+  try {
+    const venda = queryOne<any>(
+      `SELECT v.*,
+              c.nome as clienteNome,
+              c.telefone as clienteTelefone,
+              c.endereco as clienteEndereco,
+              c.documento as clienteDocumento,
+              COALESCE(
+                (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
+                CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
+              ) as formaPagamento
+       FROM vendas v
+       JOIN clientes c ON v.clienteId = c.id
+       WHERE v.id = ? AND v.deletedAt IS NULL`,
+      [req.params.id]
+    );
+    if (!venda) return res.status(404).json({ error: "Venda não encontrada." });
+    res.json(carregarDetalhesVenda(venda));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -3290,6 +3331,9 @@ app.delete("/api/backups/:filename", (req, res) => {
   }
 });
 
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Rota da API não encontrada. Atualize o sistema e tente novamente." });
+});
 
 // --- VITE DEV / PRODUCTION HANDLERS ---
 async function startServer() {

@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.5 — 2026-07-26
+
+- Prazos rápidos de 30, 60, 90, 120 e 150 dias passam a indicar visualmente quando já foram aplicados.
+- Botões de prazo aplicados ficam desabilitados até a parcela correspondente ser removida ou ter sua data alterada.
+- Checkboxes e seleção em lote removidos da listagem de Vales no computador e no celular.
+- Paginação da grade de Vales integrada ao cartão e mantida visível em todos os filtros.
+- Venda parcelada passa a verificar a compatibilidade do servidor antes do registro, evitando perda silenciosa das parcelas quando o serviço estiver desatualizado.
+
 ## 1.8.4 — 2026-07-26
 
 - Tabela de períodos garantida diretamente em Vale → Detalhes, abaixo dos cards financeiros e antes dos materiais.

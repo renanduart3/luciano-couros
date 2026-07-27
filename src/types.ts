@@ -335,6 +335,9 @@ export interface SystemInfo {
   version: string;
   startedAt: string;
   environment: "production" | "development";
+  capabilities?: {
+    valeParcelas?: boolean;
+  };
 }
 
 export interface DashboardStats {

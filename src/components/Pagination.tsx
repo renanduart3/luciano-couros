@@ -6,13 +6,14 @@ interface PaginationProps {
   pageSize: number;
   totalItems: number;
   onPageChange: (page: number) => void;
+  alwaysVisible?: boolean;
 }
 
-export function Pagination({ page, pageSize, totalItems, onPageChange }: PaginationProps) {
+export function Pagination({ page, pageSize, totalItems, onPageChange, alwaysVisible = false }: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-  if (totalItems <= pageSize) return null;
+  if (!alwaysVisible && totalItems <= pageSize) return null;
 
-  const firstItem = (page - 1) * pageSize + 1;
+  const firstItem = totalItems === 0 ? 0 : (page - 1) * pageSize + 1;
   const lastItem = Math.min(page * pageSize, totalItems);
 
   return (
@@ -24,7 +25,7 @@ export function Pagination({ page, pageSize, totalItems, onPageChange }: Paginat
         <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
           <ChevronLeft size={14} /> Anterior
         </button>
-        <span className="min-w-20 text-center font-black text-slate-700">{page} / {totalPages}</span>
+        <span className="min-w-28 text-center font-black text-slate-700">Página {page} de {totalPages}</span>
         <button type="button" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
           Próxima <ChevronRight size={14} />
         </button>

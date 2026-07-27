@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, CheckSquare, Eye, Filter, HandCoins, History, MessageCircle, WalletCards, X } from "lucide-react";
+import { AlertCircle, CalendarClock, Eye, Filter, HandCoins, History, WalletCards, X } from "lucide-react";
 import { Cliente, Venda } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
+import { formatCurrency, formatDate } from "../lib/utils";
 import { CarteiraClienteView } from "./CarteiraClienteView";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
@@ -36,7 +36,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [status, setStatus] = useState<FiltroStatus>("abertos");
   const [vencimentoInicio, setVencimentoInicio] = useState("");
   const [vencimentoFim, setVencimentoFim] = useState("");
-  const [selecionados, setSelecionados] = useState<string[]>([]);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -62,7 +61,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   }, []);
 
   useEffect(() => {
-    setSelecionados([]);
     setPage(1);
   }, [clienteId, status, vencimentoInicio, vencimentoFim]);
 
@@ -85,12 +83,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     const ultimaPagina = Math.max(1, Math.ceil(valesFiltrados.length / PAGE_SIZE));
     setPage((paginaAtual) => Math.min(paginaAtual, ultimaPagina));
   }, [valesFiltrados.length]);
-  const selecionaveis = valesFiltrados.filter(estaEmAberto);
-  const valesSelecionados = selecionados.map((id) => vales.find((vale) => vale.id === id)).filter(Boolean) as Venda[];
-  const clienteSelecionado = clientes.find((cliente) => cliente.id === valesSelecionados[0]?.clienteId)
-    || clientes.find((cliente) => cliente.id === clienteId)
-    || null;
-  const todosSelecionados = selecionaveis.length > 0 && selecionaveis.every((vale) => selecionados.includes(vale.id));
 
   const totais = useMemo(() => {
     const abertos = valesFiltrados.filter(estaEmAberto);
@@ -101,41 +93,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
       quantidadeVencida: vencidos.length,
     };
   }, [valesFiltrados]);
-
-  const alternarVale = (vale: Venda) => {
-    if (!estaEmAberto(vale)) return;
-    setSelecionados((atuais) => {
-      if (atuais.includes(vale.id)) return atuais.filter((id) => id !== vale.id);
-      const clienteAtual = vales.find((item) => item.id === atuais[0])?.clienteId;
-      if (clienteAtual && clienteAtual !== vale.clienteId) return atuais;
-      return [...atuais, vale.id];
-    });
-  };
-
-  const alternarTodos = () => {
-    if (todosSelecionados) {
-      setSelecionados((atuais) => atuais.filter((id) => !selecionaveis.some((vale) => vale.id === id)));
-      return;
-    }
-    const clienteAlvo = clienteId || valesSelecionados[0]?.clienteId;
-    if (!clienteAlvo) return;
-    setSelecionados(selecionaveis.filter((vale) => vale.clienteId === clienteAlvo).map((vale) => vale.id));
-  };
-
-  const enviarWhatsapp = () => {
-    if (!clienteSelecionado?.telefone || valesSelecionados.length === 0) return;
-    const total = valesSelecionados.reduce((soma, vale) => soma + Number(vale.saldoRestante), 0);
-    const detalhes = valesSelecionados.map((vale) => {
-      const itens = (vale.items || []).map((item) =>
-        `  • ${formatDecimal(item.quantidade)} ${item.unidade} — ${item.descricao}: ${formatCurrency(item.total)}`
-      ).join("\n");
-      return `*VALE #${vale.numeroSequencial}* — venc. ${vale.vencimento ? formatDate(vale.vencimento) : "sem vencimento"}\nSaldo: *${formatCurrency(vale.saldoRestante)}*${itens ? `\n${itens}` : ""}`;
-    }).join("\n\n");
-    const mensagem = `Olá, ${clienteSelecionado.nome}.\n\nSegue o detalhamento dos seus débitos em aberto:\n\n${detalhes}\n\n*TOTAL EM ABERTO: ${formatCurrency(total)}*`;
-    const numero = clienteSelecionado.telefone.replace(/\D/g, "");
-    const telefone = numero.startsWith("55") ? numero : `55${numero}`;
-    window.open(`https://api.whatsapp.com/send?phone=${telefone}&text=${encodeURIComponent(mensagem)}`, "_blank");
-  };
 
   const limparFiltros = () => {
     setClienteId("");
@@ -197,13 +154,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
             <div className={`rounded-2xl border p-4 shadow-sm ${totais.quantidadeVencida ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}><p className={`text-xs font-extrabold uppercase ${totais.quantidadeVencida ? "text-red-500" : "text-emerald-600"}`}>Saldo vencido</p><p className={`mt-2 text-2xl font-black ${totais.quantidadeVencida ? "text-red-800" : "text-emerald-800"}`}>{formatCurrency(totais.vencido)}</p><p className="mt-1 text-xs font-bold opacity-70">{totais.quantidadeVencida} {totais.quantidadeVencida === 1 ? "vale vencido" : "vales vencidos"}</p></div>
           </div>
 
-          {clienteId && selecionaveis.length > 0 && (
-            <div className="flex flex-col gap-3 rounded-2xl border border-emerald-300 bg-emerald-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={alternarTodos} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-4 text-xs font-black uppercase text-emerald-900"><CheckSquare size={16} /> {todosSelecionados ? "Desmarcar todos" : `Selecionar débitos em aberto (${selecionaveis.length})`}</button>
-              <button type="button" disabled={selecionados.length === 0 || !clienteSelecionado?.telefone} onClick={enviarWhatsapp} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:bg-slate-300"><MessageCircle size={17} /> Enviar detalhes pelo WhatsApp ({selecionados.length})</button>
-            </div>
-          )}
-
           {loading ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-bold text-slate-500">Carregando vales...</div>
           ) : error ? (
@@ -215,14 +165,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                 <div className="hidden overflow-x-auto md:block">
                   <table className="w-full min-w-[900px] text-left text-sm">
-                    <thead className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase text-slate-500"><tr><th className="w-10 p-3 text-center"><input type="checkbox" aria-label="Selecionar todos os débitos filtrados" disabled={!clienteId || selecionaveis.length === 0} checked={todosSelecionados} onChange={alternarTodos} /></th><th className="p-3">Documento</th><th className="p-3">Cliente</th><th className="p-3">Vencimento</th><th className="p-3">Situação</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Saldo</th><th className="p-3 text-center">Ações</th></tr></thead>
+                    <thead className="border-b border-slate-200 bg-slate-50 text-xs font-extrabold uppercase text-slate-500"><tr><th className="p-3">Documento</th><th className="p-3">Cliente</th><th className="p-3">Vencimento</th><th className="p-3">Situação</th><th className="p-3 text-right">Total</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Saldo</th><th className="p-3 text-center">Ações</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {valesPagina.map((vale) => {
                         const atraso = diasEmAtraso(vale.vencimento);
-                        const aberto = estaEmAberto(vale);
-                        const clienteDaSelecao = valesSelecionados[0]?.clienteId;
-                        const bloqueado = !aberto || Boolean(clienteDaSelecao && clienteDaSelecao !== vale.clienteId);
-                        return <tr key={vale.id} className={selecionados.includes(vale.id) ? "bg-emerald-50" : "hover:bg-slate-50"}><td className="p-3 text-center"><input type="checkbox" aria-label={`Selecionar vale ${vale.numeroSequencial}`} disabled={bloqueado} checked={selecionados.includes(vale.id)} onChange={() => alternarVale(vale)} /></td><td className="p-3 font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</td><td className="p-3 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-3 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-3">{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-extrabold text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-extrabold text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">A vencer</span>}</td><td className="p-3 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td><td className="p-3 text-right font-mono text-blue-800">{formatCurrency(vale.valorPago)}</td><td className="p-3 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td><td className="p-3 text-center"><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>;
+                        return <tr key={vale.id} className="hover:bg-slate-50"><td className="p-3 font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</td><td className="p-3 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-3 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-3">{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-extrabold text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-extrabold text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">A vencer</span>}</td><td className="p-3 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td><td className="p-3 text-right font-mono text-blue-800">{formatCurrency(vale.valorPago)}</td><td className="p-3 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td><td className="p-3 text-center"><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>;
                       })}
                     </tbody>
                   </table>
@@ -231,14 +178,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
                 <div className="divide-y divide-slate-100 md:hidden">
                   {valesPagina.map((vale) => {
                     const atraso = diasEmAtraso(vale.vencimento);
-                    const aberto = estaEmAberto(vale);
-                    const clienteDaSelecao = valesSelecionados[0]?.clienteId;
-                    const bloqueado = !aberto || Boolean(clienteDaSelecao && clienteDaSelecao !== vale.clienteId);
-                    return <article key={vale.id} className={`space-y-3 p-4 ${selecionados.includes(vale.id) ? "bg-emerald-50" : ""}`}><div className="flex items-start gap-3"><input type="checkbox" aria-label={`Selecionar vale ${vale.numeroSequencial}`} disabled={bloqueado} checked={selecionados.includes(vale.id)} onChange={() => alternarVale(vale)} className="mt-1" /><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p><h2 className="mt-1 text-base font-black text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">A vencer</span>}</div></div></div><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
+                    return <article key={vale.id} className="space-y-3 p-4"><div className="min-w-0"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p><h2 className="mt-1 text-base font-black text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">A vencer</span>}</div></div><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
                   })}
                 </div>
+                <Pagination page={page} pageSize={PAGE_SIZE} totalItems={valesFiltrados.length} onPageChange={setPage} alwaysVisible />
               </div>
-              <Pagination page={page} pageSize={PAGE_SIZE} totalItems={valesFiltrados.length} onPageChange={setPage} />
             </>
           )}
 

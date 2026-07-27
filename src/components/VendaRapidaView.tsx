@@ -840,6 +840,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         orcamentoId: orcamentoOrigemId || undefined
       };
 
+      if (vendaNoVale && parcelasVale.length > 1) {
+        const systemInfo = await api.getSystemInfo();
+        if (!systemInfo.capabilities?.valeParcelas) {
+          throw new Error(
+            "O servidor precisa ser reiniciado antes de registrar um Vale parcelado. Nenhuma venda foi criada."
+          );
+        }
+      }
+
       const result = await api.createVenda(vendaData);
       setShowAutorizacaoPreco(false);
       setAdminPin("");

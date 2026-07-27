@@ -280,14 +280,20 @@ setInterval(runAutoBackup, 12 * 60 * 60 * 1000);
 // --- API ROUTES ---
 
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", version: SYSTEM_VERSION, startedAt: SERVER_STARTED_AT });
+  res.json({
+    status: "ok",
+    version: SYSTEM_VERSION,
+    startedAt: SERVER_STARTED_AT,
+    capabilities: { valeParcelas: true }
+  });
 });
 
 app.get("/api/system/version", (_req, res) => {
   res.json({
     version: SYSTEM_VERSION,
     startedAt: SERVER_STARTED_AT,
-    environment: IS_PRODUCTION ? "production" : "development"
+    environment: IS_PRODUCTION ? "production" : "development",
+    capabilities: { valeParcelas: true }
   });
 });
 

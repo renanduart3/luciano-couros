@@ -1,5 +1,5 @@
 import React from "react";
-import { CalendarPlus, Equal, Trash2 } from "lucide-react";
+import { CalendarPlus, CheckCircle2, Equal, Trash2 } from "lucide-react";
 import { formatCurrency, parseBrazilianNumber } from "../lib/utils";
 
 export interface ParcelaValeRascunho {
@@ -56,7 +56,26 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
       </div>
 
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {PRAZOS_RAPIDOS.map((dias) => <button key={dias} type="button" onClick={() => adicionarPrazo(dias)} className="inline-flex items-center gap-1 rounded-lg bg-amber-700 px-2.5 py-1.5 text-[10px] font-black text-white"><CalendarPlus size={12} /> +{dias} dias</button>)}
+        {PRAZOS_RAPIDOS.map((dias) => {
+          const aplicado = parcelas.some((parcela) => parcela.vencimento === dataComPrazo(dias));
+          return (
+            <button
+              key={dias}
+              type="button"
+              onClick={() => adicionarPrazo(dias)}
+              disabled={aplicado}
+              aria-pressed={aplicado}
+              className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition-colors ${
+                aplicado
+                  ? "cursor-not-allowed border-emerald-300 bg-emerald-100 text-emerald-800"
+                  : "border-amber-700 bg-amber-700 text-white hover:bg-amber-800"
+              }`}
+            >
+              {aplicado ? <CheckCircle2 size={13} /> : <CalendarPlus size={12} />}
+              +{dias} dias {aplicado && <span>• Aplicado</span>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-3 overflow-x-auto rounded-xl border border-amber-200 bg-white">

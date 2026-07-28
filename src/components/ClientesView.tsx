@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards
+  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards, ShieldCheck
 } from "lucide-react";
 import { CarteiraCliente, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
+import { useConfirmacao } from "./ConfirmacaoDialog";
+
+const chavePrecoCliente = (produtoId: string, fornecedorId?: string | null) =>
+  `${produtoId}::${fornecedorId || ""}`;
 
 const PAGE_SIZE = 10;
 
@@ -32,6 +36,7 @@ interface ClientesViewProps {
 }
 
 export function ClientesView({ onRefreshStats }: ClientesViewProps) {
+  const confirmacao = useConfirmacao();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
@@ -58,6 +63,9 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
   const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
   const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
+  const [produtoRemocao, setProdutoRemocao] = useState<ProdutoHabitual | null>(null);
+  const [pinRemocao, setPinRemocao] = useState("");
+  const [erroRemocao, setErroRemocao] = useState("");
   const [orcamentoVigente, setOrcamentoVigente] = useState<Orcamento | null>(null);
   const [carteiraCliente, setCarteiraCliente] = useState<CarteiraCliente | null>(null);
 
@@ -141,7 +149,11 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Deseja realmente arquivar/excluir este cliente?")) {
+    if (await confirmacao.confirmar({
+      titulo: "Excluir cliente",
+      mensagem: "Deseja realmente arquivar/excluir este cliente?",
+      textoConfirmar: "Excluir cliente"
+    })) {
       try {
         await api.deleteCliente(id);
         fetchClientes();
@@ -166,7 +178,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       setOrcamentoVigente(orcamentoCliente);
       setCarteiraCliente(carteira);
       setPrecosCliente(Object.fromEntries(produtosHabituais.map((item) => [
-        item.produtoId,
+        chavePrecoCliente(item.produtoId, item.fornecedorId),
         Number(item.precoAutorizado ?? item.ultimoPreco).toFixed(2).replace(".", ",")
       ])));
     } catch (err: any) {
@@ -185,25 +197,47 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const resumoVales = calcularResumoVales(activeHistory?.vendas || []);
 
   const removerProdutoCliente = async (produto: ProdutoHabitual) => {
-    if (!activeHistory || !confirm(`Remover ${produto.nome} dos preços e do orçamento deste cliente?`)) return;
-    setSalvandoPrecoProduto(produto.produtoId);
+    if (!activeHistory) return;
+    setProdutoRemocao(produto);
+    setPinRemocao("");
+    setErroRemocao("");
+  };
+
+  const confirmarRemocaoProdutoCliente = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!activeHistory || !produtoRemocao) return;
+    if (!/^\d{4,8}$/.test(pinRemocao)) {
+      setErroRemocao("Informe o PIN administrativo de 4 a 8 números.");
+      return;
+    }
+    const produto = produtoRemocao;
+    const chaveProduto = chavePrecoCliente(produto.produtoId, produto.fornecedorId);
+    setSalvandoPrecoProduto(chaveProduto);
     try {
-      await api.removeClienteProduto(activeHistory.cliente.id, produto.produtoId);
-      setProdutosCliente((atuais) => atuais.filter((item) => item.produtoId !== produto.produtoId));
+      await api.removeClienteProduto(activeHistory.cliente.id, produto.produtoId, pinRemocao, produto.fornecedorId);
+      setProdutosCliente((atuais) => atuais.filter((item) =>
+        chavePrecoCliente(item.produtoId, item.fornecedorId) !== chaveProduto
+      ));
       setPrecosCliente((atuais) => {
         const proximos = { ...atuais };
-        delete proximos[produto.produtoId];
+        delete proximos[chaveProduto];
         return proximos;
       });
+      setProdutoRemocao(null);
+      setPinRemocao("");
     } catch (err: any) {
-      alert(err.message || "Não foi possível remover o produto deste cliente.");
+      setErroRemocao(err.message || "Não foi possível remover o produto deste cliente.");
     } finally {
       setSalvandoPrecoProduto("");
     }
   };
 
   const apagarOrcamentoVigente = async () => {
-    if (!orcamentoVigente || !confirm(`Apagar o orçamento #${orcamentoVigente.numeroSequencial} deste cliente?`)) return;
+    if (!orcamentoVigente || !await confirmacao.confirmar({
+      titulo: "Excluir orçamento",
+      mensagem: `Apagar o orçamento #${orcamentoVigente.numeroSequencial} deste cliente?`,
+      textoConfirmar: "Excluir orçamento"
+    })) return;
     try {
       await api.deleteOrcamento(orcamentoVigente.id);
       setOrcamentoVigente(null);
@@ -214,6 +248,26 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
 
   return (
     <div className="space-y-6">
+      {confirmacao.dialogo}
+      {produtoRemocao && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <form onSubmit={confirmarRemocaoProdutoCliente} className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="border-b border-red-100 bg-red-50 p-5">
+              <h3 className="font-black text-red-950">EXCLUIR PREÇO DO CLIENTE</h3>
+              <p className="mt-1 text-xs font-bold text-red-800">{produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. fornecedor ${produtoRemocao.fornecedorReferencia}` : ""} será removido dos preços e do orçamento vigente deste cliente.</p>
+            </div>
+            <div className="space-y-3 p-5">
+              <label className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</label>
+              <input type="password" inputMode="numeric" autoComplete="off" autoFocus value={pinRemocao} onChange={(event) => { setPinRemocao(event.target.value.replace(/\D/g, "").slice(0, 8)); setErroRemocao(""); }} placeholder="••••" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] outline-none" />
+              {erroRemocao && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{erroRemocao}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">
+              <button type="button" onClick={() => setProdutoRemocao(null)} className="rounded-lg px-4 py-2 text-xs font-black text-slate-600">CANCELAR</button>
+              <button type="submit" disabled={salvandoPrecoProduto === chavePrecoCliente(produtoRemocao.produtoId, produtoRemocao.fornecedorId)} className="inline-flex items-center gap-2 rounded-lg bg-red-700 px-4 py-2 text-xs font-black text-white disabled:opacity-50"><ShieldCheck size={15} /> VALIDAR E EXCLUIR</button>
+            </div>
+          </form>
+        </div>
+      )}
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -571,19 +625,20 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     <tbody className="divide-y divide-slate-100">
                       {produtosCliente.length === 0 ? <tr><td colSpan={8} className="p-8 text-center font-semibold text-slate-400">Este cliente ainda não possui produtos no histórico.</td></tr> :
                       produtosCliente.map((produto) => {
+                        const chaveProduto = chavePrecoCliente(produto.produtoId, produto.fornecedorId);
                         const precoPraticado = Number(produto.precoAutorizado ?? produto.ultimoPreco);
                         const custo = Number(produto.custoPadrao || 0);
                         const lucro = precoPraticado - custo;
                         const margem = precoPraticado > 0 ? (lucro / precoPraticado) * 100 : 0;
-                        return <tr key={produto.produtoId} className="bg-white">
-                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p><p className="text-[10px] text-slate-500">{produto.vezesComprado > 0 ? `${produto.vezesComprado} compra(s) • última em ${formatDate(produto.ultimaCompraEm)}` : "Adicionado ao orçamento do cliente"}</p></td>
+                        return <tr key={chaveProduto} className="bg-white">
+                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p>{produto.fornecedorReferencia && <p className="font-mono text-[10px] font-black text-blue-700">REF. FORNECEDOR: {produto.fornecedorReferencia}</p>}<p className="text-[10px] text-slate-500">{produto.vezesComprado > 0 ? `${produto.vezesComprado} compra(s) • última em ${formatDate(produto.ultimaCompraEm)}` : "Adicionado ao orçamento do cliente"}</p></td>
                           <td className="p-3 text-right font-mono font-bold">{formatCurrency(produto.precoVendaPadrao)}</td>
                           <td className="p-3 text-right font-mono">{formatCurrency(produto.ultimoPreco)}</td>
                           <td className="p-3 text-right font-mono text-slate-600">{formatCurrency(custo)}</td>
-                          <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} value={precosCliente[produto.produtoId] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => item.produtoId === produto.produtoId ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
+                          <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} fornecedorId={produto.fornecedorId} value={precosCliente[chaveProduto] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => chavePrecoCliente(item.produtoId, item.fornecedorId) === chaveProduto ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
                           <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
                           <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
-                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [produto.produtoId]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === produto.produtoId} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
                         </tr>;
                       })}
                     </tbody>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { 
-  Search, Plus, Trash2, Printer, Save, X, Sparkles, Check, ChevronDown, UserPlus, FileText,
+  Plus, Trash2, Printer, Save, X, Sparkles, Check, UserPlus, FileText,
   TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, MessageSquare, KeyRound, ShieldCheck,
   Lock, Unlock, TableProperties, History, ListChecks, CalendarRange, ShoppingCart
 } from "lucide-react";
@@ -10,7 +10,8 @@ import { Cliente, Orcamento, Produto, ProdutoHabitual, SegurancaStatus, Venda } 
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
-import { dataComPrazo, ParcelaValeRascunho, ParcelasValeEditor } from "./ParcelasValeEditor";
+import { dataComPrazo, ParcelaValeRascunho, ParcelasValeEditor, VALOR_MINIMO_PARCELA_VALE } from "./ParcelasValeEditor";
+import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -28,6 +29,8 @@ interface VendaRapidaViewProps {
 interface ItemRascunho {
   id?: string;
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   codigo?: string;
   nome: string;
   quantidade: string; // Keep as string for friendly typing
@@ -38,6 +41,24 @@ interface ItemRascunho {
   precoAutorizado?: number;
   quantidadeDevolvida?: number;
 }
+
+type FornecedorAssociadoProduto = NonNullable<Produto["fornecedores"]>[number];
+type OpcaoProdutoFornecedor = {
+  produto: Produto;
+  fornecedor: FornecedorAssociadoProduto | null;
+  precoVenda: number;
+};
+
+const chaveVarianteProduto = (produtoId: string, fornecedorId?: string | null) =>
+  `${produtoId}::${fornecedorId || ""}`;
+
+const encontrarPrecoCliente = (
+  registros: ProdutoHabitual[],
+  produtoId: string,
+  fornecedorId?: string | null
+) => registros.find((item) =>
+  item.produtoId === produtoId && (item.fornecedorId || null) === (fornecedorId || null)
+);
 
 type ProdutoComUnidades = Pick<Produto, "unidade">;
 
@@ -68,10 +89,8 @@ const FORMAS_COM_INSTRUMENTO = new Set([
 export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false, onItensChange, vendaEmEdicao, onCancelarEdicao }: VendaRapidaViewProps) {
   // Clients state
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clienteBusca, setClienteBusca] = useState("");
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [saldoCreditoCarteira, setSaldoCreditoCarteira] = useState(0);
-  const [showClienteDropdown, setShowClienteDropdown] = useState(false);
   const [showNovoClienteRapido, setShowNovoClienteRapido] = useState(false);
   
   // Fast Client Registration Form
@@ -83,6 +102,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtoBusca, setProdutoBusca] = useState("");
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<FornecedorAssociadoProduto | null>(null);
   const [showProdutoDropdown, setShowProdutoDropdown] = useState(false);
   const [produtoDropdownPosition, setProdutoDropdownPosition] = useState<{
     left: number;
@@ -160,7 +180,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   // Copy to clipboard success state
 
   // Focus Refs
-  const clienteInputRef = useRef<HTMLInputElement>(null);
+  const clienteInputRef = useRef<HTMLSelectElement>(null);
   const produtoInputRef = useRef<HTMLInputElement>(null);
   const quantidadeRef = useRef<HTMLInputElement>(null);
   const precoUnitarioRef = useRef<HTMLInputElement>(null);
@@ -198,7 +218,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   useEffect(() => {
     if (!ocultarSeletorCliente) return;
     setClienteSelecionado(clienteExterno || null);
-    setClienteBusca(clienteExterno?.nome || "");
   }, [clienteExterno, ocultarSeletorCliente]);
 
   useEffect(() => {
@@ -211,13 +230,19 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return {
         id: item.id,
         produtoId: item.produtoId,
+        fornecedorId: item.fornecedorId,
+        fornecedorReferencia: item.fornecedorReferencia,
         codigo: item.referencia || produto?.codigo,
         nome: item.descricao || produto?.nome || "Produto",
         quantidade: Number(item.quantidade).toString().replace(".", ","),
         unidade: item.unidade,
         precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
         desconto: item.desconto ? Number(item.desconto).toFixed(2).replace(".", ",") : "",
-        precoPadrao: Number(produto?.precoVendaPadrao || item.precoUnitario),
+        precoPadrao: Number(
+          produto?.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.precoVendaFornecedor
+          ?? produto?.precoVendaPadrao
+          ?? item.precoUnitario
+        ),
         quantidadeDevolvida: Number(item.quantidadeDevolvida || 0)
       };
     }));
@@ -240,9 +265,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   useEffect(() => {
     if (!toastMsg) return;
-    const timer = window.setTimeout(() => setToastMsg(null), 3500);
+    const timer = window.setTimeout(() => setToastMsg(null), 10000);
     return () => window.clearTimeout(timer);
   }, [toastMsg]);
+
+  useEffect(() => {
+    if (!feedbackMsg) return;
+    const timer = window.setTimeout(() => setFeedbackMsg(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [feedbackMsg]);
 
   useEffect(() => {
     if (!showProdutoDropdown || !produtoBusca.trim()) {
@@ -260,7 +291,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       const espacoAcima = rect.top - margem;
       const abrirAcima = espacoAbaixo < 260 && espacoAcima > espacoAbaixo;
       const espacoDisponivel = abrirAcima ? espacoAcima : espacoAbaixo;
-      const width = Math.min(Math.max(rect.width, 340), window.innerWidth - margem * 2);
+      const width = Math.min(Math.max(rect.width, 540), window.innerWidth - margem * 2);
       const left = Math.min(Math.max(rect.left, margem), window.innerWidth - width - margem);
 
       setProdutoDropdownPosition({
@@ -283,7 +314,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   }, [showProdutoDropdown, produtoBusca]);
 
   useEffect(() => {
-    onItensChange?.(itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).map((item) => item.produtoId));
+    onItensChange?.(itensVenda
+      .filter((item) => parseBrazilianNumber(item.quantidade) > 0)
+      .map((item) => chaveVarianteProduto(item.produtoId, item.fornecedorId)));
   }, [itensVenda, onItensChange]);
 
   useEffect(() => {
@@ -305,12 +338,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           setSaldoCreditoCarteira(Number(carteira.saldoBonus || 0));
           setOrcamentoCliente(orcamentoVigente);
           const precosAtuais = new Map(habituais.map((item) => [
-            item.produtoId,
+            chaveVarianteProduto(item.produtoId, item.fornecedorId),
             Number(item.precoAutorizado ?? item.ultimoPreco)
           ]));
           setItensVenda((atuais) => atuais.map((item) => ({
             ...item,
-            precoAutorizado: precosAtuais.get(item.produtoId)
+            precoAutorizado: precosAtuais.get(chaveVarianteProduto(item.produtoId, item.fornecedorId))
           })));
         })
         .catch(err => {
@@ -346,24 +379,32 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
     setClienteSelecionado(cliente);
-    setClienteBusca(cliente.nome);
     const itensRecebidos = orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         produtoId: item.produtoId,
+        fornecedorId: item.fornecedorId,
+        fornecedorReferencia: item.fornecedorReferencia,
         codigo: item.referencia || produto?.codigo,
         nome: item.descricao || produto?.nome || "Produto",
         quantidade: Number(item.quantidade).toString().replace(".", ","),
         unidade: item.unidade,
         precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
         desconto: "0",
-        precoPadrao: Number(produto?.precoVendaPadrao || item.precoUnitario)
+        precoPadrao: Number(
+          produto?.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.precoVendaFornecedor
+          ?? produto?.precoVendaPadrao
+          ?? item.precoUnitario
+        )
       };
     });
     setItensVenda((atuais) => {
       let resultado = [...atuais];
       for (const recebido of itensRecebidos) {
-        const indice = resultado.findIndex((item) => item.produtoId === recebido.produtoId);
+        const indice = resultado.findIndex((item) =>
+          chaveVarianteProduto(item.produtoId, item.fornecedorId)
+          === chaveVarianteProduto(recebido.produtoId, recebido.fornecedorId)
+        );
         resultado = indice >= 0
           ? resultado.map((item, itemIndex) => itemIndex === indice ? recebido : item)
           : [...resultado, recebido];
@@ -380,18 +421,35 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     onOrcamentoCarregado?.();
   }, [orcamentoInicial, clientes, produtos, onOrcamentoCarregado]);
 
-  // Filter clients based on query
-  const filteredClientes = clientes.filter(c => 
-    c.nome.toLowerCase().includes(clienteBusca.toLowerCase()) || 
-    (c.telefone && c.telefone.includes(clienteBusca)) ||
-    (c.documento && c.documento.includes(clienteBusca))
-  );
+  const clientesOrdenados = clientes.filter(Boolean).slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
 
   // Filter products based on query
-  const filteredProdutos = produtos.filter(p => 
-    p.nome.toLowerCase().includes(produtoBusca.toLowerCase()) || 
-    (p.codigo && p.codigo.toLowerCase().includes(produtoBusca.toLowerCase()))
-  );
+  const filteredProdutos: OpcaoProdutoFornecedor[] = produtos.flatMap((produto) => {
+    const fornecedores = produto.fornecedores || [];
+    const opcoes = fornecedores.length > 0
+      ? fornecedores.map((fornecedor) => ({
+          produto,
+          fornecedor,
+          precoVenda: Number(fornecedor.precoVendaFornecedor ?? produto.precoVendaPadrao)
+        }))
+      : [{ produto, fornecedor: null, precoVenda: Number(produto.precoVendaPadrao) }];
+    const termo = produtoBusca.toLowerCase();
+    return opcoes.filter((opcao) =>
+      produto.nome.toLowerCase().includes(termo) ||
+      (produto.codigo || "").toLowerCase().includes(termo) ||
+      (opcao.fornecedor?.fornecedorReferencia || "").toLowerCase().includes(termo)
+    );
+  }).slice(0, 20);
+
+  const produtoKeyboard = useKeyboardListNavigation<OpcaoProdutoFornecedor>({
+    items: filteredProdutos,
+    isOpen: showProdutoDropdown && Boolean(produtoBusca.trim()),
+    listId: "venda-produtos",
+    resetKey: produtoBusca,
+    onOpen: () => setShowProdutoDropdown(true),
+    onClose: () => setShowProdutoDropdown(false),
+    onSelect: (opcao) => handleSelectProduto(opcao)
+  });
 
   // Calculations for added items
   const subtotalItens = itensVenda.reduce((acc, item) => {
@@ -449,7 +507,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       const produto = produtos.find((prod) => prod.id === item.produtoId);
       const valorAntesDescontoGeral = Math.max(0, (quantidade * precoUnitario) - descontoItem);
       const valorVenda = valorAntesDescontoGeral * fatorPrecoEfetivo;
-      const custoUnitario = Number(produto?.custoPadrao || 0);
+      const custoUnitario = Number(
+        produto?.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.custoFornecedor
+        ?? produto?.custoPadrao
+        ?? 0
+      );
       const custoTotal = quantidade * custoUnitario;
       const lucro = valorVenda - custoTotal;
       const margem = valorVenda > 0 ? (lucro / valorVenda) * 100 : 0;
@@ -473,7 +535,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   // BI calculations
   const totalCustoItens = itensVenda.reduce((acc, item) => {
     const prod = produtos.find(p => p.id === item.produtoId);
-    const custoUnit = prod ? prod.custoPadrao : 0;
+    const custoUnit = Number(
+      prod?.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.custoFornecedor
+      ?? prod?.custoPadrao
+      ?? 0
+    );
     const qty = parseBrazilianNumber(item.quantidade);
     return acc + (qty * custoUnit);
   }, 0);
@@ -508,19 +574,19 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       setOrcamentoOrigemId(null);
     }
     setClienteSelecionado(cli);
-    setClienteBusca(cli.nome);
-    setShowClienteDropdown(false);
     // Focus product field on select
     setTimeout(() => {
       produtoInputRef.current?.focus();
     }, 50);
   };
 
-  const handleSelectProduto = (prod: Produto) => {
+  const handleSelectProduto = (opcao: OpcaoProdutoFornecedor) => {
+    const { produto: prod, fornecedor, precoVenda } = opcao;
     const unidadePrincipal = getUnidadeVendaPrincipal(prod);
-    const historicoCliente = produtosCliente.find((item) => item.produtoId === prod.id);
-    const precoCliente = Number(historicoCliente?.precoAutorizado ?? historicoCliente?.ultimoPreco ?? prod.precoVendaPadrao);
-    setProdutoSelecionado(prod);
+    const historicoCliente = encontrarPrecoCliente(produtosCliente, prod.id, fornecedor?.fornecedorId);
+    const precoCliente = Number(historicoCliente?.precoAutorizado ?? historicoCliente?.ultimoPreco ?? precoVenda);
+    setProdutoSelecionado({ ...prod, precoVendaPadrao: precoVenda });
+    setFornecedorSelecionado(fornecedor);
     setProdutoBusca(prod.nome);
     setItemUnidade(unidadePrincipal);
     setItemPreco(precoCliente.toString().replace(".", ","));
@@ -534,17 +600,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }, 50);
   };
 
-  const registrarPrecoAutorizadoLocal = (produtoId: string, novoPreco: number) => {
+  const registrarPrecoAutorizadoLocal = (produtoId: string, fornecedorId: string | null | undefined, novoPreco: number) => {
     const produto = produtos.find((item) => item.id === produtoId);
     if (!clienteSelecionado || !produto) return;
     setProdutosCliente((atuais) => {
-      const existente = atuais.find((item) => item.produtoId === produtoId);
+      const existente = encontrarPrecoCliente(atuais, produtoId, fornecedorId);
       if (existente) {
-        return atuais.map((item) => item.produtoId === produtoId ? { ...item, precoAutorizado: novoPreco } : item);
+        return atuais.map((item) =>
+          chaveVarianteProduto(item.produtoId, item.fornecedorId) === chaveVarianteProduto(produtoId, fornecedorId)
+            ? { ...item, precoAutorizado: novoPreco }
+            : item
+        );
       }
+      const fornecedor = produto.fornecedores?.find((item) => item.fornecedorId === fornecedorId);
       return [...atuais, {
         clienteId: clienteSelecionado.id,
         produtoId,
+        fornecedorId: fornecedorId || null,
+        fornecedorReferencia: fornecedor?.fornecedorReferencia || null,
         nome: produto.nome,
         codigo: produto.codigo,
         ultimoPreco: novoPreco,
@@ -554,8 +627,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         ultimaCompraEm: new Date().toISOString().split("T")[0],
         precoAutorizado: novoPreco,
         unidade: produto.unidade,
-        precoVendaPadrao: produto.precoVendaPadrao,
-        custoPadrao: produto.custoPadrao,
+        precoVendaPadrao: Number(fornecedor?.precoVendaFornecedor ?? produto.precoVendaPadrao),
+        custoPadrao: Number(fornecedor?.custoFornecedor ?? produto.custoPadrao),
       }];
     });
   };
@@ -621,7 +694,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
     const itemExistente = itensVenda.find((item) =>
-      item.produtoId === produtoSelecionado.id && parseBrazilianNumber(item.quantidade) > 0
+      chaveVarianteProduto(item.produtoId, item.fornecedorId)
+        === chaveVarianteProduto(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)
+      && parseBrazilianNumber(item.quantidade) > 0
     );
     if (itemExistente) {
       setFeedbackMsg({ type: "error", text: `${produtoSelecionado.nome} já está nesta venda.` });
@@ -631,6 +706,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     // Add item (item-level discount retired, set to "0")
     const novoItem: ItemRascunho = {
       produtoId: produtoSelecionado.id,
+      fornecedorId: fornecedorSelecionado?.fornecedorId || null,
+      fornecedorReferencia: fornecedorSelecionado?.fornecedorReferencia || null,
       codigo: produtoSelecionado.codigo,
       nome: produtoSelecionado.nome,
       quantidade: itemQtd,
@@ -638,15 +715,17 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       precoUnitario: itemPreco,
       desconto: "0",
       precoPadrao: produtoSelecionado.precoVendaPadrao,
-      precoAutorizado: produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)
-        ? Number(produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.precoAutorizado
-          ?? produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.ultimoPreco)
+      precoAutorizado: encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)
+        ? Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado
+          ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco)
         : undefined
     };
 
     setItensVenda(prev => {
       const habitualVazioIndex = prev.findIndex((item) =>
-        item.produtoId === novoItem.produtoId && parseBrazilianNumber(item.quantidade) <= 0
+        chaveVarianteProduto(item.produtoId, item.fornecedorId)
+          === chaveVarianteProduto(novoItem.produtoId, novoItem.fornecedorId)
+        && parseBrazilianNumber(item.quantidade) <= 0
       );
 
       if (habitualVazioIndex >= 0) {
@@ -661,6 +740,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
     // Clear item inputs for next item
     setProdutoSelecionado(null);
+    setFornecedorSelecionado(null);
     setProdutoBusca("");
     setItemUnidade("");
     setItemQtd("");
@@ -712,19 +792,27 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         if (!produto) continue;
         const importado: ItemRascunho = {
           produtoId: produto.id,
+          fornecedorId: itemHistorico.fornecedorId,
+          fornecedorReferencia: itemHistorico.fornecedorReferencia,
           codigo: produto.codigo,
           nome: itemHistorico.descricao || produto.nome,
           quantidade: Number(itemHistorico.quantidade).toString().replace(".", ","),
           unidade: itemHistorico.unidade || produto.unidade,
           precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ","),
           desconto: "0",
-          precoPadrao: Number(produto.precoVendaPadrao),
-          precoAutorizado: produtosCliente.find((registro) => registro.produtoId === produto.id)
-            ? Number(produtosCliente.find((registro) => registro.produtoId === produto.id)?.precoAutorizado
-              ?? produtosCliente.find((registro) => registro.produtoId === produto.id)?.ultimoPreco)
+          precoPadrao: Number(
+            produto.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === itemHistorico.fornecedorId)?.precoVendaFornecedor
+            ?? produto.precoVendaPadrao
+          ),
+          precoAutorizado: encontrarPrecoCliente(produtosCliente, produto.id, itemHistorico.fornecedorId)
+            ? Number(encontrarPrecoCliente(produtosCliente, produto.id, itemHistorico.fornecedorId)?.precoAutorizado
+              ?? encontrarPrecoCliente(produtosCliente, produto.id, itemHistorico.fornecedorId)?.ultimoPreco)
             : undefined
         };
-        const existenteIndex = resultado.findIndex((item) => item.produtoId === produto.id);
+        const existenteIndex = resultado.findIndex((item) =>
+          chaveVarianteProduto(item.produtoId, item.fornecedorId)
+            === chaveVarianteProduto(produto.id, itemHistorico.fornecedorId)
+        );
         if (existenteIndex >= 0) {
           resultado = resultado.map((item, index) => index === existenteIndex
             ? { ...importado, precoAutorizado: item.precoAutorizado }
@@ -751,16 +839,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         if (!produto) continue;
         const importado: ItemRascunho = {
           produtoId: item.produtoId,
+          fornecedorId: item.fornecedorId,
+          fornecedorReferencia: item.fornecedorReferencia,
           codigo: item.referencia || produto.codigo,
           nome: item.descricao || produto.nome,
           quantidade: Number(item.quantidade).toString().replace(".", ","),
           unidade: item.unidade || produto.unidade,
           precoUnitario: Number(item.precoUnitario).toFixed(2).replace(".", ","),
           desconto: "0",
-          precoPadrao: Number(produto.precoVendaPadrao),
-          precoAutorizado: produtosCliente.find((registro) => registro.produtoId === item.produtoId)?.precoAutorizado
+          precoPadrao: Number(
+            produto.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.precoVendaFornecedor
+            ?? produto.precoVendaPadrao
+          ),
+          precoAutorizado: encontrarPrecoCliente(produtosCliente, item.produtoId, item.fornecedorId)?.precoAutorizado
         };
-        const indice = resultado.findIndex((registro) => registro.produtoId === item.produtoId);
+        const indice = resultado.findIndex((registro) =>
+          chaveVarianteProduto(registro.produtoId, registro.fornecedorId)
+            === chaveVarianteProduto(item.produtoId, item.fornecedorId)
+        );
         resultado = indice >= 0
           ? resultado.map((registro, itemIndex) => itemIndex === indice ? importado : registro)
           : [...resultado, importado];
@@ -800,6 +896,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           items: itensPreenchidos.map((item) => ({
             id: item.id || `novo_${item.produtoId}`,
             produtoId: item.produtoId,
+            fornecedorId: item.fornecedorId,
+            fornecedorReferencia: item.fornecedorReferencia,
             quantidade: parseBrazilianNumber(item.quantidade),
             precoUnitario: parseBrazilianNumber(item.precoUnitario),
             desconto: parseBrazilianNumber(item.desconto)
@@ -817,6 +915,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         descontoGeral: descGeral,
         items: itensPreenchidos.map(it => ({
           produtoId: it.produtoId,
+          fornecedorId: it.fornecedorId,
+          fornecedorReferencia: it.fornecedorReferencia,
           descricao: it.nome,
           quantidade: parseBrazilianNumber(it.quantidade),
           unidade: it.unidade,
@@ -920,8 +1020,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }
     if (vendaNoVale) {
       const somaParcelas = parcelasVale.reduce((total, parcela) => total + parseBrazilianNumber(parcela.valor), 0);
+      const maximoParcelas = Math.max(1, Math.floor(totalLiquido / VALOR_MINIMO_PARCELA_VALE));
       if (parcelasVale.length === 0 || parcelasVale.some((parcela) => !parcela.vencimento || parseBrazilianNumber(parcela.valor) <= 0) || Math.abs(somaParcelas - totalLiquido) > 0.01) {
         setFeedbackMsg({ type: "error", text: "Confira as datas e os valores das condições do vale. A soma deve ser igual ao total da venda." });
+        return;
+      }
+      if (parcelasVale.length > maximoParcelas || (totalLiquido >= VALOR_MINIMO_PARCELA_VALE && parcelasVale.some((parcela) => parseBrazilianNumber(parcela.valor) < VALOR_MINIMO_PARCELA_VALE))) {
+        setFeedbackMsg({ type: "error", text: `Cada parcela do vale deve ser de pelo menos ${formatCurrency(VALOR_MINIMO_PARCELA_VALE)}. Para este total, use no máximo ${maximoParcelas} parcela(s).` });
         return;
       }
     }
@@ -973,8 +1078,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   const resetForm = () => {
     setClienteSelecionado(null);
-    setClienteBusca("");
     setProdutoSelecionado(null);
+    setFornecedorSelecionado(null);
     setProdutoBusca("");
     setItensVenda([]);
     setProdutosCliente([]);
@@ -1236,7 +1341,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
       {/* Alert Feedbacks */}
       {feedbackMsg && (
-        <div className={`p-4 rounded-xl border flex items-center justify-between text-sm ${
+        <div role={feedbackMsg.type === "error" ? "alert" : "status"} className={`fixed right-5 top-5 z-[95] flex max-w-sm items-center justify-between gap-3 rounded-xl border p-4 text-sm shadow-2xl ${
           feedbackMsg.type === "success" 
             ? "bg-emerald-50 border-emerald-200 text-emerald-800" 
             : "bg-red-50 border-red-200 text-red-800"
@@ -1317,8 +1422,22 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
             {/* Client Search or Selected Info */}
             <div className="mt-4">
-              {clienteSelecionado ? (
-                <div className="p-4 bg-emerald-50/50 border border-emerald-200/40 rounded-xl flex items-center justify-between animate-fade-in">
+              <select
+                ref={clienteInputRef}
+                value={clienteSelecionado?.id || ""}
+                onChange={(event) => {
+                  const selecionado = clientesOrdenados.find((cliente) => cliente.id === event.target.value);
+                  if (selecionado) handleSelectCliente(selecionado);
+                  else setClienteSelecionado(null);
+                }}
+                aria-label="Selecionar cliente da venda"
+                className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-950 outline-none focus:border-emerald-500"
+              >
+                <option value="">SELECIONE O CLIENTE...</option>
+                {clientesOrdenados.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}{cliente.telefone ? ` — ${cliente.telefone}` : ""}</option>)}
+              </select>
+              {clienteSelecionado && (
+                <div className="mt-2 p-3 bg-emerald-50/50 border border-emerald-200/40 rounded-xl flex items-center justify-between animate-fade-in">
                   <div className="truncate pr-2">
                     <p className="font-extrabold text-slate-900 text-sm truncate">{clienteSelecionado.nome}</p>
                     <p className="text-[10px] text-slate-500 mt-0.5 truncate flex items-center gap-1.5">
@@ -1331,67 +1450,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                     </p>
                     <p className="text-[10px] text-slate-400 truncate mt-0.5">{clienteSelecionado.documento || "Sem documento"}</p>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      setClienteSelecionado(null);
-                      setClienteBusca("");
-                    }}
-                    className="p-1.5 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-lg transition-colors shrink-0"
-                    title="Alterar cliente"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              ) : (
-                <div className="relative">
-                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500 transition-all">
-                    <span className="pl-3 text-slate-400">
-                      <Search size={16} />
-                    </span>
-                    <input 
-                      ref={clienteInputRef}
-                      type="text"
-                      placeholder="Pesquisar por cliente..."
-                      value={clienteBusca}
-                      onChange={(e) => {
-                        setClienteBusca(e.target.value);
-                        setShowClienteDropdown(true);
-                      }}
-                      onFocus={() => setShowClienteDropdown(true)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && filteredClientes.length === 1) {
-                          handleSelectCliente(filteredClientes[0]);
-                        }
-                      }}
-                      className="w-full text-slate-900 bg-transparent py-2.5 px-3 text-sm outline-none font-bold placeholder-slate-400"
-                    />
-                  </div>
-
-                  {showClienteDropdown && clienteBusca.trim() !== "" && (
-                    <div className="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-50">
-                      {filteredClientes.length === 0 ? (
-                        <div className="p-3 text-center text-slate-400 text-xs">
-                          <span>Nenhum ativo encontrado</span>
-                        </div>
-                      ) : (
-                        filteredClientes.map((c) => (
-                          <button
-                            key={c.id}
-                            type="button"
-                            onClick={() => handleSelectCliente(c)}
-                            className="w-full p-3 hover:bg-slate-50 text-left text-xs flex justify-between items-center transition-colors"
-                          >
-                            <div>
-                              <p className="font-bold text-slate-900">{c.nome}</p>
-                              <p className="text-[10px] text-slate-400 mt-0.5">{c.telefone || "Sem telefone"}</p>
-                            </div>
-                            <ChevronDown size={14} className="text-slate-400" />
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -1579,13 +1637,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
               <div className="flex items-center gap-2 justify-between">
                 <label className="text-[10px] font-bold text-slate-400 uppercase">Observações</label>
-                <input 
+                <textarea
                   ref={observacoesRef}
-                  type="text"
                   value={observacoes}
-                  onChange={(e) => setObservacoes(e.target.value)}
+                  onChange={(e) => setObservacoes(e.target.value.slice(0, 100))}
                   placeholder="Observação da venda..."
-                  className="bg-slate-50 border border-slate-200 text-xs px-2 py-1 rounded-lg text-slate-900 focus:border-emerald-500 outline-none w-36 placeholder:text-[10px]"
+                  rows={2}
+                  maxLength={100}
+                  className="min-h-16 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 outline-none focus:border-emerald-500 sm:w-72 placeholder:text-[10px]"
                 />
               </div>
             </div>
@@ -1627,8 +1686,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </div>
 
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
-        <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-sm">
-          <table className={`${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
+        <div className={`max-h-[72vh] overflow-auto rounded-xl border border-slate-200 shadow-sm ${itensVenda.length === 0 ? "min-h-[420px]" : "min-h-[260px]"}`}>
+          <table className={`${itensVenda.length === 0 ? "min-h-[418px]" : ""} ${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
             <colgroup>
               <col className="w-[8%]" /><col className="w-[28%]" /><col className="w-[10%]" />
               <col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[10%]" />
@@ -1648,19 +1707,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               <tr className="bg-emerald-50/70">
                 <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar item à venda" aria-label="Adicionar item à venda" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
                 <td className="relative px-2 py-2">
-                  <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} placeholder="Digite código ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
+                  <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); setFornecedorSelecionado(null); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} onKeyDown={produtoKeyboard.onKeyDown} role="combobox" aria-autocomplete="list" aria-expanded={showProdutoDropdown && Boolean(produtoBusca.trim())} aria-controls="venda-produtos" aria-activedescendant={produtoKeyboard.activeDescendant} placeholder="Digite código, referência ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
                   {showProdutoDropdown && produtoBusca.trim() && produtoDropdownPosition && createPortal(
                     <div
+                      id="venda-produtos"
                       role="listbox"
                       aria-label="Produtos encontrados"
                       className="fixed z-[100] overflow-y-auto overscroll-contain rounded-lg border border-slate-300 bg-white shadow-2xl"
                       style={produtoDropdownPosition}
                     >
                       {filteredProdutos.length
-                        ? filteredProdutos.map((produto) => (
-                          <button key={produto.id} type="button" role="option" aria-selected={produtoSelecionado?.id === produto.id} onClick={() => handleSelectProduto(produto)} className="flex w-full items-center justify-between gap-3 border-b border-slate-100 p-2.5 text-left text-xs hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none">
-                            <span className="min-w-0"><strong className="block truncate">{produto.nome}</strong><small className="text-slate-500">{produto.codigo || "Sem código"} • {produto.unidade}</small></span>
-                            <strong className="shrink-0 text-emerald-700">{formatCurrency(Number(produtosCliente.find((item) => item.produtoId === produto.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produto.id)?.ultimoPreco ?? produto.precoVendaPadrao))}</strong>
+                        ? filteredProdutos.map((opcao, index) => (
+                          <button {...produtoKeyboard.getOptionProps(index)} key={`${opcao.produto.id}:${opcao.fornecedor?.fornecedorId || "sem-fornecedor"}`} type="button" onClick={() => handleSelectProduto(opcao)} className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 p-3 text-left text-xs hover:bg-emerald-50 focus:bg-emerald-50 focus:outline-none ${produtoKeyboard.activeIndex === index ? "bg-emerald-50 ring-1 ring-inset ring-emerald-300" : ""}`}>
+                            <span className="min-w-0"><strong className="block truncate">{opcao.produto.nome}</strong><small className="block font-mono text-slate-600">REF.: {opcao.produto.codigo || "SEM REFERÊNCIA"} • {opcao.produto.unidade}</small><small className="mt-1 block text-[10px] font-black text-emerald-800">REF. FORNECEDOR: {opcao.fornecedor?.fornecedorReferencia || "SEM REFERÊNCIA"}</small></span>
+                            <strong className="shrink-0 text-emerald-700">VENDA {formatCurrency(opcao.precoVenda)}</strong>
                           </button>
                         ))
                         : <p className="p-3 text-xs font-bold text-slate-400">Produto não encontrado.</p>}
@@ -1670,7 +1730,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </td>
                 <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
-                <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} value={itemPreco} precoAutorizado={Number(produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.precoAutorizado ?? produtosCliente.find((item) => item.produtoId === produtoSelecionado.id)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
+                <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} fornecedorId={fornecedorSelecionado?.fornecedorId} value={itemPreco} precoAutorizado={Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
                 <td className="px-2 py-2 text-center text-slate-300">—</td>
               </tr>
@@ -1689,6 +1749,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       <td className="px-2 py-2 font-mono text-[11px] text-slate-400 font-bold">{it.codigo || "-"}</td>
                       <td className="px-2 py-2 text-xs font-bold text-slate-900">
                         {it.nome}
+                        {it.fornecedorReferencia && <span className="mt-0.5 block font-mono text-[9px] font-black text-emerald-700">REF. FORNECEDOR: {it.fornecedorReferencia}</span>}
                       </td>
                       <td className="p-2 text-center font-extrabold">
                         <input
@@ -1714,23 +1775,24 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                         </select>
                       </td>
                       <td className="p-2 text-right font-mono font-bold text-slate-600">
-                        <PrecoAutorizadoInput
-                          clienteId={clienteSelecionado!.id}
+                        {clienteSelecionado ? <PrecoAutorizadoInput
+                          clienteId={clienteSelecionado.id}
                           produtoId={it.produtoId}
+                          fornecedorId={it.fornecedorId}
                           value={it.precoUnitario}
                           precoAutorizado={Number(it.precoAutorizado ?? it.precoPadrao)}
                           origem="venda"
                           ariaLabel={`Preço unitário de ${it.nome}`}
                           onAuthorized={(valorFormatado, valor) => {
                             handleUpdateItem(idx, { precoUnitario: valorFormatado, precoAutorizado: valor });
-                            registrarPrecoAutorizadoLocal(it.produtoId, valor);
+                            registrarPrecoAutorizadoLocal(it.produtoId, it.fornecedorId, valor);
                           }}
                           className={`w-full min-w-16 rounded-md border px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:bg-white focus:ring-2 ${
                             exigeAutorizacao
                               ? "border-red-400 bg-red-50 focus:border-red-500 focus:ring-red-100"
                               : "border-sky-300 bg-sky-50 focus:border-emerald-600 focus:ring-emerald-100"
                           }`}
-                        />
+                        /> : <input value={it.precoUnitario} onChange={(event) => handleUpdateItem(idx, { precoUnitario: event.target.value })} inputMode="decimal" aria-label={`Preço unitário de ${it.nome}`} className="w-full min-w-16 rounded-md border border-slate-300 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600" />}
                       </td>
                       <td className="px-2 py-2 text-right font-mono text-xs font-extrabold text-slate-900">{formatCurrency(totalItem)}</td>
                       <td className="px-2 py-2 text-center">

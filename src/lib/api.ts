@@ -4,6 +4,20 @@ import {
 
 const API_BASE = "/api";
 
+interface ProdutoPayload {
+  nome: string;
+  codigo?: string;
+  unidade: string;
+  precoVendaPadrao: number;
+  custoPadrao: number;
+  ativo: number;
+  fornecedores?: Array<{
+    fornecedorId: string;
+    custoFornecedor: number;
+    precoVendaFornecedor: number;
+  }>;
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -104,15 +118,17 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<{ success: boolean }>(r)),
-  updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number, pin: string, origem = "cadastro_cliente", documentoId?: string) =>
+  updateClienteProdutoPreco: (clienteId: string, produtoId: string, preco: number, pin: string, origem = "cadastro_cliente", documentoId?: string, fornecedorId?: string | null) =>
     fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}/preco`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preco, pin, origem, documentoId })
+      body: JSON.stringify({ preco, pin, origem, documentoId, fornecedorId })
     }).then(r => handleResponse<{ precoAutorizado: number; precoAnterior: number; autorizador: string }>(r)),
-  removeClienteProduto: (clienteId: string, produtoId: string) =>
+  removeClienteProduto: (clienteId: string, produtoId: string, pin: string, fornecedorId?: string | null) =>
     fetch(`${API_BASE}/clientes/${clienteId}/produtos/${produtoId}`, {
-      method: "DELETE"
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, fornecedorId })
     }).then(r => handleResponse<{ success: boolean }>(r)),
   getCarteiraCliente: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira`).then(r => handleResponse<CarteiraCliente>(r)),
@@ -160,7 +176,12 @@ export const api = {
     fetch(`${API_BASE}/fornecedores/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
   getFornecedorProdutos: (id: string) =>
     fetch(`${API_BASE}/fornecedores/${id}/produtos`).then(r => handleResponse<FornecedorProduto[]>(r)),
-  vincularFornecedorProduto: (fornecedorId: string, dados: { produtoId: string; codigoFornecedor?: string; observacao?: string }) =>
+  vincularFornecedorProduto: (fornecedorId: string, dados: {
+    produtoId: string;
+    custoFornecedor: number;
+    precoVendaFornecedor: number;
+    observacao?: string;
+  }) =>
     fetch(`${API_BASE}/fornecedores/${fornecedorId}/produtos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -169,13 +190,13 @@ export const api = {
 
   // PRODUTOS
   getProdutos: () => fetch(`${API_BASE}/produtos`).then(r => handleResponse<Produto[]>(r)),
-  createProduto: (produto: Omit<Produto, "id" | "createdAt" | "updatedAt">) =>
+  createProduto: (produto: ProdutoPayload) =>
     fetch(`${API_BASE}/produtos`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(produto)
     }).then(r => handleResponse<Produto>(r)),
-  updateProduto: (id: string, produto: Partial<Produto>) =>
+  updateProduto: (id: string, produto: ProdutoPayload) =>
     fetch(`${API_BASE}/produtos/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -196,6 +217,8 @@ export const api = {
     descontoGeral: number;
     items: Array<{
       produtoId: string;
+      fornecedorId?: string | null;
+      fornecedorReferencia?: string | null;
       descricao: string;
       quantidade: number;
       unidade: string;
@@ -237,7 +260,15 @@ export const api = {
     data: string;
     desconto: number;
     observacoes?: string;
-    items: Array<{ id: string; produtoId: string; quantidade: number; precoUnitario: number; desconto: number }>;
+    items: Array<{
+      id: string;
+      produtoId: string;
+      fornecedorId?: string | null;
+      fornecedorReferencia?: string | null;
+      quantidade: number;
+      precoUnitario: number;
+      desconto: number;
+    }>;
   }) => fetch(`${API_BASE}/vendas/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -281,6 +312,8 @@ export const api = {
     autorizacaoPreco?: { pin: string };
     items: Array<{
       produtoId: string;
+      fornecedorId?: string | null;
+      fornecedorReferencia?: string | null;
       descricao: string;
       quantidade: number;
       unidade: string;

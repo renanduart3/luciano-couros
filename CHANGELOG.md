@@ -4,6 +4,28 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.6 — 2026-07-28
+
+- Produtos passam a centralizar configurações comerciais independentes para vários fornecedores, sem permitir o mesmo fornecedor repetido no material.
+- Referência global do fornecedor passa a identificar suas variantes de produto nas buscas, vendas, orçamentos e preços dos clientes.
+- Listagens de materiais da venda e do orçamento exibem uma opção por fornecedor, com referência, unidade e respectivo preço de venda.
+- Preço do cliente passa a ser controlado pela combinação cliente, produto e fornecedor, preservando separadamente a última autorização gerencial de cada variante.
+- Venda, orçamento, histórico e importações preservam fornecedor, referência, custo e preço usados em cada item.
+- Mesmo produto pode coexistir em uma venda ou orçamento quando associado a fornecedores diferentes.
+- Validação indevida de preço corrigida: o preço configurado no fornecedor deixa de solicitar autorização quando não foi alterado.
+- Tabela de preços do cliente passa a exibir separadamente cada fornecedor e mantém exclusão protegida por PIN.
+- Seletores e listagens operacionais recebem navegação e seleção por teclado.
+- Seleção principal de cliente na venda e no orçamento passa a usar lista alfabética, sem filtragem durante a digitação.
+- Venda e orçamento permanecem ocultos até a seleção de um cliente, evitando a exibição confusa de telas bloqueadas.
+- Área útil das tabelas de venda e orçamento ampliada, inclusive quando ainda não existem itens.
+- Mensagens operacionais passam a desaparecer automaticamente após dez segundos.
+- Parcelamento de Vale limitado a parcelas mínimas de R$ 100,00, com validação no formulário e no servidor.
+- Campo de observação da venda ampliado e limitado a 100 caracteres no formulário, servidor, edição do Vale e comprovante.
+- Impressão da venda inclui a observação sem quebrar o layout e deixa de gerar folha adicional em branco.
+- Confirmações nativas do Windows substituídas por diálogos padronizados com o visual do sistema.
+- Tratamentos defensivos adicionados para clientes e associações nulas, evitando telas brancas durante venda e orçamento.
+- Controle do ícone da bandeja aprimorado e adicionado atalho para reabrir o painel quando o serviço continua ativo.
+
 ## 1.8.5 — 2026-07-26
 
 - Prazos rápidos de 30, 60, 90, 120 e 150 dias passam a indicar visualmente quando já foram aplicados.

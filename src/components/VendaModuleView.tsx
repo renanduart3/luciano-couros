@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, FileText, History, Search, ShoppingCart, UserRound, X } from "lucide-react";
+import { ChevronDown, ChevronUp, FileText, History, ShoppingCart, UserRound } from "lucide-react";
 import { VendaRapidaView } from "./VendaRapidaView";
 import { VendasListaView } from "./VendasListaView";
 import { OrcamentoView } from "./OrcamentoView";
@@ -23,8 +23,6 @@ export function VendaModuleView(props: VendaModuleViewProps) {
   const [orcamentoExpandido, setOrcamentoExpandido] = useState(true);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [clienteBusca, setClienteBusca] = useState("");
-  const [clienteDropdown, setClienteDropdown] = useState(false);
   const [vendaEmEdicao, setVendaEmEdicao] = useState<Venda | null>(null);
 
   useEffect(() => {
@@ -32,16 +30,19 @@ export function VendaModuleView(props: VendaModuleViewProps) {
       .then((lista) => setClientes(lista.filter((item) => item.ativo === 1)))
       .catch(() => setClientes([]));
   }, []);
-  const clientesFiltrados = useMemo(() => clientes.filter((item) =>
-    item.nome.toLowerCase().includes(clienteBusca.toLowerCase()) ||
-    (item.telefone || "").includes(clienteBusca)
-  ).slice(0, 10), [clientes, clienteBusca]);
+  const clientesOrdenados = useMemo(
+    () => clientes.filter(Boolean).slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    [clientes]
+  );
+  const selecionarCliente = (item: Cliente) => {
+    setCliente(item);
+    setOrcamentoParaVenda(null);
+  };
 
   const iniciarEdicaoVenda = (venda: Venda) => {
     const clienteDaVenda = clientes.find((item) => item.id === venda.clienteId);
     if (!clienteDaVenda) return;
     setCliente(clienteDaVenda);
-    setClienteBusca(clienteDaVenda.nome);
     setOrcamentoParaVenda(null);
     setVendaEmEdicao(venda);
     setModo("operacao");
@@ -78,27 +79,26 @@ export function VendaModuleView(props: VendaModuleViewProps) {
           <div className="mb-1.5 flex items-center gap-2 text-[11px] font-black uppercase tracking-wider text-slate-700">
             <UserRound size={17} className="text-emerald-700" /> 1. Selecione o cliente
           </div>
-          {cliente ? (
-            <div className="flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
-              <div className="min-w-0"><strong className="block truncate text-slate-950">{cliente.nome}</strong><span className="text-xs text-slate-600">{cliente.telefone || "Sem telefone"}</span></div>
-              {!vendaEmEdicao && <button type="button" aria-label="Trocar cliente" onClick={() => { setCliente(null); setClienteBusca(""); setClienteDropdown(true); setOrcamentoParaVenda(null); }} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={17} /></button>}
-            </div>
-          ) : (
-            <div className="relative">
-              <div className="flex items-center rounded-xl border border-slate-300 bg-slate-50 focus-within:border-emerald-500">
-                <Search size={17} className="ml-3 text-slate-400" />
-                <input autoFocus value={clienteBusca} onFocus={() => setClienteDropdown(true)} onChange={(event) => { setClienteBusca(event.target.value); setClienteDropdown(true); }} placeholder="Nome ou telefone do cliente..." className="w-full bg-transparent px-3 py-3 text-sm font-bold outline-none" />
-              </div>
-              {clienteDropdown && clienteBusca.trim() && (
-                <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl">
-                  {clientesFiltrados.map((item) => <button key={item.id} type="button" onClick={() => { setCliente(item); setClienteBusca(item.nome); setClienteDropdown(false); setOrcamentoParaVenda(null); }} className="block w-full border-b border-slate-100 p-3 text-left hover:bg-emerald-50"><strong className="block text-sm">{item.nome}</strong><span className="text-xs text-slate-500">{item.telefone || "Sem telefone"}</span></button>)}
-                  {clientesFiltrados.length === 0 && <p className="p-4 text-sm font-bold text-slate-400">Nenhum cliente encontrado.</p>}
-                </div>
-              )}
-            </div>
-          )}
+          <select
+            autoFocus
+            value={cliente?.id || ""}
+            disabled={Boolean(vendaEmEdicao)}
+            onChange={(event) => {
+              const selecionado = clientesOrdenados.find((item) => item.id === event.target.value);
+              if (selecionado) selecionarCliente(selecionado);
+              else {
+                setCliente(null);
+                setOrcamentoParaVenda(null);
+              }
+            }}
+            aria-label="Selecionar cliente para venda e orçamento"
+            className="min-h-12 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold text-slate-950 outline-none focus:border-emerald-500 disabled:bg-slate-200"
+          >
+            <option value="">SELECIONE O CLIENTE...</option>
+            {clientesOrdenados.map((item) => <option key={item.id} value={item.id}>{item.nome}{item.telefone ? ` — ${item.telefone}` : ""}</option>)}
+          </select>
         </section>
-        <div className={`min-w-0 space-y-2 ${cliente ? "" : "pointer-events-none opacity-45"}`}>
+        {cliente && <div className="min-w-0 space-y-2">
           {!vendaEmEdicao && <section className="min-w-0 overflow-hidden rounded-xl bg-slate-50 shadow-sm">
             <div className="flex items-center justify-between border-b border-blue-200 bg-blue-800 px-3 py-2 text-white">
               <div className="flex items-center gap-2"><FileText size={18} /><strong className="text-sm uppercase tracking-wide">Orçamento</strong></div>
@@ -135,14 +135,13 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 onCancelarEdicao={() => {
                   setVendaEmEdicao(null);
                   setCliente(null);
-                  setClienteBusca("");
                   setProdutosNaVenda([]);
                   setModo("historico");
                 }}
               />
             </div>
           </section>
-        </div>
+        </div>}
         </>
       )}
     </section>

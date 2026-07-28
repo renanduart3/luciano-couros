@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, Coins, History, RefreshCw, Search, ShieldChe
 import { CarteiraCliente, Cliente, DividaCarteira } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
@@ -12,6 +13,7 @@ const hoje = () => new Date().toISOString().slice(0, 10);
 const dinheiro = (valor: number) => valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps) {
+  const confirmacao = useConfirmacao();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [busca, setBusca] = useState("");
@@ -112,7 +114,12 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
     if (recebido <= 0 && bonusMaximo <= 0) return alert("INFORME O VALOR RECEBIDO OU O BÔNUS QUE SERÁ UTILIZADO.");
     if (totalAplicado > valorDisponivel + 0.005) return alert("A DISTRIBUIÇÃO ULTRAPASSA O VALOR DISPONÍVEL.");
     if (totalAplicado === 0 && recebido === 0) return alert("SELECIONE UMA DÍVIDA PARA USAR O BÔNUS.");
-    if (!confirm(`CONFIRMAR RECEBIMENTO?\n\nDINHEIRO: ${formatCurrency(recebido)}\nAPLICADO: ${formatCurrency(totalAplicado)}\nBÔNUS UTILIZADO: ${formatCurrency(bonusUtilizado)}\nNOVO BÔNUS: ${formatCurrency(bonusGerado)}`)) return;
+    if (!await confirmacao.confirmar({
+      titulo: "Confirmar recebimento",
+      mensagem: `DINHEIRO: ${formatCurrency(recebido)}\nAPLICADO: ${formatCurrency(totalAplicado)}\nBÔNUS UTILIZADO: ${formatCurrency(bonusUtilizado)}\nNOVO BÔNUS: ${formatCurrency(bonusGerado)}`,
+      textoConfirmar: "Registrar",
+      variante: "atencao"
+    })) return;
 
     setSaving(true);
     try {
@@ -139,7 +146,11 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
   const estornar = async (recebimentoId: string) => {
     const pin = prompt("INFORME O PIN DO ADMINISTRADOR PARA ESTORNAR ESTE RECEBIMENTO:");
     if (!pin) return;
-    if (!confirm("CONFIRMA O ESTORNO? AS DÍVIDAS E O BÔNUS SERÃO RESTAURADOS.")) return;
+    if (!await confirmacao.confirmar({
+      titulo: "Estornar recebimento",
+      mensagem: "Confirma o estorno? As dívidas e o bônus serão restaurados.",
+      textoConfirmar: "Estornar"
+    })) return;
     try {
       await api.cancelarRecebimentoCliente(recebimentoId, pin);
       await carregarCarteira();
@@ -151,6 +162,7 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
 
   return (
     <div className="space-y-5">
+      {confirmacao.dialogo}
       <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
         <label className="mb-2 block text-xs font-black text-slate-700">LOCALIZAR CLIENTE</label>
         <div className="grid gap-3 md:grid-cols-[1fr_1.4fr]">

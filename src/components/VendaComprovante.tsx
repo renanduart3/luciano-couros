@@ -109,6 +109,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         <span><b>Vencimento:</b> {vencimento ? formatDate(vencimento) : "À vista"}</span>
       </div>
 
+      {venda.observacoes && (
+        <div className="receipt-observation-line"><b>OBSERVAÇÃO:</b> {venda.observacoes.slice(0, 100)}</div>
+      )}
+
       <footer className="receipt-footer">
         <div className="receipt-counts"><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></div>
         <div className="receipt-total"><span>VALOR TOTAL</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>

@@ -10,7 +10,8 @@ export function FornecedorProdutosView() {
   const [fornecedorId, setFornecedorId] = useState("");
   const [catalogo, setCatalogo] = useState<FornecedorProduto[]>([]);
   const [produtoId, setProdutoId] = useState("");
-  const [codigoFornecedor, setCodigoFornecedor] = useState("");
+  const [custoFornecedor, setCustoFornecedor] = useState("");
+  const [precoVendaFornecedor, setPrecoVendaFornecedor] = useState("");
   const [observacao, setObservacao] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,7 +29,8 @@ export function FornecedorProdutosView() {
   const carregarCatalogo = async (id: string) => {
     setFornecedorId(id);
     setProdutoId("");
-    setCodigoFornecedor("");
+    setCustoFornecedor("");
+    setPrecoVendaFornecedor("");
     setObservacao("");
     setFeedback("");
     if (!id) return setCatalogo([]);
@@ -48,19 +50,27 @@ export function FornecedorProdutosView() {
   const vincularProduto = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!fornecedorId || !produtoId) return;
+    const custo = Number(custoFornecedor.replace(",", "."));
+    const precoVenda = Number(precoVendaFornecedor.replace(",", "."));
+    if (!Number.isFinite(custo) || custo < 0 || !Number.isFinite(precoVenda) || precoVenda < 0) {
+      setFeedback("Informe custo e preço-base de venda válidos.");
+      return;
+    }
     setSaving(true);
     setFeedback("");
     try {
       await api.vincularFornecedorProduto(fornecedorId, {
         produtoId,
-        codigoFornecedor: codigoFornecedor.trim() || undefined,
+        custoFornecedor: custo,
+        precoVendaFornecedor: precoVenda,
         observacao: observacao.trim() || undefined
       });
       setCatalogo(await api.getFornecedorProdutos(fornecedorId));
       setProdutoId("");
-      setCodigoFornecedor("");
+      setCustoFornecedor("");
+      setPrecoVendaFornecedor("");
       setObservacao("");
-      setFeedback("Produto vinculado. O custo será confirmado quando uma compra for registrada.");
+      setFeedback("Produto vinculado com a configuração comercial do fornecedor.");
     } catch (error: any) {
       setFeedback(error.message || "Não foi possível vincular o produto.");
     } finally {
@@ -90,17 +100,18 @@ export function FornecedorProdutosView() {
           <form onSubmit={vincularProduto} className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-2"><Link2 size={18} className="text-emerald-700" /><h3 className="font-black text-slate-950">Vincular produto existente</h3></div>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-end">
-              <label className="lg:col-span-5"><span className="mb-1 block text-xs font-extrabold text-slate-700">Produto *</span><select required value={produtoId} onChange={(event) => setProdutoId(event.target.value)} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold"><option value="">Selecione no cadastro central...</option>{produtosDisponiveis.map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} — {produto.codigo || "sem referência"}</option>)}</select></label>
-              <label className="lg:col-span-3"><span className="mb-1 block text-xs font-extrabold text-slate-700">Código no fornecedor</span><input value={codigoFornecedor} onChange={(event) => setCodigoFornecedor(event.target.value)} placeholder="Opcional" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold" /></label>
-              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-slate-700">Observação</span><input value={observacao} onChange={(event) => setObservacao(event.target.value)} placeholder="Opcional" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold" /></label>
+              <label className="lg:col-span-4"><span className="mb-1 block text-xs font-extrabold text-slate-700">Produto *</span><select required value={produtoId} onChange={(event) => { const id = event.target.value; const produto = produtos.find((item) => item.id === id); setProdutoId(id); setCustoFornecedor(produto ? String(produto.custoPadrao) : ""); setPrecoVendaFornecedor(produto ? String(produto.precoVendaPadrao) : ""); }} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold"><option value="">Selecione no cadastro central...</option>{produtosDisponiveis.map((produto) => <option key={produto.id} value={produto.id}>{produto.nome} — {produto.codigo || "sem referência"}</option>)}</select></label>
+              <div className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-slate-700">REF. do fornecedor</span><div className="w-full rounded-xl border border-blue-200 bg-blue-50 px-3 py-3 text-sm font-mono font-black text-blue-900">{fornecedores.find((item) => item.id === fornecedorId)?.referencia || "SEM REF."}</div></div>
+              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-slate-700">Custo *</span><input required inputMode="decimal" value={custoFornecedor} onChange={(event) => setCustoFornecedor(event.target.value)} placeholder="0,00" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold" /></label>
+              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-slate-700">Preço-base *</span><input required inputMode="decimal" value={precoVendaFornecedor} onChange={(event) => setPrecoVendaFornecedor(event.target.value)} placeholder="0,00" className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm font-bold" /></label>
               <button disabled={saving || !produtoId} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-black text-white disabled:bg-slate-300 lg:col-span-2"><Plus size={16} /> {saving ? "Salvando" : "Vincular"}</button>
             </div>
             {feedback && <p className="mt-3 text-xs font-bold text-slate-700">{feedback}</p>}
           </form>
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black text-slate-950">Catálogo deste fornecedor</h3><p className="text-xs text-slate-600">Custos abaixo vêm somente de compras efetivamente registradas.</p></div><button type="button" aria-label="Atualizar catálogo" onClick={() => carregarCatalogo(fornecedorId)} className="rounded-xl border border-slate-300 p-2 text-slate-700"><RefreshCw size={16} /></button></div>
-            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">Código fornecedor</th><th className="p-4 text-right">Último custo</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.codigoFornecedor || "—"}</td><td className="p-4 text-right font-mono font-black">{item.ultimoCusto == null ? "Ainda não comprado" : formatCurrency(item.ultimoCusto)}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}
+            <div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black text-slate-950">Catálogo deste fornecedor</h3><p className="text-xs text-slate-600">A configuração comercial principal é mantida no cadastro do produto.</p></div><button type="button" aria-label="Atualizar catálogo" onClick={() => carregarCatalogo(fornecedorId)} className="rounded-xl border border-slate-300 p-2 text-slate-700"><RefreshCw size={16} /></button></div>
+            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">REF. fornecedor</th><th className="p-4 text-right">Custo configurado</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.fornecedorReferencia || "—"}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.custoFornecedor || 0))}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.precoVendaFornecedor || 0))}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}
           </div>
         </>
       )}

@@ -3,10 +3,12 @@ import { Search, Plus, Edit2, Trash2, X, Phone, FileText, ShoppingCart, MessageC
 import { Fornecedor } from "../types";
 import { api } from "../lib/api";
 import { paginate, Pagination } from "./Pagination";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 const PAGE_SIZE = 10;
 
 export function FornecedoresView() {
+  const confirmacao = useConfirmacao();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
@@ -17,6 +19,7 @@ export function FornecedoresView() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingFor, setEditingFor] = useState<Fornecedor | null>(null);
   const [nome, setNome] = useState("");
+  const [referencia, setReferencia] = useState("");
   const [telefone, setTelefone] = useState("");
   const [isWhatsapp, setIsWhatsapp] = useState(false);
   const [documento, setDocumento] = useState("");
@@ -46,6 +49,7 @@ export function FornecedoresView() {
     if (forn) {
       setEditingFor(forn);
       setNome(forn.nome);
+      setReferencia(forn.referencia || "");
       setTelefone(forn.telefone || "");
       setIsWhatsapp(forn.isWhatsapp === 1);
       setDocumento(forn.documento || "");
@@ -54,6 +58,7 @@ export function FornecedoresView() {
     } else {
       setEditingFor(null);
       setNome("");
+      setReferencia("");
       setTelefone("");
       setIsWhatsapp(false);
       setDocumento("");
@@ -72,10 +77,15 @@ export function FornecedoresView() {
       setFormError("O nome é obrigatório.");
       return;
     }
+    if (!referencia.trim()) {
+      setFormError("A referência do fornecedor é obrigatória.");
+      return;
+    }
 
     try {
       const data = {
         nome: nome.trim(),
+        referencia: referencia.trim(),
         telefone: telefone.trim() || undefined,
         isWhatsapp: isWhatsapp ? 1 : 0,
         documento: documento.trim() || undefined,
@@ -97,7 +107,11 @@ export function FornecedoresView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Deseja realmente arquivar/excluir este fornecedor?")) {
+    if (await confirmacao.confirmar({
+      titulo: "Excluir fornecedor",
+      mensagem: "Deseja realmente arquivar/excluir este fornecedor?",
+      textoConfirmar: "Excluir fornecedor"
+    })) {
       try {
         await api.deleteFornecedor(id);
         fetchFornecedores();
@@ -109,6 +123,7 @@ export function FornecedoresView() {
 
   const filtered = fornecedores.filter(f => 
     f.nome.toLowerCase().includes(busca.toLowerCase()) ||
+    (f.referencia || "").toLowerCase().includes(busca.toLowerCase()) ||
     (f.telefone && f.telefone.includes(busca)) ||
     (f.documento && f.documento.includes(busca))
   );
@@ -116,6 +131,7 @@ export function FornecedoresView() {
 
   return (
     <div className="space-y-6">
+      {confirmacao.dialogo}
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -139,7 +155,7 @@ export function FornecedoresView() {
           </span>
           <input 
             type="text"
-            placeholder="Pesquisar fornecedor por nome, telefone ou CNPJ..."
+            placeholder="Pesquisar por referência, nome, telefone ou CNPJ..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             className="w-full text-slate-900 bg-transparent py-2.5 px-3 text-sm outline-none font-medium placeholder-slate-400"
@@ -162,6 +178,7 @@ export function FornecedoresView() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold text-xs uppercase">
                   <th className="p-4">Fornecedor / Descrição</th>
+                  <th className="p-4">Referência</th>
                   <th className="p-4">Documento (CNPJ/CPF)</th>
                   <th className="p-4">Contato</th>
                   <th className="p-4 text-center">Status</th>
@@ -171,7 +188,7 @@ export function FornecedoresView() {
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-12 text-center text-slate-400 font-medium">
+                    <td colSpan={6} className="p-12 text-center text-slate-400 font-medium">
                       Nenhum fornecedor cadastrado ou localizado.
                     </td>
                   </tr>
@@ -185,6 +202,9 @@ export function FornecedoresView() {
                             "{f.observacoes}"
                           </p>
                         )}
+                      </td>
+                      <td className="p-4 font-mono text-xs font-black text-blue-800">
+                        {f.referencia || <span className="text-slate-300">SEM REF.</span>}
                       </td>
                       <td className="p-4 font-mono text-xs text-slate-500">
                         {f.documento || <span className="text-slate-300">-</span>}
@@ -270,6 +290,18 @@ export function FornecedoresView() {
                   value={nome}
                   onChange={(e) => setNome(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 text-sm px-3.5 py-2.5 rounded-xl font-medium focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-400 uppercase">Referência do fornecedor *</label>
+                <input
+                  type="text"
+                  value={referencia}
+                  placeholder="EX.: FABRICIO"
+                  onChange={(e) => setReferencia(e.target.value)}
+                  className="w-full bg-blue-50 border border-blue-200 text-sm px-3.5 py-2.5 rounded-xl font-mono font-black text-blue-900 focus:border-blue-500 outline-none"
                   required
                 />
               </div>

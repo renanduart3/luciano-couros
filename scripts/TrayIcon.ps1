@@ -85,6 +85,18 @@ $notifyIcon.Icon = $redIcon
 $notifyIcon.Text = "Central de Tecidos - parado"
 $notifyIcon.Visible = $true
 
+function Get-ExplorerIdentity {
+    $explorer = Get-Process explorer -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $explorer) { return $null }
+    try {
+        return "$($explorer.Id):$($explorer.StartTime.Ticks)"
+    } catch {
+        return "$($explorer.Id)"
+    }
+}
+
+$explorerIdentity = Get-ExplorerIdentity
+
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $statusItem = $menu.Items.Add("Status: verificando...")
 $statusItem.Enabled = $false
@@ -95,7 +107,8 @@ $stopItem = $menu.Items.Add("Parar")
 $restartItem = $menu.Items.Add("Reiniciar")
 $updateItem = $menu.Items.Add("Atualizar")
 $menu.Items.Add("-") | Out-Null
-$exitItem = $menu.Items.Add("Sair do icone")
+$reloadIconItem = $menu.Items.Add("Recarregar icone")
+$exitItem = $menu.Items.Add("Fechar somente o icone")
 $notifyIcon.ContextMenuStrip = $menu
 
 $openSystem = {
@@ -116,7 +129,19 @@ $startItem.Add_Click({ Start-ManagerAction "Start" })
 $stopItem.Add_Click({ Start-ManagerAction "Stop" })
 $restartItem.Add_Click({ Start-ManagerAction "Restart" })
 $updateItem.Add_Click({ Start-ManagerAction "Update" })
+$reloadIconItem.Add_Click({
+    $notifyIcon.Visible = $false
+    Start-Sleep -Milliseconds 150
+    $notifyIcon.Visible = $true
+})
 $exitItem.Add_Click({
+    $choice = [System.Windows.Forms.MessageBox]::Show(
+        "Isso fecha somente o icone; o servidor continuara rodando.`n`nPara recuperar o controle, use 'Central de Tecidos - Reabrir Controle' no Desktop/Menu Iniciar ou execute 'ABRIR CONTROLE DO SISTEMA.cmd'.`n`nDeseja fechar o icone?",
+        "Central de Tecidos",
+        "YesNo",
+        "Warning"
+    )
+    if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) { return }
     $notifyIcon.Visible = $false
     [System.Windows.Forms.Application]::Exit()
 })
@@ -124,6 +149,18 @@ $exitItem.Add_Click({
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 3000
 $timer.Add_Tick({
+    # Quando o Explorer do Windows reinicia, a area de notificacao e recriada.
+    # Registrar novamente o NotifyIcon faz o controle reaparecer sem reiniciar
+    # o servico ou criar outra instancia do tray.
+    $currentExplorerIdentity = Get-ExplorerIdentity
+    if ($null -ne $currentExplorerIdentity -and $currentExplorerIdentity -ne $script:explorerIdentity) {
+        $script:explorerIdentity = $currentExplorerIdentity
+        $notifyIcon.Visible = $false
+        $notifyIcon.Visible = $true
+    } elseif ($null -eq $currentExplorerIdentity) {
+        $script:explorerIdentity = $null
+    }
+
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($null -eq $service) {
         $notifyIcon.Visible = $false

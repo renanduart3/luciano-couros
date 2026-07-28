@@ -90,12 +90,40 @@ function erroHttp(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
 }
 
-function salvarPrecoAutorizadoCliente(clienteId: string, produtoId: string, preco: number) {
+function salvarPrecoAutorizadoCliente(
+  clienteId: string,
+  produtoId: string,
+  preco: number,
+  fornecedorId?: string | null
+) {
   const produto = queryOne<{ unidade: string }>(
     "SELECT unidade FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
     [produtoId]
   );
   if (!produto) throw erroHttp("Produto não encontrado ou inativo.", 404);
+
+  if (fornecedorId) {
+    const associacao = queryOne(
+      `SELECT fp.fornecedorId
+       FROM fornecedor_produtos fp
+       JOIN fornecedores f ON f.id = fp.fornecedorId
+       WHERE fp.produtoId = ? AND fp.fornecedorId = ? AND fp.ativo = 1
+         AND f.ativo = 1 AND f.deletedAt IS NULL`,
+      [produtoId, fornecedorId]
+    );
+    if (!associacao) throw erroHttp("Fornecedor não está associado a este produto.", 400);
+    execute(
+      `INSERT INTO cliente_produto_fornecedor_precos
+         (clienteId, produtoId, fornecedorId, ultimoPreco, ultimaQuantidade, ultimaUnidade, vezesComprado, ultimaCompraEm, precoAutorizado, oculto)
+       VALUES (?, ?, ?, ?, NULL, ?, 0, date('now', 'localtime'), ?, 0)
+       ON CONFLICT(clienteId, produtoId, fornecedorId) DO UPDATE SET
+         precoAutorizado = excluded.precoAutorizado,
+         oculto = 0,
+         updatedAt = CURRENT_TIMESTAMP`,
+      [clienteId, produtoId, fornecedorId, preco, produto.unidade, preco]
+    );
+    return;
+  }
 
   execute(
     `INSERT INTO cliente_produtos_habituais
@@ -109,14 +137,79 @@ function salvarPrecoAutorizadoCliente(clienteId: string, produtoId: string, prec
   );
 }
 
+function resolverPrecoClienteProdutoFornecedor(
+  clienteId: string,
+  produto: { id: string; precoVendaPadrao: number; custoPadrao?: number },
+  fornecedorId?: string | null
+) {
+  if (fornecedorId) {
+    const associacao = queryOne<{
+      fornecedorId: string;
+      fornecedorReferencia: string | null;
+      precoVendaFornecedor: number | null;
+      custoFornecedor: number | null;
+    }>(
+      `SELECT fp.fornecedorId, f.referencia AS fornecedorReferencia,
+              fp.precoVendaFornecedor, fp.custoFornecedor
+       FROM fornecedor_produtos fp
+       JOIN fornecedores f ON f.id = fp.fornecedorId
+       WHERE fp.produtoId = ? AND fp.fornecedorId = ? AND fp.ativo = 1
+         AND f.ativo = 1 AND f.deletedAt IS NULL`,
+      [produto.id, fornecedorId]
+    );
+    if (!associacao) throw erroHttp("Fornecedor não está associado a este produto.", 400);
+    const preferencia = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
+      `SELECT precoAutorizado, ultimoPreco
+       FROM cliente_produto_fornecedor_precos
+       WHERE clienteId = ? AND produtoId = ? AND fornecedorId = ? AND oculto = 0`,
+      [clienteId, produto.id, fornecedorId]
+    );
+    return {
+      fornecedorId,
+      fornecedorReferencia: associacao.fornecedorReferencia,
+      precoMinimoSemPin: Number(
+        preferencia?.precoAutorizado
+        ?? preferencia?.ultimoPreco
+        ?? associacao.precoVendaFornecedor
+        ?? produto.precoVendaPadrao
+        ?? 0
+      ),
+      custoUnitario: Number(associacao.custoFornecedor ?? produto.custoPadrao ?? 0),
+    };
+  }
+
+  const preferencia = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
+    `SELECT precoAutorizado, ultimoPreco
+     FROM cliente_produtos_habituais
+     WHERE clienteId = ? AND produtoId = ? AND oculto = 0`,
+    [clienteId, produto.id]
+  );
+  return {
+    fornecedorId: null,
+    fornecedorReferencia: null,
+    precoMinimoSemPin: Number(
+      preferencia?.precoAutorizado
+      ?? preferencia?.ultimoPreco
+      ?? produto.precoVendaPadrao
+      ?? 0
+    ),
+    custoUnitario: Number(produto.custoPadrao ?? 0),
+  };
+}
+
 type ParcelaValeInformada = { vencimento: string; valor: number };
 
 function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): ParcelaValeInformada[] {
   if (!Array.isArray(parcelas) || parcelas.length === 0) {
     throw erroHttp("Informe ao menos uma condição de pagamento para o vale.", 400);
   }
-  if (parcelas.length > 24) {
-    throw erroHttp("O vale pode possuir no máximo 24 parcelas.", 400);
+  const maximoParcelasPorValor = Math.max(1, Math.floor(totalEsperado / 100));
+  const maximoParcelas = Math.min(24, maximoParcelasPorValor);
+  if (parcelas.length > maximoParcelas) {
+    throw erroHttp(
+      `Para parcelas mínimas de R$ 100,00, este vale pode possuir no máximo ${maximoParcelas} parcela(s).`,
+      400
+    );
   }
   const normalizadas = parcelas.map((item: any) => ({
     vencimento: String(item?.vencimento || ""),
@@ -125,6 +218,9 @@ function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): Parce
   for (const parcela of normalizadas) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0) {
       throw erroHttp("Todas as parcelas precisam de uma data e um valor maior que zero.", 400);
+    }
+    if (totalEsperado >= 100 && parcela.valor < 100) {
+      throw erroHttp("Cada parcela do vale deve possuir valor mínimo de R$ 100,00.", 400);
     }
   }
   normalizadas.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
@@ -691,10 +787,12 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
       return res.status(404).json({ error: "Cliente não encontrado." });
     }
 
-    const produtos = queryAll<any>(
+    const produtosSemFornecedor = queryAll<any>(
       `SELECT
          cph.clienteId,
          cph.produtoId,
+         NULL AS fornecedorId,
+         NULL AS fornecedorReferencia,
          cph.ultimoPreco,
          cph.ultimaQuantidade,
          cph.ultimaUnidade,
@@ -716,6 +814,43 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
       [req.params.id]
     );
 
+    const produtosPorFornecedor = queryAll<any>(
+      `SELECT
+         cpf.clienteId,
+         cpf.produtoId,
+         cpf.fornecedorId,
+         f.referencia AS fornecedorReferencia,
+         cpf.ultimoPreco,
+         cpf.ultimaQuantidade,
+         cpf.ultimaUnidade,
+         cpf.vezesComprado,
+         cpf.ultimaCompraEm,
+         cpf.precoAutorizado,
+         p.nome,
+         p.codigo,
+         p.unidade,
+         COALESCE(fp.precoVendaFornecedor, p.precoVendaPadrao) AS precoVendaPadrao,
+         COALESCE(fp.custoFornecedor, p.custoPadrao) AS custoPadrao
+       FROM cliente_produto_fornecedor_precos cpf
+       JOIN produtos p ON p.id = cpf.produtoId
+       JOIN fornecedores f ON f.id = cpf.fornecedorId
+       JOIN fornecedor_produtos fp ON fp.produtoId = cpf.produtoId
+         AND fp.fornecedorId = cpf.fornecedorId
+       WHERE cpf.clienteId = ?
+         AND cpf.oculto = 0
+         AND fp.ativo = 1
+         AND f.ativo = 1
+         AND f.deletedAt IS NULL
+         AND p.ativo = 1
+         AND p.deletedAt IS NULL`,
+      [req.params.id]
+    );
+    const produtos = [...produtosSemFornecedor, ...produtosPorFornecedor].sort((a, b) =>
+      String(b.ultimaCompraEm || "").localeCompare(String(a.ultimaCompraEm || ""))
+      || Number(b.vezesComprado || 0) - Number(a.vezesComprado || 0)
+      || String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
+      || String(a.fornecedorReferencia || "").localeCompare(String(b.fornecedorReferencia || ""), "pt-BR")
+    );
     res.json(produtos);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -730,23 +865,52 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
     }
 
     const itens = queryAll<any>(
-      `SELECT
-         cph.produtoId,
-         p.nome,
-         p.codigo,
-         p.unidade,
-         0 AS quantidade,
-         COALESCE(cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
-         0 AS faltante,
-         CASE WHEN cph.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado
-       FROM cliente_produtos_habituais cph
-       JOIN produtos p ON p.id = cph.produtoId
-       WHERE cph.clienteId = ?
-         AND cph.oculto = 0
-         AND p.ativo = 1
-         AND p.deletedAt IS NULL
-       ORDER BY cph.ultimaCompraEm DESC, p.nome ASC`,
-      [req.params.id]
+      `SELECT * FROM (
+         SELECT
+           cph.produtoId,
+           NULL AS fornecedorId,
+           NULL AS fornecedorReferencia,
+           p.nome,
+           p.codigo,
+           p.unidade,
+           0 AS quantidade,
+           COALESCE(cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
+           0 AS faltante,
+           CASE WHEN cph.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado,
+           cph.ultimaCompraEm
+         FROM cliente_produtos_habituais cph
+         JOIN produtos p ON p.id = cph.produtoId
+         WHERE cph.clienteId = ?
+           AND cph.oculto = 0
+           AND p.ativo = 1
+           AND p.deletedAt IS NULL
+         UNION ALL
+         SELECT
+           cpf.produtoId,
+           cpf.fornecedorId,
+           f.referencia AS fornecedorReferencia,
+           p.nome,
+           p.codigo,
+           p.unidade,
+           0 AS quantidade,
+           COALESCE(cpf.precoAutorizado, cpf.ultimoPreco, fp.precoVendaFornecedor, p.precoVendaPadrao) AS precoUnitario,
+           0 AS faltante,
+           CASE WHEN cpf.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado,
+           cpf.ultimaCompraEm
+         FROM cliente_produto_fornecedor_precos cpf
+         JOIN produtos p ON p.id = cpf.produtoId
+         JOIN fornecedor_produtos fp ON fp.produtoId = cpf.produtoId
+           AND fp.fornecedorId = cpf.fornecedorId AND fp.ativo = 1
+         JOIN fornecedores f ON f.id = cpf.fornecedorId
+         WHERE cpf.clienteId = ?
+           AND cpf.oculto = 0
+           AND p.ativo = 1
+           AND p.deletedAt IS NULL
+           AND f.ativo = 1
+           AND f.deletedAt IS NULL
+       )
+       ORDER BY ultimaCompraEm DESC, nome ASC, fornecedorReferencia ASC`,
+      [req.params.id, req.params.id]
     );
 
     res.json(itens);
@@ -793,7 +957,12 @@ app.put("/api/clientes/:id/orcamento-padrao", (req, res) => {
         execute(
           `INSERT INTO cliente_orcamento_itens
              (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
-           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(clienteId, produtoId) DO UPDATE SET
+             quantidade = excluded.quantidade,
+             precoUnitario = excluded.precoUnitario,
+             faltante = excluded.faltante,
+             updatedAt = CURRENT_TIMESTAMP`,
           [id, item.produtoId, quantidade, precoUnitario, item.faltante ? 1 : 0]
         );
       }
@@ -811,6 +980,7 @@ app.put("/api/clientes/:id/orcamento-padrao", (req, res) => {
 app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
   try {
     const { clienteId, produtoId } = req.params;
+    const fornecedorId = req.body?.fornecedorId ? String(req.body.fornecedorId) : null;
     if (!queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL AND ativo = 1", [clienteId])) {
       return res.status(404).json({ error: "Cliente não encontrado ou inativo." });
     }
@@ -831,17 +1001,17 @@ app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
       [produtoId]
     );
     if (!produto) return res.status(404).json({ error: "Produto não encontrado ou inativo." });
-    const relacionamento = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
-      `SELECT precoAutorizado, ultimoPreco
-       FROM cliente_produtos_habituais
-       WHERE clienteId = ? AND produtoId = ?`,
-      [clienteId, produtoId]
-    );
-    const precoAnterior = Number(relacionamento?.precoAutorizado ?? relacionamento?.ultimoPreco ?? produto.precoVendaPadrao);
+    const contexto = resolverPrecoClienteProdutoFornecedor(clienteId, {
+      id: produtoId,
+      precoVendaPadrao: produto.precoVendaPadrao
+    }, fornecedorId);
+    const precoAnterior = contexto.precoMinimoSemPin;
 
-    salvarPrecoAutorizadoCliente(clienteId, produtoId, preco);
+    salvarPrecoAutorizadoCliente(clienteId, produtoId, preco, fornecedorId);
     registrarAuditoria(autorizador.id, "preco_cliente_atualizado", "cliente", clienteId, {
       produtoId,
+      fornecedorId,
+      fornecedorReferencia: contexto.fornecedorReferencia,
       precoAnterior,
       precoAutorizado: preco,
       origem: String(req.body?.origem || "cadastro_cliente"),
@@ -856,26 +1026,51 @@ app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
 app.delete("/api/clientes/:clienteId/produtos/:produtoId", (req, res) => {
   try {
     const { clienteId, produtoId } = req.params;
+    const fornecedorId = req.body?.fornecedorId ? String(req.body.fornecedorId) : null;
+    const administrador = getUsuarioAdministrador();
+    if (!administrador?.pinHash) {
+      return res.status(428).json({ error: "Configure o PIN administrativo antes de excluir preços de clientes." });
+    }
+    const autorizador = validarPinAdministrador(req.body?.pin);
+    if (!autorizador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. O preço não foi excluído." });
+    }
     const resultado = runInTransaction(() => {
-      const relacionamento = queryOne(
-        `SELECT clienteId, produtoId
-         FROM cliente_produtos_habituais
-         WHERE clienteId = ? AND produtoId = ?`,
-        [clienteId, produtoId]
-      );
+      const relacionamento = fornecedorId
+        ? queryOne(
+            `SELECT clienteId, produtoId
+             FROM cliente_produto_fornecedor_precos
+             WHERE clienteId = ? AND produtoId = ? AND fornecedorId = ?`,
+            [clienteId, produtoId, fornecedorId]
+          )
+        : queryOne(
+            `SELECT clienteId, produtoId
+             FROM cliente_produtos_habituais
+             WHERE clienteId = ? AND produtoId = ?`,
+            [clienteId, produtoId]
+          );
       if (!relacionamento) {
         throw erroHttp("Produto não encontrado nos preços deste cliente.", 404);
       }
-      execute(
-        `UPDATE cliente_produtos_habituais
-         SET oculto = 1, updatedAt = CURRENT_TIMESTAMP
-         WHERE clienteId = ? AND produtoId = ?`,
-        [clienteId, produtoId]
-      );
-      execute(
-        "DELETE FROM cliente_orcamento_itens WHERE clienteId = ? AND produtoId = ?",
-        [clienteId, produtoId]
-      );
+      if (fornecedorId) {
+        execute(
+          `UPDATE cliente_produto_fornecedor_precos
+           SET oculto = 1, updatedAt = CURRENT_TIMESTAMP
+           WHERE clienteId = ? AND produtoId = ? AND fornecedorId = ?`,
+          [clienteId, produtoId, fornecedorId]
+        );
+      } else {
+        execute(
+          `UPDATE cliente_produtos_habituais
+           SET oculto = 1, updatedAt = CURRENT_TIMESTAMP
+           WHERE clienteId = ? AND produtoId = ?`,
+          [clienteId, produtoId]
+        );
+        execute(
+          "DELETE FROM cliente_orcamento_itens WHERE clienteId = ? AND produtoId = ?",
+          [clienteId, produtoId]
+        );
+      }
       const abertos = queryAll<{ id: string }>(
         `SELECT id FROM orcamentos
          WHERE clienteId = ? AND status = 'aberto' AND deletedAt IS NULL`,
@@ -883,8 +1078,10 @@ app.delete("/api/clientes/:clienteId/produtos/:produtoId", (req, res) => {
       );
       for (const orcamento of abertos) {
         execute(
-          "DELETE FROM itens_orcamento WHERE orcamentoId = ? AND produtoId = ?",
-          [orcamento.id, produtoId]
+          fornecedorId
+            ? "DELETE FROM itens_orcamento WHERE orcamentoId = ? AND produtoId = ? AND fornecedorId = ?"
+            : "DELETE FROM itens_orcamento WHERE orcamentoId = ? AND produtoId = ? AND fornecedorId IS NULL",
+          fornecedorId ? [orcamento.id, produtoId, fornecedorId] : [orcamento.id, produtoId]
         );
         const totais = queryOne<{ subtotal: number }>(
           "SELECT COALESCE(SUM(total), 0) AS subtotal FROM itens_orcamento WHERE orcamentoId = ?",
@@ -905,7 +1102,10 @@ app.delete("/api/clientes/:clienteId/produtos/:produtoId", (req, res) => {
       }
       return true;
     });
-    registrarAuditoria(null, "produto_cliente_removido", "cliente", clienteId, { produtoId });
+    registrarAuditoria(autorizador.id, "produto_cliente_removido", "cliente", clienteId, {
+      produtoId,
+      fornecedorId
+    });
     res.json({ success: resultado });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
@@ -926,17 +1126,28 @@ app.get("/api/fornecedores", (req, res) => {
 app.post("/api/fornecedores", (req, res) => {
   try {
     const { nome, telefone, documento, observacoes, ativo, isWhatsapp } = req.body;
+    const referencia = String(req.body?.referencia || "").trim().toUpperCase();
     if (!nome) {
       return res.status(400).json({ error: "Nome é obrigatório." });
     }
+    if (!referencia) {
+      return res.status(400).json({ error: "A referência do fornecedor é obrigatória." });
+    }
+    const referenciaExistente = queryOne(
+      "SELECT id FROM fornecedores WHERE LOWER(referencia) = LOWER(?) AND deletedAt IS NULL",
+      [referencia]
+    );
+    if (referenciaExistente) {
+      return res.status(409).json({ error: "Já existe um fornecedor com esta referência." });
+    }
     const id = "for_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
     execute(
-      `INSERT INTO fornecedores (id, nome, telefone, documento, observacoes, ativo, isWhatsapp)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, nome, telefone || null, documento || null, observacoes || null, ativo !== undefined ? (ativo ? 1 : 0) : 1, isWhatsapp !== undefined ? (isWhatsapp ? 1 : 0) : 0]
+      `INSERT INTO fornecedores (id, nome, referencia, telefone, documento, observacoes, ativo, isWhatsapp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, nome, referencia, telefone || null, documento || null, observacoes || null, ativo !== undefined ? (ativo ? 1 : 0) : 1, isWhatsapp !== undefined ? (isWhatsapp ? 1 : 0) : 0]
     );
     const supplier = queryOne("SELECT * FROM fornecedores WHERE id = ?", [id]);
-    res.status(210).json(supplier);
+    res.status(201).json(supplier);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -946,14 +1157,25 @@ app.put("/api/fornecedores/:id", (req, res) => {
   try {
     const { id } = req.params;
     const { nome, telefone, documento, observacoes, ativo, isWhatsapp } = req.body;
+    const referencia = String(req.body?.referencia || "").trim().toUpperCase();
     if (!nome) {
       return res.status(400).json({ error: "Nome é obrigatório." });
     }
+    if (!referencia) {
+      return res.status(400).json({ error: "A referência do fornecedor é obrigatória." });
+    }
+    const referenciaExistente = queryOne(
+      "SELECT id FROM fornecedores WHERE LOWER(referencia) = LOWER(?) AND id <> ? AND deletedAt IS NULL",
+      [referencia, id]
+    );
+    if (referenciaExistente) {
+      return res.status(409).json({ error: "Já existe outro fornecedor com esta referência." });
+    }
     execute(
       `UPDATE fornecedores
-       SET nome = ?, telefone = ?, documento = ?, observacoes = ?, ativo = ?, isWhatsapp = ?, updatedAt = CURRENT_TIMESTAMP
+       SET nome = ?, referencia = ?, telefone = ?, documento = ?, observacoes = ?, ativo = ?, isWhatsapp = ?, updatedAt = CURRENT_TIMESTAMP
        WHERE id = ? AND deletedAt IS NULL`,
-      [nome, telefone || null, documento || null, observacoes || null, ativo ? 1 : 0, isWhatsapp !== undefined ? (isWhatsapp ? 1 : 0) : 0, id]
+      [nome, referencia, telefone || null, documento || null, observacoes || null, ativo ? 1 : 0, isWhatsapp !== undefined ? (isWhatsapp ? 1 : 0) : 0, id]
     );
     const updated = queryOne("SELECT * FROM fornecedores WHERE id = ?", [id]);
     res.json(updated);
@@ -979,12 +1201,17 @@ app.get("/api/fornecedores/:id/produtos", (req, res) => {
     if (!fornecedor) return res.status(404).json({ error: "Fornecedor não encontrado." });
 
     const produtos = queryAll(
-      `SELECT fp.fornecedorId, fp.produtoId, fp.codigoFornecedor, fp.observacao, fp.ativo,
+      `SELECT fp.fornecedorId, fp.produtoId, f.referencia AS fornecedorReferencia, fp.custoFornecedor,
+              fp.precoVendaFornecedor, fp.observacao, fp.ativo,
               p.nome as produtoNome, p.codigo as produtoCodigo, p.unidade, p.precoVendaPadrao,
               (SELECT ic.custoUnitario
                FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
                WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
-               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1) as ultimoCusto,
+               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1) as ultimoCustoCompra,
+              COALESCE(fp.custoFornecedor, (SELECT ic.custoUnitario
+               FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
+               WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
+               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1), p.custoPadrao, 0) as ultimoCusto,
               (SELECT c.data
                FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
                WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
@@ -994,6 +1221,7 @@ app.get("/api/fornecedores/:id/produtos", (req, res) => {
                WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL) as comprasRealizadas
        FROM fornecedor_produtos fp
        JOIN produtos p ON p.id = fp.produtoId
+       JOIN fornecedores f ON f.id = fp.fornecedorId
        WHERE fp.fornecedorId = ? AND fp.ativo = 1 AND p.deletedAt IS NULL
        ORDER BY p.nome ASC`,
       [req.params.id]
@@ -1010,15 +1238,28 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
     const produto = queryOne("SELECT id FROM produtos WHERE id = ? AND deletedAt IS NULL", [req.body?.produtoId]);
     if (!fornecedor || !produto) return res.status(404).json({ error: "Fornecedor ou produto não encontrado." });
 
+    const custoFornecedor = Number(req.body?.custoFornecedor ?? 0);
+    const precoVendaFornecedor = Number(req.body?.precoVendaFornecedor ?? 0);
+    if (!Number.isFinite(custoFornecedor) || custoFornecedor < 0 || !Number.isFinite(precoVendaFornecedor) || precoVendaFornecedor < 0) {
+      return res.status(400).json({ error: "Custo e preço-base do fornecedor devem ser valores válidos." });
+    }
     execute(
-      `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, codigoFornecedor, observacao, ativo)
-       VALUES (?, ?, ?, ?, 1)
+      `INSERT INTO fornecedor_produtos
+         (fornecedorId, produtoId, custoFornecedor, precoVendaFornecedor, observacao, ativo)
+       VALUES (?, ?, ?, ?, ?, 1)
        ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET
-         codigoFornecedor = excluded.codigoFornecedor,
+         custoFornecedor = excluded.custoFornecedor,
+         precoVendaFornecedor = excluded.precoVendaFornecedor,
          observacao = excluded.observacao,
          ativo = 1,
          updatedAt = CURRENT_TIMESTAMP`,
-      [req.params.id, req.body.produtoId, req.body.codigoFornecedor || null, req.body.observacao || null]
+      [
+        req.params.id,
+        req.body.produtoId,
+        custoFornecedor,
+        precoVendaFornecedor,
+        req.body.observacao || null
+      ]
     );
     res.status(201).json({ success: true });
   } catch (error: any) {
@@ -1030,7 +1271,7 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
 // 5. PRODUTOS
 app.get("/api/produtos", (req, res) => {
   try {
-    const rows = queryAll(`
+    const rows = queryAll<any>(`
       SELECT
         p.*,
         (
@@ -1055,7 +1296,63 @@ app.get("/api/produtos", (req, res) => {
       WHERE p.deletedAt IS NULL
       ORDER BY p.nome ASC
     `);
-    res.json(rows);
+    const fornecedores = queryAll<any>(`
+      SELECT
+        fp.produtoId,
+        fp.fornecedorId,
+        f.nome AS fornecedorNome,
+        f.referencia AS fornecedorReferencia,
+        fp.custoFornecedor,
+        fp.precoVendaFornecedor,
+        (
+          SELECT ic.custoUnitario
+          FROM itens_compra ic
+          JOIN compras c ON c.id = ic.compraId
+          WHERE ic.produtoId = fp.produtoId
+            AND c.fornecedorId = fp.fornecedorId
+            AND c.deletedAt IS NULL
+          ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+          LIMIT 1
+        ) AS ultimoCustoCompra,
+        COALESCE(
+          fp.custoFornecedor,
+          (
+            SELECT ic.custoUnitario
+            FROM itens_compra ic
+            JOIN compras c ON c.id = ic.compraId
+            WHERE ic.produtoId = fp.produtoId
+              AND c.fornecedorId = fp.fornecedorId
+              AND c.deletedAt IS NULL
+            ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+            LIMIT 1
+          ),
+          0
+        ) AS ultimoCusto,
+        (
+          SELECT c.data
+          FROM itens_compra ic
+          JOIN compras c ON c.id = ic.compraId
+          WHERE ic.produtoId = fp.produtoId
+            AND c.fornecedorId = fp.fornecedorId
+            AND c.deletedAt IS NULL
+          ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+          LIMIT 1
+        ) AS ultimaCompraEm
+      FROM fornecedor_produtos fp
+      JOIN fornecedores f ON f.id = fp.fornecedorId
+      WHERE fp.ativo = 1 AND f.ativo = 1 AND f.deletedAt IS NULL
+      ORDER BY f.nome ASC
+    `);
+    const fornecedoresPorProduto = new Map<string, any[]>();
+    for (const fornecedor of fornecedores) {
+      const lista = fornecedoresPorProduto.get(fornecedor.produtoId) || [];
+      lista.push(fornecedor);
+      fornecedoresPorProduto.set(fornecedor.produtoId, lista);
+    }
+    res.json(rows.map((produto) => ({
+      ...produto,
+      fornecedores: fornecedoresPorProduto.get(produto.id) || []
+    })));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -1067,12 +1364,17 @@ app.get("/api/produtos/:id/fornecedores", (req, res) => {
     if (!produto) return res.status(404).json({ error: "Produto não encontrado." });
 
     const fornecedores = queryAll(
-      `SELECT fp.fornecedorId, fp.produtoId, fp.codigoFornecedor, fp.observacao, fp.ativo,
+      `SELECT fp.fornecedorId, fp.produtoId, f.referencia AS fornecedorReferencia, fp.custoFornecedor,
+              fp.precoVendaFornecedor, fp.observacao, fp.ativo,
               f.nome as fornecedorNome, f.telefone as fornecedorTelefone,
               (SELECT ic.custoUnitario
                FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
                WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
-               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1) as ultimoCusto,
+               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1) as ultimoCustoCompra,
+              COALESCE(fp.custoFornecedor, (SELECT ic.custoUnitario
+               FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
+               WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
+               ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1), 0) as ultimoCusto,
               (SELECT c.data
                FROM itens_compra ic JOIN compras c ON c.id = ic.compraId
                WHERE c.fornecedorId = fp.fornecedorId AND ic.produtoId = fp.produtoId AND c.deletedAt IS NULL
@@ -1092,9 +1394,93 @@ app.get("/api/produtos/:id/fornecedores", (req, res) => {
   }
 });
 
+interface ConfiguracaoFornecedorProduto {
+  fornecedorId: string;
+  custoFornecedor: number;
+  precoVendaFornecedor: number;
+}
+
+function normalizarConfiguracoesFornecedores(
+  body: any,
+  custoPadrao: number,
+  precoVendaPadrao: number
+): ConfiguracaoFornecedorProduto[] | null {
+  const possuiConfiguracoes = Array.isArray(body?.fornecedores);
+  const entradas = possuiConfiguracoes
+    ? body.fornecedores
+    : Array.isArray(body?.fornecedorIds)
+      ? body.fornecedorIds.map((fornecedorId: unknown) => ({
+          fornecedorId,
+          custoFornecedor: custoPadrao,
+          precoVendaFornecedor: precoVendaPadrao
+        }))
+      : null;
+  if (entradas === null) return null;
+
+  const configuracoes: ConfiguracaoFornecedorProduto[] = [];
+  const ids = new Set<string>();
+  for (const entrada of entradas) {
+    const fornecedorId = String(entrada?.fornecedorId || "").trim();
+    const custoFornecedor = Number(entrada?.custoFornecedor);
+    const precoVendaFornecedor = Number(entrada?.precoVendaFornecedor);
+    if (!fornecedorId) throw erroHttp("Selecione o fornecedor em todas as linhas.", 400);
+    if (ids.has(fornecedorId)) throw erroHttp("O mesmo fornecedor não pode aparecer mais de uma vez no produto.", 400);
+    if (!Number.isFinite(custoFornecedor) || custoFornecedor < 0) {
+      throw erroHttp("Informe um custo válido em todas as linhas de fornecedor.", 400);
+    }
+    if (!Number.isFinite(precoVendaFornecedor) || precoVendaFornecedor < 0) {
+      throw erroHttp("Informe um preço-base de venda válido em todas as linhas de fornecedor.", 400);
+    }
+    ids.add(fornecedorId);
+    configuracoes.push({
+      fornecedorId,
+      custoFornecedor,
+      precoVendaFornecedor
+    });
+  }
+
+  if (configuracoes.length > 0) {
+    const fornecedoresValidos = queryAll<{ id: string }>(
+      `SELECT id FROM fornecedores
+       WHERE id IN (${configuracoes.map(() => "?").join(",")})
+         AND deletedAt IS NULL AND ativo = 1`,
+      configuracoes.map((item) => item.fornecedorId)
+    );
+    if (fornecedoresValidos.length !== configuracoes.length) {
+      throw erroHttp("Um ou mais fornecedores selecionados são inválidos.", 400);
+    }
+  }
+  return configuracoes;
+}
+
+function salvarConfiguracoesFornecedoresProduto(
+  produtoId: string,
+  configuracoes: ConfiguracaoFornecedorProduto[]
+) {
+  execute("UPDATE fornecedor_produtos SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE produtoId = ?", [produtoId]);
+  for (const configuracao of configuracoes) {
+    execute(
+      `INSERT INTO fornecedor_produtos
+         (fornecedorId, produtoId, custoFornecedor, precoVendaFornecedor, ativo)
+       VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET
+         custoFornecedor = excluded.custoFornecedor,
+         precoVendaFornecedor = excluded.precoVendaFornecedor,
+         ativo = 1,
+         updatedAt = CURRENT_TIMESTAMP`,
+      [
+        configuracao.fornecedorId,
+        produtoId,
+        configuracao.custoFornecedor,
+        configuracao.precoVendaFornecedor
+      ]
+    );
+  }
+}
+
 app.post("/api/produtos", (req, res) => {
   try {
-    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, fornecedorIds } = req.body;
+    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo } = req.body;
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
@@ -1104,18 +1490,11 @@ app.post("/api/produtos", (req, res) => {
     if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
       return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
     }
-    const fornecedoresSelecionados = [...new Set(
-      Array.isArray(fornecedorIds) ? fornecedorIds.filter((id): id is string => typeof id === "string" && id.trim() !== "") : []
-    )];
-    if (fornecedoresSelecionados.length > 0) {
-      const fornecedoresValidos = queryAll<{ id: string }>(
-        `SELECT id FROM fornecedores WHERE id IN (${fornecedoresSelecionados.map(() => "?").join(",")}) AND deletedAt IS NULL AND ativo = 1`,
-        fornecedoresSelecionados
-      );
-      if (fornecedoresValidos.length !== fornecedoresSelecionados.length) {
-        return res.status(400).json({ error: "Um ou mais fornecedores selecionados são inválidos." });
-      }
-    }
+    const configuracoesFornecedores = normalizarConfiguracoesFornecedores(
+      req.body,
+      Number(custoPadrao),
+      Number(precoVendaPadrao)
+    ) || [];
     const id = "prod_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
     runInTransaction(() => {
       execute(
@@ -1136,26 +1515,19 @@ app.post("/api/produtos", (req, res) => {
           ativo !== undefined ? (ativo ? 1 : 0) : 1
         ]
       );
-      for (const fornecedorId of fornecedoresSelecionados) {
-        execute(
-          `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
-           VALUES (?, ?, 1)
-           ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
-          [fornecedorId, id]
-        );
-      }
+      salvarConfiguracoesFornecedoresProduto(id, configuracoesFornecedores);
     });
     const product = queryOne("SELECT * FROM produtos WHERE id = ?", [id]);
     res.status(201).json(product);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
 app.put("/api/produtos/:id", (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo, fornecedorIds } = req.body;
+    const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo } = req.body;
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
@@ -1165,19 +1537,11 @@ app.put("/api/produtos/:id", (req, res) => {
     if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
       return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
     }
-    const sincronizarFornecedores = Array.isArray(fornecedorIds);
-    const fornecedoresSelecionados = [...new Set(
-      sincronizarFornecedores ? fornecedorIds.filter((fornecedorId): fornecedorId is string => typeof fornecedorId === "string" && fornecedorId.trim() !== "") : []
-    )];
-    if (fornecedoresSelecionados.length > 0) {
-      const fornecedoresValidos = queryAll<{ id: string }>(
-        `SELECT id FROM fornecedores WHERE id IN (${fornecedoresSelecionados.map(() => "?").join(",")}) AND deletedAt IS NULL AND ativo = 1`,
-        fornecedoresSelecionados
-      );
-      if (fornecedoresValidos.length !== fornecedoresSelecionados.length) {
-        return res.status(400).json({ error: "Um ou mais fornecedores selecionados são inválidos." });
-      }
-    }
+    const configuracoesFornecedores = normalizarConfiguracoesFornecedores(
+      req.body,
+      Number(custoPadrao),
+      Number(precoVendaPadrao)
+    );
     runInTransaction(() => {
       execute(
         `UPDATE produtos
@@ -1197,22 +1561,14 @@ app.put("/api/produtos/:id", (req, res) => {
           id
         ]
       );
-      if (sincronizarFornecedores) {
-        execute("UPDATE fornecedor_produtos SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE produtoId = ?", [id]);
-        for (const fornecedorId of fornecedoresSelecionados) {
-          execute(
-            `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
-             VALUES (?, ?, 1)
-             ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
-            [fornecedorId, id]
-          );
-        }
+      if (configuracoesFornecedores !== null) {
+        salvarConfiguracoesFornecedoresProduto(id, configuracoesFornecedores);
       }
     });
     const updated = queryOne("SELECT * FROM produtos WHERE id = ?", [id]);
     res.json(updated);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 
@@ -1310,9 +1666,12 @@ app.post("/api/orcamentos", (req, res) => {
     if (!clienteId || !data || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Informe cliente, data e ao menos um item para o orçamento." });
     }
-    const produtosDoOrcamento = items.map((item: any) => String(item?.produtoId || ""));
-    if (produtosDoOrcamento.some((produtoId: string) => !produtoId) || new Set(produtosDoOrcamento).size !== produtosDoOrcamento.length) {
-      return res.status(400).json({ error: "O mesmo produto não pode ser adicionado duas vezes no orçamento." });
+    const variantesDoOrcamento = items.map((item: any) => ({
+      produtoId: String(item?.produtoId || ""),
+      chave: `${String(item?.produtoId || "")}::${String(item?.fornecedorId || "")}`
+    }));
+    if (variantesDoOrcamento.some((item: any) => !item.produtoId) || new Set(variantesDoOrcamento.map((item: any) => item.chave)).size !== variantesDoOrcamento.length) {
+      return res.status(400).json({ error: "A mesma combinação de produto e fornecedor não pode aparecer duas vezes no orçamento." });
     }
     if (!queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [clienteId])) {
       return res.status(404).json({ error: "Cliente não encontrado." });
@@ -1353,17 +1712,10 @@ app.post("/api/orcamentos", (req, res) => {
         }
         const total = (quantidade * precoUnitario) - descontoItem;
         if (total < 0) throw erroHttp(`O desconto de ${produto.nome} é maior que o valor do item.`, 400);
-        const preferenciaCliente = queryOne<{ precoAutorizado: number | null; ultimoPreco: number | null }>(
-          `SELECT precoAutorizado, ultimoPreco
-           FROM cliente_produtos_habituais
-           WHERE clienteId = ? AND produtoId = ?`,
-          [clienteId, produto.id]
-        );
-        const precoMinimoSemPin = Number(
-          preferenciaCliente?.precoAutorizado
-          ?? preferenciaCliente?.ultimoPreco
-          ?? produto.precoVendaPadrao
-          ?? 0
+        const contextoPreco = resolverPrecoClienteProdutoFornecedor(
+          clienteId,
+          produto,
+          item.fornecedorId ? String(item.fornecedorId) : null
         );
         subtotal += total;
         return {
@@ -1376,7 +1728,9 @@ app.post("/api/orcamentos", (req, res) => {
           desconto: descontoItem,
           total,
           faltante: item.faltante ? 1 : 0,
-          precoMinimoSemPin
+          fornecedorId: contextoPreco.fornecedorId,
+          fornecedorReferencia: contextoPreco.fornecedorReferencia,
+          precoMinimoSemPin: contextoPreco.precoMinimoSemPin
         };
       });
 
@@ -1434,11 +1788,11 @@ app.post("/api/orcamentos", (req, res) => {
       for (const item of itensResolvidos) {
         execute(
           `INSERT INTO itens_orcamento
-             (id, orcamentoId, produtoId, descricao, quantidade, unidade, precoUnitario, desconto, total, faltante)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [item.id, orcamentoId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total, item.faltante]
+             (id, orcamentoId, produtoId, fornecedorId, fornecedorReferencia, descricao, quantidade, unidade, precoUnitario, desconto, total, faltante)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [item.id, orcamentoId, item.produtoId, item.fornecedorId, item.fornecedorReferencia, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.desconto, item.total, item.faltante]
         );
-        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, item.precoUnitario * fatorPrecoEfetivo);
+        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, item.precoUnitario * fatorPrecoEfetivo, item.fornecedorId);
       }
 
       // O orçamento operacional é também a lista de pedido permanente deste
@@ -1448,7 +1802,12 @@ app.post("/api/orcamentos", (req, res) => {
         execute(
           `INSERT INTO cliente_orcamento_itens
              (clienteId, produtoId, quantidade, precoUnitario, faltante, updatedAt)
-           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+           VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(clienteId, produtoId) DO UPDATE SET
+             quantidade = excluded.quantidade,
+             precoUnitario = excluded.precoUnitario,
+             faltante = excluded.faltante,
+             updatedAt = CURRENT_TIMESTAMP`,
           [clienteId, item.produtoId, item.quantidade, item.precoUnitario, item.faltante]
         );
       }
@@ -1670,9 +2029,16 @@ app.post("/api/vendas", (req, res) => {
     if (!clienteId || !data || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Dados da venda incompletos ou vazios." });
     }
-    const produtosDaVenda = items.map((item: any) => String(item?.produtoId || ""));
-    if (produtosDaVenda.some((produtoId: string) => !produtoId) || new Set(produtosDaVenda).size !== produtosDaVenda.length) {
-      return res.status(400).json({ error: "O mesmo produto não pode ser adicionado duas vezes na venda." });
+    const observacoesVenda = String(observacoes || "").trim();
+    if (observacoesVenda.length > 100) {
+      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+    }
+    const variantesDaVenda = items.map((item: any) => ({
+      produtoId: String(item?.produtoId || ""),
+      chave: `${String(item?.produtoId || "")}::${String(item?.fornecedorId || "")}`
+    }));
+    if (variantesDaVenda.some((item: any) => !item.produtoId) || new Set(variantesDaVenda.map((item: any) => item.chave)).size !== variantesDaVenda.length) {
+      return res.status(400).json({ error: "A mesma combinação de produto e fornecedor não pode aparecer duas vezes na venda." });
     }
 
     const nextSeqRow = queryOne<{ maxSeq: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) as maxSeq FROM vendas");
@@ -1716,15 +2082,12 @@ app.post("/api/vendas", (req, res) => {
           throw new Error(`Quantidade, preço ou desconto inválido para o produto ${prod.nome}.`);
         }
 
-        const custoUnit = Number(prod.custoPadrao || 0);
-        const precoPadraoUnidade = Number(prod.precoVendaPadrao || 0);
-        const preferenciaCliente = queryOne<{ precoAutorizado: number | null }>(
-          `SELECT precoAutorizado
-           FROM cliente_produtos_habituais
-           WHERE clienteId = ? AND produtoId = ?`,
-          [clienteId, it.produtoId]
+        const contextoPreco = resolverPrecoClienteProdutoFornecedor(
+          clienteId,
+          prod,
+          it.fornecedorId ? String(it.fornecedorId) : null
         );
-        const precoMinimoSemPin = preferenciaCliente?.precoAutorizado ?? precoPadraoUnidade;
+        const custoUnit = contextoPreco.custoUnitario;
 
         // Calculate totals
         const totalItem = (qty * precoUnit) - descItem;
@@ -1745,7 +2108,9 @@ app.post("/api/vendas", (req, res) => {
           total: totalItem,
           custoTotal: totalCustoItem,
           lucroBruto: lucroItem,
-          precoMinimoSemPin
+          fornecedorId: contextoPreco.fornecedorId,
+          fornecedorReferencia: contextoPreco.fornecedorReferencia,
+          precoMinimoSemPin: contextoPreco.precoMinimoSemPin
         };
       });
 
@@ -1832,7 +2197,7 @@ app.post("/api/vendas", (req, res) => {
       execute(
         `INSERT INTO vendas (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante, status, vencimento, observacoes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [vendaId, nextSeq, clienteId, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimentoPrincipal, observacoes || null]
+        [vendaId, nextSeq, clienteId, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimentoPrincipal, observacoesVenda || null]
       );
       if (parcelasResolvidas.length > 0) {
         inserirParcelasVale(vendaId, parcelasResolvidas);
@@ -1842,9 +2207,9 @@ app.post("/api/vendas", (req, res) => {
       // Insert Itens Venda
       for (const it of resolvedItems) {
         execute(
-          `INSERT INTO itens_venda (id, vendaId, produtoId, descricao, quantidade, unidade, precoUnitario, custoUnitario, desconto, total, custoTotal, lucroBruto)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [it.id, vendaId, it.produtoId, it.descricao, it.quantidade, it.unidade, it.precoUnitario, it.custoUnitario, it.desconto, it.total, it.custoTotal, it.lucroBruto]
+          `INSERT INTO itens_venda (id, vendaId, produtoId, fornecedorId, fornecedorReferencia, descricao, quantidade, unidade, precoUnitario, custoUnitario, desconto, total, custoTotal, lucroBruto)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [it.id, vendaId, it.produtoId, it.fornecedorId, it.fornecedorReferencia, it.descricao, it.quantidade, it.unidade, it.precoUnitario, it.custoUnitario, it.desconto, it.total, it.custoTotal, it.lucroBruto]
         );
       }
 
@@ -1898,7 +2263,7 @@ app.post("/api/vendas", (req, res) => {
       // referência atual, enquanto o preço praticado permanece preservado no item.
       for (const item of resolvedItems) {
         const precoEfetivo = item.precoUnitario * fatorPrecoEfetivo;
-        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, precoEfetivo);
+        salvarPrecoAutorizadoCliente(clienteId, item.produtoId, precoEfetivo, item.fornecedorId);
       }
 
       if (itensQueExigemAutorizacao.length > 0 && administradorAutorizador) {
@@ -1912,6 +2277,7 @@ app.post("/api/vendas", (req, res) => {
             numeroSequencial: nextSeq,
             itens: itensQueExigemAutorizacao.map((item) => ({
               produtoId: item.produtoId,
+              fornecedorId: item.fornecedorId,
               precoAnteriorPermitido: item.precoMinimoSemPin,
               precoAutorizado: item.precoEfetivo
             }))
@@ -2084,6 +2450,10 @@ app.put("/api/vendas/:id", (req, res) => {
       return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi alterada." });
     }
     const vendaId = req.params.id;
+    const observacoesVenda = String(req.body?.observacoes || "").trim();
+    if (observacoesVenda.length > 100) {
+      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+    }
     const itensInformados = Array.isArray(req.body?.items) ? req.body.items : [];
     if (itensInformados.length === 0) {
       return res.status(400).json({ error: "A venda deve manter ao menos um item." });
@@ -2105,7 +2475,7 @@ app.put("/api/vendas/:id", (req, res) => {
       const atuaisPorId = new Map(itensAtuais.map((item) => [item.id, item]));
       const idsInformados = new Set<string>();
       const chavesInformadas = new Set<string>();
-      const produtosInformados = new Set<string>();
+      const variantesInformadas = new Set<string>();
       const resolvidos = itensInformados.map((entrada: any) => {
         const chave = String(entrada.id || "");
         if (!chave || chavesInformadas.has(chave)) {
@@ -2120,13 +2490,20 @@ app.put("/api/vendas/:id", (req, res) => {
             [entrada.produtoId]
           );
           if (!produto) throw erroHttp("Um produto adicionado não existe ou está inativo.", 400);
+          const contextoPreco = resolverPrecoClienteProdutoFornecedor(
+            venda.clienteId,
+            produto,
+            entrada.fornecedorId ? String(entrada.fornecedorId) : null
+          );
           atual = {
             id: "iv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
             vendaId,
             produtoId: produto.id,
+            fornecedorId: contextoPreco.fornecedorId,
+            fornecedorReferencia: contextoPreco.fornecedorReferencia,
             descricao: produto.nome,
             unidade: produto.unidade,
-            custoUnitario: Number(produto.custoPadrao || 0),
+            custoUnitario: contextoPreco.custoUnitario,
             desconto: 0,
             quantidadeDevolvida: 0,
             itemNovo: true
@@ -2134,10 +2511,11 @@ app.put("/api/vendas/:id", (req, res) => {
         } else {
           idsInformados.add(atual.id);
         }
-        if (produtosInformados.has(atual.produtoId)) {
-          throw erroHttp(`O produto ${atual.descricao} não pode aparecer duas vezes na mesma venda.`, 400);
+        const chaveVariante = `${atual.produtoId}::${atual.fornecedorId || ""}`;
+        if (variantesInformadas.has(chaveVariante)) {
+          throw erroHttp(`A combinação de produto e fornecedor de ${atual.descricao} não pode aparecer duas vezes na mesma venda.`, 400);
         }
-        produtosInformados.add(atual.produtoId);
+        variantesInformadas.add(chaveVariante);
         const quantidade = Number(entrada.quantidade);
         const precoUnitario = Number(entrada.precoUnitario);
         const descontoItem = Number(entrada.desconto ?? atual.desconto ?? 0);
@@ -2177,9 +2555,9 @@ app.put("/api/vendas/:id", (req, res) => {
         if (item.itemNovo) {
           execute(
             `INSERT INTO itens_venda
-               (id, vendaId, produtoId, descricao, quantidade, unidade, precoUnitario, custoUnitario, desconto, total, custoTotal, lucroBruto)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [item.id, vendaId, item.produtoId, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.custoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto]
+               (id, vendaId, produtoId, fornecedorId, fornecedorReferencia, descricao, quantidade, unidade, precoUnitario, custoUnitario, desconto, total, custoTotal, lucroBruto)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [item.id, vendaId, item.produtoId, item.fornecedorId, item.fornecedorReferencia, item.descricao, item.quantidade, item.unidade, item.precoUnitario, item.custoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto]
           );
         } else {
           execute(
@@ -2188,7 +2566,7 @@ app.put("/api/vendas/:id", (req, res) => {
             [item.quantidade, item.precoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto, item.id]
           );
         }
-        salvarPrecoAutorizadoCliente(venda.clienteId, item.produtoId, item.precoUnitario);
+        salvarPrecoAutorizadoCliente(venda.clienteId, item.produtoId, item.precoUnitario, item.fornecedorId);
       }
       for (const atual of itensAtuais) {
         if (!idsInformados.has(atual.id)) execute("DELETE FROM itens_venda WHERE id = ?", [atual.id]);
@@ -2223,7 +2601,7 @@ app.put("/api/vendas/:id", (req, res) => {
           novoSaldo,
           novoSaldo <= 0.005 ? "paga" : "pendente",
           primeiroVencimento,
-          String(req.body?.observacoes || "").trim() || null,
+          observacoesVenda || null,
           vendaId
         ]
       );
@@ -2282,6 +2660,10 @@ app.put("/api/vales/:id", (req, res) => {
     if (venda.status === "cancelada") {
       return res.status(409).json({ error: "Um vale cancelado não pode ser alterado." });
     }
+    const observacoesVale = String(req.body?.observacoes || "").trim();
+    if (observacoesVale.length > 100) {
+      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+    }
 
     const parcelasAnteriores = queryAll<any>(
       "SELECT numero, vencimento, valor, valorPago, saldo, status FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY numero",
@@ -2293,7 +2675,7 @@ app.put("/api/vales/:id", (req, res) => {
       inserirParcelasVale(id, parcelas);
       execute(
         "UPDATE vendas SET vencimento = ?, observacoes = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-        [parcelas[0].vencimento, String(req.body?.observacoes || "").trim() || null, id]
+        [parcelas[0].vencimento, observacoesVale || null, id]
       );
       recalcularParcelasVale(id);
       registrarAuditoria(administrador.id, "vale_replanejado", "venda", id, {
@@ -2302,7 +2684,7 @@ app.put("/api/vales/:id", (req, res) => {
         parcelasAnteriores,
         parcelasNovas: parcelas,
         observacoesAnteriores: venda.observacoes || null,
-        observacoesNovas: String(req.body?.observacoes || "").trim() || null
+        observacoesNovas: observacoesVale || null
       });
     });
 
@@ -3041,6 +3423,7 @@ app.get("/api/relatorios", (req, res) => {
     const itensVendidos = queryAll<any>(
       `SELECT
          iv.*,
+         p.custoPadrao AS custoAtualProduto,
          v.data,
          v.numeroSequencial,
          v.subtotal AS vendaSubtotal,
@@ -3062,10 +3445,22 @@ app.get("/api/relatorios", (req, res) => {
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
        JOIN clientes c ON v.clienteId = c.id
+       JOIN produtos p ON p.id = iv.produtoId
        ${itemWhere}
        ORDER BY v.data DESC`,
       itemParams
-    );
+    ).map((item) => {
+      const custoUnitario = Number(item.custoUnitario) > 0
+        ? Number(item.custoUnitario)
+        : Number(item.custoAtualProduto || 0);
+      const custoTotal = custoUnitario * Number(item.quantidade || 0);
+      return {
+        ...item,
+        custoUnitario,
+        custoTotal,
+        lucroBruto: Number(item.valorVendaLiquido || item.total || 0) - custoTotal
+      };
+    });
 
     // C. PAGAMENTOS RECEBIDOS
     let pagFilters = ["p.deletedAt IS NULL"];
@@ -3093,15 +3488,24 @@ app.get("/api/relatorios", (req, res) => {
          COALESCE(SUM(
            iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
          ), 0) as totalValor,
-         COALESCE(SUM(iv.custoTotal), 0) as totalCusto,
+         COALESCE(SUM(
+           CASE WHEN iv.custoUnitario > 0
+             THEN iv.custoTotal
+             ELSE iv.quantidade * COALESCE(p.custoPadrao, 0)
+           END
+         ), 0) as totalCusto,
          COALESCE(SUM(
            iv.total
            - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
-           - iv.custoTotal
+           - CASE WHEN iv.custoUnitario > 0
+               THEN iv.custoTotal
+               ELSE iv.quantidade * COALESCE(p.custoPadrao, 0)
+             END
          ), 0) as totalLucro,
          COUNT(DISTINCT iv.vendaId) as totalVendas
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
+       JOIN produtos p ON p.id = iv.produtoId
        ${itemWhere}
        GROUP BY iv.produtoId, iv.descricao
        ORDER BY totalLucro DESC`,

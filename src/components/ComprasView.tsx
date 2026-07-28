@@ -4,10 +4,12 @@ import { Fornecedor, Produto, Compra } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 const PAGE_SIZE = 12;
 
 export function ComprasView() {
+  const confirmacao = useConfirmacao();
   const [compras, setCompras] = useState<Compra[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -153,7 +155,11 @@ export function ComprasView() {
   };
 
   const handleCancelCompra = async (id: string) => {
-    if (confirm("Deseja realmente cancelar esta compra? O custo dos produtos voltará automaticamente para a compra válida anterior.")) {
+    if (await confirmacao.confirmar({
+      titulo: "Cancelar compra",
+      mensagem: "Deseja realmente cancelar esta compra? O custo dos produtos voltará automaticamente para a compra válida anterior.",
+      textoConfirmar: "Cancelar compra"
+    })) {
       try {
         await api.cancelarCompra(id);
         fetchData();
@@ -165,6 +171,7 @@ export function ComprasView() {
 
   return (
     <div className="space-y-6">
+      {confirmacao.dialogo}
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">

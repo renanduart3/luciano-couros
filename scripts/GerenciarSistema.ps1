@@ -23,7 +23,9 @@ $ServiceExecutable = Join-Path $ServiceDir "$ServiceName.Service.exe"
 $ServiceConfig = Join-Path $ServiceDir "$ServiceName.Service.xml"
 $WinSwDownloadUrl = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe"
 $TrayScript = Join-Path $PSScriptRoot "TrayIcon.ps1"
+$TrayLauncherScript = Join-Path $PSScriptRoot "AbrirControle.ps1"
 $TrayShortcutName = "Central de Tecidos.lnk"
+$TrayRecoveryShortcutName = "Central de Tecidos - Reabrir Controle.lnk"
 
 function Write-Step([string]$Message) {
     Write-Host "`n==> $Message" -ForegroundColor Cyan
@@ -306,18 +308,26 @@ function Write-ServiceConfig {
 }
 
 function Install-TrayShortcut {
-    if (-not (Test-Path -LiteralPath $TrayScript)) {
-        throw "O controlador da bandeja nao foi encontrado em $TrayScript."
+    if (-not (Test-Path -LiteralPath $TrayScript) -or -not (Test-Path -LiteralPath $TrayLauncherScript)) {
+        throw "Os arquivos do controlador da bandeja nao foram encontrados."
     }
-    $startupDir = [Environment]::GetFolderPath("Startup")
-    $shortcutPath = Join-Path $startupDir $TrayShortcutName
     $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($shortcutPath)
-    $shortcut.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TrayScript`""
-    $shortcut.WorkingDirectory = $ProjectRoot
-    $shortcut.IconLocation = (Join-Path $ProjectRoot "src\img\favicon.ico")
-    $shortcut.Save()
+    $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $iconPath = Join-Path $ProjectRoot "src\img\favicon.ico"
+    $shortcutTargets = @(
+        @{ Path = Join-Path ([Environment]::GetFolderPath("Startup")) $TrayShortcutName; Name = $TrayShortcutName },
+        @{ Path = Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayRecoveryShortcutName; Name = $TrayRecoveryShortcutName },
+        @{ Path = Join-Path ([Environment]::GetFolderPath("Programs")) $TrayRecoveryShortcutName; Name = $TrayRecoveryShortcutName }
+    )
+    foreach ($target in $shortcutTargets) {
+        $shortcut = $shell.CreateShortcut($target.Path)
+        $shortcut.TargetPath = $powershellPath
+        $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TrayLauncherScript`""
+        $shortcut.WorkingDirectory = $ProjectRoot
+        $shortcut.IconLocation = $iconPath
+        $shortcut.Description = "Reabre o controle da Central de Tecidos na bandeja do Windows."
+        $shortcut.Save()
+    }
 }
 
 function Install-SystemService {
@@ -363,6 +373,9 @@ function Uninstall-SystemService {
     }
     $shortcutPath = Join-Path ([Environment]::GetFolderPath("Startup")) $TrayShortcutName
     Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+    $desktopRecoveryShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayRecoveryShortcutName
+    $startMenuRecoveryShortcut = Join-Path ([Environment]::GetFolderPath("Programs")) $TrayRecoveryShortcutName
+    Remove-Item -LiteralPath $desktopRecoveryShortcut, $startMenuRecoveryShortcut -Force -ErrorAction SilentlyContinue
     Write-Host "Servico e inicializacao automatica do icone removidos." -ForegroundColor Green
 }
 
@@ -384,6 +397,7 @@ function Update-System {
     Backup-Databases
     Apply-UpdatePackage
     Build-System
+    Install-TrayShortcut
     $newVersion = Get-SystemVersion
     Start-System
     Register-UpdateHistory -PreviousVersion $previousVersion -NewVersion $newVersion

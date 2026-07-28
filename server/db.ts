@@ -93,6 +93,7 @@ export function initDatabase() {
       CREATE TABLE IF NOT EXISTS fornecedores (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
+        referencia TEXT,
         telefone TEXT,
         documento TEXT,
         observacoes TEXT,
@@ -333,6 +334,31 @@ export function initDatabase() {
 
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_produtos_habituais_cliente ON cliente_produtos_habituais (clienteId, oculto, ultimaCompraEm DESC)`).run();
 
+    // O mesmo produto pode possuir condições comerciais diferentes conforme
+    // o fornecedor. Mantemos a tabela habitual legada para itens antigos sem
+    // fornecedor e usamos esta projeção para as variantes identificadas.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS cliente_produto_fornecedor_precos (
+        clienteId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        fornecedorId TEXT NOT NULL,
+        ultimoPreco REAL NOT NULL,
+        ultimaQuantidade REAL,
+        ultimaUnidade TEXT NOT NULL,
+        vezesComprado INTEGER NOT NULL DEFAULT 0,
+        ultimaCompraEm TEXT NOT NULL,
+        precoAutorizado REAL,
+        oculto INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (clienteId, produtoId, fornecedorId),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (produtoId) REFERENCES produtos (id),
+        FOREIGN KEY (fornecedorId) REFERENCES fornecedores (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_produto_fornecedor_cliente ON cliente_produto_fornecedor_precos (clienteId, oculto, ultimaCompraEm DESC)`).run();
+
     // Catálogo opcional: o produto continua independente, mas pode ser
     // relacionado a um ou mais fornecedores antes ou depois da primeira compra.
     db.prepare(`
@@ -340,6 +366,8 @@ export function initDatabase() {
         fornecedorId TEXT NOT NULL,
         produtoId TEXT NOT NULL,
         codigoFornecedor TEXT,
+        custoFornecedor REAL,
+        precoVendaFornecedor REAL,
         observacao TEXT,
         ativo INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -574,11 +602,55 @@ export function initDatabase() {
   // Dynamic migrations for existing databases to support WhatsApp and product unit conversion fields
   try { db.prepare(`ALTER TABLE clientes ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN referencia TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeCompra TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeVenda TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN venderUnidadeCompra INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN custoManual REAL`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE fornecedor_produtos ADD COLUMN custoFornecedor REAL`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE fornecedor_produtos ADD COLUMN precoVendaFornecedor REAL`).run(); } catch (e) {}
+  db.prepare(`
+    UPDATE fornecedores
+    SET referencia = (
+      SELECT fp.codigoFornecedor
+      FROM fornecedor_produtos fp
+      WHERE fp.fornecedorId = fornecedores.id
+        AND TRIM(COALESCE(fp.codigoFornecedor, '')) <> ''
+      ORDER BY fp.updatedAt DESC, fp.createdAt DESC
+      LIMIT 1
+    )
+    WHERE TRIM(COALESCE(referencia, '')) = ''
+      AND EXISTS (
+        SELECT 1
+        FROM fornecedor_produtos fp
+        WHERE fp.fornecedorId = fornecedores.id
+          AND TRIM(COALESCE(fp.codigoFornecedor, '')) <> ''
+      )
+  `).run();
+  db.prepare(`
+    UPDATE fornecedor_produtos
+    SET custoFornecedor = COALESCE(
+          custoFornecedor,
+          (
+            SELECT ic.custoUnitario
+            FROM itens_compra ic
+            JOIN compras c ON c.id = ic.compraId
+            WHERE ic.produtoId = fornecedor_produtos.produtoId
+              AND c.fornecedorId = fornecedor_produtos.fornecedorId
+              AND c.deletedAt IS NULL
+            ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC
+            LIMIT 1
+          ),
+          (SELECT p.custoPadrao FROM produtos p WHERE p.id = fornecedor_produtos.produtoId),
+          0
+        ),
+        precoVendaFornecedor = COALESCE(
+          precoVendaFornecedor,
+          (SELECT p.precoVendaPadrao FROM produtos p WHERE p.id = fornecedor_produtos.produtoId),
+          0
+        )
+  `).run();
   let custoOrigemAdicionada = false;
   try {
     db.prepare(`ALTER TABLE produtos ADD COLUMN custoOrigem TEXT NOT NULL DEFAULT 'manual'`).run();
@@ -600,6 +672,10 @@ export function initDatabase() {
   }
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN fornecedorId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN fornecedorReferencia TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE itens_venda ADD COLUMN fornecedorId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE itens_venda ADD COLUMN fornecedorReferencia TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE cliente_bonus_movimentos ADD COLUMN vendaId TEXT`).run(); } catch (e) {}
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_venda ON cliente_bonus_movimentos (vendaId, deletedAt)`).run();
@@ -883,10 +959,31 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
   }>;
 
   const preferencias = new Map(existentes.map((item) => [item.produtoId, item]));
+  const existentesPorFornecedor = db.prepare(`
+    SELECT fornecedorId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade,
+           vezesComprado, ultimaCompraEm, oculto, precoAutorizado
+    FROM cliente_produto_fornecedor_precos
+    WHERE clienteId = ?
+  `).all(clienteId) as Array<{
+    fornecedorId: string;
+    produtoId: string;
+    ultimoPreco: number;
+    ultimaQuantidade: number | null;
+    ultimaUnidade: string;
+    vezesComprado: number;
+    ultimaCompraEm: string;
+    oculto: number;
+    precoAutorizado: number | null;
+  }>;
+  const chaveFornecedor = (produtoId: string, fornecedorId: string) => `${produtoId}::${fornecedorId}`;
+  const preferenciasPorFornecedor = new Map(
+    existentesPorFornecedor.map((item) => [chaveFornecedor(item.produtoId, item.fornecedorId), item])
+  );
   const historico = db.prepare(`
     SELECT
       iv.vendaId,
       iv.produtoId,
+      iv.fornecedorId,
       iv.quantidade,
       iv.unidade,
       iv.precoUnitario,
@@ -901,6 +998,7 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
   `).all(clienteId) as Array<{
     vendaId: string;
     produtoId: string;
+    fornecedorId: string | null;
     quantidade: number;
     unidade: string;
     precoUnitario: number;
@@ -916,8 +1014,36 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
     ultimaCompraEm: string;
     vendas: Set<string>;
   }>();
+  const agregadosPorFornecedor = new Map<string, {
+    produtoId: string;
+    fornecedorId: string;
+    ultimoPreco: number;
+    ultimaQuantidade: number;
+    ultimaUnidade: string;
+    ultimaCompraEm: string;
+    vendas: Set<string>;
+  }>();
 
   for (const item of historico) {
+    if (item.fornecedorId) {
+      const chave = chaveFornecedor(item.produtoId, item.fornecedorId);
+      const atual = agregadosPorFornecedor.get(chave) || {
+        produtoId: item.produtoId,
+        fornecedorId: item.fornecedorId,
+        ultimoPreco: Number(item.precoUnitario),
+        ultimaQuantidade: Number(item.quantidade),
+        ultimaUnidade: item.unidade,
+        ultimaCompraEm: item.data,
+        vendas: new Set<string>(),
+      };
+      atual.ultimoPreco = Number(item.precoUnitario);
+      atual.ultimaQuantidade = Number(item.quantidade);
+      atual.ultimaUnidade = item.unidade;
+      atual.ultimaCompraEm = item.data;
+      atual.vendas.add(item.vendaId);
+      agregadosPorFornecedor.set(chave, atual);
+      continue;
+    }
     const atual = agregados.get(item.produtoId) || {
       produtoId: item.produtoId,
       ultimoPreco: Number(item.precoUnitario),
@@ -936,11 +1062,18 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
   }
 
   db.prepare("DELETE FROM cliente_produtos_habituais WHERE clienteId = ?").run(clienteId);
+  db.prepare("DELETE FROM cliente_produto_fornecedor_precos WHERE clienteId = ?").run(clienteId);
   const insert = db.prepare(`
     INSERT INTO cliente_produtos_habituais (
       clienteId, produtoId, ultimoPreco, ultimaQuantidade, ultimaUnidade,
       vezesComprado, ultimaCompraEm, precoAutorizado, oculto
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertPorFornecedor = db.prepare(`
+    INSERT INTO cliente_produto_fornecedor_precos (
+      clienteId, produtoId, fornecedorId, ultimoPreco, ultimaQuantidade,
+      ultimaUnidade, vezesComprado, ultimaCompraEm, precoAutorizado, oculto
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   for (const item of agregados.values()) {
@@ -965,6 +1098,41 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
     insert.run(
       clienteId,
       preferencia.produtoId,
+      preferencia.ultimoPreco,
+      preferencia.ultimaQuantidade,
+      preferencia.ultimaUnidade,
+      preferencia.vezesComprado,
+      preferencia.ultimaCompraEm,
+      preferencia.precoAutorizado,
+      preferencia.oculto,
+    );
+  }
+
+  for (const item of agregadosPorFornecedor.values()) {
+    const preferencia = preferenciasPorFornecedor.get(chaveFornecedor(item.produtoId, item.fornecedorId));
+    insertPorFornecedor.run(
+      clienteId,
+      item.produtoId,
+      item.fornecedorId,
+      item.ultimoPreco,
+      item.ultimaQuantidade,
+      item.ultimaUnidade,
+      item.vendas.size,
+      item.ultimaCompraEm,
+      preferencia?.precoAutorizado ?? null,
+      preferencia?.oculto ?? 0,
+    );
+  }
+
+  // Autorizações podem existir antes da primeira venda (por exemplo, a partir
+  // de um orçamento). Elas não podem desaparecer durante a reconstrução.
+  for (const preferencia of existentesPorFornecedor) {
+    const chave = chaveFornecedor(preferencia.produtoId, preferencia.fornecedorId);
+    if (agregadosPorFornecedor.has(chave)) continue;
+    insertPorFornecedor.run(
+      clienteId,
+      preferencia.produtoId,
+      preferencia.fornecedorId,
       preferencia.ultimoPreco,
       preferencia.ultimaQuantidade,
       preferencia.ultimaUnidade,

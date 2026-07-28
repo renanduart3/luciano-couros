@@ -14,6 +14,7 @@ export interface Cliente {
 export interface Fornecedor {
   id: string;
   nome: string;
+  referencia?: string;
   telefone?: string;
   documento?: string;
   observacoes?: string;
@@ -36,6 +37,15 @@ export interface Produto {
   ultimaCompraEm?: string;
   ultimoFornecedorNome?: string;
   quantidadeFornecedores?: number;
+  fornecedores?: Array<{
+    fornecedorId: string;
+    fornecedorNome: string;
+    fornecedorReferencia?: string;
+    custoFornecedor?: number | null;
+    precoVendaFornecedor?: number | null;
+    ultimoCusto?: number | null;
+    ultimaCompraEm?: string | null;
+  }>;
   ativo: number;
   createdAt: string;
   updatedAt: string;
@@ -44,7 +54,7 @@ export interface Produto {
 export interface FornecedorProduto {
   fornecedorId: string;
   produtoId: string;
-  codigoFornecedor?: string;
+  fornecedorReferencia?: string;
   observacao?: string;
   ativo: number;
   produtoNome?: string;
@@ -53,7 +63,10 @@ export interface FornecedorProduto {
   fornecedorTelefone?: string;
   unidade?: string;
   precoVendaPadrao?: number;
+  custoFornecedor?: number | null;
+  precoVendaFornecedor?: number | null;
   ultimoCusto?: number | null;
+  ultimoCustoCompra?: number | null;
   ultimaCompraEm?: string | null;
   comprasRealizadas: number;
 }
@@ -61,6 +74,8 @@ export interface FornecedorProduto {
 export interface ProdutoHabitual {
   clienteId: string;
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   nome: string;
   codigo?: string;
   ultimoPreco: number;
@@ -76,6 +91,8 @@ export interface ProdutoHabitual {
 
 export interface OrcamentoPadraoClienteItem {
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   nome: string;
   codigo?: string;
   unidade: string;
@@ -89,6 +106,8 @@ export interface ItemVenda {
   id: string;
   vendaId: string;
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   descricao: string;
   quantidade: number;
   unidade: string;
@@ -178,6 +197,8 @@ export interface ItemOrcamento {
   id: string;
   orcamentoId: string;
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   descricao: string;
   quantidade: number;
   unidade: string;

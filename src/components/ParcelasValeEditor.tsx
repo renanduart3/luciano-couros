@@ -15,6 +15,7 @@ interface ParcelasValeEditorProps {
 }
 
 const PRAZOS_RAPIDOS = [30, 60, 90, 120, 150];
+export const VALOR_MINIMO_PARCELA_VALE = 100;
 
 export function dataComPrazo(dias: number) {
   const data = new Date();
@@ -37,8 +38,13 @@ function distribuir(total: number, parcelas: ParcelaValeRascunho[]) {
 export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false }: ParcelasValeEditorProps) {
   const soma = parcelas.reduce((valor, parcela) => valor + parseBrazilianNumber(parcela.valor), 0);
   const diferenca = Math.round((total - soma) * 100) / 100;
+  const maximoParcelas = Math.max(1, Math.floor(total / VALOR_MINIMO_PARCELA_VALE));
+  const limiteParcelasAtingido = parcelas.length >= maximoParcelas;
+  const possuiParcelaAbaixoDoMinimo = total >= VALOR_MINIMO_PARCELA_VALE &&
+    parcelas.some((parcela) => parseBrazilianNumber(parcela.valor) < VALOR_MINIMO_PARCELA_VALE);
 
   const adicionarPrazo = (dias: number) => {
+    if (limiteParcelasAtingido) return;
     const vencimento = dataComPrazo(dias);
     if (parcelas.some((parcela) => parcela.vencimento === vencimento)) return;
     onChange(distribuir(total, [...parcelas, { vencimento, valor: "" }]));
@@ -63,10 +69,10 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
               key={dias}
               type="button"
               onClick={() => adicionarPrazo(dias)}
-              disabled={aplicado}
+              disabled={aplicado || limiteParcelasAtingido}
               aria-pressed={aplicado}
               className={`inline-flex min-h-8 items-center gap-1 rounded-lg border px-2.5 py-1.5 text-[10px] font-black transition-colors ${
-                aplicado
+                aplicado || limiteParcelasAtingido
                   ? "cursor-not-allowed border-emerald-300 bg-emerald-100 text-emerald-800"
                   : "border-amber-700 bg-amber-700 text-white hover:bg-amber-800"
               }`}
@@ -96,7 +102,7 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
                   <input type="date" value={parcela.vencimento} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, vencimento: event.target.value } : item))} aria-label={`Vencimento da parcela ${index + 1}`} className="min-h-9 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs font-bold" />
                 </td>
                 <td className="px-3 py-2">
-                  <input inputMode="decimal" value={parcela.valor} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, valor: event.target.value } : item))} placeholder="0,00" aria-label={`Valor da parcela ${index + 1}`} className="min-h-9 w-full rounded-md border border-slate-300 px-2 py-1.5 text-right text-xs font-black" />
+                  <input inputMode="decimal" value={parcela.valor} onChange={(event) => onChange(parcelas.map((item, itemIndex) => itemIndex === index ? { ...item, valor: event.target.value } : item))} placeholder="0,00" aria-label={`Valor da parcela ${index + 1}`} className={`min-h-9 w-full rounded-md border px-2 py-1.5 text-right text-xs font-black ${total >= VALOR_MINIMO_PARCELA_VALE && parseBrazilianNumber(parcela.valor) < VALOR_MINIMO_PARCELA_VALE ? "border-red-500 bg-red-50 text-red-800" : "border-slate-300"}`} />
                 </td>
                 <td className="px-3 py-2 text-center">
                   <button type="button" onClick={() => remover(index)} aria-label={`Remover parcela ${index + 1}`} className="rounded-md border border-red-200 p-2 text-red-700"><Trash2 size={14} /></button>
@@ -112,6 +118,9 @@ export function ParcelasValeEditor({ total, parcelas, onChange, compacto = false
         <span className="text-amber-900">Planejado: {formatCurrency(soma)}</span>
         <span className={Math.abs(diferenca) <= 0.01 ? "text-emerald-700" : "text-red-700"}>{Math.abs(diferenca) <= 0.01 ? "Valores conferidos" : `Diferença: ${formatCurrency(diferenca)}`}</span>
       </div>
+      <p className={`mt-2 rounded-lg px-2.5 py-2 text-[10px] font-black uppercase ${possuiParcelaAbaixoDoMinimo ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>
+        Parcela mínima: {formatCurrency(VALOR_MINIMO_PARCELA_VALE)} • máximo para este vale: {maximoParcelas} parcela(s).
+      </p>
     </div>
   );
 }

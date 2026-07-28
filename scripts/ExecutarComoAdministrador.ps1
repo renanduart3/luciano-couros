@@ -17,9 +17,9 @@ try {
     exit 1
 }
 
-if ($process.ExitCode -eq 0 -and $Action -eq "Install") {
-    $trayScript = Join-Path $PSScriptRoot "TrayIcon.ps1"
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$trayScript`""
+if ($process.ExitCode -eq 0 -and $Action -in @("Install", "Update", "Start", "Restart")) {
+    $trayLauncher = Join-Path $PSScriptRoot "AbrirControle.ps1"
+    & $trayLauncher
 }
 
 exit $process.ExitCode

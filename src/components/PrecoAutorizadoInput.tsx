@@ -6,6 +6,7 @@ import { parseBrazilianNumber } from "../lib/utils";
 interface PrecoAutorizadoInputProps {
   clienteId: string;
   produtoId: string;
+  fornecedorId?: string | null;
   value: string;
   precoAutorizado: number;
   origem: "venda" | "orcamento" | "cadastro_cliente" | "vale";
@@ -18,6 +19,7 @@ interface PrecoAutorizadoInputProps {
 export function PrecoAutorizadoInput({
   clienteId,
   produtoId,
+  fornecedorId,
   value,
   precoAutorizado,
   origem,
@@ -104,7 +106,8 @@ export function PrecoAutorizadoInput({
         valorRascunho,
         pinAutorizado,
         origem,
-        documentoId
+        documentoId,
+        fornecedorId
       );
       const formatado = Number(resultado.precoAutorizado).toFixed(2).replace(".", ",");
       setRascunho(formatado);

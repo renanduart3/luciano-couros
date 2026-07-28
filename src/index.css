@@ -327,6 +327,20 @@ textarea {
   font-size: 6.2pt;
 }
 
+.receipt-observation-line {
+  display: -webkit-box;
+  min-height: 5.5mm;
+  max-height: 8mm;
+  overflow: hidden;
+  border-top: 0.2mm solid #64748b;
+  padding: 0.8mm 1mm;
+  font-size: 6.1pt;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .receipt-footer {
   display: grid;
   min-height: 8mm;
@@ -432,6 +446,7 @@ textarea {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
+    margin: 0 !important;
   }
   
   /* Hide interactive margins */
@@ -538,7 +553,8 @@ textarea {
   .receipt-sheet-a4,
   .budget-sheet-a4 {
     width: 210mm !important;
-    height: 297mm !important;
+    /* Uma pequena folga evita que o arredondamento do navegador crie uma folha vazia. */
+    height: 296mm !important;
     min-height: 0 !important;
     margin: 0 !important;
     padding: 25mm 25mm 50mm !important;

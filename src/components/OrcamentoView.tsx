@@ -9,6 +9,8 @@ import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from 
 import { Pagination, paginate } from "./Pagination";
 import { OrcamentoComprovante } from "./OrcamentoComprovante";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
+import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 interface OrcamentoViewProps {
   onLevarParaVenda: (orcamento: Orcamento) => void;
@@ -20,6 +22,8 @@ interface OrcamentoViewProps {
 
 interface ItemRascunhoOrcamento {
   produtoId: string;
+  fornecedorId?: string | null;
+  fornecedorReferencia?: string | null;
   codigo?: string;
   descricao: string;
   quantidade: string;
@@ -34,7 +38,26 @@ function dataFutura(dias: number) {
   return data.toISOString().split("T")[0];
 }
 
+type FornecedorAssociadoProduto = NonNullable<Produto["fornecedores"]>[number];
+type OpcaoProdutoFornecedor = {
+  produto: Produto;
+  fornecedor: FornecedorAssociadoProduto | null;
+  precoVenda: number;
+};
+
+const chaveVarianteProduto = (produtoId: string, fornecedorId?: string | null) =>
+  `${produtoId}::${fornecedorId || ""}`;
+
+const encontrarPrecoCliente = (
+  registros: ProdutoHabitual[],
+  produtoId: string,
+  fornecedorId?: string | null
+) => registros.find((item) =>
+  item.produtoId === produtoId && (item.fornecedorId || null) === (fornecedorId || null)
+);
+
 export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExterno, ocultarSeletorCliente = false, produtosNaVenda = [] }: OrcamentoViewProps) {
+  const confirmacao = useConfirmacao();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
@@ -48,7 +71,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [clienteBusca, setClienteBusca] = useState("");
   const [produtoBusca, setProdutoBusca] = useState("");
+  const [produtoDropdownOpen, setProdutoDropdownOpen] = useState(false);
   const [produtoSelecionado, setProdutoSelecionado] = useState<Produto | null>(null);
+  const [fornecedorSelecionado, setFornecedorSelecionado] = useState<FornecedorAssociadoProduto | null>(null);
   const [quantidade, setQuantidade] = useState("");
   const [preco, setPreco] = useState("");
   const [items, setItems] = useState<ItemRascunhoOrcamento[]>([]);
@@ -69,6 +94,12 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const [itensHistoricoSelecionados, setItensHistoricoSelecionados] = useState<string[]>([]);
   const [origemItens, setOrigemItens] = useState("todos");
   const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
+
+  useEffect(() => {
+    if (!mensagem) return;
+    const timer = window.setTimeout(() => setMensagem(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [mensagem]);
   const [pinOpen, setPinOpen] = useState(false);
   const [adminPin, setAdminPin] = useState("");
   const [pinErro, setPinErro] = useState("");
@@ -162,6 +193,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setObservacoes(registro.observacoes || "");
     setItems(registro.items.map((item) => ({
       produtoId: item.produtoId,
+      fornecedorId: item.fornecedorId,
+      fornecedorReferencia: item.fornecedorReferencia,
       codigo: item.referencia,
       descricao: item.descricao,
       quantidade: Number(item.quantidade).toString().replace(".", ","),
@@ -171,6 +204,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     })));
     setProdutoBusca("");
     setProdutoSelecionado(null);
+    setFornecedorSelecionado(null);
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
     setItensSelecionadosVenda([]);
@@ -178,15 +212,39 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setAba("formulario");
   };
 
-  const clientesFiltrados = useMemo(() => clientes.filter((item) =>
-    item.nome.toLowerCase().includes(clienteBusca.toLowerCase()) ||
-    (item.telefone || "").includes(clienteBusca)
-  ).slice(0, 8), [clientes, clienteBusca]);
+  const clientesOrdenados = useMemo(
+    () => clientes.filter(Boolean).slice().sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")),
+    [clientes]
+  );
 
-  const produtosFiltrados = useMemo(() => produtos.filter((item) =>
-    item.nome.toLowerCase().includes(produtoBusca.toLowerCase()) ||
-    (item.codigo || "").toLowerCase().includes(produtoBusca.toLowerCase())
-  ).slice(0, 10), [produtos, produtoBusca]);
+  const produtosFiltrados = useMemo<OpcaoProdutoFornecedor[]>(() => {
+    const termo = produtoBusca.toLowerCase();
+    return produtos.flatMap((produto) => {
+      const fornecedores = produto.fornecedores || [];
+      const opcoes = fornecedores.length > 0
+        ? fornecedores.map((fornecedor) => ({
+            produto,
+            fornecedor,
+            precoVenda: Number(fornecedor.precoVendaFornecedor ?? produto.precoVendaPadrao)
+          }))
+        : [{ produto, fornecedor: null, precoVenda: Number(produto.precoVendaPadrao) }];
+      return opcoes.filter((opcao) =>
+        produto.nome.toLowerCase().includes(termo) ||
+        (produto.codigo || "").toLowerCase().includes(termo) ||
+        (opcao.fornecedor?.fornecedorReferencia || "").toLowerCase().includes(termo)
+      );
+    }).slice(0, 20);
+  }, [produtos, produtoBusca]);
+
+  const produtoKeyboard = useKeyboardListNavigation<OpcaoProdutoFornecedor>({
+    items: produtosFiltrados,
+    isOpen: produtoDropdownOpen && Boolean(produtoBusca) && !produtoSelecionado,
+    listId: "orcamento-produtos",
+    resetKey: produtoBusca,
+    onOpen: () => setProdutoDropdownOpen(true),
+    onClose: () => setProdutoDropdownOpen(false),
+    onSelect: (opcao) => selecionarProduto(opcao)
+  });
 
   const orcamentosFiltrados = useMemo(() => {
     const termo = buscaOrcamentos.trim().toLowerCase();
@@ -204,7 +262,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     total + parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario), 0
   );
   const itensDisponiveisVenda = items.filter((item) =>
-    parseBrazilianNumber(item.quantidade) > 0 && !produtosNaVenda.includes(item.produtoId)
+    parseBrazilianNumber(item.quantidade) > 0
+    && !produtosNaVenda.includes(chaveVarianteProduto(item.produtoId, item.fornecedorId))
   );
   const descontoPercentualValor = parseBrazilianNumber(descontoPercentual);
   const descontoValor = subtotal * Math.max(0, descontoPercentualValor) / 100;
@@ -213,10 +272,12 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   const itensAbaixoDoPrecoCliente = items.filter((item) => {
     if (parseBrazilianNumber(item.quantidade) <= 0) return false;
     const produto = produtos.find((registro) => registro.id === item.produtoId);
-    const referenciaCliente = produtosCliente.find((registro) => registro.produtoId === item.produtoId);
+    const referenciaCliente = encontrarPrecoCliente(produtosCliente, item.produtoId, item.fornecedorId);
+    const fornecedor = produto?.fornecedores?.find((registro) => registro.fornecedorId === item.fornecedorId);
     const precoAtualCliente = Number(
       referenciaCliente?.precoAutorizado
       ?? referenciaCliente?.ultimoPreco
+      ?? fornecedor?.precoVendaFornecedor
       ?? produto?.precoVendaPadrao
       ?? 0
     );
@@ -236,7 +297,12 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
 
   const selecionarCliente = async (selecionado: Cliente) => {
     if (cliente?.id && cliente.id !== selecionado.id && items.length > 0) {
-      if (!confirm("Alterar o cliente manterá os itens, mas atualizará apenas os próximos preços adicionados. Continuar?")) return;
+      if (!await confirmacao.confirmar({
+        titulo: "Alterar cliente",
+        mensagem: "Alterar o cliente manterá os itens, mas atualizará apenas os próximos preços adicionados. Continuar?",
+        textoConfirmar: "Alterar cliente",
+        variante: "atencao"
+      })) return;
     }
     setCliente(selecionado);
     setClienteBusca(selecionado.nome);
@@ -256,6 +322,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       if (listaPadrao.length > 0) {
         setItems(listaPadrao.map((item) => ({
           produtoId: item.produtoId,
+          fornecedorId: item.fornecedorId,
+          fornecedorReferencia: item.fornecedorReferencia,
           codigo: item.codigo,
           descricao: item.nome,
           quantidade: "",
@@ -290,6 +358,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         const acumulados = await api.getClienteOrcamentoPadrao(cliente.id);
         const lista = acumulados.map((item) => ({
           produtoId: item.produtoId,
+          fornecedorId: item.fornecedorId,
+          fornecedorReferencia: item.fornecedorReferencia,
           codigo: item.codigo,
           descricao: item.nome,
           quantidade: "",
@@ -311,6 +381,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         produtoId: item.produtoId,
+        fornecedorId: item.fornecedorId,
+        fornecedorReferencia: item.fornecedorReferencia,
         codigo: item.referencia || produto?.codigo,
         descricao: item.descricao || produto?.nome || "Produto",
         quantidade: Number(item.quantidade).toString().replace(".", ","),
@@ -340,29 +412,39 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   }, [clienteExterno?.id, loading]);
 
   useEffect(() => {
-    setItensSelecionadosVenda((atuais) => atuais.filter((produtoId) => !produtosNaVenda.includes(produtoId)));
+    setItensSelecionadosVenda((atuais) => atuais.filter((chave) => !produtosNaVenda.includes(chave)));
   }, [produtosNaVenda]);
 
-  const selecionarProduto = (produto: Produto) => {
-    const referenciaCliente = produtosCliente.find((item) => item.produtoId === produto.id);
-    const precoAtual = Number(referenciaCliente?.precoAutorizado ?? referenciaCliente?.ultimoPreco ?? produto.precoVendaPadrao);
-    setProdutoSelecionado(produto);
+  const selecionarProduto = (opcao: OpcaoProdutoFornecedor) => {
+    const { produto, fornecedor, precoVenda } = opcao;
+    const referenciaCliente = encontrarPrecoCliente(produtosCliente, produto.id, fornecedor?.fornecedorId);
+    const precoAtual = Number(referenciaCliente?.precoAutorizado ?? referenciaCliente?.ultimoPreco ?? precoVenda);
+    setProdutoSelecionado({ ...produto, precoVendaPadrao: precoVenda });
+    setFornecedorSelecionado(fornecedor);
     setProdutoBusca(produto.nome);
+    setProdutoDropdownOpen(false);
     setPreco(precoAtual.toFixed(2).replace(".", ","));
     setQuantidade("");
   };
 
-  const registrarPrecoAutorizadoLocal = (produtoId: string, novoPreco: number) => {
+  const registrarPrecoAutorizadoLocal = (produtoId: string, fornecedorId: string | null | undefined, novoPreco: number) => {
     const produto = produtos.find((item) => item.id === produtoId);
     if (!cliente || !produto) return;
     setProdutosCliente((atuais) => {
-      const existente = atuais.find((item) => item.produtoId === produtoId);
+      const existente = encontrarPrecoCliente(atuais, produtoId, fornecedorId);
       if (existente) {
-        return atuais.map((item) => item.produtoId === produtoId ? { ...item, precoAutorizado: novoPreco } : item);
+        return atuais.map((item) =>
+          chaveVarianteProduto(item.produtoId, item.fornecedorId) === chaveVarianteProduto(produtoId, fornecedorId)
+            ? { ...item, precoAutorizado: novoPreco }
+            : item
+        );
       }
+      const fornecedor = produto.fornecedores?.find((item) => item.fornecedorId === fornecedorId);
       return [...atuais, {
         clienteId: cliente.id,
         produtoId,
+        fornecedorId: fornecedorId || null,
+        fornecedorReferencia: fornecedor?.fornecedorReferencia || null,
         nome: produto.nome,
         codigo: produto.codigo,
         ultimoPreco: novoPreco,
@@ -372,15 +454,18 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         ultimaCompraEm: new Date().toISOString().split("T")[0],
         precoAutorizado: novoPreco,
         unidade: produto.unidade,
-        precoVendaPadrao: produto.precoVendaPadrao,
-        custoPadrao: produto.custoPadrao,
+        precoVendaPadrao: Number(fornecedor?.precoVendaFornecedor ?? produto.precoVendaPadrao),
+        custoPadrao: Number(fornecedor?.custoFornecedor ?? produto.custoPadrao),
       }];
     });
   };
 
   const adicionarItem = () => {
     if (!produtoSelecionado) return setMensagem({ tipo: "erro", texto: "Selecione um produto." });
-    if (items.some((item) => item.produtoId === produtoSelecionado.id)) {
+    if (items.some((item) =>
+      chaveVarianteProduto(item.produtoId, item.fornecedorId)
+        === chaveVarianteProduto(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)
+    )) {
       setMensagem({ tipo: "erro", texto: `${produtoSelecionado.nome} já está neste orçamento.` });
       return;
     }
@@ -390,6 +475,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
 
     const novo: ItemRascunhoOrcamento = {
       produtoId: produtoSelecionado.id,
+      fornecedorId: fornecedorSelecionado?.fornecedorId || null,
+      fornecedorReferencia: fornecedorSelecionado?.fornecedorReferencia || null,
       codigo: produtoSelecionado.codigo,
       descricao: produtoSelecionado.nome,
       quantidade,
@@ -399,7 +486,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     };
     setItems((atuais) => [...atuais, novo]);
     setProdutoSelecionado(null);
+    setFornecedorSelecionado(null);
     setProdutoBusca("");
+    setProdutoDropdownOpen(false);
     setPreco("");
     setQuantidade("");
     setMensagem({ tipo: "ok", texto: `${novo.descricao} adicionado ao orçamento.` });
@@ -422,6 +511,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         if (!produto) continue;
         const importado: ItemRascunhoOrcamento = {
           produtoId: produto.id,
+          fornecedorId: itemHistorico.fornecedorId,
+          fornecedorReferencia: itemHistorico.fornecedorReferencia,
           codigo: produto.codigo,
           descricao: itemHistorico.descricao || produto.nome,
           quantidade: Number(itemHistorico.quantidade).toString().replace(".", ","),
@@ -429,7 +520,10 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           precoUnitario: Number(itemHistorico.precoUnitario).toFixed(2).replace(".", ","),
           faltante: false
         };
-        const existente = resultado.findIndex((item) => item.produtoId === produto.id);
+        const existente = resultado.findIndex((item) =>
+          chaveVarianteProduto(item.produtoId, item.fornecedorId)
+            === chaveVarianteProduto(produto.id, itemHistorico.fornecedorId)
+        );
         resultado = existente >= 0
           ? resultado.map((item, index) => index === existente ? importado : item)
           : [...resultado, importado];
@@ -454,6 +548,8 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     autorizacaoPreco: pin ? { pin } : undefined,
     items: items.filter((item) => parseBrazilianNumber(item.quantidade) > 0).map((item) => ({
       produtoId: item.produtoId,
+      fornecedorId: item.fornecedorId,
+      fornecedorReferencia: item.fornecedorReferencia,
       descricao: item.descricao,
       quantidade: parseBrazilianNumber(item.quantidade),
       unidade: item.unidade,
@@ -487,11 +583,13 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     }
     const selecionados = new Set(produtosSelecionados);
     const itensParaVenda = items
-      .filter((item) => selecionados.has(item.produtoId) && parseBrazilianNumber(item.quantidade) > 0)
+      .filter((item) => selecionados.has(chaveVarianteProduto(item.produtoId, item.fornecedorId)) && parseBrazilianNumber(item.quantidade) > 0)
       .map((item, index) => ({
         id: `item-transferencia-${index}`,
         orcamentoId: orcamento?.id || "",
         produtoId: item.produtoId,
+        fornecedorId: item.fornecedorId,
+        fornecedorReferencia: item.fornecedorReferencia,
         descricao: item.descricao,
         quantidade: parseBrazilianNumber(item.quantidade),
         unidade: item.unidade,
@@ -562,7 +660,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         const selecionados = new Set(produtosParaVenda);
         onLevarParaVenda({
           ...salvo,
-          items: salvo.items.filter((item) => selecionados.has(item.produtoId))
+          items: salvo.items.filter((item) => selecionados.has(chaveVarianteProduto(item.produtoId, item.fornecedorId)))
         });
         setItensSelecionadosVenda([]);
       } else if (!compact) {
@@ -577,7 +675,11 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
   };
 
   const excluirOrcamento = async (registro: Orcamento) => {
-    if (!confirm(`Excluir o orçamento #${registro.numeroSequencial} de ${registro.clienteNome || "este cliente"}?`)) return;
+    if (!await confirmacao.confirmar({
+      titulo: "Excluir orçamento",
+      mensagem: `Excluir o orçamento #${registro.numeroSequencial} de ${registro.clienteNome || "este cliente"}?`,
+      textoConfirmar: "Excluir orçamento"
+    })) return;
     setSalvando(true);
     try {
       await api.deleteOrcamento(registro.id);
@@ -597,6 +699,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
 
   return (
     <div id="orcamento-view" className={compact ? "space-y-3" : "space-y-5"}>
+      {confirmacao.dialogo}
       {previewOpen && orcamento && (
         <div id="print-orcamento" className="fixed inset-0 z-[80] overflow-x-hidden overflow-y-auto bg-slate-950/70 p-3 sm:p-6 print:absolute print:bg-white print:p-0">
           <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-2xl bg-white shadow-2xl sm:max-w-[calc(100vw-3rem)] print:max-w-none print:overflow-visible print:rounded-none print:shadow-none">
@@ -745,7 +848,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         <button type="button" aria-label="Novo orçamento" onClick={abrirNovoOrcamento} className={`flex min-w-0 items-center justify-center gap-2 rounded-xl px-2 py-2.5 text-xs font-black sm:px-4 sm:text-sm ${aba === "formulario" ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100"}`}><Plus size={17} className="shrink-0" /> <span className="sm:hidden">Novo</span><span className="hidden sm:inline">Novo orçamento</span></button>
       </div>}
 
-      {mensagem && <div className={`flex items-center justify-between rounded-xl border p-3 text-sm font-bold ${mensagem.tipo === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}><span>{mensagem.texto}</span><button type="button" onClick={() => setMensagem(null)}><X size={15} /></button></div>}
+      {mensagem && <div role={mensagem.tipo === "erro" ? "alert" : "status"} className={`fixed right-5 top-5 z-[95] flex max-w-sm items-center justify-between gap-3 rounded-xl border p-3 text-sm font-bold shadow-2xl ${mensagem.tipo === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}><span>{mensagem.texto}</span><button type="button" aria-label="Fechar aviso" onClick={() => setMensagem(null)}><X size={15} /></button></div>}
 
       {aba === "lista" && !compact ? (
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -852,27 +955,18 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
             </div>
           </div>
         ) : (
-          <>
-            <div className="flex min-h-14 items-center rounded-xl border border-blue-300 bg-white shadow-sm focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-100">
-              <Search size={20} className="ml-4 shrink-0 text-blue-600" />
-              <input
-                value={clienteBusca}
-                onChange={(event) => setClienteBusca(event.target.value)}
-                placeholder="Digite o nome ou telefone do cliente..."
-                className="w-full rounded-xl px-4 py-3 text-base font-bold outline-none"
-              />
-            </div>
-            {clienteBusca && (
-              <div className="absolute left-4 right-4 z-30 mt-2 max-h-64 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl sm:left-5 sm:right-5">
-                {clientesFiltrados.map((item) => (
-                  <button key={item.id} type="button" onClick={() => selecionarCliente(item)} className="block w-full border-b border-slate-100 p-4 text-left text-sm font-bold hover:bg-blue-50">
-                    {item.nome}
-                    <span className="mt-0.5 block text-xs font-normal text-slate-500">{item.telefone || "Sem telefone"}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
+          <select
+            value=""
+            onChange={(event) => {
+              const selecionado = clientesOrdenados.find((item) => item.id === event.target.value);
+              if (selecionado) selecionarCliente(selecionado);
+            }}
+            aria-label="Selecionar cliente do orçamento"
+            className="min-h-14 w-full rounded-xl border border-blue-300 bg-white px-4 text-base font-bold text-slate-950 shadow-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="">SELECIONE O CLIENTE...</option>
+            {clientesOrdenados.map((item) => <option key={item.id} value={item.id}>{item.nome}{item.telefone ? ` — ${item.telefone}` : ""}</option>)}
+          </select>
         )}
       </section>}
 
@@ -880,35 +974,38 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
         <section className={`min-w-0 rounded-xl bg-white ${compact ? "space-y-2 p-2" : "space-y-5 border border-slate-200 p-3 shadow-sm sm:p-5"}`}>
           <div className="flex flex-wrap items-end justify-between gap-2">
             <label className="min-w-[260px] flex-1"><span className="mb-1 block text-[10px] font-black uppercase tracking-wider text-slate-600">CARREGAR ITENS</span><select value={origemItens} onChange={(event) => carregarOrigemItens(event.target.value)} className="w-full rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-2 text-xs font-black uppercase text-slate-900 outline-none focus:border-blue-700"><option value="todos">TODOS OS PRODUTOS JÁ COMPRADOS</option>{orcamentoVigente && <option value="orcamento">ORÇAMENTO DO CLIENTE #{orcamentoVigente.numeroSequencial}</option>}{historicoVendas.slice(0, 7).map((venda) => <option key={venda.id} value={venda.id}>VENDA #{venda.numeroSequencial} — {formatDate(venda.data)} — {formatCurrency(venda.totalLiquido)}</option>)}</select></label>
+            <button type="button" disabled={salvando} onClick={() => salvar(false)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-[11px] font-black uppercase text-white disabled:opacity-50"><Save size={15} /> {salvando ? "SALVANDO..." : "SALVAR ORÇAMENTO"}</button>
             {itensSelecionadosVenda.length > 1 && <button type="button" onClick={() => incluirItensNaVenda(itensSelecionadosVenda)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-[11px] font-black uppercase text-white shadow-sm hover:bg-emerald-800"><ListChecks size={15} /> INSERIR TODOS SELECIONADOS ({itensSelecionadosVenda.length})</button>}
           </div>
 
-          <div className="max-h-[55vh] overflow-auto rounded-xl border border-slate-200">
-            <table className={`w-full text-xs ${compact ? "min-w-[620px] xl:min-w-0 xl:table-fixed" : "min-w-[720px]"}`}>
+          <div className={`max-h-[72vh] overflow-auto rounded-xl border border-slate-200 ${items.length === 0 ? "min-h-[420px]" : "min-h-[260px]"}`}>
+            <table className={`w-full text-xs ${items.length === 0 ? "min-h-[418px]" : ""} ${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[780px]"}`}>
               <colgroup>
-                <col className="w-[5%]" /><col className="w-[8%]" /><col className="w-[29%]" /><col className="w-[10%]" />
+                <col className="w-[11%]" /><col className="w-[8%]" /><col className="w-[23%]" /><col className="w-[10%]" />
                 <col className="w-[8%]" /><col className="w-[16%]" /><col className="w-[14%]" /><col className="w-[10%]" />
               </colgroup>
-              <thead className="sticky top-0 z-10"><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-center"><span className="sr-only">Adicionar à venda</span><input aria-label="Selecionar todos os itens do orçamento" type="checkbox" checked={itensDisponiveisVenda.length > 0 && itensDisponiveisVenda.every((item) => itensSelecionadosVenda.includes(item.produtoId))} onChange={(event) => setItensSelecionadosVenda(event.target.checked ? itensDisponiveisVenda.map((item) => item.produtoId) : [])} /></th><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
+              <thead className="sticky top-0 z-10"><tr className="bg-blue-50 text-[9px] font-black uppercase tracking-tight text-slate-500"><th className="px-1 py-2 text-center"><span>ENVIAR À VENDA</span><input className="ml-1" aria-label="Selecionar todos os itens do orçamento" type="checkbox" checked={itensDisponiveisVenda.length > 0 && itensDisponiveisVenda.every((item) => itensSelecionadosVenda.includes(chaveVarianteProduto(item.produtoId, item.fornecedorId)))} onChange={(event) => setItensSelecionadosVenda(event.target.checked ? itensDisponiveisVenda.map((item) => chaveVarianteProduto(item.produtoId, item.fornecedorId)) : [])} /></th><th className="px-1 py-2 text-left">Ref.</th><th className="px-1 py-2 text-left">Material</th><th className="px-1 py-2 text-right">Qtd.</th><th className="px-1 py-2 text-left">Un.</th><th className="px-1 py-2 text-right">Preço</th><th className="px-1 py-2 text-right">Total</th><th className="px-1 py-2"></th></tr></thead>
               <tbody className="divide-y divide-slate-200">
                 <tr className="bg-blue-50/60">
                   <td className="px-2 py-2 text-center"><button type="button" onClick={adicionarItem} title="Adicionar item ao orçamento" aria-label="Adicionar item ao orçamento" className="rounded-md bg-blue-700 p-2 text-white hover:bg-blue-800"><Plus size={14} /></button></td>
                   <td className="px-2 py-2 text-center font-mono text-xs font-bold text-slate-500">{produtoSelecionado?.codigo || "—"}</td>
-                  <td className="relative px-2 py-2"><input value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); }} placeholder="Digite código ou material..." className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 font-bold outline-none" />{produtoBusca && !produtoSelecionado && <div className="absolute left-1 right-1 top-full z-30 max-h-60 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{produtosFiltrados.map((item) => <button key={item.id} type="button" onClick={() => selecionarProduto(item)} className="flex w-full items-center justify-between border-b border-slate-100 p-2 text-left hover:bg-blue-50"><span><strong className="block">{item.nome}</strong><small className="text-slate-500">{item.codigo || "Sem código"} • {item.unidade}</small></span><strong className="text-blue-700">{formatCurrency(Number(produtosCliente.find((registro) => registro.produtoId === item.id)?.precoAutorizado ?? produtosCliente.find((registro) => registro.produtoId === item.id)?.ultimoPreco ?? item.precoVendaPadrao))}</strong></button>)}</div>}</td>
+                  <td className="relative px-2 py-2"><input value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); setFornecedorSelecionado(null); setProdutoDropdownOpen(true); }} onFocus={() => setProdutoDropdownOpen(true)} onKeyDown={produtoKeyboard.onKeyDown} role="combobox" aria-autocomplete="list" aria-expanded={produtoDropdownOpen && Boolean(produtoBusca) && !produtoSelecionado} aria-controls="orcamento-produtos" aria-activedescendant={produtoKeyboard.activeDescendant} placeholder="Digite código, referência ou material..." className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 font-bold outline-none" />{produtoDropdownOpen && produtoBusca && !produtoSelecionado && <div id="orcamento-produtos" role="listbox" className="absolute left-1 right-1 top-full z-30 max-h-[360px] min-w-[420px] overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">{produtosFiltrados.map((opcao, index) => <button {...produtoKeyboard.getOptionProps(index)} key={`${opcao.produto.id}:${opcao.fornecedor?.fornecedorId || "sem-fornecedor"}`} type="button" onClick={() => selecionarProduto(opcao)} className={`flex w-full items-center justify-between gap-3 border-b border-slate-100 p-3 text-left hover:bg-blue-50 ${produtoKeyboard.activeIndex === index ? "bg-blue-50 ring-1 ring-inset ring-blue-300" : ""}`}><span className="min-w-0"><strong className="block">{opcao.produto.nome}</strong><small className="block font-mono text-slate-600">REF.: {opcao.produto.codigo || "SEM REFERÊNCIA"} • {opcao.produto.unidade}</small><small className="mt-1 block text-[10px] font-black text-blue-800">REF. FORNECEDOR: {opcao.fornecedor?.fornecedorReferencia || "SEM REFERÊNCIA"}</small></span><strong className="shrink-0 text-blue-700">VENDA {formatCurrency(opcao.precoVenda)}</strong></button>)}</div>}</td>
                   <td className="px-2 py-2"><input value={quantidade} onChange={(event) => setQuantidade(event.target.value)} placeholder="0" className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /></td>
                   <td className="px-2 py-2 font-bold text-slate-600">{produtoSelecionado?.unidade || "—"}</td>
-                  <td className="px-2 py-2">{cliente && produtoSelecionado ? <PrecoAutorizadoInput clienteId={cliente.id} produtoId={produtoSelecionado.id} value={preco} precoAutorizado={Number(produtosCliente.find((registro) => registro.produtoId === produtoSelecionado.id)?.precoAutorizado ?? produtosCliente.find((registro) => registro.produtoId === produtoSelecionado.id)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="orcamento" documentoId={orcamento?.id} ariaLabel={`Preço de ${produtoSelecionado.nome} no orçamento`} onAuthorized={(valorFormatado, valor) => { setPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, valor); }} className="w-full min-w-16 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /> : <input value={preco} onChange={(event) => setPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" />}</td>
+                  <td className="px-2 py-2">{cliente && produtoSelecionado ? <PrecoAutorizadoInput clienteId={cliente.id} produtoId={produtoSelecionado.id} fornecedorId={fornecedorSelecionado?.fornecedorId} value={preco} precoAutorizado={Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="orcamento" documentoId={orcamento?.id} ariaLabel={`Preço de ${produtoSelecionado.nome} no orçamento`} onAuthorized={(valorFormatado, valor) => { setPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId, valor); }} className="w-full min-w-16 rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" /> : <input value={preco} onChange={(event) => setPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-blue-200 bg-white px-2 py-1.5 text-right font-black outline-none" />}</td>
                   <td className="px-2 py-2 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(quantidade) * parseBrazilianNumber(preco))}</td>
                   <td className="px-2 py-2 text-center text-slate-300">—</td>
                 </tr>
                 {items.length === 0 ? <tr><td colSpan={8} className="p-6 text-center font-bold text-slate-400">Use a linha azul para adicionar o primeiro item.</td></tr> : items.map((item, index) => {
-                  const jaEstaNaVenda = produtosNaVenda.includes(item.produtoId);
+                  const chaveItem = chaveVarianteProduto(item.produtoId, item.fornecedorId);
+                  const jaEstaNaVenda = produtosNaVenda.includes(chaveItem);
                   const disponivel = parseBrazilianNumber(item.quantidade) > 0 && !jaEstaNaVenda;
-                  const selecionado = itensSelecionadosVenda.includes(item.produtoId);
+                  const selecionado = itensSelecionadosVenda.includes(chaveItem);
                   const produto = produtos.find((registro) => registro.id === item.produtoId);
-                  const referenciaCliente = produtosCliente.find((registro) => registro.produtoId === item.produtoId);
-                  const precoAutorizado = Number(referenciaCliente?.precoAutorizado ?? referenciaCliente?.ultimoPreco ?? produto?.precoVendaPadrao ?? 0);
-                  return <tr key={item.produtoId} className={jaEstaNaVenda ? "bg-emerald-50/70 text-slate-500" : "bg-white"}><td className="px-1 py-1"><div className="flex items-center justify-center gap-1"><button type="button" disabled={!disponivel || salvando} title={jaEstaNaVenda ? "Item já inserido na venda" : "Incluir este item na venda"} onClick={() => incluirItensNaVenda([item.produtoId])} className="rounded border border-emerald-300 p-1.5 text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><ShoppingCart size={13} /></button><input aria-label={`Selecionar ${item.descricao} para venda`} type="checkbox" disabled={!disponivel} checked={selecionado} onChange={(event) => setItensSelecionadosVenda((atuais) => event.target.checked ? [...new Set([...atuais, item.produtoId])] : atuais.filter((id) => id !== item.produtoId))} /></div></td><td className="px-2 py-1 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-1 font-black uppercase text-slate-900">{item.descricao}{jaEstaNaVenda && <span className="ml-2 rounded bg-emerald-700 px-1.5 py-0.5 text-[8px] font-black text-white">NA VENDA</span>}</td><td className="px-2 py-1"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => { const valor = event.target.value; setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: valor } : registro)); if (parseBrazilianNumber(valor) <= 0) setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} placeholder="0" className="w-full rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-right font-black outline-none focus:border-amber-600" /></td><td className="px-2 py-1 font-bold uppercase">{item.unidade}</td><td className="px-2 py-1"><PrecoAutorizadoInput clienteId={cliente!.id} produtoId={item.produtoId} value={item.precoUnitario} precoAutorizado={precoAutorizado} origem="orcamento" documentoId={orcamento?.id} ariaLabel={`Preço de ${item.descricao} no orçamento`} onAuthorized={(valorFormatado, valor) => { setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: valorFormatado } : registro)); registrarPrecoAutorizadoLocal(item.produtoId, valor); }} className="w-full min-w-16 rounded border border-sky-300 bg-sky-50 px-1.5 py-1 text-right font-black outline-none focus:border-sky-600" /></td><td className="px-2 py-1 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-1 py-1 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => { setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index)); setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== item.produtoId)); }} className="rounded border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></td></tr>;
+                  const fornecedor = produto?.fornecedores?.find((registro) => registro.fornecedorId === item.fornecedorId);
+                  const referenciaCliente = encontrarPrecoCliente(produtosCliente, item.produtoId, item.fornecedorId);
+                  const precoAutorizado = Number(referenciaCliente?.precoAutorizado ?? referenciaCliente?.ultimoPreco ?? fornecedor?.precoVendaFornecedor ?? produto?.precoVendaPadrao ?? 0);
+                  return <tr key={chaveItem} className={jaEstaNaVenda ? "bg-emerald-50/70 text-slate-500" : "bg-white"}><td className="px-1 py-1"><div className="flex flex-col items-center justify-center gap-1"><button type="button" disabled={!disponivel || salvando} title={jaEstaNaVenda ? "Item já inserido na venda" : "Enviar este item para a venda"} onClick={() => incluirItensNaVenda([chaveItem])} className="inline-flex items-center gap-1 rounded border border-emerald-300 px-2 py-1.5 text-[9px] font-black text-emerald-800 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"><ArrowRight size={12} /> {jaEstaNaVenda ? "ENVIADO" : "ENVIAR"}</button><input aria-label={`Selecionar ${item.descricao} para venda`} type="checkbox" disabled={!disponivel} checked={selecionado} onChange={(event) => setItensSelecionadosVenda((atuais) => event.target.checked ? [...new Set([...atuais, chaveItem])] : atuais.filter((id) => id !== chaveItem))} /></div></td><td className="px-2 py-1 font-mono text-slate-400">{item.codigo || "—"}</td><td className="px-2 py-1 font-black uppercase text-slate-900">{item.descricao}{item.fornecedorReferencia && <span className="mt-0.5 block font-mono text-[9px] text-blue-700">REF. FORNECEDOR: {item.fornecedorReferencia}</span>}{jaEstaNaVenda && <span className="ml-2 rounded bg-emerald-700 px-1.5 py-0.5 text-[8px] font-black text-white">NA VENDA</span>}</td><td className="px-2 py-1"><input aria-label={`Quantidade de ${item.descricao} no orçamento`} value={item.quantidade} onChange={(event) => { const valor = event.target.value; setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, quantidade: valor } : registro)); if (parseBrazilianNumber(valor) <= 0) setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== chaveItem)); }} placeholder="0" className="w-full rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-right font-black outline-none focus:border-amber-600" /></td><td className="px-2 py-1 font-bold uppercase">{item.unidade}</td><td className="px-2 py-1"><PrecoAutorizadoInput clienteId={cliente!.id} produtoId={item.produtoId} fornecedorId={item.fornecedorId} value={item.precoUnitario} precoAutorizado={precoAutorizado} origem="orcamento" documentoId={orcamento?.id} ariaLabel={`Preço de ${item.descricao} no orçamento`} onAuthorized={(valorFormatado, valor) => { setItems((atuais) => atuais.map((registro, itemIndex) => itemIndex === index ? { ...registro, precoUnitario: valorFormatado } : registro)); registrarPrecoAutorizadoLocal(item.produtoId, item.fornecedorId, valor); }} className="w-full min-w-16 rounded border border-sky-300 bg-sky-50 px-1.5 py-1 text-right font-black outline-none focus:border-sky-600" /></td><td className="px-2 py-1 text-right font-mono font-black">{formatCurrency(parseBrazilianNumber(item.quantidade) * parseBrazilianNumber(item.precoUnitario))}</td><td className="px-1 py-1 text-center"><button type="button" aria-label={`Remover ${item.descricao}`} onClick={() => { setItems((atuais) => atuais.filter((_, itemIndex) => itemIndex !== index)); setItensSelecionadosVenda((atuais) => atuais.filter((id) => id !== chaveItem)); }} className="rounded border border-red-200 p-1.5 text-red-600 hover:bg-red-50"><Trash2 size={13} /></button></td></tr>;
                 })}
               </tbody>
             </table>

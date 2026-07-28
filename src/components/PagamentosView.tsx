@@ -4,6 +4,8 @@ import { Cliente, Venda, Pagamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
+import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 const PAGE_SIZE = 12;
 
@@ -12,6 +14,7 @@ interface PagamentosViewProps {
 }
 
 export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
+  const confirmacao = useConfirmacao();
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [vendasPendentes, setVendasPendentes] = useState<Venda[]>([]);
@@ -114,7 +117,11 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
   };
 
   const handleCancelPagamento = async (id: string) => {
-    if (confirm("Deseja realmente cancelar/estornar este pagamento? Os saldos das faturas correspondentes serão reajustados para a cobrança.")) {
+    if (await confirmacao.confirmar({
+      titulo: "Estornar recebimento",
+      mensagem: "Deseja realmente cancelar/estornar este pagamento? Os saldos das faturas correspondentes serão reajustados para a cobrança.",
+      textoConfirmar: "Estornar"
+    })) {
       try {
         await api.cancelarPagamento(id);
         fetchData();
@@ -130,11 +137,21 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
     c.nome.toLowerCase().includes(clienteBusca.toLowerCase()) || 
     (c.telefone && c.telefone.includes(clienteBusca))
   );
+  const clienteKeyboard = useKeyboardListNavigation<Cliente>({
+    items: filteredClientes,
+    isOpen: showClienteDropdown && Boolean(clienteBusca.trim()),
+    listId: "pagamentos-clientes",
+    resetKey: clienteBusca,
+    onOpen: () => setShowClienteDropdown(true),
+    onClose: () => setShowClienteDropdown(false),
+    onSelect: handleSelectCliente
+  });
 
   const pagamentosPagina = paginate<Pagamento>(pagamentos, page, PAGE_SIZE);
 
   return (
     <div className="space-y-6">
+      {confirmacao.dialogo}
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -194,6 +211,12 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                     if (clienteSelecionado) setClienteSelecionado(null);
                   }}
                   onFocus={() => setShowClienteDropdown(true)}
+                  onKeyDown={clienteKeyboard.onKeyDown}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={showClienteDropdown && clienteBusca.trim() !== ""}
+                  aria-controls="pagamentos-clientes"
+                  aria-activedescendant={clienteKeyboard.activeDescendant}
                   className="w-full text-slate-900 bg-transparent py-2.5 px-3.5 text-sm outline-none font-bold"
                 />
                 {clienteSelecionado && (
@@ -204,16 +227,17 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
               </div>
 
               {showClienteDropdown && clienteBusca.trim() !== "" && (
-                <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-50">
+                <div id="pagamentos-clientes" role="listbox" className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-50">
                   {filteredClientes.length === 0 ? (
                     <div className="p-3 text-slate-400 text-xs">Nenhum cliente ativo localizado.</div>
                   ) : (
-                    filteredClientes.map((c) => (
+                    filteredClientes.map((c, index) => (
                       <button
+                        {...clienteKeyboard.getOptionProps(index)}
                         key={c.id}
                         type="button"
                         onClick={() => handleSelectCliente(c)}
-                        className="w-full p-3 hover:bg-slate-50 text-left text-xs flex justify-between items-center transition-colors"
+                        className={`w-full p-3 hover:bg-slate-50 text-left text-xs flex justify-between items-center transition-colors ${clienteKeyboard.activeIndex === index ? "bg-emerald-50 ring-1 ring-inset ring-emerald-300" : ""}`}
                       >
                         <div>
                           <p className="font-bold text-slate-800">{c.nome}</p>

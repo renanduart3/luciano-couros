@@ -558,6 +558,8 @@ export function initDatabase() {
         clienteId TEXT NOT NULL,
         data TEXT NOT NULL,
         valorCredito REAL NOT NULL,
+        abatimentoVale REAL NOT NULL DEFAULT 0,
+        bonusGerado REAL NOT NULL DEFAULT 0,
         observacoes TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -677,6 +679,27 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE itens_venda ADD COLUMN fornecedorId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_venda ADD COLUMN fornecedorReferencia TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE cliente_bonus_movimentos ADD COLUMN vendaId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE devolucoes_venda ADD COLUMN abatimentoVale REAL`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE devolucoes_venda ADD COLUMN bonusGerado REAL`).run(); } catch (e) {}
+  db.prepare(`
+    UPDATE devolucoes_venda
+    SET bonusGerado = COALESCE((
+      SELECT SUM(bm.valor)
+      FROM cliente_bonus_movimentos bm
+      WHERE bm.vendaId = devolucoes_venda.vendaId
+        AND bm.data = devolucoes_venda.data
+        AND bm.createdAt = devolucoes_venda.createdAt
+        AND bm.tipo = 'credito'
+        AND bm.deletedAt IS NULL
+        AND bm.observacao LIKE 'Crédito excedente da devolução%'
+    ), 0)
+    WHERE bonusGerado IS NULL
+  `).run();
+  db.prepare(`
+    UPDATE devolucoes_venda
+    SET abatimentoVale = MAX(0, valorCredito - COALESCE(bonusGerado, 0))
+    WHERE abatimentoVale IS NULL
+  `).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_venda ON cliente_bonus_movimentos (vendaId, deletedAt)`).run();
 

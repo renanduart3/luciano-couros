@@ -38,6 +38,8 @@ export function RelatoriosView() {
   const [pin, setPin] = useState("");
   const [pinErro, setPinErro] = useState("");
   const [itensClientePage, setItensClientePage] = useState(1);
+  const [geralProdutosPage, setGeralProdutosPage] = useState(1);
+  const [geralClientesPage, setGeralClientesPage] = useState(1);
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
 
   useEffect(() => {
@@ -55,6 +57,11 @@ export function RelatoriosView() {
     setDadosClienteLiberados(false);
     setItensClientePage(1);
   }, [clienteId, dataInicio, dataFim]);
+
+  useEffect(() => {
+    setGeralProdutosPage(1);
+    setGeralClientesPage(1);
+  }, [dados, situacaoCliente]);
 
   const carregar = async () => {
     if (dataInicio && dataFim && dataInicio > dataFim) {
@@ -101,7 +108,9 @@ export function RelatoriosView() {
       vendas: dados.vendas.length,
       historico: [...porDia].map(([data, total]) => ({ data: formatDate(data), total })),
       meios: [...meios].map(([nome, total]) => ({ nome, total })),
-      produtos: (dados.rankings?.produtos || []).slice(0, 10),
+      produtos: [...(dados.rankings?.produtos || [])].sort((a: any, b: any) =>
+        Number(b.totalVendas) - Number(a.totalVendas) || Number(b.totalValor) - Number(a.totalValor)
+      ),
     };
   }, [dados]);
 
@@ -139,6 +148,9 @@ export function RelatoriosView() {
   }, [dados, clienteId]);
   const itensClientePageSize = 12;
   const itensClientePagina = paginate<any>(analiseCliente.itens, itensClientePage, itensClientePageSize);
+  const rankingPageSize = 10;
+  const produtosGeraisPagina = paginate<any>(geral?.produtos || [], geralProdutosPage, rankingPageSize);
+  const clientesGeraisPagina = paginate<any>(linhasClientes, geralClientesPage, rankingPageSize);
 
   const desbloquearAnaliseCliente = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -244,14 +256,82 @@ export function RelatoriosView() {
         </div>
 
         {aba === "geral" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label></div>}
-        {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select value={situacaoCliente} onChange={(e) => setSituacaoCliente(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="com_saldo">COM SALDO DEVEDOR</option><option value="com_bonus">COM BÔNUS</option><option value="sem_movimento">SEM COMPRA NO PERÍODO</option></select></label></div>}
+        {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "fornecedores" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORNECEDOR<select data-testid="relatorio-filtro-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS FORNECEDORES</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">PRODUTO / MATERIAL<select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS PRODUTOS</option>{produtos.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "vales" && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vale-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select data-testid="relatorio-vale-status" value={valeStatus} onChange={(e) => setValeStatus(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="abertos">EM ABERTO</option><option value="vencidos">VENCIDOS</option><option value="a_vencer">A VENCER</option><option value="quitados">QUITADOS</option></select></label><label className="text-xs font-black text-slate-700">VENCIMENTO DE<input type="date" value={vencimentoInicio} onChange={(e) => setVencimentoInicio(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label><label className="text-xs font-black text-slate-700">VENCIMENTO ATÉ<input type="date" value={vencimentoFim} onChange={(e) => setVencimentoFim(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label></div>}
       </div>
 
       {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-4 font-black text-red-900"><AlertTriangle size={18} />{error}</div>}
       {loading ? <div className="rounded-2xl border border-slate-300 bg-white p-12 text-center font-black text-slate-600">PROCESSANDO RELATÓRIO...</div> : dados && <>
-        {aba === "geral" && geral && <div className="space-y-5"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Card titulo="FATURAMENTO" valor={formatCurrency(geral.faturamento)} destaque="text-emerald-800" /><Card titulo="RECEBIDO NO PERÍODO" valor={formatCurrency(geral.recebido)} destaque="text-blue-800" /><Card titulo="LUCRO BRUTO" valor={formatCurrency(geral.lucro)} destaque={geral.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /><Card titulo="MARGEM / TICKET" valor={`${geral.margem.toFixed(1)}% • ${formatCurrency(geral.ticket)}`} /></div><div className="grid gap-5 lg:grid-cols-[2fr_1fr]"><div className="rounded-2xl border border-slate-300 bg-white p-4"><h3 className="mb-4 font-black text-slate-950">FATURAMENTO POR DIA</h3><div className="h-72">{geral.historico.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={geral.historico}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="data" fontSize={11} /><YAxis fontSize={11} /><Tooltip formatter={(valor) => formatCurrency(Number(valor))} /><Area dataKey="total" stroke="#047857" fill="#d1fae5" /></AreaChart></ResponsiveContainer> : <p className="p-10 text-center font-bold text-slate-500">SEM VENDAS NO PERÍODO.</p>}</div></div><div className="rounded-2xl border border-slate-300 bg-white p-4"><h3 className="mb-4 font-black text-slate-950">RECEBIMENTOS POR MEIO</h3><div className="space-y-2">{geral.meios.map((item) => <div key={item.nome} className="flex justify-between gap-3 rounded-lg bg-slate-100 p-3 text-xs font-black"><span>{item.nome.replaceAll("_", " ")}</span><span>{formatCurrency(item.total)}</span></div>)}</div></div></div><div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[650px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead><tbody className="divide-y">{geral.produtos.map((item: any) => <tr key={item.produtoId}><td className="p-3 font-black">{item.descricao}</td><td className="p-3 text-right">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>)}</tbody></table></div></div>}
+        {aba === "geral" && geral && (
+          <div className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Card titulo="FATURAMENTO" valor={formatCurrency(geral.faturamento)} destaque="text-emerald-800" />
+              <Card titulo="RECEBIDO NO PERÍODO" valor={formatCurrency(geral.recebido)} destaque="text-blue-800" />
+              <Card titulo="LUCRO BRUTO" valor={formatCurrency(geral.lucro)} destaque={geral.lucro >= 0 ? "text-emerald-800" : "text-red-800"} />
+              <Card titulo="MARGEM / TICKET" valor={`${geral.margem.toFixed(1)}% • ${formatCurrency(geral.ticket)}`} />
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+              <div className="rounded-2xl border border-slate-300 bg-white p-4">
+                <h3 className="mb-4 font-black text-slate-950">FATURAMENTO POR DIA</h3>
+                <div className="h-72">
+                  {geral.historico.length ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={geral.historico}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="data" fontSize={11} />
+                        <YAxis fontSize={11} />
+                        <Tooltip formatter={(valor) => formatCurrency(Number(valor))} />
+                        <Area dataKey="total" stroke="#047857" fill="#d1fae5" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : <p className="p-10 text-center font-bold text-slate-500">SEM VENDAS NO PERÍODO.</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-300 bg-white p-4">
+                <h3 className="mb-4 font-black text-slate-950">RECEBIMENTOS POR MEIO</h3>
+                <div className="space-y-2">
+                  {geral.meios.map((item) => <div key={item.nome} className="flex justify-between gap-3 rounded-lg bg-slate-100 p-3 text-xs font-black"><span>{item.nome.replaceAll("_", " ")}</span><span>{formatCurrency(item.total)}</span></div>)}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+              <div className="border-b border-slate-200 bg-slate-50 p-4">
+                <h3 className="font-black text-slate-950">MATERIAIS MAIS VENDIDOS</h3>
+                <p className="mt-1 text-xs font-bold text-slate-500">Ordenados pela quantidade de vendas, do maior para o menor.</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[650px] text-sm">
+                  <thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead>
+                  <tbody className="divide-y">{produtosGeraisPagina.length ? produtosGeraisPagina.map((item: any) => <tr key={item.produtoId}><td className="p-3 font-black">{item.descricao}</td><td className="p-3 text-right font-black">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>) : <tr><td colSpan={5} className="p-10 text-center font-bold text-slate-500">NENHUM MATERIAL VENDIDO NO PERÍODO.</td></tr>}</tbody>
+                </table>
+              </div>
+              <Pagination page={geralProdutosPage} pageSize={rankingPageSize} totalItems={geral.produtos.length} onPageChange={setGeralProdutosPage} />
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
+              <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="font-black text-slate-950">CLIENTES — VISÃO GERAL</h3>
+                  <p className="mt-1 text-xs font-bold text-slate-500">Ranking por total comprado e situação financeira no período.</p>
+                </div>
+                <label className="w-full text-xs font-black text-slate-700 md:w-72">
+                  SITUAÇÃO
+                  <select data-testid="relatorio-filtro-situacao-cliente" value={situacaoCliente} onChange={(e) => setSituacaoCliente(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-white px-3 font-bold">
+                    <option value="todos">TODOS</option>
+                    <option value="com_saldo">COM SALDO DEVEDOR</option>
+                    <option value="com_bonus">COM BÔNUS</option>
+                    <option value="sem_movimento">SEM COMPRA NO PERÍODO</option>
+                  </select>
+                </label>
+              </div>
+              <TabelaClientes linhas={clientesGeraisPagina} />
+              <Pagination page={geralClientesPage} pageSize={rankingPageSize} totalItems={linhasClientes.length} onPageChange={setGeralClientesPage} />
+            </div>
+          </div>
+        )}
 
         {aba === "clientes" && <div className="space-y-4">
           {!clienteId ? (
@@ -268,7 +348,6 @@ export function RelatoriosView() {
                 <Pagination page={itensClientePage} pageSize={itensClientePageSize} totalItems={analiseCliente.itens.length} onPageChange={setItensClientePage} />
                 <div className="grid gap-2 border-t border-slate-200 bg-slate-50 p-4 text-xs font-black sm:grid-cols-3"><span>Total líquido: {formatCurrency(analiseCliente.valorLiquido)}</span><span>Custo: {dadosClienteLiberados ? formatCurrency(analiseCliente.custo) : "••••"}</span><span>Lucro / margem: {dadosClienteLiberados ? `${formatCurrency(analiseCliente.lucro)} • ${analiseCliente.margem.toFixed(1)}%` : "••••"}</span></div>
               </div>
-              <TabelaClientes linhas={linhasClientes} />
             </>
           )}
         </div>}
@@ -282,7 +361,7 @@ export function RelatoriosView() {
 }
 
 function TabelaClientes({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto rounded-2xl border border-slate-300 bg-white"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">COMPRADO</th><th className="p-3 text-right">RECEBIDO</th><th className="p-3 text-right">DÍVIDA ATUAL</th><th className="p-3 text-right">BÔNUS</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId}><td className="p-3 font-black text-slate-950">{item.clienteNome}</td><td className="p-3 font-bold text-slate-600">{item.clienteTelefone || "—"}</td><td className="p-3 text-right font-bold">{item.totalVendas}</td><td className="p-3 text-right font-black">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoDevedor)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.saldoBonus)}</td><td className="p-3 text-right">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM CLIENTE NESTE FILTRO.</td></tr>}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">COMPRADO</th><th className="p-3 text-right">RECEBIDO</th><th className="p-3 text-right">DÍVIDA ATUAL</th><th className="p-3 text-right">BÔNUS</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId}><td className="p-3 font-black text-slate-950">{item.clienteNome}</td><td className="p-3 font-bold text-slate-600">{item.clienteTelefone || "—"}</td><td className="p-3 text-right font-bold">{item.totalVendas}</td><td className="p-3 text-right font-black">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoDevedor)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.saldoBonus)}</td><td className="p-3 text-right">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM CLIENTE NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }
 
 function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boolean }) {

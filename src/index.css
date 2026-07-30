@@ -328,17 +328,28 @@ textarea {
 }
 
 .receipt-observation-line {
-  display: -webkit-box;
-  min-height: 5.5mm;
-  max-height: 8mm;
+  box-sizing: border-box;
+  display: grid;
+  height: 6mm;
+  min-height: 6mm;
+  max-height: 6mm;
+  flex: 0 0 6mm;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  column-gap: 1mm;
   overflow: hidden;
   border-top: 0.2mm solid #64748b;
-  padding: 0.8mm 1mm;
+  padding: 0.6mm 1mm 0.4mm;
   font-size: 6.1pt;
-  line-height: 1.25;
+  line-height: 2.2mm;
   overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+}
+
+.receipt-observation-line > b,
+.receipt-observation-line > span {
+  display: block;
+  min-width: 0;
+  line-height: inherit;
 }
 
 .receipt-footer {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards, ShieldCheck
+  Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards, ShieldCheck, RotateCcw
 } from "lucide-react";
 import { CarteiraCliente, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
@@ -195,6 +195,12 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   );
   const clientesPagina = paginate<Cliente>(filteredClientes, page, PAGE_SIZE);
   const resumoVales = calcularResumoVales(activeHistory?.vendas || []);
+  const devolucoesCliente = (activeHistory?.vendas || [])
+    .flatMap((venda: Venda) => (venda.devolucoes || []).map((devolucao) => ({
+      ...devolucao,
+      numeroSequencial: venda.numeroSequencial
+    })))
+    .sort((a: any, b: any) => b.data.localeCompare(a.data) || String(b.createdAt).localeCompare(String(a.createdAt)));
 
   const removerProdutoCliente = async (produto: ProdutoHabitual) => {
     if (!activeHistory) return;
@@ -537,50 +543,49 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
               
               {/* Profile statistics cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
                 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Comprado</p>
-                  <p className="text-base font-extrabold text-slate-900 mt-1">{formatCurrency(activeHistory.estatisticas.totalComprado)}</p>
+                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">COMPRADO</p>
+                  <p className="mt-1 text-sm font-extrabold text-slate-900">{formatCurrency(activeHistory.estatisticas.totalComprado)}</p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cliente desde</p>
-                  <p className="text-base font-extrabold text-slate-900 mt-1">{formatDate(activeHistory.cliente.createdAt)}</p>
+                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">DESDE</p>
+                  <p className="mt-1 text-sm font-extrabold text-slate-900">{formatDate(activeHistory.cliente.createdAt)}</p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Pago</p>
-                  <p className="text-base font-extrabold text-emerald-700 mt-1">{formatCurrency(activeHistory.estatisticas.totalPago)}</p>
+                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">PAGO</p>
+                  <p className="mt-1 text-sm font-extrabold text-emerald-700">{formatCurrency(activeHistory.estatisticas.totalPago)}</p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Saldo Pendente</p>
-                  <p className={`text-base font-extrabold mt-1 ${activeHistory.estatisticas.saldoPendente > 0 ? "text-amber-600" : "text-slate-500"}`}>
+                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">PENDENTE</p>
+                  <p className={`mt-1 text-sm font-extrabold ${activeHistory.estatisticas.saldoPendente > 0 ? "text-amber-600" : "text-slate-500"}`}>
                     {formatCurrency(activeHistory.estatisticas.saldoPendente)}
                   </p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/60 text-center">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Lucro Gerado</p>
-                  <p className="text-base font-extrabold text-teal-600 mt-1">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
+                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">LUCRO</p>
+                  <p className="mt-1 text-sm font-extrabold text-teal-600">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
                 </div>
 
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Vales ativos</p>
-                  <p className="mt-1 text-base font-extrabold text-amber-950">{resumoVales.quantidade}</p>
-                  <p className="text-[9px] font-bold text-amber-700">{resumoVales.parcelas} vencimento(s)</p>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700">VALES</p>
+                  <p className="mt-1 text-sm font-extrabold text-amber-950">{resumoVales.quantidade}</p>
+                  <p className="text-[8px] font-bold uppercase text-amber-700">{resumoVales.parcelas} VENC.</p>
                 </div>
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Data média dos vales</p>
-                  <p className="mt-1 text-base font-extrabold text-blue-950">{resumoVales.dataMedia ? formatDate(resumoVales.dataMedia) : "Sem vales"}</p>
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-blue-700">MÉDIA VALES</p>
+                  <p className="mt-1 text-sm font-extrabold text-blue-950">{resumoVales.dataMedia ? formatDate(resumoVales.dataMedia) : "—"}</p>
                 </div>
 
-                <div className="rounded-xl border border-violet-200 bg-violet-50 p-4 text-center">
-                  <p className="flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider text-violet-700"><WalletCards size={13} /> Bônus disponível</p>
-                  <p className="mt-1 text-base font-extrabold text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
-                  <p className="text-[9px] font-bold text-violet-700">Carteira do cliente</p>
+                <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-center">
+                  <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider text-violet-700"><WalletCards size={11} /> BÔNUS</p>
+                  <p className="mt-1 text-sm font-extrabold text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
                 </div>
 
               </div>
@@ -706,7 +711,10 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           <tr key={v.id} className="hover:bg-slate-50/20">
                             <td className="p-3 text-center font-extrabold text-slate-900">#{v.numeroSequencial}</td>
                             <td className="p-3 font-mono">{formatDate(v.data)}</td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900">{formatCurrency(v.totalLiquido)}</td>
+                            <td className="p-3 text-right font-mono font-bold text-slate-900">
+                              {formatCurrency(v.totalLiquido)}
+                              {(v.devolucoes || []).length > 0 && <span className="block text-[9px] font-black uppercase text-violet-700">Devolvido: {formatCurrency((v.devolucoes || []).reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0))}</span>}
+                            </td>
                             <td className="p-3 text-right font-mono text-emerald-700">{formatCurrency(v.valorPago)}</td>
                             <td className="p-3 text-right font-mono text-amber-600 font-bold">
                               {v.saldoRestante > 0 ? formatCurrency(v.saldoRestante) : "-"}
@@ -723,6 +731,36 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                       )}
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Full History of Returns */}
+              <div className="space-y-3">
+                <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                  <RotateCcw size={14} className="text-violet-600" />
+                  Histórico de Devoluções
+                </h4>
+                <div className="max-h-[280px] overflow-y-auto rounded-xl border border-violet-200 bg-white">
+                  {devolucoesCliente.length === 0 ? (
+                    <p className="p-6 text-center text-xs font-semibold text-slate-400">Nenhuma devolução registrada para este cliente.</p>
+                  ) : (
+                    <div className="divide-y divide-violet-100">
+                      {devolucoesCliente.map((devolucao: any) => (
+                        <article key={devolucao.id} className="space-y-2 p-3 text-xs">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div><p className="font-black text-slate-950">VENDA #{devolucao.numeroSequencial}</p><p className="font-mono text-slate-500">{formatDate(devolucao.data)}</p></div>
+                            <strong className="font-mono text-sm text-violet-800">{formatCurrency(devolucao.valorCredito)}</strong>
+                          </div>
+                          <div className="flex flex-wrap gap-2 font-black uppercase">
+                            <span className="rounded-lg bg-amber-50 px-2 py-1 text-[9px] text-amber-800">Dívida abatida: {formatCurrency(devolucao.abatimentoVale || 0)}</span>
+                            <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[9px] text-emerald-800">Bônus gerado: {formatCurrency(devolucao.bonusGerado || 0)}</span>
+                          </div>
+                          <p className="font-bold text-slate-700">{(devolucao.items || []).map((item: any) => `${item.quantidade} ${item.unidade || ""} de ${item.descricao || "item"}`).join(" • ")}</p>
+                          {devolucao.observacoes && <p className="text-slate-500">{devolucao.observacoes}</p>}
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

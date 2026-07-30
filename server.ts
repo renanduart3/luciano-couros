@@ -715,23 +715,39 @@ app.get("/api/clientes/:id/historico", (req, res) => {
     // 4. Lucro bruto gerado (lucro bruto das vendas ativas)
     const lucroBrutoRow = queryOne<{ total: number }>(
       `SELECT COALESCE(SUM(
-         iv.total
-         - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
-         - iv.custoTotal
+         (
+           iv.total
+           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+           - iv.custoTotal
+         ) * ((iv.quantidade - COALESCE(dev.quantidade, 0)) / NULLIF(iv.quantidade, 0))
        ), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
+       LEFT JOIN (
+         SELECT itemVendaId, SUM(quantidade) AS quantidade
+         FROM itens_devolucao
+         GROUP BY itemVendaId
+       ) dev ON dev.itemVendaId = iv.id
         WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL`,
       [id]
     );
 
     // 5. Produtos mais comprados (ranking)
     const produtosMaisComprados = queryAll<any>(
-      `SELECT iv.produtoId, iv.descricao, COALESCE(SUM(iv.total), 0) as totalValor
+      `SELECT iv.produtoId, iv.descricao,
+              COALESCE(SUM(
+                iv.total * ((iv.quantidade - COALESCE(dev.quantidade, 0)) / NULLIF(iv.quantidade, 0))
+              ), 0) as totalValor
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
+       LEFT JOIN (
+         SELECT itemVendaId, SUM(quantidade) AS quantidade
+         FROM itens_devolucao
+         GROUP BY itemVendaId
+       ) dev ON dev.itemVendaId = iv.id
         WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL
        GROUP BY iv.produtoId, iv.descricao
+       HAVING SUM(iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005
        ORDER BY totalValor DESC
        LIMIT 5`,
       [id]
@@ -743,14 +759,10 @@ app.get("/api/clientes/:id/historico", (req, res) => {
       [id]
     );
 
-    // For each sale, get its items
+    // Carrega itens, parcelas, instrumentos e devoluções para que a ficha do
+    // cliente preserve todo o histórico financeiro da venda.
     for (const v of vendas) {
-      v.items = queryAll("SELECT * FROM itens_venda WHERE vendaId = ?", [v.id]);
-      v.parcelas = queryAll(
-        `SELECT id, vendaId, numero, vencimento, valor, valorPago, saldo, status, createdAt, updatedAt
-         FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY vencimento, numero`,
-        [v.id]
-      );
+      carregarDetalhesVenda(v);
     }
 
     // 7. Histórico de pagamentos
@@ -1889,7 +1901,7 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 });
 
 
-const carregarDetalhesVenda = (venda: any) => {
+function carregarDetalhesVenda(venda: any) {
   venda.items = queryAll(
     `SELECT iv.*, p.codigo as referencia,
             COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
@@ -1944,7 +1956,7 @@ const carregarDetalhesVenda = (venda: any) => {
     }];
   }
   return venda;
-};
+}
 
 // 6. VENDAS
 app.get("/api/vendas", (req, res) => {
@@ -2381,6 +2393,13 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const abatimentoVale = Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
       const bonusGerado = Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
       const primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, valorCredito);
+
+      execute(
+        `UPDATE devolucoes_venda
+         SET abatimentoVale = ?, bonusGerado = ?, updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [abatimentoVale, bonusGerado, devolucaoId]
+      );
 
       execute(
         `UPDATE vendas
@@ -3412,7 +3431,11 @@ app.get("/api/relatorios", (req, res) => {
     );
 
     // B. ITENS VENDIDOS (com detalhamento de metros, lucro, custo)
-    let itemFilters = ["v.deletedAt IS NULL"];
+    const quantidadeDevolvidaSql = "COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)";
+    let itemFilters = [
+      "v.deletedAt IS NULL",
+      `(iv.quantidade - ${quantidadeDevolvidaSql}) > 0.005`
+    ];
     let itemParams: any[] = [];
     if (startDate) { itemFilters.push("v.data >= ?"); itemParams.push(startDate); }
     if (endDate) { itemFilters.push("v.data <= ?"); itemParams.push(endDate); }
@@ -3429,6 +3452,7 @@ app.get("/api/relatorios", (req, res) => {
          v.subtotal AS vendaSubtotal,
          v.desconto AS descontoVenda,
          c.nome as clienteNome,
+         ${quantidadeDevolvidaSql} AS quantidadeDevolvida,
          (
            iv.total
            - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
@@ -3450,15 +3474,22 @@ app.get("/api/relatorios", (req, res) => {
        ORDER BY v.data DESC`,
       itemParams
     ).map((item) => {
+      const quantidadeOriginal = Number(item.quantidade || 0);
+      const quantidade = Math.max(0, quantidadeOriginal - Number(item.quantidadeDevolvida || 0));
+      const proporcao = quantidadeOriginal > 0 ? quantidade / quantidadeOriginal : 0;
       const custoUnitario = Number(item.custoUnitario) > 0
         ? Number(item.custoUnitario)
         : Number(item.custoAtualProduto || 0);
-      const custoTotal = custoUnitario * Number(item.quantidade || 0);
+      const custoTotal = custoUnitario * quantidade;
+      const valorVendaLiquido = Number(item.valorVendaLiquido || item.total || 0) * proporcao;
       return {
         ...item,
+        quantidade,
+        total: Number(item.total || 0) * proporcao,
+        valorVendaLiquido,
         custoUnitario,
         custoTotal,
-        lucroBruto: Number(item.valorVendaLiquido || item.total || 0) - custoTotal
+        lucroBruto: valorVendaLiquido - custoTotal
       };
     });
 
@@ -3486,20 +3517,22 @@ app.get("/api/relatorios", (req, res) => {
          iv.produtoId, 
          iv.descricao, 
          COALESCE(SUM(
-           iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+           (iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END)
+           * ((iv.quantidade - ${quantidadeDevolvidaSql}) / NULLIF(iv.quantidade, 0))
          ), 0) as totalValor,
          COALESCE(SUM(
            CASE WHEN iv.custoUnitario > 0
-             THEN iv.custoTotal
-             ELSE iv.quantidade * COALESCE(p.custoPadrao, 0)
+             THEN iv.custoUnitario * (iv.quantidade - ${quantidadeDevolvidaSql})
+             ELSE (iv.quantidade - ${quantidadeDevolvidaSql}) * COALESCE(p.custoPadrao, 0)
            END
          ), 0) as totalCusto,
          COALESCE(SUM(
-           iv.total
-           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+           (iv.total
+           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END)
+           * ((iv.quantidade - ${quantidadeDevolvidaSql}) / NULLIF(iv.quantidade, 0))
            - CASE WHEN iv.custoUnitario > 0
-               THEN iv.custoTotal
-               ELSE iv.quantidade * COALESCE(p.custoPadrao, 0)
+               THEN iv.custoUnitario * (iv.quantidade - ${quantidadeDevolvidaSql})
+               ELSE (iv.quantidade - ${quantidadeDevolvidaSql}) * COALESCE(p.custoPadrao, 0)
              END
          ), 0) as totalLucro,
          COUNT(DISTINCT iv.vendaId) as totalVendas

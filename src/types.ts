@@ -140,6 +140,8 @@ export interface DevolucaoVenda {
   clienteId: string;
   data: string;
   valorCredito: number;
+  abatimentoVale: number;
+  bonusGerado: number;
   observacoes?: string;
   createdAt: string;
   items: ItemDevolucaoVenda[];

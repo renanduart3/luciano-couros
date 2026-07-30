@@ -32,6 +32,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
+  const [numeroVale, setNumeroVale] = useState("");
   const [clienteId, setClienteId] = useState("");
   const [status, setStatus] = useState<FiltroStatus>("abertos");
   const [vencimentoInicio, setVencimentoInicio] = useState("");
@@ -62,9 +63,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
 
   useEffect(() => {
     setPage(1);
-  }, [clienteId, status, vencimentoInicio, vencimentoFim]);
+  }, [numeroVale, clienteId, status, vencimentoInicio, vencimentoFim]);
 
   const valesFiltrados = useMemo(() => vales.filter((vale) => {
+    const numeroBuscado = numeroVale.replace(/\D/g, "").replace(/^0+/, "");
+    if (numeroBuscado && String(vale.numeroSequencial) !== numeroBuscado) return false;
     if (clienteId && vale.clienteId !== clienteId) return false;
     if (vencimentoInicio && (!vale.vencimento || vale.vencimento < vencimentoInicio)) return false;
     if (vencimentoFim && (!vale.vencimento || vale.vencimento > vencimentoFim)) return false;
@@ -76,7 +79,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     if (status === "quitados" && vale.status !== "paga") return false;
     if (status === "cancelados" && vale.status !== "cancelada") return false;
     return true;
-  }), [vales, clienteId, status, vencimentoInicio, vencimentoFim]);
+  }), [vales, numeroVale, clienteId, status, vencimentoInicio, vencimentoFim]);
 
   const valesPagina = paginate<Venda>(valesFiltrados, page, PAGE_SIZE);
   useEffect(() => {
@@ -95,6 +98,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   }, [valesFiltrados]);
 
   const limparFiltros = () => {
+    setNumeroVale("");
     setClienteId("");
     setStatus("abertos");
     setVencimentoInicio("");
@@ -140,7 +144,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <>
           <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-xs font-black uppercase text-slate-700"><Filter size={16} /> Filtrar cobranças</h2><button type="button" onClick={limparFiltros} className="inline-flex items-center gap-1 text-xs font-black uppercase text-slate-500 hover:text-slate-900"><X size={14} /> Limpar</button></div>
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <label className="text-[10px] font-black uppercase text-slate-600">Número do vale<input data-testid="vale-filtro-numero" type="text" inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950" /></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value as FiltroStatus)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950"><option value="abertos">Em aberto</option><option value="vencidos">Vencidos</option><option value="a_vencer">A vencer</option><option value="quitados">Quitados</option><option value="cancelados">Cancelados</option><option value="todos">Todos</option></select></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Vencimento de<input type="date" value={vencimentoInicio} onChange={(event) => setVencimentoInicio(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950" /></label>

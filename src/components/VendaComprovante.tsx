@@ -58,7 +58,6 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
     : ehVale
       ? "VENDA / VALE"
       : "VENDA";
-  const vencimento = instrumento?.vencimento || venda.vencimento;
   const viaCurta = via.startsWith("1ª") ? "1ª VIA" : "2ª VIA";
 
   return (
@@ -106,11 +105,13 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         {Number(venda.desconto) > 0 && <span><b>Desconto:</b> {formatCurrency(venda.desconto)}</span>}
         {instrumento && <span><b>Nº:</b> {instrumento.numeroDocumento} • <b>Emitente:</b> {instrumento.emitente}</span>}
         {venda.saldoRestante > 0 && <span><b>Saldo do Vale:</b> {formatCurrency(venda.saldoRestante)}</span>}
-        <span><b>Vencimento:</b> {vencimento ? formatDate(vencimento) : "À vista"}</span>
       </div>
 
       {venda.observacoes && (
-        <div className="receipt-observation-line"><b>OBSERVAÇÃO:</b> {venda.observacoes.slice(0, 100)}</div>
+        <div className="receipt-observation-line">
+          <b>OBSERVAÇÃO:</b>
+          <span>{venda.observacoes.slice(0, 100)}</span>
+        </div>
       )}
 
       <footer className="receipt-footer">

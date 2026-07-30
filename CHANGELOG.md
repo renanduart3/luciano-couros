@@ -4,6 +4,20 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.8.7 — 2026-07-30
+
+- Ficha do cliente recebe indicadores compactos, objetivos e com melhor aproveitamento de espaço.
+- Visão geral dos relatórios passa a ordenar e paginar os materiais mais vendidos de dez em dez.
+- Análise consolidada de clientes movida para a visão geral, com ranking por total comprado, filtro de situação e paginação.
+- Relatório por cliente fica dedicado exclusivamente ao detalhamento individual de itens, valores, custos e lucro.
+- Vales recebem busca direta pelo número identificador do documento.
+- Comprovante de venda deixa de exibir vencimento e estabiliza o alinhamento da observação entre navegadores e impressoras.
+- Devoluções passam a persistir separadamente o valor abatido da dívida e o bônus gerado.
+- Histórico de devoluções adicionado ao detalhe do Vale e à ficha do cliente, com data, itens e impacto financeiro.
+- Ficha do cliente passa a carregar as devoluções vinculadas às vendas, evitando movimentações invisíveis.
+- Relatórios de materiais, custos e lucro deixam de contabilizar quantidades já devolvidas.
+- Migração automática recupera o impacto financeiro das devoluções existentes sem alterar os bancos do cliente.
+
 ## 1.8.6 — 2026-07-28
 
 - Produtos passam a centralizar configurações comerciais independentes para vários fornecedores, sem permitir o mesmo fornecedor repetido no material.

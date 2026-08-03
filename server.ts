@@ -1279,6 +1279,21 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
   }
 });
 
+app.delete("/api/fornecedores/:id/produtos/:produtoId", (req, res) => {
+  try {
+    const resultado = execute(
+      `UPDATE fornecedor_produtos
+       SET ativo = 0, updatedAt = CURRENT_TIMESTAMP
+       WHERE fornecedorId = ? AND produtoId = ? AND ativo = 1`,
+      [req.params.id, req.params.produtoId]
+    );
+    if (!resultado.changes) return res.status(404).json({ error: "Associação ativa não encontrada." });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // 5. PRODUTOS
 app.get("/api/produtos", (req, res) => {

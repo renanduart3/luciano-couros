@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link2, Package, Plus, RefreshCw } from "lucide-react";
+import { Link2, Package, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Fornecedor, FornecedorProduto, Produto } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
+import { useConfirmacao } from "./ConfirmacaoDialog";
 
 export function FornecedorProdutosView() {
+  const confirmacao = useConfirmacao();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [fornecedorId, setFornecedorId] = useState("");
@@ -78,10 +80,30 @@ export function FornecedorProdutosView() {
     }
   };
 
+  const desvincularProduto = async (item: FornecedorProduto) => {
+    if (!await confirmacao.confirmar({
+      titulo: "Remover produto do fornecedor",
+      mensagem: `Remover ${item.produtoNome} da lista de produtos associados? O histórico de compras será preservado.`,
+      textoConfirmar: "Remover associação"
+    })) return;
+    setSaving(true);
+    setFeedback("");
+    try {
+      await api.desvincularFornecedorProduto(fornecedorId, item.produtoId);
+      setCatalogo(await api.getFornecedorProdutos(fornecedorId));
+      setFeedback("Produto removido da associação. Uma nova compra poderá vinculá-lo novamente automaticamente.");
+    } catch (error: any) {
+      setFeedback(error.message || "Não foi possível remover a associação.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading && fornecedores.length === 0) return <div className="py-20 text-center font-bold text-slate-600">Carregando catálogo...</div>;
 
   return (
     <div className="space-y-6">
+      {confirmacao.dialogo}
       <div className="border-b border-slate-200 pb-4">
         <h2 className="text-2xl font-black text-slate-950">Produtos por fornecedor</h2>
         <p className="mt-1 text-sm text-slate-600">O vínculo é opcional. Produtos cadastrados manualmente continuam disponíveis para venda mesmo sem fornecedor.</p>
@@ -111,7 +133,7 @@ export function FornecedorProdutosView() {
 
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black text-slate-950">Catálogo deste fornecedor</h3><p className="text-xs text-slate-600">A configuração comercial principal é mantida no cadastro do produto.</p></div><button type="button" aria-label="Atualizar catálogo" onClick={() => carregarCatalogo(fornecedorId)} className="rounded-xl border border-slate-300 p-2 text-slate-700"><RefreshCw size={16} /></button></div>
-            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">REF. fornecedor</th><th className="p-4 text-right">Custo configurado</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th></tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.fornecedorReferencia || "—"}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.custoFornecedor || 0))}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.precoVendaFornecedor || 0))}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td></tr>)}</tbody></table></div>}
+            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">REF. fornecedor</th><th className="p-4 text-right">Custo configurado</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.fornecedorReferencia || "—"}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.custoFornecedor || 0))}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.precoVendaFornecedor || 0))}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td><td className="p-4 text-right"><button type="button" disabled={saving} onClick={() => desvincularProduto(item)} aria-label={`Remover associação de ${item.produtoNome}`} className="rounded-lg border border-red-200 p-2 text-red-700 disabled:opacity-40"><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>}
           </div>
         </>
       )}

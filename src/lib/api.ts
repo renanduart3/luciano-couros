@@ -187,6 +187,9 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
     }).then(r => handleResponse<{ success: boolean }>(r)),
+  desvincularFornecedorProduto: (fornecedorId: string, produtoId: string) =>
+    fetch(`${API_BASE}/fornecedores/${fornecedorId}/produtos/${produtoId}`, { method: "DELETE" })
+      .then(r => handleResponse<{ success: boolean }>(r)),
 
   // PRODUTOS
   getProdutos: () => fetch(`${API_BASE}/produtos`).then(r => handleResponse<Produto[]>(r)),

@@ -1,10 +1,10 @@
 import React, { useState } from "react";
-import { ShoppingBag, Truck } from "lucide-react";
-import { ComprasView } from "./ComprasView";
+import { PackageSearch, Truck } from "lucide-react";
 import { FornecedoresView } from "./FornecedoresView";
+import { FornecedorProdutosView } from "./FornecedorProdutosView";
 
 export function FornecedoresModuleView() {
-  const [tab, setTab] = useState<"cadastro" | "compras">("cadastro");
+  const [tab, setTab] = useState<"cadastro" | "produtos">("cadastro");
 
   return (
     <section className="space-y-5">
@@ -12,12 +12,12 @@ export function FornecedoresModuleView() {
         <button type="button" onClick={() => setTab("cadastro")} className={`module-tab ${tab === "cadastro" ? "module-tab-active" : ""}`}>
           <Truck size={17} /> Cadastro
         </button>
-        <button type="button" onClick={() => setTab("compras")} className={`module-tab ${tab === "compras" ? "module-tab-active" : ""}`}>
-          <ShoppingBag size={17} /> Compras e custos
+        <button type="button" onClick={() => setTab("produtos")} className={`module-tab ${tab === "produtos" ? "module-tab-active" : ""}`}>
+          <PackageSearch size={17} /> Produtos associados
         </button>
       </div>
 
-      {tab === "cadastro" ? <FornecedoresView /> : <ComprasView />}
+      {tab === "cadastro" ? <FornecedoresView /> : <FornecedorProdutosView />}
     </section>
   );
 }

@@ -1279,6 +1279,21 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
   }
 });
 
+app.delete("/api/fornecedores/:id/produtos/:produtoId", (req, res) => {
+  try {
+    const resultado = execute(
+      `UPDATE fornecedor_produtos
+       SET ativo = 0, updatedAt = CURRENT_TIMESTAMP
+       WHERE fornecedorId = ? AND produtoId = ? AND ativo = 1`,
+      [req.params.id, req.params.produtoId]
+    );
+    if (!resultado.changes) return res.status(404).json({ error: "Associação ativa não encontrada." });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // 5. PRODUTOS
 app.get("/api/produtos", (req, res) => {
@@ -2856,111 +2871,285 @@ function recalcularUltimoCustoProduto(produtoId: string) {
   );
 }
 
-// 7. COMPRAS
-app.get("/api/compras", (req, res) => {
-  try {
-    const rows = queryAll<any>(
-      `SELECT comp.*, f.nome as fornecedorNome, f.telefone as fornecedorTelefone
-       FROM compras comp
-       JOIN fornecedores f ON comp.fornecedorId = f.id
-       WHERE comp.deletedAt IS NULL
-       ORDER BY comp.data DESC, comp.createdAt DESC`
-    );
+// 7. COMPRAS. Orçamento e entrada compartilham a mesma validação de catálogo,
+// mas permanecem documentos distintos para preservar solicitado x conferido.
+function arredondarCompra(valor: number) {
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
+}
 
-    for (const c of rows) {
-      c.items = queryAll("SELECT * FROM itens_compra WHERE compraId = ?", [c.id]);
-    }
-
-    res.json(rows);
-  } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+function resolverItensCompraFornecedor(fornecedorId: string, items: any[], campoCusto: "custoEstimado" | "custoUnitario") {
+  if (!fornecedorId || !Array.isArray(items) || items.length === 0) {
+    throw erroHttp("Informe o fornecedor e pelo menos um produto.", 400);
   }
+  const ids = [...new Set(items.map((item) => String(item?.produtoId || "")).filter(Boolean))];
+  if (ids.length !== items.length) throw erroHttp("Não repita produtos no mesmo documento.", 400);
+  const placeholders = ids.map(() => "?").join(",");
+  const fornecedor = queryOne(
+    "SELECT id FROM fornecedores WHERE id = ? AND ativo = 1 AND deletedAt IS NULL",
+    [fornecedorId]
+  );
+  if (!fornecedor) throw erroHttp("Fornecedor não encontrado ou inativo.", 404);
+  const catalogo = queryAll<any>(
+    `SELECT p.id, p.nome, p.unidade, p.codigo
+     FROM produtos p
+     WHERE p.ativo = 1 AND p.deletedAt IS NULL
+       AND p.id IN (${placeholders})`,
+    ids
+  );
+  const porId = new Map(catalogo.map((produto) => [produto.id, produto]));
+  return items.map((item) => {
+    const produto = porId.get(String(item.produtoId));
+    if (!produto) throw erroHttp("A lista contém um produto inexistente ou inativo.", 400);
+    const quantidade = Number(item.quantidade);
+    const custo = Number(item[campoCusto]);
+    if (item.unidade && item.unidade !== produto.unidade) {
+      throw erroHttp(`O produto ${produto.nome} deve ser registrado em ${produto.unidade}.`, 400);
+    }
+    if (!Number.isFinite(quantidade) || quantidade <= 0 || !Number.isFinite(custo) || custo < 0) {
+      throw erroHttp(`Quantidade ou custo inválido para ${produto.nome}.`, 400);
+    }
+    return { produtoId: produto.id, produtoNome: produto.nome, unidade: produto.unidade, quantidade, custo, total: arredondarCompra(quantidade * custo) };
+  });
+}
+
+function agruparFilhos<T extends { [key: string]: any }>(pais: any[], filhos: T[], chavePai: string, destino: string) {
+  const mapa = new Map<string, T[]>();
+  for (const filho of filhos) {
+    const chave = String(filho[chavePai]);
+    mapa.set(chave, [...(mapa.get(chave) || []), filho]);
+  }
+  for (const pai of pais) pai[destino] = mapa.get(String(pai.id)) || [];
+}
+
+function listarCompras(donde = "", params: any[] = []) {
+  const compras = queryAll<any>(
+    `SELECT c.*, f.nome AS fornecedorNome, f.telefone AS fornecedorTelefone
+     FROM compras c JOIN fornecedores f ON f.id = c.fornecedorId
+     WHERE c.deletedAt IS NULL ${donde}
+     ORDER BY c.data DESC, c.numeroSequencial DESC`, params
+  );
+  if (compras.length === 0) return compras;
+  const ids = compras.map((item) => item.id);
+  const ph = ids.map(() => "?").join(",");
+  const itens = queryAll<any>(
+    `SELECT ic.*, p.nome AS produtoNome, p.codigo AS produtoCodigo
+     FROM itens_compra ic JOIN produtos p ON p.id = ic.produtoId
+     WHERE ic.compraId IN (${ph}) ORDER BY ic.id`, ids
+  );
+  const pagamentos = queryAll<any>(
+    `SELECT * FROM pagamentos_compra WHERE compraId IN (${ph}) AND deletedAt IS NULL ORDER BY data, createdAt`, ids
+  );
+  agruparFilhos(compras, itens, "compraId", "items");
+  agruparFilhos(compras, pagamentos, "compraId", "pagamentos");
+  return compras;
+}
+
+function listarOrcamentosCompra() {
+  const documentos = queryAll<any>(
+    `SELECT o.*, f.nome AS fornecedorNome, f.telefone AS fornecedorTelefone
+     FROM orcamentos_compra o JOIN fornecedores f ON f.id = o.fornecedorId
+     WHERE o.deletedAt IS NULL ORDER BY o.data DESC, o.numeroSequencial DESC`
+  );
+  if (documentos.length === 0) return documentos;
+  const ids = documentos.map((item) => item.id);
+  const ph = ids.map(() => "?").join(",");
+  const itens = queryAll<any>(
+    `SELECT io.*, p.nome AS produtoNome, p.codigo AS produtoCodigo
+     FROM itens_orcamento_compra io JOIN produtos p ON p.id = io.produtoId
+     WHERE io.orcamentoCompraId IN (${ph}) ORDER BY io.id`, ids
+  );
+  agruparFilhos(documentos, itens, "orcamentoCompraId", "items");
+  return documentos;
+}
+
+function recalcularCustoFornecedorProduto(fornecedorId: string, produtoId: string) {
+  const ultimo = queryOne<{ custoUnitario: number }>(
+    `SELECT ic.custoUnitario FROM itens_compra ic
+     JOIN compras c ON c.id = ic.compraId
+     WHERE c.fornecedorId = ? AND ic.produtoId = ? AND c.deletedAt IS NULL
+     ORDER BY c.data DESC, c.createdAt DESC, ic.id DESC LIMIT 1`,
+    [fornecedorId, produtoId]
+  );
+  execute(
+    `UPDATE fornecedor_produtos SET custoFornecedor = ?, updatedAt = CURRENT_TIMESTAMP
+     WHERE fornecedorId = ? AND produtoId = ?`,
+    [ultimo ? Number(ultimo.custoUnitario) : null, fornecedorId, produtoId]
+  );
+}
+
+app.get("/api/orcamentos-compra", (_req, res) => {
+  try { res.json(listarOrcamentosCompra()); }
+  catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
+app.post("/api/orcamentos-compra", (req, res) => {
+  try {
+    const { fornecedorId, data, validade, observacao } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    const resolvidos = resolverItensCompraFornecedor(String(fornecedorId || ""), req.body.items, "custoEstimado");
+    const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
+    const desconto = arredondarCompra(Number(req.body.desconto || 0));
+    if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal) return res.status(400).json({ error: "Desconto inválido." });
+    const idInformado = req.body.id ? String(req.body.id) : null;
+    const id = idInformado || "orc_comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+    runInTransaction(() => {
+      if (idInformado) {
+        const atual = queryOne<any>("SELECT * FROM orcamentos_compra WHERE id = ? AND status = 'aberto' AND deletedAt IS NULL", [id]);
+        if (!atual) throw erroHttp("Orçamento de compra não encontrado ou já encerrado.", 409);
+        execute(
+          `UPDATE orcamentos_compra SET fornecedorId = ?, data = ?, validade = ?, subtotal = ?, desconto = ?, total = ?, observacao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+          [fornecedorId, data, validade || null, subtotal, desconto, arredondarCompra(subtotal - desconto), observacao || null, id]
+        );
+        execute("DELETE FROM itens_orcamento_compra WHERE orcamentoCompraId = ?", [id]);
+      } else {
+        const numero = Number(queryOne<any>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM orcamentos_compra")?.numero || 1);
+        execute(
+          `INSERT INTO orcamentos_compra (id, numeroSequencial, fornecedorId, data, validade, subtotal, desconto, total, observacao)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [id, numero, fornecedorId, data, validade || null, subtotal, desconto, arredondarCompra(subtotal - desconto), observacao || null]
+        );
+      }
+      for (const item of resolvidos) execute(
+        `INSERT INTO itens_orcamento_compra (id, orcamentoCompraId, produtoId, quantidade, unidade, custoEstimado, total) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ["ioc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), id, item.produtoId, item.quantidade, item.unidade, item.custo, item.total]
+      );
+    });
+    res.status(idInformado ? 200 : 201).json(listarOrcamentosCompra().find((item) => item.id === id));
+  } catch (error: any) {
+    const mensagem = String(error.message || "");
+    res.status(error.statusCode || 500).json({ error: mensagem });
+  }
+});
+
+app.post("/api/orcamentos-compra/:id/cancelar", (req, res) => {
+  try {
+    const resultado = execute("UPDATE orcamentos_compra SET status = 'cancelado', updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND status = 'aberto' AND deletedAt IS NULL", [req.params.id]);
+    if (!resultado.changes) return res.status(404).json({ error: "Orçamento aberto não encontrado." });
+    res.json({ success: true });
+  } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+
+app.get("/api/compras", (_req, res) => {
+  try { res.json(listarCompras()); }
+  catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
 app.post("/api/compras", (req, res) => {
   try {
-    const { fornecedorId, data, desconto, items, observacao } = req.body;
-
-    if (!fornecedorId || !data || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Dados da compra incompletos." });
-    }
-
+    const { fornecedorId, data, observacao } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    const resolvidos = resolverItensCompraFornecedor(String(fornecedorId || ""), req.body.items, "custoUnitario");
+    const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
+    const desconto = arredondarCompra(Number(req.body.desconto || 0));
+    const total = arredondarCompra(subtotal - desconto);
+    const valorPago = arredondarCompra(Number(req.body.valorPago || 0));
+    if (!Number.isFinite(desconto) || desconto < 0 || total < 0) return res.status(400).json({ error: "Desconto inválido." });
+    if (!Number.isFinite(valorPago) || valorPago < 0 || valorPago > total) return res.status(400).json({ error: "O valor pago deve estar entre zero e o total da compra." });
     const compraId = "comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
-
     runInTransaction(() => {
-      let subtotal = 0;
-
-      const resolvedItems = items.map((it: any) => {
-        const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
-        if (!prod) {
-          throw erroHttp(`Produto não encontrado para o ID: ${it.produtoId}`, 404);
-        }
-
-        const qty = Number(it.quantidade);
-        const custoUnit = Number(it.custoUnitario);
-        const unidadeInformada = it.unidade || prod.unidade;
-
-        if (unidadeInformada !== prod.unidade) {
-          throw erroHttp(`A compra de ${prod.nome} deve ser registrada em ${prod.unidade}.`, 400);
-        }
-
-        if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(custoUnit) || custoUnit < 0) {
-          throw erroHttp(`Quantidade ou custo inválido para o produto ${prod.nome}.`, 400);
-        }
-
-        const itemTotal = qty * custoUnit;
-
-        subtotal += itemTotal;
-
-        return {
-          id: "itc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
-          produtoId: it.produtoId,
-          quantidade: qty,
-          unidade: prod.unidade,
-          custoUnitario: custoUnit,
-          total: itemTotal
-        };
-      });
-
-      const desc = Number(desconto || 0);
-      const total = subtotal - desc;
-
-      if (total < 0) {
-        throw erroHttp("Desconto não pode ser maior que o subtotal da compra.", 400);
+      const orcamentoId = req.body.orcamentoCompraId ? String(req.body.orcamentoCompraId) : null;
+      if (orcamentoId) {
+        const orcamento = queryOne<any>("SELECT * FROM orcamentos_compra WHERE id = ? AND fornecedorId = ? AND status = 'aberto' AND deletedAt IS NULL", [orcamentoId, fornecedorId]);
+        if (!orcamento) throw erroHttp("O orçamento informado não está aberto para este fornecedor.", 409);
       }
-
-      // Insert Compra
+      const numero = Number(queryOne<any>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM compras")?.numero || 1);
+      const saldo = arredondarCompra(total - valorPago);
       execute(
-        `INSERT INTO compras (id, fornecedorId, data, subtotal, desconto, total, observacao)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [compraId, fornecedorId, data, subtotal, desc, total, observacao || null]
+        `INSERT INTO compras (id, numeroSequencial, fornecedorId, orcamentoCompraId, data, subtotal, desconto, total, valorPago, saldoRestante, status, vencimento, observacao)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [compraId, numero, fornecedorId, orcamentoId, data, subtotal, desconto, total, valorPago, saldo, saldo <= 0.005 ? "paga" : "pendente", req.body.vencimento || null, observacao || null]
       );
-
-      // Insert Itens Compra
-      for (const it of resolvedItems) {
+      for (const item of resolvidos) execute(
+        `INSERT INTO itens_compra (id, compraId, produtoId, quantidade, unidade, custoUnitario, total) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ["itc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), compraId, item.produtoId, item.quantidade, item.unidade, item.custo, item.total]
+      );
+      if (valorPago > 0) execute(
+        `INSERT INTO pagamentos_compra (id, fornecedorId, compraId, data, valor, formaPagamento, observacao) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        ["pagc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), fornecedorId, compraId, data, valorPago, String(req.body.formaPagamento || "nao_informado"), "Pagamento registrado na entrada"]
+      );
+      if (orcamentoId) execute("UPDATE orcamentos_compra SET status = 'convertido', compraId = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [compraId, orcamentoId]);
+      for (const item of resolvidos) {
         execute(
-          `INSERT INTO itens_compra (id, compraId, produtoId, quantidade, unidade, custoUnitario, total)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [it.id, compraId, it.produtoId, it.quantidade, it.unidade, it.custoUnitario, it.total]
+          `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, custoFornecedor, ativo)
+           VALUES (?, ?, ?, 1)
+           ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET
+             custoFornecedor = excluded.custoFornecedor,
+             ativo = 1,
+             updatedAt = CURRENT_TIMESTAMP`,
+          [fornecedorId, item.produtoId, item.custo]
+        );
+        recalcularUltimoCustoProduto(item.produtoId);
+      }
+    });
+    res.status(201).json(listarCompras("AND c.id = ?", [compraId])[0]);
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
+app.put("/api/compras/:id", (req, res) => {
+  try {
+    const id = String(req.params.id);
+    const { data, observacao } = req.body;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    runInTransaction(() => {
+      const compra = queryOne<any>("SELECT * FROM compras WHERE id = ? AND deletedAt IS NULL", [id]);
+      if (!compra) throw erroHttp("Compra não encontrada.", 404);
+      if (!req.body.updatedAt || String(req.body.updatedAt) !== String(compra.updatedAt)) {
+        throw erroHttp("Esta compra foi alterada em outra tela. Recarregue o histórico antes de salvar.", 409);
+      }
+      const resolvidos = resolverItensCompraFornecedor(compra.fornecedorId, req.body.items, "custoUnitario");
+      const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
+      const desconto = arredondarCompra(Number(req.body.desconto || 0));
+      const total = arredondarCompra(subtotal - desconto);
+      if (!Number.isFinite(desconto) || desconto < 0 || total < 0) throw erroHttp("Desconto inválido.", 400);
+      if (total + 0.005 < Number(compra.valorPago)) throw erroHttp("O total não pode ser menor que o valor já pago.", 400);
+
+      const antigos = queryAll<{ produtoId: string }>("SELECT DISTINCT produtoId FROM itens_compra WHERE compraId = ?", [id]);
+      execute("DELETE FROM itens_compra WHERE compraId = ?", [id]);
+      for (const item of resolvidos) {
+        execute(
+          `INSERT INTO itens_compra (id, compraId, produtoId, quantidade, unidade, custoUnitario, total) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          ["itc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), id, item.produtoId, item.quantidade, item.unidade, item.custo, item.total]
+        );
+        execute(
+          `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, custoFornecedor, ativo)
+           VALUES (?, ?, ?, 1)
+           ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET custoFornecedor = excluded.custoFornecedor, ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
+          [compra.fornecedorId, item.produtoId, item.custo]
         );
       }
-
-      for (const produtoId of new Set(resolvedItems.map((item) => item.produtoId))) {
-        execute(
-          `INSERT INTO fornecedor_produtos (fornecedorId, produtoId, ativo)
-           VALUES (?, ?, 1)
-           ON CONFLICT(fornecedorId, produtoId) DO UPDATE SET ativo = 1, updatedAt = CURRENT_TIMESTAMP`,
-          [fornecedorId, produtoId]
-        );
+      const saldo = arredondarCompra(total - Number(compra.valorPago));
+      execute(
+        `UPDATE compras SET data = ?, subtotal = ?, desconto = ?, total = ?, saldoRestante = ?, status = ?, vencimento = ?, observacao = ?, updatedAt = ? WHERE id = ?`,
+        [data, subtotal, desconto, total, saldo, saldo <= 0.005 ? "paga" : "pendente", req.body.vencimento || null, observacao || null, new Date().toISOString(), id]
+      );
+      const afetados = new Set([...antigos.map((item) => item.produtoId), ...resolvidos.map((item) => item.produtoId)]);
+      for (const produtoId of afetados) {
+        recalcularCustoFornecedorProduto(compra.fornecedorId, produtoId);
         recalcularUltimoCustoProduto(produtoId);
       }
     });
+    res.json(listarCompras("AND c.id = ?", [id])[0]);
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
 
-    const fullCompra = queryOne("SELECT * FROM compras WHERE id = ?", [compraId]);
-    res.status(210).json(fullCompra);
-  } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message });
-  }
+app.post("/api/compras/:id/pagamentos", (req, res) => {
+  try {
+    const valor = arredondarCompra(Number(req.body.valor));
+    if (!Number.isFinite(valor) || valor <= 0) return res.status(400).json({ error: "Informe um valor de pagamento válido." });
+    const pagamentoId = "pagc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+    runInTransaction(() => {
+      const compra = queryOne<any>("SELECT * FROM compras WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+      if (!compra) throw erroHttp("Compra não encontrada.", 404);
+      if (valor > Number(compra.saldoRestante) + 0.005) throw erroHttp("O pagamento ultrapassa o saldo da compra.", 400);
+      const novoPago = arredondarCompra(Number(compra.valorPago) + valor);
+      const saldo = arredondarCompra(Number(compra.total) - novoPago);
+      execute(`INSERT INTO pagamentos_compra (id, fornecedorId, compraId, data, valor, formaPagamento, observacao) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [pagamentoId, compra.fornecedorId, compra.id, req.body.data, valor, String(req.body.formaPagamento || "nao_informado"), req.body.observacao || null]);
+      execute("UPDATE compras SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [novoPago, saldo, saldo <= 0.005 ? "paga" : "pendente", compra.id]);
+    });
+    const compra = listarCompras("AND c.id = ?", [req.params.id])[0];
+    res.status(201).json({ pagamento: compra.pagamentos.find((item: any) => item.id === pagamentoId), compra });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
 app.post("/api/compras/:id/cancelar", (req, res) => {
@@ -2968,7 +3157,7 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
     const { id } = req.params;
     const nowStr = new Date().toISOString();
     runInTransaction(() => {
-      const compra = queryOne<{ id: string }>("SELECT id FROM compras WHERE id = ? AND deletedAt IS NULL", [id]);
+      const compra = queryOne<{ id: string; fornecedorId: string }>("SELECT id, fornecedorId FROM compras WHERE id = ? AND deletedAt IS NULL", [id]);
       if (!compra) {
         throw erroHttp("Compra não encontrada ou já cancelada.", 404);
       }
@@ -2977,7 +3166,9 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
         [id]
       );
       execute("UPDATE compras SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [nowStr, id]);
+      execute("UPDATE pagamentos_compra SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE compraId = ? AND deletedAt IS NULL", [nowStr, id]);
       for (const item of produtosAfetados) {
+        recalcularCustoFornecedorProduto(compra.fornecedorId, item.produtoId);
         recalcularUltimoCustoProduto(item.produtoId);
       }
     });

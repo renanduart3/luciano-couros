@@ -425,6 +425,17 @@ textarea {
   height: 142mm;
 }
 
+/* O pedido ao fornecedor fica próximo do topo na prévia para facilitar uma
+   captura de tela legível, sem alterar a paginação A4 de impressão. */
+.purchase-budget-sheet {
+  align-items: flex-start;
+  padding-top: 15mm;
+}
+
+.purchase-budget-sheet .budget-copy {
+  height: 205mm;
+}
+
 .budget-observation {
   min-width: 0;
   flex: 1;
@@ -509,6 +520,7 @@ textarea {
   #quick-sale-view:has(#print-receipt) > *:not(#print-receipt),
   #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay),
   #orcamento-view:has(#print-orcamento) > *:not(#print-orcamento),
+  #compras-view:has(#print-orcamento-compra) > *:not(#print-orcamento-compra),
   #vales-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay),
   #relatorios-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay) {
     display: none !important;
@@ -517,6 +529,7 @@ textarea {
   #print-receipt,
   #print-sale-detail-overlay,
   #print-orcamento,
+  #print-orcamento-compra,
   #print-vale-detail-overlay {
     position: static !important;
     inset: auto !important;
@@ -534,6 +547,7 @@ textarea {
   #print-receipt > div,
   #print-sale-detail-overlay > div,
   #print-orcamento > div,
+  #print-orcamento-compra > div,
   #print-vale-detail-overlay > div {
     position: static !important;
     width: 100% !important;

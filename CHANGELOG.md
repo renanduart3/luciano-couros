@@ -4,6 +4,21 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.9.0 — 2026-08-03
+
+- Módulo de Compras separado em três áreas coesas: Compra, Histórico e Orçamentos abertos.
+- Compra passa a carregar qualquer orçamento aberto do fornecedor para conferência de quantidades, metragem e custos recebidos.
+- Vários orçamentos de compra podem permanecer abertos simultaneamente para o mesmo fornecedor.
+- Produtos habituais do fornecedor são sugeridos sem impedir a inclusão flexível de outros produtos ativos.
+- Produtos novos confirmados em uma compra passam a integrar automaticamente a associação do fornecedor, com remoção manual disponível na aba Produtos associados.
+- Histórico de compras recebe busca, filtro por fornecedor, paginação, baixa de pagamentos e edição segura da compra.
+- Histórico de compras recebe visualização rápida com produtos, quantidades, custos, pagamentos e observações.
+- Edição de compra preserva pagamentos registrados, recalcula custos e impede sobrescrita concorrente ou total inferior ao valor já pago.
+- Orçamentos de compra recebem filtro por fornecedor, paginação e ações para visualizar, editar e excluir.
+- Prévia do pedido ao fornecedor oculta custos internos e mantém Imprimir e Salvar PDF no topo, inclusive no celular.
+- Orçamentos de clientes recebem filtro específico por cliente e ação direta de visualização, mantendo edição, exclusão e paginação.
+- Consultas de compras, itens e pagamentos passam a usar carregamento em lote para evitar consultas N+1.
+
 ## 1.8.7 — 2026-07-30
 
 - Ficha do cliente recebe indicadores compactos, objetivos e com melhor aproveitamento de espaço.

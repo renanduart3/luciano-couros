@@ -316,14 +316,59 @@ export interface ItemCompra {
   id: string;
   compraId: string;
   produtoId: string;
+  produtoNome?: string;
+  produtoCodigo?: string;
   quantidade: number;
   unidade: string;
   custoUnitario: number;
   total: number;
 }
 
+export interface ItemOrcamentoCompra {
+  id: string;
+  orcamentoCompraId: string;
+  produtoId: string;
+  produtoNome?: string;
+  produtoCodigo?: string;
+  quantidade: number;
+  unidade: string;
+  custoEstimado: number;
+  total: number;
+}
+
+export interface OrcamentoCompra {
+  id: string;
+  numeroSequencial: number;
+  fornecedorId: string;
+  fornecedorNome?: string;
+  fornecedorTelefone?: string;
+  data: string;
+  validade?: string;
+  subtotal: number;
+  desconto: number;
+  total: number;
+  status: "aberto" | "convertido" | "cancelado";
+  observacao?: string;
+  compraId?: string;
+  items: ItemOrcamentoCompra[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PagamentoCompra {
+  id: string;
+  fornecedorId: string;
+  compraId: string;
+  data: string;
+  valor: number;
+  formaPagamento: string;
+  observacao?: string;
+  createdAt: string;
+}
+
 export interface Compra {
   id: string;
+  numeroSequencial: number;
   fornecedorId: string;
   fornecedorNome?: string;
   fornecedorTelefone?: string;
@@ -331,8 +376,14 @@ export interface Compra {
   subtotal: number;
   desconto: number;
   total: number;
+  valorPago: number;
+  saldoRestante: number;
+  status: "paga" | "pendente" | "cancelada";
+  vencimento?: string;
+  orcamentoCompraId?: string;
   observacao?: string;
   items?: ItemCompra[];
+  pagamentos?: PagamentoCompra[];
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;

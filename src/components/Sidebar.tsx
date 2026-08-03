@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   BarChart3, FileClock,
-  Menu, Package, Settings, ShoppingCart, Truck, Users, X
+  Menu, Package, Settings, ShoppingBag, ShoppingCart, Truck, Users, X
 } from "lucide-react";
 import logo from "../img/logo.png";
 import { APP_VERSION } from "../lib/version";
@@ -11,8 +11,18 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
 }
 
-const menuItems = [
+interface MenuItem {
+  id: string;
+  label: string;
+  compactLabel: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  highlight?: boolean;
+  purchase?: boolean;
+}
+
+const menuItems: MenuItem[] = [
   { id: "venda", label: "Venda", compactLabel: "Venda", icon: ShoppingCart, highlight: true },
+  { id: "compra", label: "Compra", compactLabel: "Compra", icon: ShoppingBag, purchase: true },
   { id: "fornecedores", label: "Fornecedores", compactLabel: "Fornec.", icon: Truck },
   { id: "clientes", label: "Clientes", compactLabel: "Clientes", icon: Users },
   { id: "vales", label: "Vales", compactLabel: "Vales", icon: FileClock },
@@ -57,7 +67,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               {menuItems.map((item) => {
                 const Icon = item.icon;
                 const active = currentView === item.id;
-                return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold ${active ? "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={19} /><span>{item.label}</span></button>;
+                return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold ${active ? item.purchase ? "bg-amber-600 text-white" : "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : item.purchase ? "bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={19} /><span>{item.label}</span></button>;
               })}
             </nav>
             <div className="border-t border-slate-800 p-4 text-center text-[10px] text-slate-400">v{APP_VERSION} • Servidor local</div>
@@ -71,7 +81,7 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
           {menuItems.map((item) => {
             const Icon = item.icon;
             const active = currentView === item.id;
-            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-center text-sm font-medium transition-all ${active ? item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
+            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-center text-sm font-medium transition-all ${active ? item.purchase ? "bg-amber-600 text-white" : item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : item.purchase ? "border border-amber-800/30 bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
           })}
         </nav>
         <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">v{APP_VERSION}</div>

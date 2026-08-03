@@ -276,11 +276,17 @@ export function initDatabase() {
     db.prepare(`
       CREATE TABLE IF NOT EXISTS compras (
         id TEXT PRIMARY KEY,
+        numeroSequencial INTEGER,
         fornecedorId TEXT NOT NULL,
+        orcamentoCompraId TEXT,
         data TEXT NOT NULL, -- YYYY-MM-DD
         subtotal REAL NOT NULL,
         desconto REAL NOT NULL,
         total REAL NOT NULL,
+        valorPago REAL NOT NULL DEFAULT 0,
+        saldoRestante REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        vencimento TEXT,
         observacao TEXT,
         deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -303,6 +309,67 @@ export function initDatabase() {
         FOREIGN KEY (produtoId) REFERENCES produtos (id)
       )
     `).run();
+
+    // Planejamento de compras: o orçamento registra o que foi solicitado e a
+    // compra registra, separadamente, o que efetivamente foi conferido.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS orcamentos_compra (
+        id TEXT PRIMARY KEY,
+        numeroSequencial INTEGER NOT NULL,
+        fornecedorId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        validade TEXT,
+        subtotal REAL NOT NULL,
+        desconto REAL NOT NULL DEFAULT 0,
+        total REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'aberto',
+        observacao TEXT,
+        compraId TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (fornecedorId) REFERENCES fornecedores (id),
+        FOREIGN KEY (compraId) REFERENCES compras (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_compra_seq ON orcamentos_compra (numeroSequencial)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_orcamentos_compra_fornecedor ON orcamentos_compra (fornecedorId, status, data DESC)`).run();
+    // Diferentemente das vendas, um fornecedor pode possuir vários pedidos de
+    // orçamento abertos ao mesmo tempo.
+    db.prepare(`DROP INDEX IF EXISTS idx_orcamentos_compra_vigente`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS itens_orcamento_compra (
+        id TEXT PRIMARY KEY,
+        orcamentoCompraId TEXT NOT NULL,
+        produtoId TEXT NOT NULL,
+        quantidade REAL NOT NULL,
+        unidade TEXT NOT NULL,
+        custoEstimado REAL NOT NULL,
+        total REAL NOT NULL,
+        FOREIGN KEY (orcamentoCompraId) REFERENCES orcamentos_compra (id) ON DELETE CASCADE,
+        FOREIGN KEY (produtoId) REFERENCES produtos (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_itens_orcamento_compra_documento ON itens_orcamento_compra (orcamentoCompraId)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS pagamentos_compra (
+        id TEXT PRIMARY KEY,
+        fornecedorId TEXT NOT NULL,
+        compraId TEXT NOT NULL,
+        data TEXT NOT NULL,
+        valor REAL NOT NULL,
+        formaPagamento TEXT NOT NULL,
+        observacao TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (fornecedorId) REFERENCES fornecedores (id),
+        FOREIGN KEY (compraId) REFERENCES compras (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_compra_documento ON pagamentos_compra (compraId, deletedAt, data)`).run();
 
     // 9. Configurações
     db.prepare(`
@@ -612,6 +679,34 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN custoManual REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedor_produtos ADD COLUMN custoFornecedor REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedor_produtos ADD COLUMN precoVendaFornecedor REAL`).run(); } catch (e) {}
+  const colunasComprasAntesDaMigracao = db.prepare(`PRAGMA table_info(compras)`).all() as Array<{ name: string }>;
+  const migrarFinanceiroComprasLegadas = !colunasComprasAntesDaMigracao.some((coluna) => coluna.name === "valorPago");
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN numeroSequencial INTEGER`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN orcamentoCompraId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN valorPago REAL NOT NULL DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN saldoRestante REAL NOT NULL DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN status TEXT NOT NULL DEFAULT 'pendente'`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN vencimento TEXT`).run(); } catch (e) {}
+  db.prepare(`
+    UPDATE compras
+    SET numeroSequencial = (
+      SELECT COUNT(*) FROM compras anterior
+      WHERE anterior.createdAt < compras.createdAt
+         OR (anterior.createdAt = compras.createdAt AND anterior.id <= compras.id)
+    )
+    WHERE numeroSequencial IS NULL
+  `).run();
+  if (migrarFinanceiroComprasLegadas) {
+    db.prepare(`
+      UPDATE compras
+      SET valorPago = total,
+          saldoRestante = 0,
+          status = 'paga'
+    `).run();
+  }
+  db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_compras_seq ON compras (numeroSequencial)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_compras_fornecedor_status ON compras (fornecedorId, status, data DESC)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_itens_compra_documento ON itens_compra (compraId)`).run();
   db.prepare(`
     UPDATE fornecedores
     SET referencia = (

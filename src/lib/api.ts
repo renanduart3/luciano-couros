@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
 } from "../types";
 
 const API_BASE = "/api";
@@ -332,10 +332,30 @@ export const api = {
 
   // COMPRAS
   getCompras: () => fetch(`${API_BASE}/compras`).then(r => handleResponse<Compra[]>(r)),
-  createCompra: (compraData: {
+  getOrcamentosCompra: () => fetch(`${API_BASE}/orcamentos-compra`).then(r => handleResponse<OrcamentoCompra[]>(r)),
+  saveOrcamentoCompra: (dados: {
+    id?: string;
     fornecedorId: string;
     data: string;
+    validade?: string;
     desconto: number;
+    observacao?: string;
+    items: Array<{ produtoId: string; quantidade: number; unidade: string; custoEstimado: number }>;
+  }) => fetch(`${API_BASE}/orcamentos-compra`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<OrcamentoCompra>(r)),
+  cancelarOrcamentoCompra: (id: string) =>
+    fetch(`${API_BASE}/orcamentos-compra/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean }>(r)),
+  createCompra: (compraData: {
+    fornecedorId: string;
+    orcamentoCompraId?: string;
+    data: string;
+    desconto: number;
+    valorPago: number;
+    formaPagamento?: string;
+    vencimento?: string;
     items: Array<{
       produtoId: string;
       quantidade: number;
@@ -349,8 +369,26 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(compraData)
     }).then(r => handleResponse<Compra>(r)),
+  updateCompra: (id: string, compraData: {
+    updatedAt: string;
+    data: string;
+    desconto: number;
+    vencimento?: string;
+    observacao?: string;
+    items: Array<{ produtoId: string; quantidade: number; unidade: string; custoUnitario: number }>;
+  }) => fetch(`${API_BASE}/compras/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(compraData)
+  }).then(r => handleResponse<Compra>(r)),
   cancelarCompra: (id: string) => 
     fetch(`${API_BASE}/compras/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+  createPagamentoCompra: (compraId: string, dados: { data: string; valor: number; formaPagamento: string; observacao?: string }) =>
+    fetch(`${API_BASE}/compras/${compraId}/pagamentos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ pagamento: PagamentoCompra; compra: Compra }>(r)),
 
   // PAGAMENTOS
   getPagamentos: () => fetch(`${API_BASE}/pagamentos`).then(r => handleResponse<Pagamento[]>(r)),

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ClipboardList, CreditCard, Eye, FileText, History, PackagePlus, Pencil,
-  Printer, Save, Search, ShoppingBag, Trash2, Truck, X
+  Plus, Printer, Save, Search, ShoppingBag, Trash2, Truck, X
 } from "lucide-react";
 import { Compra, Fornecedor, FornecedorProduto, OrcamentoCompra, Produto } from "../types";
 import { api } from "../lib/api";
@@ -78,6 +78,7 @@ export function ComprasView() {
   const [orcamentosPage, setOrcamentosPage] = useState(1);
   const [buscaOrcamentos, setBuscaOrcamentos] = useState("");
   const [filtroFornecedorOrcamentos, setFiltroFornecedorOrcamentos] = useState("");
+  const [editorOrcamentoAberto, setEditorOrcamentoAberto] = useState(false);
 
   const [orcamentoAtual, setOrcamentoAtual] = useState<OrcamentoCompra | null>(null);
   const [orcamentoItems, setOrcamentoItems] = useState<ItemRascunho[]>([]);
@@ -353,7 +354,25 @@ export function ComprasView() {
   const editarOrcamento = async (registro: OrcamentoCompra) => {
     setModo("orcamentos");
     await selecionarFornecedor(registro.fornecedorId, registro.id);
+    setEditorOrcamentoAberto(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const abrirNovoOrcamento = () => {
+    setFornecedorId("");
+    setCatalogo([]);
+    setOrcamentoAtual(null);
+    setOrcamentoItems([]);
+    setEditorOrcamentoAberto(true);
+    setOrcamentoExpandido(true);
+  };
+
+  const fecharEditorOrcamento = () => {
+    setEditorOrcamentoAberto(false);
+    setFornecedorId("");
+    setCatalogo([]);
+    setOrcamentoAtual(null);
+    setOrcamentoItems([]);
   };
 
   const registrarPagamento = async (compra: Compra) => {
@@ -458,6 +477,7 @@ export function ComprasView() {
               <div className="flex items-center rounded-lg border border-slate-300 bg-white"><Search size={16} className="ml-3 text-slate-400"/><input value={buscaOrcamentos} onChange={(event) => { setBuscaOrcamentos(event.target.value); setOrcamentosPage(1); }} placeholder="Número ou fornecedor..." className="w-full rounded-lg px-3 py-2 text-sm outline-none"/></div>
               <select aria-label="Filtrar por fornecedor" value={filtroFornecedorOrcamentos} onChange={(event) => { setFiltroFornecedorOrcamentos(event.target.value); setOrcamentosPage(1); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold"><option value="">Todos os fornecedores</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select>
             </div>
+            <button type="button" onClick={abrirNovoOrcamento} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 text-sm font-black text-white"><Plus size={16}/> Novo orçamento</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-sm">
@@ -469,8 +489,11 @@ export function ComprasView() {
           </div>
           <Pagination page={orcamentosPage} pageSize={PAGE_SIZE} totalItems={orcamentosAbertos.length} onPageChange={setOrcamentosPage}/>
         </section>
-        {seletorFornecedor("blue")}
-        {fornecedor && <section className="overflow-hidden rounded-xl bg-slate-50 shadow-sm"><div className="flex items-center justify-between bg-blue-800 px-3 py-2 text-white"><div className="flex items-center gap-2"><FileText size={18}/><strong className="text-sm uppercase">{orcamentoAtual ? `Editar orçamento #${orcamentoAtual.numeroSequencial}` : "Novo orçamento ao fornecedor"}</strong></div><button type="button" onClick={() => setOrcamentoExpandido((atual) => !atual)} className="rounded border border-white/30 px-2 py-1 text-[10px] font-black">{orcamentoExpandido ? "RECOLHER" : "EXPANDIR"}</button></div>{orcamentoExpandido && <div className="space-y-3 p-2"><div className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-white p-2 sm:flex-row"><SeletorProduto produtos={produtos} associados={associados} bloqueados={new Set(orcamentoItems.map((item) => item.produtoId))} onAdicionar={(produto) => adicionarItem("orcamento", produto)}/><input type="date" aria-label="Data do orçamento" value={orcamentoData} onChange={(event) => setOrcamentoData(event.target.value)} className="rounded-lg border px-2 text-xs font-bold"/><input type="date" aria-label="Validade" value={validade} onChange={(event) => setValidade(event.target.value)} className="rounded-lg border px-2 text-xs font-bold"/></div>{orcamentoItems.length === 0 ? <div className="rounded-lg border border-dashed border-blue-300 p-8 text-center text-sm font-bold text-slate-500">Pesquise qualquer produto para começar.</div> : renderTabelaItens("orcamento", orcamentoItems)}<div className="grid gap-3 lg:grid-cols-[1fr_300px]"><textarea rows={2} value={orcamentoObservacao} onChange={(event) => setOrcamentoObservacao(event.target.value)} placeholder="Observações para o fornecedor..." className="rounded-lg border border-blue-200 p-3 text-sm"/><div className="space-y-2 rounded-lg bg-blue-50 p-3 text-sm"><div className="flex justify-between"><span>Estimativa interna</span><strong>{formatCurrency(totaisOrcamento.subtotal)}</strong></div><label className="flex justify-between">Desconto<input value={orcamentoDesconto} onChange={(event) => setOrcamentoDesconto(event.target.value)} className="w-24 rounded border px-2 py-1 text-right"/></label><div className="flex justify-between border-t pt-2"><strong>Total</strong><strong>{formatCurrency(totaisOrcamento.total)}</strong></div></div></div><div className="flex flex-wrap gap-2"><button type="button" disabled={salvando} onClick={salvarOrcamento} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white"><Save size={17}/>{orcamentoAtual ? "Salvar alterações" : "Salvar orçamento"}</button>{orcamentoAtual && <button type="button" onClick={() => visualizarOrcamento(orcamentoAtual)} className="rounded-xl border border-blue-300 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} className="mr-1 inline"/>Tela para enviar</button>}<button type="button" onClick={() => { levarOrcamentoParaCompra(); setModo("compra"); }} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">Levar para conferência <ArrowDown size={17} className="inline"/></button></div></div>}</section>}
+        {editorOrcamentoAberto && <>
+          {!orcamentoAtual && seletorFornecedor("blue")}
+          {orcamentoAtual && fornecedor && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3"><div><span className="text-[10px] font-black uppercase text-blue-700">Fornecedor do orçamento</span><strong className="block text-blue-950">{fornecedor.nome}</strong></div><button type="button" onClick={fecharEditorOrcamento} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black text-blue-800">Fechar edição</button></div>}
+          {fornecedor && <section className="overflow-hidden rounded-xl bg-slate-50 shadow-sm"><div className="flex items-center justify-between bg-blue-800 px-3 py-2 text-white"><div className="flex items-center gap-2"><FileText size={18}/><strong className="text-sm uppercase">{orcamentoAtual ? `Editar orçamento #${orcamentoAtual.numeroSequencial}` : "Novo orçamento ao fornecedor"}</strong></div><div className="flex items-center gap-2"><button type="button" onClick={() => setOrcamentoExpandido((atual) => !atual)} className="rounded border border-white/30 px-2 py-1 text-[10px] font-black">{orcamentoExpandido ? "RECOLHER" : "EXPANDIR"}</button>{!orcamentoAtual && <button type="button" aria-label="Fechar novo orçamento" onClick={fecharEditorOrcamento} className="rounded border border-white/30 p-1"><X size={15}/></button>}</div></div>{orcamentoExpandido && <div className="space-y-3 p-2"><div className="flex flex-col gap-2 rounded-lg border border-blue-200 bg-white p-2 sm:flex-row"><SeletorProduto produtos={produtos} associados={associados} bloqueados={new Set(orcamentoItems.map((item) => item.produtoId))} onAdicionar={(produto) => adicionarItem("orcamento", produto)}/><input type="date" aria-label="Data do orçamento" value={orcamentoData} onChange={(event) => setOrcamentoData(event.target.value)} className="rounded-lg border px-2 text-xs font-bold"/><input type="date" aria-label="Validade" value={validade} onChange={(event) => setValidade(event.target.value)} className="rounded-lg border px-2 text-xs font-bold"/></div>{orcamentoItems.length === 0 ? <div className="rounded-lg border border-dashed border-blue-300 p-8 text-center text-sm font-bold text-slate-500">Pesquise qualquer produto para começar.</div> : renderTabelaItens("orcamento", orcamentoItems)}<div className="grid gap-3 lg:grid-cols-[1fr_300px]"><textarea rows={2} value={orcamentoObservacao} onChange={(event) => setOrcamentoObservacao(event.target.value)} placeholder="Observações para o fornecedor..." className="rounded-lg border border-blue-200 p-3 text-sm"/><div className="space-y-2 rounded-lg bg-blue-50 p-3 text-sm"><div className="flex justify-between"><span>Estimativa interna</span><strong>{formatCurrency(totaisOrcamento.subtotal)}</strong></div><label className="flex justify-between">Desconto<input value={orcamentoDesconto} onChange={(event) => setOrcamentoDesconto(event.target.value)} className="w-24 rounded border px-2 py-1 text-right"/></label><div className="flex justify-between border-t pt-2"><strong>Total</strong><strong>{formatCurrency(totaisOrcamento.total)}</strong></div></div></div><div className="flex flex-wrap gap-2"><button type="button" disabled={salvando} onClick={salvarOrcamento} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-700 px-4 py-3 text-sm font-black text-white"><Save size={17}/>{orcamentoAtual ? "Salvar alterações" : "Salvar orçamento"}</button>{orcamentoAtual && <button type="button" onClick={() => visualizarOrcamento(orcamentoAtual)} className="rounded-xl border border-blue-300 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} className="mr-1 inline"/>Tela para enviar</button>}<button type="button" onClick={() => { levarOrcamentoParaCompra(); setModo("compra"); }} className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-black text-amber-900">Levar para conferência <ArrowDown size={17} className="inline"/></button></div></div>}</section>}
+        </>}
       </div>}
     </>}
   </div>;

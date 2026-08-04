@@ -93,7 +93,7 @@ export default function App() {
       <main className="min-w-0 flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Top Mini Header Bar */}
-        <header className="bg-white border-b border-slate-200/50 px-8 py-3 hidden md:flex justify-between items-center shrink-0 print:hidden">
+        <header className="hidden shrink-0 items-center justify-between border-b border-slate-200/50 bg-white px-5 py-2 md:flex print:hidden">
           <div className="text-xs text-slate-400 font-bold font-mono">
             ESTADO: <span className="text-emerald-600">● ONLINE LOCAL</span>
           </div>
@@ -104,8 +104,8 @@ export default function App() {
         </header>
 
         {/* Dynamic Content Viewport */}
-        <div key={statsKey} className="flex-1 overflow-y-auto px-4 pb-6 pt-20 sm:px-5 md:p-8 print:p-0 print:bg-white">
-          <div className={`mx-auto w-full ${currentView === "venda" || currentView === "compra" ? "max-w-[1800px]" : "max-w-7xl"}`}>
+        <div key={statsKey} className="flex-1 overflow-y-auto px-3 pb-4 pt-16 sm:px-4 md:px-5 md:py-4 print:bg-white print:p-0">
+          <div className="mx-auto w-full max-w-[1800px]">
             {renderActiveView()}
           </div>
         </div>

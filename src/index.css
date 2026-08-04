@@ -35,6 +35,56 @@
   transition: background-color 150ms, color 150ms, box-shadow 150ms;
 }
 
+/* Densidade operacional: usa primeiro a largura disponível e reduz a soma de
+   paddings repetidos sem comprometer os alvos de toque no celular. */
+@media screen {
+  main h1,
+  main h2,
+  main h3 {
+    line-height: 1.12;
+  }
+
+  main .space-y-8 > :not(:last-child) { margin-block-end: 1.25rem !important; }
+  main .space-y-6 > :not(:last-child) { margin-block-end: 1rem !important; }
+  main .space-y-5 > :not(:last-child) { margin-block-end: 0.75rem !important; }
+  main .space-y-4 > :not(:last-child) { margin-block-end: 0.625rem !important; }
+  main .gap-8 { gap: 1.25rem !important; }
+  main .gap-6 { gap: 1rem !important; }
+  main .gap-5 { gap: 0.875rem !important; }
+  main .gap-4 { gap: 0.75rem !important; }
+  main .gap-3 { gap: 0.625rem !important; }
+  main .p-12 { padding: 2rem !important; }
+  main .p-10 { padding: 1.75rem !important; }
+  main .p-8 { padding: 1.25rem !important; }
+  main .p-6 { padding: 1rem !important; }
+  main .p-5 { padding: 0.875rem !important; }
+  main .p-4 { padding: 0.75rem !important; }
+  main .p-3 { padding: 0.625rem !important; }
+  main .px-5 { padding-inline: 0.875rem !important; }
+  main .px-4 { padding-inline: 0.75rem !important; }
+  main .py-4 { padding-block: 0.75rem !important; }
+  main .py-3 { padding-block: 0.625rem !important; }
+}
+
+@media screen and (min-width: 768px) {
+  .module-tab {
+    min-height: 38px;
+    padding: 0.45rem 0.75rem;
+  }
+
+  body main input:not([type="checkbox"]):not([type="radio"]),
+  body main select,
+  body main textarea,
+  body main button[class*="min-h-11"] {
+    min-height: 38px !important;
+  }
+
+  main table th,
+  main table td {
+    line-height: 1.2;
+  }
+}
+
 .module-tab:hover {
   background: #f1f5f9;
   color: #0f172a;
@@ -147,11 +197,11 @@ textarea {
   }
 
   main .receipt-items-table {
-    font-size: 6.3pt !important;
+    font-size: 6.7pt !important;
   }
 
   main .receipt-items-table th {
-    font-size: 6.2pt !important;
+    font-size: 6.6pt !important;
   }
 
   :where(button, input, select, textarea):focus-visible {
@@ -187,7 +237,7 @@ textarea {
   overflow: hidden;
   border: 0.3mm solid #111827;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 6.8pt;
+  font-size: 7.2pt;
   line-height: 1.15;
 }
 
@@ -197,7 +247,7 @@ textarea {
   top: 1mm;
   z-index: 2;
   color: #64748b;
-  font-size: 6.5pt;
+  font-size: 6.8pt;
   font-weight: 700;
 }
 
@@ -223,7 +273,7 @@ textarea {
   flex-direction: column;
   gap: 0.7mm;
   text-align: center;
-  font-size: 6.1pt;
+  font-size: 6.5pt;
 }
 
 .receipt-store em {
@@ -236,11 +286,11 @@ textarea {
   flex-direction: column;
   gap: 0.6mm;
   text-align: right;
-  font-size: 6.2pt;
+  font-size: 6.6pt;
 }
 
 .receipt-document-meta strong {
-  font-size: 6.8pt;
+  font-size: 7.2pt;
 }
 
 .receipt-meta-row {
@@ -284,7 +334,7 @@ textarea {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
-  font-size: 6.3pt;
+  font-size: 6.7pt;
 }
 
 .receipt-items-table th,
@@ -307,7 +357,7 @@ textarea {
   height: 3.5mm;
   background: #f1f5f9;
   text-align: center;
-  font-size: 6.2pt;
+  font-size: 6.6pt;
   font-weight: 800;
 }
 
@@ -324,7 +374,7 @@ textarea {
   gap: 1mm 5mm;
   border-top: 0.3mm solid #111827;
   padding: 0.7mm 1mm;
-  font-size: 6.2pt;
+  font-size: 6.6pt;
 }
 
 .receipt-observation-line {
@@ -340,7 +390,7 @@ textarea {
   overflow: hidden;
   border-top: 0.2mm solid #64748b;
   padding: 0.6mm 1mm 0.4mm;
-  font-size: 6.1pt;
+  font-size: 6.4pt;
   line-height: 2.2mm;
   overflow-wrap: anywhere;
 }
@@ -381,12 +431,12 @@ textarea {
   justify-content: space-between;
   border-left: 0.3mm solid #111827;
   padding: 0.6mm 1mm;
-  font-size: 6.4pt;
+  font-size: 6.8pt;
 }
 
 .receipt-total { grid-column: 2; }
 .receipt-due { border-top: 0.2mm solid #111827; }
-.receipt-total strong { font-size: 8.5pt; }
+.receipt-total strong { font-size: 9pt; }
 
 .receipt-cut {
   box-sizing: border-box;
@@ -522,7 +572,8 @@ textarea {
   #orcamento-view:has(#print-orcamento) > *:not(#print-orcamento),
   #compras-view:has(#print-orcamento-compra) > *:not(#print-orcamento-compra),
   #vales-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay),
-  #relatorios-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay) {
+  #relatorios-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay),
+  #vales-view:has(#print-cobranca-vales) > *:not(#print-cobranca-vales) {
     display: none !important;
   }
 
@@ -530,7 +581,8 @@ textarea {
   #print-sale-detail-overlay,
   #print-orcamento,
   #print-orcamento-compra,
-  #print-vale-detail-overlay {
+  #print-vale-detail-overlay,
+  #print-cobranca-vales {
     position: static !important;
     inset: auto !important;
     display: block !important;
@@ -548,7 +600,8 @@ textarea {
   #print-sale-detail-overlay > div,
   #print-orcamento > div,
   #print-orcamento-compra > div,
-  #print-vale-detail-overlay > div {
+  #print-vale-detail-overlay > div,
+  #print-cobranca-vales > div {
     position: static !important;
     width: 100% !important;
     max-width: 100% !important;

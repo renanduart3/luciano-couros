@@ -135,7 +135,6 @@ export const api = {
   createRecebimentoCliente: (clienteId: string, dados: {
     data: string;
     valorRecebido: number;
-    bonusDisponivel: number;
     formaPagamento: string;
     observacao?: string;
     alocacoes: Array<{ vendaId: string; valor: number }>;

@@ -198,7 +198,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
   }, [restoreCountdown]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
+    <div className="mx-auto max-w-[1500px] space-y-8">
       
       {/* Header */}
       <div className="border-b border-slate-100 pb-4">

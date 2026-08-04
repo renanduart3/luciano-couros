@@ -20,7 +20,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
   );
   const [orcamentoParaVenda, setOrcamentoParaVenda] = useState<Orcamento | null>(null);
   const [produtosNaVenda, setProdutosNaVenda] = useState<string[]>([]);
-  const [orcamentoExpandido, setOrcamentoExpandido] = useState(true);
+  const [orcamentoExpandido, setOrcamentoExpandido] = useState(false);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [vendaEmEdicao, setVendaEmEdicao] = useState<Venda | null>(null);
@@ -37,6 +37,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
   const selecionarCliente = (item: Cliente) => {
     setCliente(item);
     setOrcamentoParaVenda(null);
+    setOrcamentoExpandido(false);
   };
 
   const iniciarEdicaoVenda = (venda: Venda) => {
@@ -112,6 +113,7 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 produtosNaVenda={produtosNaVenda}
                 onLevarParaVenda={(orcamento) => {
                   setOrcamentoParaVenda(orcamento);
+                  setOrcamentoExpandido(false);
                 }}
               />
             </div>}

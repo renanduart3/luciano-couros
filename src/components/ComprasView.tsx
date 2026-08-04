@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ClipboardList, CreditCard, Eye, FileText, History, PackagePlus, Pencil,
+  ArrowDown, ClipboardList, CreditCard, Eye, FileText, HandCoins, History, PackagePlus, Pencil,
   Printer, Save, Search, ShoppingBag, Trash2, Truck, X
 } from "lucide-react";
 import { Compra, Fornecedor, FornecedorProduto, OrcamentoCompra, Produto } from "../types";
@@ -62,7 +62,7 @@ function SeletorProduto({
 export function ComprasView() {
   const confirmacao = useConfirmacao();
   const catalogoRequest = useRef(0);
-  const [modo, setModo] = useState<"compra" | "historico" | "orcamentos">("compra");
+  const [modo, setModo] = useState<"compra" | "historico" | "orcamentos" | "vales">("compra");
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [compras, setCompras] = useState<Compra[]>([]);
@@ -75,6 +75,9 @@ export function ComprasView() {
   const [page, setPage] = useState(1);
   const [buscaHistorico, setBuscaHistorico] = useState("");
   const [filtroFornecedorHistorico, setFiltroFornecedorHistorico] = useState("");
+  const [valesPage, setValesPage] = useState(1);
+  const [filtroFornecedorVales, setFiltroFornecedorVales] = useState("");
+  const [filtroStatusVales, setFiltroStatusVales] = useState<"abertos" | "quitados" | "todos">("abertos");
   const [orcamentosPage, setOrcamentosPage] = useState(1);
   const [buscaOrcamentos, setBuscaOrcamentos] = useState("");
   const [filtroFornecedorOrcamentos, setFiltroFornecedorOrcamentos] = useState("");
@@ -308,6 +311,7 @@ export function ComprasView() {
     if (erro) return setMensagem({ tipo: "erro", texto: erro });
     const pago = compraEmEdicao ? Number(compraEmEdicao.valorPago) : parseBrazilianNumber(valorPago);
     if (pago < 0 || pago > totaisCompra.total) return setMensagem({ tipo: "erro", texto: "O valor pago deve estar entre zero e o total." });
+    if (!compraEmEdicao && formaPagamento === "vale" && pago >= totaisCompra.total - 0.005) return setMensagem({ tipo: "erro", texto: "O Vale precisa possuir saldo pendente. Para uma compra totalmente paga, escolha outra forma." });
     if (pago < totaisCompra.total && !vencimento) return setMensagem({ tipo: "erro", texto: "Informe o vencimento do saldo pendente." });
     setSalvando(true);
     try {
@@ -320,10 +324,13 @@ export function ComprasView() {
         fornecedorId, orcamentoCompraId: orcamentoOrigemCompraId || undefined, data: compraData, desconto: totaisCompra.desconto,
         valorPago: pago, formaPagamento, vencimento: vencimento || undefined, observacao: compraObservacao || undefined, items
       });
+      const valeEmitido = !compraEmEdicao && formaPagamento === "vale";
       await carregar();
       setFornecedorId(""); setCatalogo([]); setOrcamentoAtual(null); setOrcamentoItems([]); setCompraItems([]); setOrcamentoOrigemCompraId(""); setCompraEmEdicao(null);
-      setMensagem({ tipo: "ok", texto: compraEmEdicao ? "Alterações da compra salvas com segurança." : "Compra finalizada. Os produtos novos agora fazem parte dos habituais deste fornecedor." });
-      setModo("historico");
+      setValorPago("0"); setFormaPagamento("pix"); setVencimento("");
+      setMensagem({ tipo: "ok", texto: compraEmEdicao ? "Alterações da compra salvas com segurança." : valeEmitido ? "Compra finalizada e Vale emitido para acompanhamento dos pagamentos." : "Compra finalizada. Os produtos novos agora fazem parte dos habituais deste fornecedor." });
+      if (valeEmitido) { setFiltroStatusVales("abertos"); setFiltroFornecedorVales(""); setValesPage(1); }
+      setModo(valeEmitido ? "vales" : "historico");
     } catch (error: any) { setMensagem({ tipo: "erro", texto: error.message || "Não foi possível finalizar a compra." }); }
     finally { setSalvando(false); }
   };
@@ -336,6 +343,7 @@ export function ComprasView() {
     setCompraData(compra.data);
     setCompraDesconto(numeroBR(Number(compra.desconto)));
     setValorPago(numeroBR(Number(compra.valorPago)));
+    setFormaPagamento(compra.formaPagamento || "nao_informado");
     setVencimento(compra.vencimento || "");
     setCompraObservacao(compra.observacao || "");
     setOrcamentoOrigemCompraId(compra.orcamentoCompraId || "");
@@ -380,7 +388,7 @@ export function ComprasView() {
     if (valor <= 0 || valor > Number(compra.saldoRestante)) return setMensagem({ tipo: "erro", texto: "Informe um valor dentro do saldo da compra." });
     try {
       await api.createPagamentoCompra(compra.id, { data: hoje(), valor, formaPagamento: pagamentoForma });
-      setPagandoId(null); setPagamentoValor(""); await carregar();
+      setPagandoId(null); setPagamentoValor(""); if (modo === "vales") setValesPage(1); await carregar();
       setMensagem({ tipo: "ok", texto: "Pagamento registrado e saldo atualizado." });
     } catch (error: any) { setMensagem({ tipo: "erro", texto: error.message || "Não foi possível registrar o pagamento." }); }
   };
@@ -397,10 +405,16 @@ export function ComprasView() {
     catch (error: any) { setMensagem({ tipo: "erro", texto: error.message || "Não foi possível cancelar o pedido." }); }
   };
 
-  const renderTabelaItens = (destino: "orcamento" | "compra", items: ItemRascunho[]) => <>
+  const renderTabelaItens = (destino: "orcamento" | "compra", items: ItemRascunho[]) => {
+    const itemsOrdenados = destino === "compra"
+      ? items.map((item, indice) => ({ item, indice })).sort((a, b) =>
+          parseBrazilianNumber(b.item.quantidade) - parseBrazilianNumber(a.item.quantidade) || a.indice - b.indice
+        ).map(({ item }) => item)
+      : items;
+    return <>
     <div className="hidden overflow-x-auto md:block">
       <table className="w-full min-w-[900px] text-sm"><thead className={destino === "compra" ? "bg-amber-50 text-left text-[10px] font-black uppercase text-amber-950" : "bg-blue-50 text-left text-[10px] font-black uppercase text-blue-950"}><tr><th className="p-2">Produto</th><th className="p-2">Últimos preços pagos</th><th className="w-36 p-2">Quantidade</th><th className="w-36 p-2">{destino === "compra" ? "Custo recebido" : "Custo estimado"}</th><th className="w-32 p-2 text-right">Total</th><th className="w-12"></th></tr></thead>
-        <tbody className="divide-y divide-slate-100">{items.map((item) => {
+        <tbody className="divide-y divide-slate-100">{itemsOrdenados.map((item) => {
           const historico = historicoPrecos.get(item.produtoId) || [];
           return <tr key={item.produtoId} className={item.habitual ? "bg-white" : "bg-violet-50/40"}>
             <td className="p-2"><div className="flex items-center gap-2"><strong className="text-slate-950">{item.nome}</strong>{!item.habitual && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-black text-violet-800">NOVO</span>}</div><small className="font-mono text-slate-500">{item.codigo || "SEM CÓDIGO"} • {item.unidade}</small></td>
@@ -413,7 +427,7 @@ export function ComprasView() {
         })}</tbody>
       </table>
     </div>
-    <div className="space-y-2 md:hidden">{items.map((item) => {
+    <div className="space-y-2 md:hidden">{itemsOrdenados.map((item) => {
       const historico = historicoPrecos.get(item.produtoId) || [];
       return <article key={item.produtoId} className={`rounded-xl border p-3 shadow-sm ${item.habitual ? "border-slate-200 bg-white" : "border-violet-200 bg-violet-50"}`}>
         <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="flex flex-wrap items-center gap-1"><strong className="text-sm text-slate-950">{item.nome}</strong>{!item.habitual && <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-black text-violet-800">NOVO</span>}</div><p className="mt-0.5 font-mono text-[10px] text-slate-500">{item.codigo || "SEM CÓDIGO"} • {item.unidade}</p></div><button type="button" onClick={() => removerItem(destino, item.produtoId)} aria-label={`Remover ${item.nome}`} className="shrink-0 rounded-lg border border-red-200 p-2 text-red-600"><Trash2 size={15}/></button></div>
@@ -423,10 +437,21 @@ export function ComprasView() {
       </article>;
     })}</div>
   </>;
+  };
 
   const termoHistorico = buscaHistorico.trim().toLocaleLowerCase("pt-BR");
   const comprasFiltradas = compras.filter((compra) => (!filtroFornecedorHistorico || compra.fornecedorId === filtroFornecedorHistorico) && (!termoHistorico || String(compra.numeroSequencial).includes(termoHistorico) || (compra.fornecedorNome || "").toLocaleLowerCase("pt-BR").includes(termoHistorico)));
   const comprasPagina = paginate<Compra>(comprasFiltradas, page, PAGE_SIZE);
+  const valesCompra = compras.filter((compra) => compra.formaPagamento === "vale"
+    && (!filtroFornecedorVales || compra.fornecedorId === filtroFornecedorVales)
+    && (filtroStatusVales === "todos" || (filtroStatusVales === "abertos" ? compra.status === "pendente" : compra.status === "paga"))
+  );
+  const valesPagina = paginate<Compra>(valesCompra, valesPage, PAGE_SIZE);
+  const totaisVales = valesCompra.reduce((totais, compra) => ({
+    total: totais.total + Number(compra.total),
+    pago: totais.pago + Number(compra.valorPago),
+    saldo: totais.saldo + Number(compra.saldoRestante)
+  }), { total: 0, pago: 0, saldo: 0 });
   const termoOrcamento = buscaOrcamentos.trim().toLocaleLowerCase("pt-BR");
   const orcamentosAbertos = orcamentos.filter((item) => item.status === "aberto" && (!filtroFornecedorOrcamentos || item.fornecedorId === filtroFornecedorOrcamentos) && (!termoOrcamento || String(item.numeroSequencial).includes(termoOrcamento) || (item.fornecedorNome || "").toLocaleLowerCase("pt-BR").includes(termoOrcamento)));
   const orcamentosPaginaLista = paginate<OrcamentoCompra>(orcamentosAbertos, orcamentosPage, PAGE_SIZE);
@@ -463,10 +488,11 @@ export function ComprasView() {
       <div className="max-w-full overflow-x-auto bg-slate-200 p-3 print:overflow-visible print:bg-white print:p-0"><OrcamentoCompraComprovante orcamento={orcamentoPreview} fornecedor={fornecedorPreview}/></div>
     </div></div>}
 
-    <nav className="sticky top-0 z-30 grid grid-cols-3 gap-1 rounded-xl border border-amber-300 bg-amber-50/95 p-1.5 shadow-sm backdrop-blur print:hidden">
+    <nav className="sticky top-0 z-30 grid grid-cols-2 gap-1 rounded-xl border border-amber-300 bg-amber-50/95 p-1.5 shadow-sm backdrop-blur sm:grid-cols-4 print:hidden">
       <button type="button" onClick={abrirAreaCompra} className={`module-tab justify-center ${modo === "compra" ? "module-tab-active" : ""}`}><ShoppingBag size={17}/><span>Compra</span></button>
       <button type="button" onClick={() => setModo("historico")} className={`module-tab justify-center ${modo === "historico" ? "module-tab-active" : ""}`}><History size={17}/><span>Histórico</span></button>
       <button type="button" onClick={() => setModo("orcamentos")} className={`module-tab justify-center ${modo === "orcamentos" ? "module-tab-active" : ""}`}><ClipboardList size={17}/><span className="sm:hidden">Orçamentos</span><span className="hidden sm:inline">Orçamentos abertos</span></button>
+      <button type="button" onClick={() => setModo("vales")} className={`module-tab justify-center ${modo === "vales" ? "module-tab-active" : ""}`}><HandCoins size={17}/><span>Vales</span></button>
     </nav>
 
     {mensagem && <div className={`rounded-xl border p-3 text-sm font-bold ${mensagem.tipo === "ok" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-red-200 bg-red-50 text-red-800"}`}>{mensagem.texto}</div>}
@@ -480,7 +506,7 @@ export function ComprasView() {
           {compraEmEdicao && <input type="date" aria-label="Data da compra" value={compraData} onChange={(event) => setCompraData(event.target.value)} className="min-h-11 rounded-xl border border-amber-300 bg-white px-3 text-sm font-bold"/>}
           <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-white p-2 sm:flex-row"><SeletorProduto produtos={produtos} associados={associados} bloqueados={new Set(compraItems.map((item) => item.produtoId))} onAdicionar={(produto) => adicionarItem("compra", produto)} cor="amber"/>{!compraEmEdicao && <button type="button" onClick={carregarHabituaisNaCompra} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-900"><PackagePlus size={15}/> Carregar habituais</button>}</div>
           {compraItems.length === 0 ? <div className="rounded-lg border border-dashed border-amber-300 p-8 text-center text-sm font-bold text-slate-500">Carregue um orçamento, os habituais ou pesquise um produto.</div> : renderTabelaItens("compra", compraItems)}
-          <div className="grid gap-3 xl:grid-cols-[1fr_340px]"><div className="space-y-2"><textarea rows={2} value={compraObservacao} onChange={(event) => setCompraObservacao(event.target.value)} placeholder="Nota fiscal, prazo ou observações..." className="w-full rounded-lg border border-amber-200 p-3 text-sm"/><div className="grid gap-2 sm:grid-cols-3"><label className="text-xs font-bold">{compraEmEdicao ? "Pago já registrado" : "Valor pago agora"}<input disabled={Boolean(compraEmEdicao)} value={valorPago} onChange={(event) => setValorPago(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"/></label><label className="text-xs font-bold">Forma<select disabled={Boolean(compraEmEdicao)} value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option></select></label><label className="text-xs font-bold">Vencimento do saldo<input type="date" value={vencimento} onChange={(event) => setVencimento(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2"/></label></div></div><div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm"><div className="flex justify-between"><span>Subtotal</span><strong>{formatCurrency(totaisCompra.subtotal)}</strong></div><label className="flex items-center justify-between">Desconto<input value={compraDesconto} onChange={(event) => setCompraDesconto(event.target.value)} className="w-24 rounded border px-2 py-1 text-right"/></label><div className="flex justify-between border-t border-amber-200 pt-2 text-base"><strong>Total</strong><strong>{formatCurrency(totaisCompra.total)}</strong></div><button type="button" disabled={salvando} onClick={finalizarCompra} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17}/>{compraEmEdicao ? "Salvar alterações" : "Finalizar compra"}</button></div></div>
+          <div className="grid gap-3 xl:grid-cols-[1fr_340px]"><div className="space-y-2"><textarea rows={2} value={compraObservacao} onChange={(event) => setCompraObservacao(event.target.value)} placeholder="Nota fiscal, prazo ou observações..." className="w-full rounded-lg border border-amber-200 p-3 text-sm"/><div className="grid gap-2 sm:grid-cols-3"><label className="text-xs font-bold">{compraEmEdicao ? "Pago já registrado" : "Valor pago agora"}<input disabled={Boolean(compraEmEdicao)} value={valorPago} onChange={(event) => setValorPago(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"/></label><label className="text-xs font-bold">Forma / condição<select disabled={Boolean(compraEmEdicao)} value={formaPagamento} onChange={(event) => { const forma = event.target.value; setFormaPagamento(forma); if (forma === "vale" && !vencimento) setVencimento(emDias(30)); }} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option><option value="vale">Vale — pagar depois</option></select></label><label className="text-xs font-bold">Vencimento do saldo<input type="date" value={vencimento} onChange={(event) => setVencimento(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2"/></label></div>{!compraEmEdicao && formaPagamento === "vale" && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">O valor pago agora será abatido e o restante ficará no Vale de compras para pagamentos parciais.</p>}</div><div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm"><div className="flex justify-between"><span>Subtotal</span><strong>{formatCurrency(totaisCompra.subtotal)}</strong></div><label className="flex items-center justify-between">Desconto<input value={compraDesconto} onChange={(event) => setCompraDesconto(event.target.value)} className="w-24 rounded border px-2 py-1 text-right"/></label><div className="flex justify-between border-t border-amber-200 pt-2 text-base"><strong>Total</strong><strong>{formatCurrency(totaisCompra.total)}</strong></div><button type="button" disabled={salvando} onClick={finalizarCompra} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17}/>{compraEmEdicao ? "Salvar alterações" : "Finalizar compra"}</button></div></div>
         </div></section>}
       </div>}
 
@@ -488,6 +514,38 @@ export function ComprasView() {
         <div className="space-y-3 p-3 md:hidden">{comprasPagina.map((compra) => <article key={compra.id} className="rounded-xl border p-3"><div className="flex justify-between"><div><strong>Compra #{compra.numeroSequencial}</strong><p className="text-xs text-slate-500">{compra.fornecedorNome} • {formatDate(compra.data)}</p></div><strong>{formatCurrency(compra.total)}</strong></div><p className="mt-2 text-xs font-bold text-amber-700">Pago {formatCurrency(compra.valorPago)} • saldo {formatCurrency(compra.saldoRestante)}</p><div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setCompraDetalhe(compra)} className="rounded-lg border border-slate-300 p-2 text-xs font-black text-slate-700"><Eye size={14} className="mr-1 inline"/>Ver detalhes</button><button type="button" onClick={() => editarCompra(compra)} className="rounded-lg border border-blue-200 p-2 text-xs font-black text-blue-700"><Pencil size={14} className="mr-1 inline"/>Editar</button>{Number(compra.saldoRestante) > 0 && <button type="button" onClick={() => { setPagandoId(compra.id); setPagamentoValor(numeroBR(Number(compra.saldoRestante))); }} className="rounded-lg border border-emerald-200 p-2 text-xs font-black text-emerald-700"><CreditCard size={14} className="mr-1 inline"/>Pagar</button>}<button type="button" onClick={() => cancelarCompra(compra)} className="rounded-lg border border-red-200 p-2 text-xs font-black text-red-700"><Trash2 size={14}/></button></div>{pagandoId === compra.id && <div className="mt-3 grid gap-2 rounded-lg bg-emerald-50 p-2"><input value={pagamentoValor} onChange={(event) => setPagamentoValor(event.target.value)} className="rounded border px-3 py-2"/><select value={pagamentoForma} onChange={(event) => setPagamentoForma(event.target.value)} className="rounded border px-3 py-2"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option></select><button type="button" onClick={() => registrarPagamento(compra)} className="rounded bg-emerald-700 p-2 font-bold text-white">Dar baixa</button></div>}</article>)}</div>
         <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[950px] text-sm"><thead className="bg-slate-50 text-left text-xs uppercase text-slate-500"><tr><th className="p-4">Compra</th><th className="p-4">Fornecedor</th><th className="p-4">Itens</th><th className="p-4 text-right">Total</th><th className="p-4 text-right">Pago / saldo</th><th className="p-4">Vencimento</th><th className="p-4">Ações</th></tr></thead><tbody className="divide-y">{comprasPagina.map((compra) => <React.Fragment key={compra.id}><tr><td className="p-4"><strong>#{compra.numeroSequencial}</strong><p className="text-xs text-slate-500">{formatDate(compra.data)}</p></td><td className="p-4 font-bold">{compra.fornecedorNome}</td><td className="p-4">{compra.items?.length || 0} item(ns)</td><td className="p-4 text-right font-mono font-black">{formatCurrency(compra.total)}</td><td className="p-4 text-right"><strong className="text-emerald-700">{formatCurrency(compra.valorPago)}</strong><p className="text-xs text-amber-700">saldo {formatCurrency(compra.saldoRestante)}</p></td><td className="p-4">{compra.vencimento ? formatDate(compra.vencimento) : "—"}</td><td className="p-4"><div className="flex gap-2"><button type="button" onClick={() => setCompraDetalhe(compra)} className="rounded-lg border border-slate-300 p-2 text-slate-700" aria-label="Ver detalhes da compra"><Eye size={15}/></button><button type="button" onClick={() => editarCompra(compra)} className="rounded-lg border border-blue-200 p-2 text-blue-700" aria-label="Editar compra"><Pencil size={15}/></button>{Number(compra.saldoRestante) > 0 && <button type="button" onClick={() => { setPagandoId(compra.id); setPagamentoValor(numeroBR(Number(compra.saldoRestante))); }} className="rounded-lg border border-emerald-200 p-2 text-emerald-700"><CreditCard size={15}/></button>}<button type="button" onClick={() => cancelarCompra(compra)} className="rounded-lg border border-red-200 p-2 text-red-600"><Trash2 size={15}/></button></div></td></tr>{pagandoId === compra.id && <tr className="bg-emerald-50"><td colSpan={7} className="p-3"><div className="flex flex-wrap items-end justify-end gap-3"><input aria-label="Valor do pagamento" value={pagamentoValor} onChange={(event) => setPagamentoValor(event.target.value)} className="rounded-lg border px-3 py-2"/><select aria-label="Forma do pagamento" value={pagamentoForma} onChange={(event) => setPagamentoForma(event.target.value)} className="rounded-lg border px-3 py-2"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option></select><button type="button" onClick={() => registrarPagamento(compra)} className="rounded-lg bg-emerald-700 px-4 py-2 font-bold text-white">Dar baixa</button></div></td></tr>}</React.Fragment>)}</tbody></table></div><Pagination page={page} pageSize={PAGE_SIZE} totalItems={comprasFiltradas.length} onPageChange={setPage}/>
       </section>}
+
+      {modo === "vales" && <div className="space-y-3">
+        <section className="overflow-hidden rounded-xl border border-amber-200 bg-white">
+          <div className="grid gap-2 border-b border-amber-200 bg-amber-50 p-3 md:grid-cols-[1fr_260px_190px] md:items-end">
+            <div><h3 className="flex items-center gap-2 font-black text-amber-950"><HandCoins size={18}/> Vales de compras</h3><p className="text-xs font-bold text-amber-800/70">Contas assumidas com fornecedores e pagas parcialmente.</p></div>
+            <label className="text-[10px] font-black uppercase text-amber-900">Fornecedor<select value={filtroFornecedorVales} onChange={(event) => { setFiltroFornecedorVales(event.target.value); setValesPage(1); }} className="mt-1 min-h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm font-bold normal-case"><option value="">Todos os fornecedores</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label>
+            <label className="text-[10px] font-black uppercase text-amber-900">Situação<select value={filtroStatusVales} onChange={(event) => { setFiltroStatusVales(event.target.value as "abertos" | "quitados" | "todos"); setValesPage(1); }} className="mt-1 min-h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm font-bold normal-case"><option value="abertos">Em aberto</option><option value="quitados">Quitados</option><option value="todos">Todos</option></select></label>
+          </div>
+          <div className="grid grid-cols-3 gap-2 border-b bg-slate-50 p-3">
+            <div className="rounded-lg border bg-white p-2"><span className="text-[9px] font-black uppercase text-slate-500">Original</span><strong className="block font-mono text-sm text-slate-950 sm:text-base">{formatCurrency(totaisVales.total)}</strong></div>
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2"><span className="text-[9px] font-black uppercase text-emerald-700">Pago</span><strong className="block font-mono text-sm text-emerald-800 sm:text-base">{formatCurrency(totaisVales.pago)}</strong></div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-2"><span className="text-[9px] font-black uppercase text-amber-700">A pagar</span><strong className="block font-mono text-sm text-amber-900 sm:text-base">{formatCurrency(totaisVales.saldo)}</strong></div>
+          </div>
+
+          <div className="space-y-2 p-3 md:hidden">{valesPagina.length === 0 ? <p className="p-8 text-center text-sm font-bold text-slate-400">Nenhum Vale de compra neste filtro.</p> : valesPagina.map((compra) => {
+            const vencido = compra.status === "pendente" && Boolean(compra.vencimento && compra.vencimento < hoje());
+            return <article key={compra.id} className={`rounded-xl border p-3 ${vencido ? "border-red-200 bg-red-50/40" : "border-slate-200 bg-white"}`}>
+              <div className="flex items-start justify-between gap-2"><div><strong className="text-slate-950">Vale #{compra.numeroSequencial}</strong><p className="text-xs font-bold text-slate-600">{compra.fornecedorNome}</p><p className="text-[10px] text-slate-500">Emitido em {formatDate(compra.data)}</p></div><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${compra.status === "paga" ? "bg-emerald-100 text-emerald-800" : vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{compra.status === "paga" ? "Quitado" : vencido ? "Vencido" : "Em aberto"}</span></div>
+              <div className="mt-3 grid grid-cols-3 gap-1.5 text-center"><div className="rounded-lg bg-slate-100 p-2"><span className="block text-[8px] font-black uppercase text-slate-500">Original</span><strong className="font-mono text-xs">{formatCurrency(compra.total)}</strong></div><div className="rounded-lg bg-emerald-50 p-2"><span className="block text-[8px] font-black uppercase text-emerald-700">Pago</span><strong className="font-mono text-xs text-emerald-800">{formatCurrency(compra.valorPago)}</strong></div><div className="rounded-lg bg-amber-50 p-2"><span className="block text-[8px] font-black uppercase text-amber-700">Falta</span><strong className="font-mono text-xs text-amber-900">{formatCurrency(compra.saldoRestante)}</strong></div></div>
+              <div className="mt-2 flex items-center justify-between text-xs"><span className="font-bold text-slate-500">Vencimento</span><strong className={vencido ? "text-red-700" : "text-slate-800"}>{compra.vencimento ? formatDate(compra.vencimento) : "—"}</strong></div>
+              <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setCompraDetalhe(compra)} className="rounded-lg border border-slate-300 p-2 text-xs font-black text-slate-700"><Eye size={14} className="mr-1 inline"/>Detalhes</button>{compra.status === "pendente" && <button type="button" onClick={() => { setPagandoId(compra.id); setPagamentoValor(numeroBR(Number(compra.saldoRestante))); }} className="rounded-lg bg-emerald-700 p-2 text-xs font-black text-white"><CreditCard size={14} className="mr-1 inline"/>Registrar pagamento</button>}</div>
+              {pagandoId === compra.id && <div className="mt-3 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><label className="text-[10px] font-black uppercase text-emerald-900">Valor pago<input aria-label="Valor do pagamento do Vale" inputMode="decimal" value={pagamentoValor} onChange={(event) => setPagamentoValor(event.target.value)} className="mt-1 w-full rounded-lg border border-emerald-300 bg-white px-3 py-2 text-base font-black"/></label><select aria-label="Forma do pagamento do Vale" value={pagamentoForma} onChange={(event) => setPagamentoForma(event.target.value)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-bold"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option></select><div className="grid grid-cols-2 gap-2"><button type="button" onClick={() => { setPagandoId(null); setPagamentoValor(""); }} className="rounded-lg border border-slate-300 bg-white p-2 text-xs font-black text-slate-600">Cancelar</button><button type="button" onClick={() => registrarPagamento(compra)} className="rounded-lg bg-emerald-700 p-2 text-xs font-black text-white">Confirmar baixa</button></div></div>}
+            </article>;
+          })}</div>
+
+          <div className="hidden overflow-x-auto md:block"><table className="w-full min-w-[920px] text-sm"><thead className="bg-slate-100 text-left text-[10px] font-black uppercase text-slate-500"><tr><th className="p-3">Vale / emissão</th><th className="p-3">Fornecedor</th><th className="p-3 text-right">Valor original</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Saldo</th><th className="p-3">Vencimento</th><th className="p-3">Situação</th><th className="p-3 text-right">Ações</th></tr></thead><tbody className="divide-y">{valesPagina.length === 0 ? <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-400">Nenhum Vale de compra neste filtro.</td></tr> : valesPagina.map((compra) => {
+            const vencido = compra.status === "pendente" && Boolean(compra.vencimento && compra.vencimento < hoje());
+            return <React.Fragment key={compra.id}><tr className={vencido ? "bg-red-50/40" : ""}><td className="p-3"><strong className="font-mono text-amber-900">#{compra.numeroSequencial}</strong><p className="text-[10px] text-slate-500">{formatDate(compra.data)}</p></td><td className="p-3 font-bold">{compra.fornecedorNome}</td><td className="p-3 text-right font-mono font-black">{formatCurrency(compra.total)}</td><td className="p-3 text-right font-mono font-black text-emerald-700">{formatCurrency(compra.valorPago)}</td><td className="p-3 text-right font-mono font-black text-amber-800">{formatCurrency(compra.saldoRestante)}</td><td className={`p-3 font-bold ${vencido ? "text-red-700" : ""}`}>{compra.vencimento ? formatDate(compra.vencimento) : "—"}</td><td className="p-3"><span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${compra.status === "paga" ? "bg-emerald-100 text-emerald-800" : vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{compra.status === "paga" ? "Quitado" : vencido ? "Vencido" : "Em aberto"}</span></td><td className="p-3"><div className="flex justify-end gap-2"><button type="button" onClick={() => setCompraDetalhe(compra)} aria-label={`Detalhes do Vale ${compra.numeroSequencial}`} className="rounded-lg border border-slate-300 p-2 text-slate-700"><Eye size={15}/></button>{compra.status === "pendente" && <button type="button" onClick={() => { setPagandoId(compra.id); setPagamentoValor(numeroBR(Number(compra.saldoRestante))); }} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white"><CreditCard size={14}/>Pagar</button>}</div></td></tr>{pagandoId === compra.id && <tr className="bg-emerald-50"><td colSpan={8} className="p-3"><div className="flex flex-wrap items-end justify-end gap-2"><label className="text-[10px] font-black uppercase text-emerald-900">Valor pago<input aria-label="Valor do pagamento do Vale" inputMode="decimal" value={pagamentoValor} onChange={(event) => setPagamentoValor(event.target.value)} className="mt-1 block rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-black"/></label><select aria-label="Forma do pagamento do Vale" value={pagamentoForma} onChange={(event) => setPagamentoForma(event.target.value)} className="rounded-lg border border-emerald-300 bg-white px-3 py-2 font-bold"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option></select><button type="button" onClick={() => { setPagandoId(null); setPagamentoValor(""); }} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-600">Cancelar</button><button type="button" onClick={() => registrarPagamento(compra)} className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black text-white">Confirmar baixa</button></div></td></tr>}</React.Fragment>;
+          })}</tbody></table></div>
+          <Pagination page={valesPage} pageSize={PAGE_SIZE} totalItems={valesCompra.length} onPageChange={setValesPage}/>
+        </section>
+      </div>}
 
       {modo === "orcamentos" && <div className="space-y-3">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">

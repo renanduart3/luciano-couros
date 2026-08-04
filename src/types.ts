@@ -379,6 +379,7 @@ export interface Compra {
   valorPago: number;
   saldoRestante: number;
   status: "paga" | "pendente" | "cancelada";
+  formaPagamento: string;
   vencimento?: string;
   orcamentoCompraId?: string;
   observacao?: string;

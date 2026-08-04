@@ -1973,6 +1973,81 @@ function carregarDetalhesVenda(venda: any) {
   return venda;
 }
 
+// Evita quatro consultas adicionais por venda nas telas de listagem e relatório.
+// O detalhamento completo é carregado em lotes e distribuído em memória por ID.
+function carregarDetalhesVendasEmLote(vendas: any[]) {
+  if (vendas.length === 0) return vendas;
+  const ids = vendas.map((venda) => venda.id);
+  const marcadores = ids.map(() => "?").join(",");
+  const agrupar = (linhas: any[], chave: string) => {
+    const mapa = new Map<string, any[]>();
+    linhas.forEach((linha) => {
+      const grupo = mapa.get(linha[chave]);
+      if (grupo) grupo.push(linha); else mapa.set(linha[chave], [linha]);
+    });
+    return mapa;
+  };
+
+  const itensPorVenda = agrupar(queryAll<any>(
+    `SELECT iv.*, p.codigo as referencia,
+            COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
+            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
+     FROM itens_venda iv
+     LEFT JOIN produtos p ON p.id = iv.produtoId
+     WHERE iv.vendaId IN (${marcadores})`, ids
+  ), "vendaId");
+  const devolucoes = queryAll<any>(
+    `SELECT * FROM devolucoes_venda WHERE vendaId IN (${marcadores}) ORDER BY createdAt DESC`, ids
+  );
+  const devolucoesPorVenda = agrupar(devolucoes, "vendaId");
+  const idsDevolucoes = devolucoes.map((devolucao) => devolucao.id);
+  const itensPorDevolucao = idsDevolucoes.length > 0
+    ? agrupar(queryAll<any>(
+        `SELECT idv.*, iv.descricao, iv.unidade
+         FROM itens_devolucao idv
+         JOIN itens_venda iv ON iv.id = idv.itemVendaId
+         WHERE idv.devolucaoId IN (${idsDevolucoes.map(() => "?").join(",")})`, idsDevolucoes
+      ), "devolucaoId")
+    : new Map<string, any[]>();
+  devolucoes.forEach((devolucao) => { devolucao.items = itensPorDevolucao.get(devolucao.id) || []; });
+
+  const instrumentos = queryAll<any>(
+    `SELECT vendaId, tipo, emitente, numeroDocumento, valor, vencimento, status, observacao, createdAt
+     FROM instrumentos_recebimento
+     WHERE vendaId IN (${marcadores}) AND deletedAt IS NULL
+     ORDER BY createdAt DESC`, ids
+  );
+  const instrumentoPorVenda = new Map<string, any>();
+  instrumentos.forEach((instrumento) => {
+    if (!instrumentoPorVenda.has(instrumento.vendaId)) instrumentoPorVenda.set(instrumento.vendaId, instrumento);
+  });
+  const parcelasPorVenda = agrupar(queryAll<any>(
+    `SELECT id, vendaId, numero, vencimento, valor, valorPago, saldo, status, createdAt, updatedAt
+     FROM vale_parcelas
+     WHERE vendaId IN (${marcadores}) AND deletedAt IS NULL
+     ORDER BY vencimento ASC, numero ASC`, ids
+  ), "vendaId");
+
+  vendas.forEach((venda) => {
+    venda.items = itensPorVenda.get(venda.id) || [];
+    venda.devolucoes = devolucoesPorVenda.get(venda.id) || [];
+    venda.instrumentoRecebimento = instrumentoPorVenda.get(venda.id) || null;
+    venda.parcelas = parcelasPorVenda.get(venda.id) || [];
+    if (venda.parcelas.length === 0 && venda.vencimento) {
+      const total = Number(venda.totalLiquido || 0);
+      const pago = Math.min(total, Math.max(0, Number(venda.valorPago || 0)));
+      const saldo = Math.max(0, total - pago);
+      venda.parcelas = [{
+        id: `parcela_legada_${venda.id}`, vendaId: venda.id, numero: 1, vencimento: venda.vencimento,
+        valor: total, valorPago: pago, saldo,
+        status: venda.status === "cancelada" ? "cancelada" : saldo <= 0.005 ? "paga" : "pendente",
+        createdAt: venda.createdAt, updatedAt: venda.updatedAt,
+      }];
+    }
+  });
+  return vendas;
+}
+
 // 6. VENDAS
 app.get("/api/vendas", (req, res) => {
   try {
@@ -1992,7 +2067,7 @@ app.get("/api/vendas", (req, res) => {
        ORDER BY v.numeroSequencial DESC`
     );
     
-    rows.forEach(carregarDetalhesVenda);
+    carregarDetalhesVendasEmLote(rows);
     
     res.json(rows);
   } catch (error: any) {
@@ -3043,8 +3118,13 @@ app.post("/api/compras", (req, res) => {
     const desconto = arredondarCompra(Number(req.body.desconto || 0));
     const total = arredondarCompra(subtotal - desconto);
     const valorPago = arredondarCompra(Number(req.body.valorPago || 0));
+    const formaPagamento = String(req.body.formaPagamento || "nao_informado").trim().toLocaleLowerCase("pt-BR");
+    const formasPermitidas = new Set(["pix", "dinheiro", "boleto", "transferencia", "cartao", "vale", "nao_informado"]);
+    if (!formasPermitidas.has(formaPagamento)) throw erroHttp("Forma de pagamento da compra inválida.", 400);
     if (!Number.isFinite(desconto) || desconto < 0 || total < 0) return res.status(400).json({ error: "Desconto inválido." });
     if (!Number.isFinite(valorPago) || valorPago < 0 || valorPago > total) return res.status(400).json({ error: "O valor pago deve estar entre zero e o total da compra." });
+    if (formaPagamento === "vale" && valorPago >= total - 0.005) throw erroHttp("O Vale deve possuir saldo pendente. Para uma compra totalmente paga, selecione outra forma.", 400);
+    if (valorPago < total - 0.005 && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.vencimento || ""))) throw erroHttp("Informe o vencimento do saldo pendente.", 400);
     const compraId = "comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
     runInTransaction(() => {
       const orcamentoId = req.body.orcamentoCompraId ? String(req.body.orcamentoCompraId) : null;
@@ -3055,9 +3135,9 @@ app.post("/api/compras", (req, res) => {
       const numero = Number(queryOne<any>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM compras")?.numero || 1);
       const saldo = arredondarCompra(total - valorPago);
       execute(
-        `INSERT INTO compras (id, numeroSequencial, fornecedorId, orcamentoCompraId, data, subtotal, desconto, total, valorPago, saldoRestante, status, vencimento, observacao)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [compraId, numero, fornecedorId, orcamentoId, data, subtotal, desconto, total, valorPago, saldo, saldo <= 0.005 ? "paga" : "pendente", req.body.vencimento || null, observacao || null]
+        `INSERT INTO compras (id, numeroSequencial, fornecedorId, orcamentoCompraId, data, subtotal, desconto, total, valorPago, saldoRestante, status, formaPagamento, vencimento, observacao)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [compraId, numero, fornecedorId, orcamentoId, data, subtotal, desconto, total, valorPago, saldo, saldo <= 0.005 ? "paga" : "pendente", formaPagamento, req.body.vencimento || null, observacao || null]
       );
       for (const item of resolvidos) execute(
         `INSERT INTO itens_compra (id, compraId, produtoId, quantidade, unidade, custoUnitario, total) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -3065,7 +3145,7 @@ app.post("/api/compras", (req, res) => {
       );
       if (valorPago > 0) execute(
         `INSERT INTO pagamentos_compra (id, fornecedorId, compraId, data, valor, formaPagamento, observacao) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ["pagc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), fornecedorId, compraId, data, valorPago, String(req.body.formaPagamento || "nao_informado"), "Pagamento registrado na entrada"]
+        ["pagc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), fornecedorId, compraId, data, valorPago, formaPagamento === "vale" ? "entrada" : formaPagamento, "Pagamento registrado na entrada"]
       );
       if (orcamentoId) execute("UPDATE orcamentos_compra SET status = 'convertido', compraId = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [compraId, orcamentoId]);
       for (const item of resolvidos) {
@@ -3238,18 +3318,13 @@ app.get("/api/clientes/:id/carteira", (req, res) => {
 app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
   try {
     const { id: clienteId } = req.params;
-    const { data, valorRecebido, bonusDisponivel, formaPagamento, observacao, alocacoes } = req.body;
+    const { data, formaPagamento, observacao, alocacoes } = req.body;
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
-    const recebido = arredondar(valorRecebido);
-    const bonusPermitido = arredondar(bonusDisponivel);
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) {
       throw erroHttp("Informe uma data válida para o recebimento.", 400);
     }
-    if (recebido < 0 || bonusPermitido < 0 || (recebido === 0 && bonusPermitido === 0)) {
-      throw erroHttp("Informe um valor recebido ou um valor de bônus a utilizar.", 400);
-    }
-    if (recebido > 0 && !String(formaPagamento || "").trim()) {
+    if (!String(formaPagamento || "").trim()) {
       throw erroHttp("Informe a forma de pagamento.", 400);
     }
 
@@ -3265,29 +3340,20 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     }
     const listaAlocacoes = [...agrupadas].map(([vendaId, valor]) => ({ vendaId, valor }));
     const totalAplicado = arredondar(listaAlocacoes.reduce((total, item) => total + item.valor, 0));
-    const bonusUtilizado = arredondar(Math.max(0, totalAplicado - recebido));
-    const bonusGerado = arredondar(Math.max(0, recebido - totalAplicado));
+    // Na carteira, cada valor aplicado é dinheiro efetivamente recebido.
+    // Créditos de devolução são tratados quando a devolução reduz o vale.
+    const recebido = totalAplicado;
+    const bonusUtilizado = 0;
+    const bonusGerado = 0;
 
-    if (totalAplicado === 0 && recebido === 0) {
-      throw erroHttp("Selecione ao menos uma dívida para utilizar o bônus.", 400);
-    }
-    if (bonusUtilizado > bonusPermitido + 0.005) {
-      throw erroHttp("O valor distribuído ultrapassa o dinheiro recebido e o bônus informado.", 400);
+    if (totalAplicado <= 0) {
+      throw erroHttp("Informe o valor pago em pelo menos uma dívida.", 400);
     }
 
     const recebimentoId = "rec_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
-    const pagamentoId = recebido > 0 ? "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16) : null;
+    const pagamentoId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
 
     runInTransaction(() => {
-      const saldoBonus = Number(queryOne<{ saldo: number }>(
-        `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
-         FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`,
-        [clienteId]
-      )?.saldo || 0);
-      if (bonusUtilizado > saldoBonus + 0.005) {
-        throw erroHttp("O bônus disponível do cliente não é suficiente.", 409);
-      }
-
       for (const item of listaAlocacoes) {
         const venda = queryOne<any>(
           `SELECT * FROM vendas
@@ -3302,18 +3368,16 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
 
       // A entrada de caixa é criada primeiro porque o cabeçalho do
       // recebimento mantém uma referência explícita a ela.
-      if (pagamentoId) {
-        execute(
-          `INSERT INTO pagamentos (id, clienteId, vendaId, data, valor, formaPagamento, observacao, recebimentoId)
-           VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
-          [pagamentoId, clienteId, data, recebido, formaPagamento, observacao || "Recebimento pela carteira do cliente", recebimentoId]
-        );
-      }
+      execute(
+        `INSERT INTO pagamentos (id, clienteId, vendaId, data, valor, formaPagamento, observacao, recebimentoId)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
+        [pagamentoId, clienteId, data, recebido, formaPagamento, observacao || "Recebimento pela carteira do cliente", recebimentoId]
+      );
       execute(
         `INSERT INTO recebimentos_cliente
          (id, clienteId, data, valorRecebido, valorAplicado, bonusUtilizado, bonusGerado, formaPagamento, observacao, pagamentoId)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, recebido > 0 ? formaPagamento : "bonus", observacao || null, pagamentoId]
+        [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, formaPagamento, observacao || null, pagamentoId]
       );
 
       for (const item of listaAlocacoes) {
@@ -3331,22 +3395,8 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
         );
       }
 
-      if (bonusUtilizado > 0) {
-        execute(
-          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, data, tipo, valor, observacao)
-           VALUES (?, ?, ?, ?, 'debito', ?, ?)`,
-          ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), clienteId, recebimentoId, data, bonusUtilizado, "Bônus utilizado na quitação de dívidas"]
-        );
-      }
-      if (bonusGerado > 0) {
-        execute(
-          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, data, tipo, valor, observacao)
-           VALUES (?, ?, ?, ?, 'credito', ?, ?)`,
-          ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), clienteId, recebimentoId, data, bonusGerado, "Excedente de recebimento convertido em bônus"]
-        );
-      }
       registrarAuditoria(null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
-        clienteId, recebido, totalAplicado, bonusUtilizado, bonusGerado, dividas: listaAlocacoes
+        clienteId, recebido, totalAplicado, dividas: listaAlocacoes
       });
     });
 
@@ -3769,6 +3819,7 @@ app.get("/api/relatorios", (req, res) => {
     const clientesResumo = queryAll<any>(
       `SELECT
          c.id as clienteId,
+         printf('%04d', c.rowid) as clienteCodigo,
          c.nome as clienteNome,
          c.telefone as clienteTelefone,
          COUNT(DISTINCT v.id) as totalVendas,
@@ -3858,7 +3909,7 @@ app.get("/api/relatorios", (req, res) => {
                 v.vencimento ASC, v.numeroSequencial DESC`,
       [hoje, hoje, ...valeParams]
     );
-    vales.forEach(carregarDetalhesVenda);
+    carregarDetalhesVendasEmLote(vales);
 
     res.json({
       vendas,

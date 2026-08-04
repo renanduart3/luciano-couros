@@ -4,6 +4,26 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.10.0 — 2026-08-04
+
+- Interface geral compactada para aproveitar melhor a largura, reduzir rolagem e preservar áreas de toque no celular.
+- Ícones da navegação lateral ampliados e cabeçalhos, cartões, filtros e tabelas reorganizados com maior densidade visual.
+- Orçamento da venda passa a iniciar recolhido, mantendo a operação principal visível e a abertura em um clique.
+- Relatórios recebem área exclusiva de Vendas, visão agregada por cliente e destaque para os materiais mais vendidos.
+- Filtros de período e forma de pagamento da visão geral passam a ocupar a mesma linha no desktop.
+- Custos, lucro e valor de venda sensível dos relatórios de clientes ficam protegidos pelo botão compacto de custo com PIN.
+- Vales recebem seleção de cobranças para apresentação ao cliente, incluindo devoluções abatidas e resumo preparado para captura de tela.
+- Filtro de clientes dos Vales passa a usar toda a base cadastrada e a ação redundante “Registrar recebimento” é removida da listagem.
+- Recebimentos de Vales deixam de consultar bônus já abatidos e tratam o valor aplicado exclusivamente como pagamento recebido.
+- Distribuição de recebimentos passa a mostrar valor original, total já pago e saldo restante de cada dívida.
+- Compras recebem uma aba própria de Vales para acompanhar contas assumidas com fornecedores.
+- Selecionar “Vale — pagar depois” ao finalizar uma compra registra valor original, entrada, saldo e vencimento em um único documento financeiro.
+- Vales de compras aceitam pagamentos parciais, histórico detalhado, filtros por fornecedor e situação, paginação e quitação controlada.
+- Pagamentos de compras impedem valores acima do saldo e preservam a atualização transacional do total pago e do saldo restante.
+- Itens da conferência de compras passam a ser ordenados da maior para a menor quantidade.
+- Comprovantes recebem tipografia ligeiramente maior sem alterar o encaixe de impressão.
+- Consultas financeiras e de itens foram agrupadas para evitar carregamentos N+1 nos fluxos de compras, vendas e relatórios.
+
 ## 1.9.0 — 2026-08-03
 
 - Módulo de Compras separado em três áreas coesas: Compra, Histórico e Orçamentos abertos.

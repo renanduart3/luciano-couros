@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Eye, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer, RefreshCw, TrendingUp, Truck, Unlock, Users, X } from "lucide-react";
+import { AlertTriangle, Eye, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer, RefreshCw, ShoppingCart, TrendingUp, Truck, Unlock, Users, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
 import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from "../lib/utils";
 import { Pagination, paginate } from "./Pagination";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 
-type AbaRelatorio = "geral" | "clientes" | "fornecedores" | "vales";
+type AbaRelatorio = "geral" | "vendas" | "clientes" | "fornecedores" | "vales";
 
 const iso = (data: Date) => data.toISOString().slice(0, 10);
 const inicioPadrao = () => { const data = new Date(); data.setDate(data.getDate() - 30); return iso(data); };
@@ -22,7 +22,6 @@ export function RelatoriosView() {
   const [fornecedorId, setFornecedorId] = useState("");
   const [produtoId, setProdutoId] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("");
-  const [situacaoCliente, setSituacaoCliente] = useState("todos");
   const [valeStatus, setValeStatus] = useState("abertos");
   const [vencimentoInicio, setVencimentoInicio] = useState("");
   const [vencimentoFim, setVencimentoFim] = useState("");
@@ -39,13 +38,14 @@ export function RelatoriosView() {
   const [pinErro, setPinErro] = useState("");
   const [itensClientePage, setItensClientePage] = useState(1);
   const [geralProdutosPage, setGeralProdutosPage] = useState(1);
-  const [geralClientesPage, setGeralClientesPage] = useState(1);
+  const [vendasPage, setVendasPage] = useState(1);
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
 
   useEffect(() => {
     Promise.all([api.getClientes(), api.getFornecedores(), api.getProdutos(), api.getSegurancaStatus()])
       .then(([listaClientes, listaFornecedores, listaProdutos, segurancaStatus]) => {
-        setClientes(listaClientes.filter((item) => item.ativo === 1));
+        // Relatórios históricos também precisam localizar clientes hoje inativos.
+        setClientes(listaClientes);
         setFornecedores(listaFornecedores.filter((item) => item.ativo === 1));
         setProdutos(listaProdutos.filter((item) => item.ativo === 1));
         setSeguranca(segurancaStatus);
@@ -60,8 +60,8 @@ export function RelatoriosView() {
 
   useEffect(() => {
     setGeralProdutosPage(1);
-    setGeralClientesPage(1);
-  }, [dados, situacaoCliente]);
+    setVendasPage(1);
+  }, [dados, clienteId]);
 
   const carregar = async () => {
     if (dataInicio && dataFim && dataInicio > dataFim) {
@@ -74,7 +74,7 @@ export function RelatoriosView() {
       setDados(await api.getRelatorios({
         startDate: dataInicio,
         endDate: dataFim,
-        clienteId: aba === "clientes" || aba === "vales" ? clienteId : undefined,
+        clienteId: aba === "vendas" || aba === "clientes" || aba === "vales" ? clienteId : undefined,
         fornecedorId: aba === "fornecedores" ? fornecedorId : undefined,
         produtoId: aba === "fornecedores" ? produtoId : undefined,
         formaPagamento: aba === "geral" ? formaPagamento : undefined,
@@ -114,13 +114,18 @@ export function RelatoriosView() {
     };
   }, [dados]);
 
-  const linhasClientes = useMemo(() => {
-    const linhas = dados?.clientesResumo || [];
-    if (situacaoCliente === "com_saldo") return linhas.filter((item: any) => Number(item.saldoDevedor) > 0);
-    if (situacaoCliente === "com_bonus") return linhas.filter((item: any) => Number(item.saldoBonus) > 0);
-    if (situacaoCliente === "sem_movimento") return linhas.filter((item: any) => Number(item.totalVendas) === 0);
-    return linhas;
-  }, [dados, situacaoCliente]);
+  const linhasVendas = useMemo(() => {
+    const linhas = (dados?.clientesResumo || []).filter((item: any) => Number(item.totalVendas) > 0);
+    if (clienteId) return linhas;
+    const total = linhas.reduce((resumo: any, item: any) => ({
+      ...resumo,
+      totalVendas: resumo.totalVendas + Number(item.totalVendas),
+      totalComprado: resumo.totalComprado + Number(item.totalComprado),
+      totalRecebido: resumo.totalRecebido + Number(item.totalRecebido),
+      ultimaCompra: !resumo.ultimaCompra || item.ultimaCompra > resumo.ultimaCompra ? item.ultimaCompra : resumo.ultimaCompra,
+    }), { clienteId: "todos", clienteCodigo: "—", clienteNome: "TODOS", totalVendas: 0, totalComprado: 0, totalRecebido: 0, ultimaCompra: "" });
+    return [total, ...linhas];
+  }, [dados, clienteId]);
 
   const linhasFornecedores = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -150,7 +155,7 @@ export function RelatoriosView() {
   const itensClientePagina = paginate<any>(analiseCliente.itens, itensClientePage, itensClientePageSize);
   const rankingPageSize = 10;
   const produtosGeraisPagina = paginate<any>(geral?.produtos || [], geralProdutosPage, rankingPageSize);
-  const clientesGeraisPagina = paginate<any>(linhasClientes, geralClientesPage, rankingPageSize);
+  const vendasPagina = paginate<any>(linhasVendas, vendasPage, rankingPageSize);
 
   const desbloquearAnaliseCliente = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -186,11 +191,18 @@ export function RelatoriosView() {
   const exportarCsv = () => {
     if (!dados) return;
     let csv = "\uFEFF";
-    if (aba === "clientes") {
-      csv += "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR LÍQUIDO;CUSTO;LUCRO;FORNECEDOR\n";
+    if (aba === "vendas") {
+      csv += "CÓDIGO CLIENTE;CLIENTE;VENDAS;VALOR TOTAL;VALOR RECEBIDO;DATA DA ÚLTIMA VENDA\n";
+      linhasVendas.forEach((item: any) => { csv += `${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.totalVendas};${item.totalComprado};${item.totalRecebido};${item.ultimaCompra}\n`; });
+    } else if (aba === "clientes") {
+      csv += dadosClienteLiberados
+        ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;FORNECEDOR\n"
+        : "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO\n";
       analiseCliente.itens.forEach((item: any) => {
         const lucro = Number(item.valorVendaLiquido) - Number(item.custoTotal);
-        csv += `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario};${item.valorVendaLiquido};${item.custoTotal};${lucro};${csvCelula(item.fornecedorNome)}\n`;
+        csv += dadosClienteLiberados
+          ? `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario};${item.valorVendaLiquido};${item.custoTotal};${lucro};${csvCelula(item.fornecedorNome)}\n`
+          : `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario}\n`;
       });
       csv += `\nTOTAL QUANTIDADE;${analiseCliente.quantidade}\nVALOR BRUTO;${analiseCliente.valorBruto}\nDESCONTO;${analiseCliente.desconto}\nVALOR LÍQUIDO;${analiseCliente.valorLiquido}\n`;
     } else if (aba === "fornecedores") {
@@ -243,19 +255,20 @@ export function RelatoriosView() {
         <div className="flex flex-wrap gap-2"><button onClick={exportarCsv} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-400 bg-white px-4 text-xs font-black text-slate-900"><FileSpreadsheet size={16} /> Exportar CSV</button><button onClick={() => window.print()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-black text-white"><Printer size={16} /> Imprimir</button></div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm sm:flex print:hidden">
-        {([['geral', TrendingUp, 'Visão geral'], ['clientes', Users, 'Clientes'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap ${aba === id ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
+      <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-300 bg-white p-1.5 shadow-sm sm:flex print:hidden">
+        {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['clientes', Users, 'Clientes'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${aba === id ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
       </div>
 
-      <div className="space-y-4 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm print:hidden">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="text-xs font-black text-slate-700">EMISSÃO DE<input data-testid="relatorio-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
-          <label className="text-xs font-black text-slate-700">ATÉ<input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="mt-1 block min-h-11 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
+      <div className="space-y-2 rounded-xl border border-slate-300 bg-white p-3 shadow-sm print:hidden">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="w-[calc(50%-0.25rem)] min-w-0 text-xs font-black text-slate-700 md:w-auto">EMISSÃO DE<input data-testid="relatorio-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
+          <label className="w-[calc(50%-0.25rem)] min-w-0 text-xs font-black text-slate-700 md:w-auto">ATÉ<input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
+          {aba === "geral" && <label className="w-full text-xs font-black text-slate-700 md:w-56">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label>}
           <div className="flex flex-wrap gap-2"><button onClick={() => periodoRapido(7)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">7 DIAS</button><button onClick={() => periodoRapido(30)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">30 DIAS</button><button onClick={() => periodoRapido(90)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">90 DIAS</button></div>
-          <button onClick={carregar} className="ml-auto inline-flex min-h-11 items-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black text-white"><RefreshCw size={16} />Atualizar</button>
+          <button onClick={carregar} aria-label="Atualizar relatório" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[10px] font-bold uppercase text-slate-400 hover:border-slate-300 hover:text-slate-600"><RefreshCw size={15} />Atualizar</button>
         </div>
 
-        {aba === "geral" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label></div>}
+        {aba === "vendas" && <div className="grid gap-2 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vendas-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "fornecedores" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORNECEDOR<select data-testid="relatorio-filtro-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS FORNECEDORES</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">PRODUTO / MATERIAL<select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS PRODUTOS</option>{produtos.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "vales" && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vale-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select data-testid="relatorio-vale-status" value={valeStatus} onChange={(e) => setValeStatus(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="abertos">EM ABERTO</option><option value="vencidos">VENCIDOS</option><option value="a_vencer">A VENCER</option><option value="quitados">QUITADOS</option></select></label><label className="text-xs font-black text-slate-700">VENCIMENTO DE<input type="date" value={vencimentoInicio} onChange={(e) => setVencimentoInicio(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label><label className="text-xs font-black text-slate-700">VENCIMENTO ATÉ<input type="date" value={vencimentoFim} onChange={(e) => setVencimentoFim(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label></div>}
@@ -297,41 +310,28 @@ export function RelatoriosView() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
-              <div className="border-b border-slate-200 bg-slate-50 p-4">
-                <h3 className="font-black text-slate-950">MATERIAIS MAIS VENDIDOS</h3>
-                <p className="mt-1 text-xs font-bold text-slate-500">Ordenados pela quantidade de vendas, do maior para o menor.</p>
+            <div className="overflow-hidden rounded-xl border-2 border-amber-400 bg-white shadow-lg shadow-amber-100">
+              <div className="flex items-center justify-between gap-3 border-b border-amber-300 bg-gradient-to-r from-amber-100 via-yellow-50 to-white p-3">
+                <div><h3 className="text-base font-black text-amber-950">MATERIAIS MAIS VENDIDOS</h3><p className="text-xs font-bold text-amber-800">Ranking por quantidade de vendas no período.</p></div>
+                <span className="rounded-full bg-amber-500 px-3 py-1 text-xs font-black text-slate-950">DESTAQUE</span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[650px] text-sm">
                   <thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead>
-                  <tbody className="divide-y">{produtosGeraisPagina.length ? produtosGeraisPagina.map((item: any) => <tr key={item.produtoId}><td className="p-3 font-black">{item.descricao}</td><td className="p-3 text-right font-black">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>) : <tr><td colSpan={5} className="p-10 text-center font-bold text-slate-500">NENHUM MATERIAL VENDIDO NO PERÍODO.</td></tr>}</tbody>
+                  <tbody className="divide-y">{produtosGeraisPagina.length ? produtosGeraisPagina.map((item: any, index: number) => <tr key={item.produtoId} className={index < 3 && geralProdutosPage === 1 ? "bg-amber-50/60" : ""}><td className="p-3 font-black"><span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] text-slate-950">{(geralProdutosPage - 1) * rankingPageSize + index + 1}</span>{item.descricao}</td><td className="p-3 text-right text-base font-black text-amber-900">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>) : <tr><td colSpan={5} className="p-10 text-center font-bold text-slate-500">NENHUM MATERIAL VENDIDO NO PERÍODO.</td></tr>}</tbody>
                 </table>
               </div>
               <Pagination page={geralProdutosPage} pageSize={rankingPageSize} totalItems={geral.produtos.length} onPageChange={setGeralProdutosPage} />
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white">
-              <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <h3 className="font-black text-slate-950">CLIENTES — VISÃO GERAL</h3>
-                  <p className="mt-1 text-xs font-bold text-slate-500">Ranking por total comprado e situação financeira no período.</p>
-                </div>
-                <label className="w-full text-xs font-black text-slate-700 md:w-72">
-                  SITUAÇÃO
-                  <select data-testid="relatorio-filtro-situacao-cliente" value={situacaoCliente} onChange={(e) => setSituacaoCliente(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-white px-3 font-bold">
-                    <option value="todos">TODOS</option>
-                    <option value="com_saldo">COM SALDO DEVEDOR</option>
-                    <option value="com_bonus">COM BÔNUS</option>
-                    <option value="sem_movimento">SEM COMPRA NO PERÍODO</option>
-                  </select>
-                </label>
-              </div>
-              <TabelaClientes linhas={clientesGeraisPagina} />
-              <Pagination page={geralClientesPage} pageSize={rankingPageSize} totalItems={linhasClientes.length} onPageChange={setGeralClientesPage} />
-            </div>
           </div>
         )}
+
+        {aba === "vendas" && <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-emerald-50 p-3"><h3 className="font-black text-emerald-950">VENDAS POR CLIENTE</h3><p className="text-xs font-bold text-emerald-800">Valores agregados conforme o período selecionado. A linha TODOS consolida a carteira.</p></div>
+          <TabelaVendas linhas={vendasPagina} />
+          <Pagination page={vendasPage} pageSize={rankingPageSize} totalItems={linhasVendas.length} onPageChange={setVendasPage} alwaysVisible />
+        </div>}
 
         {aba === "clientes" && <div className="space-y-4">
           {!clienteId ? (
@@ -342,11 +342,11 @@ export function RelatoriosView() {
               <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div><h3 className="font-black text-slate-950">Itens vendidos para o cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(dataInicio)} até {formatDate(dataFim)}</p></div>
-                  {dadosClienteLiberados ? <button type="button" onClick={() => setDadosClienteLiberados(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-black text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setPin(""); setPinErro(""); setPinOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-black text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}
+                  {dadosClienteLiberados ? <button type="button" onClick={() => setDadosClienteLiberados(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black uppercase text-emerald-800"><Unlock size={15} /> Custo visível</button> : <button type="button" onClick={() => { setPin(""); setPinErro(""); setPinOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Lock size={15} /> Custo</button>}
                 </div>
                 <TabelaItensCliente linhas={itensClientePagina} liberado={dadosClienteLiberados} />
                 <Pagination page={itensClientePage} pageSize={itensClientePageSize} totalItems={analiseCliente.itens.length} onPageChange={setItensClientePage} />
-                <div className="grid gap-2 border-t border-slate-200 bg-slate-50 p-4 text-xs font-black sm:grid-cols-3"><span>Total líquido: {formatCurrency(analiseCliente.valorLiquido)}</span><span>Custo: {dadosClienteLiberados ? formatCurrency(analiseCliente.custo) : "••••"}</span><span>Lucro / margem: {dadosClienteLiberados ? `${formatCurrency(analiseCliente.lucro)} • ${analiseCliente.margem.toFixed(1)}%` : "••••"}</span></div>
+                <div className={`grid gap-2 border-t border-slate-200 bg-slate-50 p-3 text-xs font-black ${dadosClienteLiberados ? "sm:grid-cols-3" : ""}`}><span>TOTAL LÍQUIDO: {formatCurrency(analiseCliente.valorLiquido)}</span>{dadosClienteLiberados && <><span>CUSTO: {formatCurrency(analiseCliente.custo)}</span><span>LUCRO / MARGEM: {formatCurrency(analiseCliente.lucro)} • {analiseCliente.margem.toFixed(1)}%</span></>}</div>
               </div>
             </>
           )}
@@ -360,18 +360,19 @@ export function RelatoriosView() {
   );
 }
 
-function TabelaClientes({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">CLIENTE</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">COMPRADO</th><th className="p-3 text-right">RECEBIDO</th><th className="p-3 text-right">DÍVIDA ATUAL</th><th className="p-3 text-right">BÔNUS</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId}><td className="p-3 font-black text-slate-950">{item.clienteNome}</td><td className="p-3 font-bold text-slate-600">{item.clienteTelefone || "—"}</td><td className="p-3 text-right font-bold">{item.totalVendas}</td><td className="p-3 text-right font-black">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-3 text-right font-black text-amber-800">{formatCurrency(item.saldoDevedor)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.saldoBonus)}</td><td className="p-3 text-right">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={8} className="p-10 text-center font-bold text-slate-500">NENHUM CLIENTE NESTE FILTRO.</td></tr>}</tbody></table></div>;
+function TabelaVendas({ linhas }: { linhas: any[] }) {
+  return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-2.5 text-left">CÓD. CLIENTE</th><th className="p-2.5 text-left">NOME CLIENTE</th><th className="p-2.5 text-right">VENDAS</th><th className="p-2.5 text-right">VALOR TOTAL DA VENDA</th><th className="p-2.5 text-right">VALOR RECEBIDO</th><th className="p-2.5 text-right">DATA DA VENDA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId} className={item.clienteId === "todos" ? "bg-emerald-100 text-emerald-950" : "hover:bg-slate-50"}><td className="p-2.5 font-mono font-black">{item.clienteCodigo || String(item.clienteId).slice(-6).toUpperCase()}</td><td className="p-2.5 font-black">{item.clienteNome}</td><td className="p-2.5 text-right font-black">{item.totalVendas}</td><td className="p-2.5 text-right font-mono text-base font-black">{formatCurrency(item.totalComprado)}</td><td className="p-2.5 text-right font-mono font-black text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-2.5 text-right font-bold">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA VENDA NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }
 
 function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boolean }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[1080px] text-xs"><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-3 text-left">Data</th><th className="p-3 text-left">Venda</th><th className="p-3 text-right">Qtd.</th><th className="p-3 text-left">Unid.</th><th className="p-3 text-left">Artigo / material</th><th className="p-3 text-right">V. unitário</th><th className="p-3 text-right">V. venda</th><th className="bg-slate-100 p-3 text-right">Custo</th><th className="bg-slate-100 p-3 text-right">Lucro</th><th className="bg-slate-100 p-3 text-left">Fornecedor</th><th className="bg-slate-100 p-3 text-right">Margem</th></tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
+  const colunas = liberado ? 11 : 6;
+  return <div className="overflow-x-auto"><table className={`w-full text-xs ${liberado ? "min-w-[1080px]" : "min-w-[720px]"}`}><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-2.5 text-left">Data</th><th className="p-2.5 text-left">Venda</th><th className="p-2.5 text-right">Qtd.</th><th className="p-2.5 text-left">Unid.</th><th className="p-2.5 text-left">Artigo / material</th><th className="p-2.5 text-right">V. unitário</th>{liberado && <><th className="p-2.5 text-right">V. venda</th><th className="bg-slate-100 p-2.5 text-right">Custo</th><th className="bg-slate-100 p-2.5 text-right">Lucro</th><th className="bg-slate-100 p-2.5 text-left">Fornecedor</th><th className="bg-slate-100 p-2.5 text-right">Margem</th></>}</tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
     const valorVenda = Number(item.valorVendaLiquido || 0);
     const custo = Number(item.custoTotal || 0);
     const lucro = valorVenda - custo;
     const margem = valorVenda > 0 ? lucro / valorVenda * 100 : 0;
-    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-3 font-mono">{formatDate(item.data)}</td><td className="p-3 font-mono font-black">#{item.numeroSequencial}</td><td className="p-3 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-3 font-bold">{item.unidade}</td><td className="p-3 font-black text-slate-900">{item.descricao}</td><td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td><td className="p-3 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-3 text-right font-mono">{liberado ? formatCurrency(custo) : "••••"}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{liberado ? formatCurrency(lucro) : "••••"}</td><td className="bg-slate-50 p-3 font-bold">{liberado ? item.fornecedorNome || "Sem compra registrada" : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> Protegido</span>}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{liberado ? `${margem.toFixed(1)}%` : "••••"}</td></tr>;
-  }) : <tr><td colSpan={11} className="p-12 text-center font-bold text-slate-500">Nenhum item vendido para este cliente no período.</td></tr>}</tbody></table></div>;
+    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-2.5 font-mono">{formatDate(item.data)}</td><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-2.5 font-bold">{item.unidade}</td><td className="p-2.5 font-black text-slate-900">{item.descricao}</td><td className="p-2.5 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>{liberado && <><td className="p-2.5 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-2.5 text-right font-mono">{formatCurrency(custo)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{formatCurrency(lucro)}</td><td className="bg-slate-50 p-2.5 font-bold">{item.fornecedorNome || "Sem compra registrada"}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{margem.toFixed(1)}%</td></>}</tr>;
+  }) : <tr><td colSpan={colunas} className="p-12 text-center font-bold text-slate-500">Nenhum item vendido para este cliente no período.</td></tr>}</tbody></table></div>;
 }
 
 function TabelaFornecedores({ linhas }: { linhas: any[] }) {

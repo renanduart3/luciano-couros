@@ -286,6 +286,7 @@ export function initDatabase() {
         valorPago REAL NOT NULL DEFAULT 0,
         saldoRestante REAL NOT NULL DEFAULT 0,
         status TEXT NOT NULL DEFAULT 'pendente',
+        formaPagamento TEXT NOT NULL DEFAULT 'nao_informado',
         vencimento TEXT,
         observacao TEXT,
         deletedAt TEXT,
@@ -686,6 +687,7 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE compras ADD COLUMN valorPago REAL NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE compras ADD COLUMN saldoRestante REAL NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE compras ADD COLUMN status TEXT NOT NULL DEFAULT 'pendente'`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE compras ADD COLUMN formaPagamento TEXT NOT NULL DEFAULT 'nao_informado'`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE compras ADD COLUMN vencimento TEXT`).run(); } catch (e) {}
   db.prepare(`
     UPDATE compras
@@ -706,6 +708,7 @@ export function initDatabase() {
   }
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_compras_seq ON compras (numeroSequencial)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_compras_fornecedor_status ON compras (fornecedorId, status, data DESC)`).run();
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_compras_forma_status ON compras (formaPagamento, status, vencimento)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_itens_compra_documento ON itens_compra (compraId)`).run();
   db.prepare(`
     UPDATE fornecedores

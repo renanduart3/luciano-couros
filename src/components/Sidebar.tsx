@@ -47,12 +47,12 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm print:hidden md:hidden">
-        <div className="flex min-w-0 items-center gap-3">
-          <img src={logo} alt="Luciano Couros" className="h-11 w-14 object-contain" />
+      <header className="fixed inset-x-0 top-0 z-50 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-3 shadow-sm print:hidden md:hidden">
+        <div className="flex min-w-0 items-center gap-2">
+          <img src={logo} alt="Luciano Couros" className="h-10 w-12 object-contain" />
           <div className="min-w-0"><p className="truncate text-sm font-extrabold text-slate-900">{activeItem?.label || "Luciano Couros"}</p><p className="text-[10px] font-bold text-emerald-600">● ONLINE LOCAL</p></div>
         </div>
-        <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu" aria-expanded={mobileOpen} className="rounded-xl bg-slate-900 p-2.5 text-white"><Menu size={20} /></button>
+        <button type="button" onClick={() => setMobileOpen(true)} aria-label="Abrir menu" aria-expanded={mobileOpen} className="rounded-xl bg-slate-900 p-2.5 text-white"><Menu size={23} /></button>
       </header>
 
       {mobileOpen && (
@@ -63,11 +63,11 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               <img src={logo} alt="Luciano Couros" className="h-20 w-40 object-contain" />
               <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu" className="rounded-xl bg-slate-100 p-2 text-slate-700"><X size={19} /></button>
             </div>
-            <nav className="flex-1 space-y-1.5 overflow-y-auto p-4">
+            <nav className="flex-1 space-y-1 overflow-y-auto p-3">
               {menuItems.map((item) => {
                 const Icon = item.icon;
                 const active = currentView === item.id;
-                return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-bold ${active ? item.purchase ? "bg-amber-600 text-white" : "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : item.purchase ? "bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={19} /><span>{item.label}</span></button>;
+                return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold ${active ? item.purchase ? "bg-amber-600 text-white" : "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : item.purchase ? "bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={23} /><span>{item.label}</span></button>;
               })}
             </nav>
             <div className="border-t border-slate-800 p-4 text-center text-[10px] text-slate-400">v{APP_VERSION} • Servidor local</div>
@@ -76,15 +76,15 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
       )}
 
       <aside className="relative hidden h-screen w-20 shrink-0 select-none flex-col border-r border-slate-800 bg-slate-900 text-slate-100 md:flex">
-        <div className="flex h-20 items-center justify-center overflow-hidden border-b border-slate-200 bg-white px-1"><img src={logo} alt="Luciano Couros" className="h-14 w-14 object-contain" /></div>
-        <nav className="flex-1 space-y-1.5 overflow-y-auto px-1.5 py-3">
+        <div className="flex h-16 items-center justify-center overflow-hidden border-b border-slate-200 bg-white px-1"><img src={logo} alt="Luciano Couros" className="h-12 w-12 object-contain" /></div>
+        <nav className="flex-1 space-y-1 overflow-y-auto px-1.5 py-2">
           {menuItems.map((item) => {
             const Icon = item.icon;
             const active = currentView === item.id;
-            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-11 w-full flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-center text-sm font-medium transition-all ${active ? item.purchase ? "bg-amber-600 text-white" : item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : item.purchase ? "border border-amber-800/30 bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={18} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
+            return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-10 w-full flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-center text-sm font-medium transition-all ${active ? item.purchase ? "bg-amber-600 text-white" : item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : item.purchase ? "border border-amber-800/30 bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={22} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
           })}
         </nav>
-        <div className="border-t border-slate-800 bg-slate-950/40 p-4 text-center text-xs text-slate-400">v{APP_VERSION}</div>
+        <div className="border-t border-slate-800 bg-slate-950/40 p-2 text-center text-[10px] text-slate-400">v{APP_VERSION}</div>
       </aside>
     </>
   );

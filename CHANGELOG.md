@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.11.1 — 2026-08-06
+
+- Tela de login redesenhada com área da marca clara, painel vinho e fechadura interativa para revelar ou recolher os campos de acesso.
+- Opção de dados de demonstração e suas rotas administrativas removidas do sistema.
+- Comprovantes de venda passam a exibir a referência completa do fornecedor e recuperam o cadastro vinculado quando o item histórico não a possui.
+- Comprovantes de orçamento recebem a coluna de referência do fornecedor com a mesma recuperação dos registros já existentes.
+
 ## 1.11.0 — 2026-08-05
 
 - Acesso ao sistema passa a exigir usuário e senha, com sessão local de até 16 horas e opção de bloquear/trocar usuário sem fechar o servidor.

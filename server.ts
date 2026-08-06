@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
-import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, isMockModeEnabled, setMockMode, BACKUP_DIR, LIVE_DB_FILE, rebuildClienteProdutosHabituais } from "./server/db.js";
+import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP_DIR, LIVE_DB_FILE, rebuildClienteProdutosHabituais } from "./server/db.js";
 
 // Initialize express app
 const app = express();
@@ -670,7 +670,7 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
-app.use(["/api/mock", "/api/backups", "/api/usuarios"], exigirGerente);
+app.use(["/api/backups", "/api/usuarios"], exigirGerente);
 app.use("/api", (req, res, next) => {
   const operacaoGerencial = req.method === "DELETE"
     || /\/(cancelar|devolucoes)(\/|$)/.test(req.path);
@@ -764,47 +764,6 @@ app.delete("/api/usuarios/:id", (req, res) => {
     invalidarSessoesUsuario(usuario.id);
     registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "vendedor_desativado", "usuario", usuario.id, { nome: usuario.nome });
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 0. MOCK DATA CONTROL
-app.get("/api/mock/status", (req, res) => {
-  try {
-    const enabled = isMockModeEnabled();
-    res.json({ mockEnabled: enabled });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/mock/toggle", (req, res) => {
-  try {
-    const { enabled } = req.body;
-    if (typeof enabled !== "boolean") {
-      return res.status(400).json({ error: "Campo 'enabled' deve ser um booleano." });
-    }
-    const usuariosAtuais = queryAll<any>(
-      `SELECT id, nome, login, perfil, pinHash, pinSalt, deveTrocarSenha, ultimoAcesso,
-              ativo, createdAt, updatedAt FROM usuarios`
-    );
-    setMockMode(enabled);
-    const salvarUsuario = db.prepare(
-      `INSERT INTO usuarios (id, nome, login, perfil, pinHash, pinSalt, deveTrocarSenha, ultimoAcesso, ativo, createdAt, updatedAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET nome = excluded.nome, login = excluded.login,
-         perfil = excluded.perfil, pinHash = excluded.pinHash, pinSalt = excluded.pinSalt,
-         deveTrocarSenha = excluded.deveTrocarSenha, ultimoAcesso = excluded.ultimoAcesso,
-         ativo = excluded.ativo, updatedAt = excluded.updatedAt`
-    );
-    db.transaction(() => {
-      for (const usuario of usuariosAtuais) salvarUsuario.run(
-        usuario.id, usuario.nome, usuario.login, usuario.perfil, usuario.pinHash, usuario.pinSalt,
-        usuario.deveTrocarSenha, usuario.ultimoAcesso, usuario.ativo, usuario.createdAt, usuario.updatedAt
-      );
-    })();
-    res.json({ success: true, mockEnabled: enabled });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -2021,9 +1980,11 @@ function carregarOrcamentoCompleto(id: string) {
   );
   if (!orcamento) return null;
   orcamento.items = queryAll(
-    `SELECT io.*, p.codigo AS referencia
+    `SELECT io.*, p.codigo AS referencia,
+            COALESCE(NULLIF(io.fornecedorReferencia, ''), f.referencia) AS fornecedorReferencia
      FROM itens_orcamento io
      LEFT JOIN produtos p ON p.id = io.produtoId
+     LEFT JOIN fornecedores f ON f.id = io.fornecedorId
      WHERE io.orcamentoId = ?
      ORDER BY io.rowid ASC`,
     [id]
@@ -2318,11 +2279,14 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 
 function carregarDetalhesVenda(venda: any) {
   venda.items = queryAll(
-    `SELECT iv.*, p.codigo as referencia,
+    `SELECT iv.*,
+            p.codigo as referencia,
+            COALESCE(NULLIF(iv.fornecedorReferencia, ''), f.referencia) as fornecedorReferencia,
             COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
             iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
      FROM itens_venda iv
      LEFT JOIN produtos p ON p.id = iv.produtoId
+     LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
      WHERE iv.vendaId = ?`,
     [venda.id]
   );
@@ -2389,11 +2353,14 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   };
 
   const itensPorVenda = agrupar(queryAll<any>(
-    `SELECT iv.*, p.codigo as referencia,
+    `SELECT iv.*,
+            p.codigo as referencia,
+            COALESCE(NULLIF(iv.fornecedorReferencia, ''), f.referencia) as fornecedorReferencia,
             COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
             iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
      FROM itens_venda iv
      LEFT JOIN produtos p ON p.id = iv.produtoId
+     LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
      WHERE iv.vendaId IN (${marcadores})`, ids
   ), "vendaId");
   const devolucoes = queryAll<any>(

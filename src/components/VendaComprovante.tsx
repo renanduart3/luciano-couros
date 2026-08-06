@@ -89,7 +89,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
           {itens.map((item, index) => (
             <tr key={item.id || index}>
               <td>{item.referencia || ""}</td>
-              <td className="receipt-supplier-code">{String(item.fornecedorReferencia || "").slice(0, 4)}</td>
+              <td className="receipt-supplier-code">{item.fornecedorReferencia || ""}</td>
               <td className="receipt-number">{formatDecimal(item.quantidade)}</td>
               <td>{item.descricao}</td>
               <td className="receipt-number">{formatCurrency(item.precoUnitario)}</td>

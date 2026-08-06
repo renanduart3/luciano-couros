@@ -72,18 +72,19 @@ function ViaOrcamento({
       </div>
 
       <table className="receipt-items-table">
-        <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-qty">QUANT.</th><th>DISCRIMINAÇÃO</th><th className="receipt-money">P. UNITÁRIO</th><th className="receipt-money">PREÇO TOTAL</th></tr></thead>
+        <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-supplier-ref">FORN.</th><th className="receipt-qty">QUANT.</th><th>DISCRIMINAÇÃO</th><th className="receipt-money">P. UNITÁRIO</th><th className="receipt-money">PREÇO TOTAL</th></tr></thead>
         <tbody>
           {itens.map((item, index) => (
             <tr key={item.id || index}>
               <td>{item.referencia || ""}</td>
+              <td className="receipt-supplier-code">{item.fornecedorReferencia || ""}</td>
               <td className="receipt-number">{formatDecimal(item.quantidade)}</td>
               <td>{item.descricao}{item.faltante === 1 ? " — FALTANTE" : ""}</td>
               <td className="receipt-number">{formatCurrency(item.precoUnitario)}</td>
               <td className="receipt-number">{formatCurrency(item.total)}</td>
             </tr>
           ))}
-          {linhasVazias.map((_, index) => <tr key={`empty-${index}`} aria-hidden="true"><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>)}
+          {linhasVazias.map((_, index) => <tr key={`empty-${index}`} aria-hidden="true"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>)}
         </tbody>
       </table>
 

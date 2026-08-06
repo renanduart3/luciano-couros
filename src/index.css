@@ -210,6 +210,25 @@ textarea {
   }
 }
 
+/* A identidade visual do login não deve herdar as regras operacionais globais. */
+@media screen {
+  main.login-view .login-panel .login-field-label {
+    color: #ffffff !important;
+    font-size: 0.75rem !important;
+  }
+
+  main.login-view .login-panel .login-submit {
+    color: #ffffff !important;
+    font-size: 0.875rem !important;
+    opacity: 1;
+  }
+
+  main.login-view .login-panel .login-session-note {
+    color: rgb(255 255 255 / 55%) !important;
+    font-size: 9px !important;
+  }
+}
+
 /* Comprovante histórico: duas meias páginas idênticas em uma folha A4. */
 .receipt-pages {
   display: flex;

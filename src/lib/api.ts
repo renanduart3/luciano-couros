@@ -62,15 +62,6 @@ export const api = {
   }).then(r => handleResponse<UsuarioSistema>(r)),
   deleteUsuarioSistema: (id: string) => fetch(`${API_BASE}/usuarios/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
 
-  // MOCK DATA CONTROL
-  getMockStatus: () => fetch(`${API_BASE}/mock/status`).then(r => handleResponse<{ mockEnabled: boolean }>(r)),
-  toggleMock: (enabled: boolean) => 
-    fetch(`${API_BASE}/mock/toggle`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled })
-    }).then(r => handleResponse<{ success: boolean; mockEnabled: boolean }>(r)),
-
   // CONFIGS
   getConfig: () => fetch(`${API_BASE}/config`).then(r => handleResponse<Record<string, string>>(r)),
   updateConfig: (updates: Record<string, string>) => 

@@ -30,10 +30,6 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
   const [savingPin, setSavingPin] = useState(false);
   const [pinFeedback, setPinFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
-  // Mock status state
-  const [mockEnabled, setMockEnabled] = useState(false);
-  const [togglingMock, setTogglingMock] = useState(false);
-
   // Restore confirmation modal state
   const [selectedBackup, setSelectedBackup] = useState<string | null>(null);
   const [restoreConfirmText, setRestoreConfirmText] = useState("");
@@ -44,10 +40,9 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [config, backupList, mockStatus, segurancaStatus] = await Promise.all([
+      const [config, backupList, segurancaStatus] = await Promise.all([
         api.getConfig(),
         api.getBackups(),
-        api.getMockStatus().catch(() => ({ mockEnabled: false })),
         api.getSegurancaStatus()
       ]);
       setStoreName(config.store_name || "Luciano Couros");
@@ -56,7 +51,6 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
       setStoreMobile(config.store_mobile || "98800-5778 e 98719-4108");
       setStoreEmail(config.store_email || "lucianocouros@hotmail.com");
       setBackups(backupList);
-      setMockEnabled(mockStatus.mockEnabled);
       setSeguranca(segurancaStatus);
       setAdminNome(segurancaStatus.nome);
     } catch (err: any) {
@@ -142,24 +136,6 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
       setPinFeedback({ type: "error", text: err.message || "Erro ao salvar o PIN." });
     } finally {
       setSavingPin(false);
-    }
-  };
-
-  const handleToggleMock = async () => {
-    setTogglingMock(true);
-    try {
-      const nextState = !mockEnabled;
-      const res = await api.toggleMock(nextState);
-      setMockEnabled(res.mockEnabled);
-      alert(res.mockEnabled 
-        ? "Modo de Demonstração ativado com sucesso! Dados fictícios de tecidos e vendas foram carregados separadamente." 
-        : "Modo de Demonstração desativado! Seus dados reais foram restaurados com total segurança."
-      );
-      if (onRefreshConfig) onRefreshConfig();
-    } catch (err: any) {
-      alert(err.message || "Erro ao alternar o modo de demonstração.");
-    } finally {
-      setTogglingMock(false);
     }
   };
 
@@ -350,50 +326,6 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
                 <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar senha" : "Configurar senha"}
               </button>
             </form>
-
-            {/* Mock Data Card */}
-            <div className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-4">
-              <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-50 pb-3">
-                <Database size={16} className="text-emerald-600" />
-                Dados de Demonstração (Mock)
-              </h3>
-              
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold text-slate-700">Modo de Simulação</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Ativa dados fictícios para testes.</p>
-                </div>
-                
-                <button
-                  type="button"
-                  disabled={togglingMock}
-                  onClick={handleToggleMock}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    mockEnabled ? "bg-emerald-600" : "bg-slate-200"
-                  } disabled:opacity-50`}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                      mockEnabled ? "translate-x-5" : "translate-x-0"
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-xl space-y-1.5 border border-slate-100/50">
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${mockEnabled ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`}></span>
-                  <span className="text-[10px] font-bold text-slate-600">
-                    Status: {mockEnabled ? "ATIVO (Dados Simulados)" : "INATIVO (Dados Reais)"}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-500 leading-relaxed">
-                  {mockEnabled 
-                    ? "As telas exibirão clientes, vendas, compras e pagamentos simulados de tecidos sem afetar seus registros originais."
-                    : "Você está visualizando os dados reais de sua base local. Ative para preencher gráficos e tabelas para testes rápidos."}
-                </p>
-              </div>
-            </div>
 
             {/* Information Card */}
             <div className="bg-slate-50 border border-slate-100 rounded-2xl p-6 space-y-3">

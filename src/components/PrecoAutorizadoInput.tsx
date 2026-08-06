@@ -66,8 +66,8 @@ export function PrecoAutorizadoInput({
   };
 
   const validarPin = async () => {
-    if (!/^\d{4,8}$/.test(pin)) {
-      setErro("PIN de 4 a 8 números.");
+    if (pin.length < 4 || pin.length > 64) {
+      setErro("Informe a senha do gerente.");
       return;
     }
     setValidando(true);
@@ -154,7 +154,7 @@ export function PrecoAutorizadoInput({
               autoComplete="off"
               autoFocus
               value={pin}
-              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 8))}
+              onChange={(event) => setPin(event.target.value.slice(0, 64))}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();

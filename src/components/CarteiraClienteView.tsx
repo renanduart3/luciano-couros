@@ -4,6 +4,7 @@ import { CarteiraCliente, Cliente, DividaCarteira } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
@@ -14,6 +15,7 @@ const dinheiro = (valor: number) => valor.toLocaleString("pt-BR", { minimumFract
 
 export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps) {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteId, setClienteId] = useState("");
   const [busca, setBusca] = useState("");
@@ -137,7 +139,7 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
   };
 
   const estornar = async (recebimentoId: string) => {
-    const pin = prompt("INFORME O PIN DO ADMINISTRADOR PARA ESTORNAR ESTE RECEBIMENTO:");
+    const pin = prompt("INFORME A SENHA DO GERENTE PARA ESTORNAR ESTE RECEBIMENTO:");
     if (!pin) return;
     if (!await confirmacao.confirmar({
       titulo: "Estornar recebimento",
@@ -201,7 +203,7 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 p-4"><History size={18} /><h3 className="font-black text-slate-950">HISTÓRICO DA CARTEIRA</h3></div>
-            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="grid gap-3 p-4 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className="font-black text-emerald-800">{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold text-slate-600">{recebimento.formaPagamento}</p></div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || "SEM DÍVIDAS"}</p></div><button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button></article>)}</div>}
+            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="grid gap-3 p-4 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className="font-black text-emerald-800">{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold text-slate-600">{recebimento.formaPagamento}</p></div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || "SEM DÍVIDAS"}</p></div>{gerente && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</article>)}</div>}
           </div>
         </form>
       )}

@@ -4,6 +4,19 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.11.0 — 2026-08-05
+
+- Acesso ao sistema passa a exigir usuário e senha, com sessão local de até 16 horas e opção de bloquear/trocar usuário sem fechar o servidor.
+- Gerente recebe acesso exclusivo às Configurações, ao cadastro de vendedores, aos backups e ao modo de demonstração.
+- Vendedores deixam de visualizar ações destrutivas e o servidor bloqueia exclusões, cancelamentos, estornos e devoluções fora do perfil gerente.
+- Cadastro de vendedores usa senha provisória com troca obrigatória no primeiro acesso, ativação, desativação e redefinição controladas pelo gerente.
+- Recuperação local do gerente passa a ser feita pelo comando `RESETAR SENHA DO GERENTE.cmd`, com senha temporária `Altinopolis` e troca obrigatória no próximo login.
+- Tentativas de login inválidas recebem bloqueio temporário após cinco falhas consecutivas.
+- Vendas passam a registrar o vendedor responsável para identificação futura e auditoria.
+- Ranking de materiais mais vendidos passa a exibir a quantidade total e sua unidade de medida.
+- Comprovante de venda passa a mostrar os quatro primeiros caracteres da referência do fornecedor sem ampliar o layout atual.
+- Referências de fornecedor passam a aceitar no máximo quatro caracteres no cadastro e nos vínculos de produtos.
+
 ## 1.10.0 — 2026-08-04
 
 - Interface geral compactada para aproveitar melhor a largura, reduzir rolagem e preservar áreas de toque no celular.

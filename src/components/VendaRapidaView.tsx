@@ -1005,8 +1005,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     }
 
     if (vendaEmEdicao) {
-      if (!/^\d{4,8}$/.test(pinEdicao)) {
-        setFeedbackMsg({ type: "error", text: "Informe o PIN administrativo de 4 a 8 números para salvar a alteração." });
+      if (pinEdicao.length < 4 || pinEdicao.length > 64) {
+        setFeedbackMsg({ type: "error", text: "Informe a senha do gerente para salvar a alteração." });
         return;
       }
       await executarSalvamentoVenda();
@@ -1052,8 +1052,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   const handleAutorizarPreco = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^\d{4,8}$/.test(adminPin)) {
-      setAutorizacaoErro("Informe o PIN administrativo de 4 a 8 números.");
+    if (adminPin.length < 4 || adminPin.length > 64) {
+      setAutorizacaoErro("Informe a senha do gerente.");
       return;
     }
     await executarSalvamentoVenda({ pin: adminPin });
@@ -1061,8 +1061,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   const handleDesbloquearAnalise = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^\d{4,8}$/.test(analisePin)) {
-      setAnalisePinErro("Informe o PIN administrativo de 4 a 8 números.");
+    if (analisePin.length < 4 || analisePin.length > 64) {
+      setAnalisePinErro("Informe a senha do gerente.");
       return;
     }
     setAnalisePinErro("");
@@ -1144,7 +1144,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               {!seguranca?.pinConfigurado ? (
                 <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900"><p className="font-bold">Configure primeiro o PIN do administrador.</p><button type="button" onClick={() => onNavigateToView("config")} className="w-full rounded-lg bg-slate-900 px-3 py-2.5 font-bold text-white">Ir para Configurações</button></div>
               ) : (
-                <><label className="block text-xs font-extrabold uppercase tracking-wider text-slate-500">PIN de {seguranca.nome}</label><input type="password" inputMode="numeric" autoComplete="off" autoFocus value={analisePin} onChange={(event) => setAnalisePin(event.target.value.replace(/\D/g, "").slice(0, 8))} placeholder="••••" aria-label="PIN para visualizar análise" className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" /></>
+                <><label className="block text-xs font-extrabold uppercase tracking-wider text-slate-500">Senha de {seguranca.nome}</label><input type="password" autoComplete="off" autoFocus value={analisePin} onChange={(event) => setAnalisePin(event.target.value.slice(0, 64))} placeholder="Senha do gerente" aria-label="Senha para visualizar análise" className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-widest text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100" /></>
               )}
               {analisePinErro && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">{analisePinErro}</p>}
             </div>
@@ -1215,7 +1215,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       autoComplete="off"
                       autoFocus
                       value={adminPin}
-                      onChange={(e) => setAdminPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                      onChange={(e) => setAdminPin(e.target.value.slice(0, 64))}
                       placeholder="••••"
                       aria-label="PIN administrativo"
                       className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
@@ -1651,7 +1651,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           </div>
 
           <div className={compact ? "" : "pt-3 border-t border-slate-100"}>
-            {vendaEmEdicao && <div className="mb-2 flex flex-col gap-2 sm:flex-row"><input type="password" inputMode="numeric" autoComplete="off" value={pinEdicao} onChange={(event) => { setPinEdicao(event.target.value.replace(/\D/g, "").slice(0, 8)); setFeedbackMsg(null); }} placeholder="PIN administrativo para salvar" className="min-h-10 flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 text-center text-xs font-black tracking-widest outline-none focus:border-blue-600" /><button type="button" onClick={onCancelarEdicao} className="min-h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700">Cancelar edição</button></div>}
+            {vendaEmEdicao && <div className="mb-2 flex flex-col gap-2 sm:flex-row"><input type="password" autoComplete="off" value={pinEdicao} onChange={(event) => { setPinEdicao(event.target.value.slice(0, 64)); setFeedbackMsg(null); }} placeholder="Senha do gerente para salvar" className="min-h-10 flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 text-center text-xs font-black tracking-widest outline-none focus:border-blue-600" /><button type="button" onClick={onCancelarEdicao} className="min-h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700">Cancelar edição</button></div>}
             <button 
               ref={salvarBtnRef}
               type="button"

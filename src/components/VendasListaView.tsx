@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { paginate, Pagination } from "./Pagination";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 const PAGE_SIZE = 12;
 
@@ -20,6 +21,7 @@ interface VendasListaViewProps {
 
 export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelectedSaleId, onEditarVenda }: VendasListaViewProps) {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [busca, setBusca] = useState("");
   const [statusFiltro, setStatusFiltro] = useState("todas");
@@ -202,7 +204,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                         <div className="flex flex-wrap justify-center gap-1.5">
                           <button onClick={() => setVendaDetalhada(v)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-200 hover:text-slate-900"><Eye size={14} /> Detalhe</button>
                           {v.status !== "cancelada" && <button onClick={() => onEditarVenda?.(v)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"><Pencil size={14} /> Editar</button>}
-                          {v.status !== "cancelada" && <button disabled={canceling} onClick={async () => { if (await confirmacao.confirmar({ titulo: "Cancelar venda", mensagem: `Excluir a venda #${v.numeroSequencial}? Ela permanecerá registrada como cancelada no histórico.`, textoConfirmar: "Cancelar venda" })) void handleCancelVenda(v.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
+                          {gerente && v.status !== "cancelada" && <button disabled={canceling} onClick={async () => { if (await confirmacao.confirmar({ titulo: "Cancelar venda", mensagem: `Excluir a venda #${v.numeroSequencial}? Ela permanecerá registrada como cancelada no histórico.`, textoConfirmar: "Cancelar venda" })) void handleCancelVenda(v.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
                         </div>
                       </td>
                     </tr>

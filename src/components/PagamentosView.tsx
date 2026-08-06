@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 const PAGE_SIZE = 12;
 
@@ -15,6 +16,7 @@ interface PagamentosViewProps {
 
 export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [vendasPendentes, setVendasPendentes] = useState<Venda[]>([]);
@@ -385,12 +387,12 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                       </td>
                       <td className="p-4 text-right font-mono font-extrabold text-emerald-700">{formatCurrency(p.valor)}</td>
                       <td className="p-4 text-center">
-                        <button 
+                        {gerente && <button
                           onClick={() => handleCancelPagamento(p.id)}
                           className="px-2.5 py-1.5 text-red-600 hover:text-white hover:bg-red-600 border border-red-200 hover:border-red-600 rounded-lg inline-flex items-center gap-1 text-xs font-bold transition-all"
                         >
                           <Trash2 size={13} /> Estornar
-                        </button>
+                        </button>}
                       </td>
                     </tr>
                   ))

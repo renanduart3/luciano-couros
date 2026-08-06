@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, UsuarioSistema, AuthStatus
 } from "../types";
 
 const API_BASE = "/api";
@@ -30,6 +30,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   const data = await response.json();
   if (!response.ok) {
+    if (response.status === 401) window.dispatchEvent(new CustomEvent("auth-expired"));
     throw new Error(data?.error || "Erro de rede ou servidor");
   }
   return data as T;
@@ -37,6 +38,29 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 export const api = {
   getSystemInfo: () => fetch(`${API_BASE}/system/version`).then(r => handleResponse<SystemInfo>(r)),
+
+  // AUTENTICAÇÃO LOCAL
+  getAuthStatus: () => fetch(`${API_BASE}/auth/status`).then(r => handleResponse<AuthStatus>(r)),
+  getUsuariosLogin: () => fetch(`${API_BASE}/auth/usuarios`).then(r => handleResponse<Array<Pick<UsuarioSistema, "id" | "nome" | "login" | "perfil">>>(r)),
+  configurarGerenteInicial: (dados: { nome: string; senha: string }) => fetch(`${API_BASE}/auth/configurar-gerente`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
+  }).then(r => handleResponse<{ success: boolean }>(r)),
+  login: (login: string, senha: string) => fetch(`${API_BASE}/auth/login`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ login, senha })
+  }).then(r => handleResponse<{ usuario: UsuarioSistema; expiraEm: string }>(r)),
+  logout: () => fetch(`${API_BASE}/auth/logout`, { method: "POST" }).then(r => handleResponse<{ success: boolean }>(r)),
+  getUsuarioAtual: () => fetch(`${API_BASE}/auth/me`).then(r => handleResponse<{ usuario: UsuarioSistema }>(r)),
+  alterarSenhaAtual: (senhaAtual: string, novaSenha: string) => fetch(`${API_BASE}/auth/senha`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ senhaAtual, novaSenha })
+  }).then(r => handleResponse<{ success: boolean; usuario: UsuarioSistema }>(r)),
+  getUsuariosSistema: () => fetch(`${API_BASE}/usuarios`).then(r => handleResponse<UsuarioSistema[]>(r)),
+  createUsuarioSistema: (dados: { nome: string; login: string; senha: string }) => fetch(`${API_BASE}/usuarios`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
+  }).then(r => handleResponse<UsuarioSistema>(r)),
+  updateUsuarioSistema: (id: string, dados: { nome?: string; login?: string; ativo?: boolean; novaSenha?: string }) => fetch(`${API_BASE}/usuarios/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
+  }).then(r => handleResponse<UsuarioSistema>(r)),
+  deleteUsuarioSistema: (id: string) => fetch(`${API_BASE}/usuarios/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // MOCK DATA CONTROL
   getMockStatus: () => fetch(`${API_BASE}/mock/status`).then(r => handleResponse<{ mockEnabled: boolean }>(r)),

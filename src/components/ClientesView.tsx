@@ -8,6 +8,7 @@ import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 const chavePrecoCliente = (produtoId: string, fornecedorId?: string | null) =>
   `${produtoId}::${fornecedorId || ""}`;
@@ -37,6 +38,7 @@ interface ClientesViewProps {
 
 export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
@@ -212,8 +214,8 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const confirmarRemocaoProdutoCliente = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!activeHistory || !produtoRemocao) return;
-    if (!/^\d{4,8}$/.test(pinRemocao)) {
-      setErroRemocao("Informe o PIN administrativo de 4 a 8 números.");
+    if (pinRemocao.length < 4 || pinRemocao.length > 64) {
+      setErroRemocao("Informe a senha do gerente.");
       return;
     }
     const produto = produtoRemocao;
@@ -264,7 +266,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
             </div>
             <div className="space-y-3 p-5">
               <label className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</label>
-              <input type="password" inputMode="numeric" autoComplete="off" autoFocus value={pinRemocao} onChange={(event) => { setPinRemocao(event.target.value.replace(/\D/g, "").slice(0, 8)); setErroRemocao(""); }} placeholder="••••" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] outline-none" />
+              <input type="password" autoComplete="off" autoFocus value={pinRemocao} onChange={(event) => { setPinRemocao(event.target.value.slice(0, 64)); setErroRemocao(""); }} placeholder="Senha do gerente" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-widest outline-none" />
               {erroRemocao && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{erroRemocao}</p>}
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">
@@ -391,7 +393,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           </button>
                           <button 
                             onClick={() => handleDelete(c.id)}
-                            className="p-1.5 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                            className={`${gerente ? "" : "hidden"} p-1.5 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors`}
                             title="Excluir"
                           >
                             <Trash2 size={15} />
@@ -597,7 +599,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     <FileText size={14} />
                     Orçamento vigente
                   </h4>
-                  {orcamentoVigente && <button type="button" onClick={apagarOrcamentoVigente} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 size={14} /> Apagar orçamento</button>}
+                  {gerente && orcamentoVigente && <button type="button" onClick={apagarOrcamentoVigente} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 size={14} /> Apagar orçamento</button>}
                 </div>
                 {!orcamentoVigente ? (
                   <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-xs font-semibold text-slate-400">Nenhum orçamento vigente para este cliente.</div>
@@ -643,7 +645,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} fornecedorId={produto.fornecedorId} value={precosCliente[chaveProduto] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => chavePrecoCliente(item.produtoId, item.fornecedorId) === chaveProduto ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
                           <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
                           <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
-                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button></div></td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button>{gerente && <button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button>}</div></td>
                         </tr>;
                       })}
                     </tbody>

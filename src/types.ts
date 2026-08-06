@@ -151,6 +151,8 @@ export interface Venda {
   id: string;
   numeroSequencial: number;
   clienteId: string;
+  vendedorId?: string | null;
+  vendedorNome?: string | null;
   clienteNome?: string;
   clienteTelefone?: string;
   clienteEndereco?: string;
@@ -404,6 +406,24 @@ export interface SegurancaStatus {
   usuarioId: string | null;
   nome: string;
   pinConfigurado: boolean;
+}
+
+export interface UsuarioSistema {
+  id: string;
+  nome: string;
+  login: string;
+  perfil: "administrador" | "vendedor";
+  ativo?: number;
+  deveTrocarSenha: number;
+  ultimoAcesso?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AuthStatus {
+  configuracaoInicialPendente: boolean;
+  configuracaoPermitida: boolean;
+  sessaoAtiva: boolean;
 }
 
 export interface SystemInfo {

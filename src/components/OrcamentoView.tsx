@@ -11,6 +11,7 @@ import { OrcamentoComprovante } from "./OrcamentoComprovante";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 interface OrcamentoViewProps {
   onLevarParaVenda: (orcamento: Orcamento) => void;
@@ -58,6 +59,7 @@ const encontrarPrecoCliente = (
 
 export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExterno, ocultarSeletorCliente = false, produtosNaVenda = [] }: OrcamentoViewProps) {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
@@ -881,7 +883,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
                   <button type="button" onClick={() => { setOrcamentoPreview(registro); setPreviewOpen(true); }} className="rounded-xl border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700"><Eye size={15} className="mr-1 inline" /> Ver</button>
                   {registro.status === "aberto" && <button type="button" onClick={() => abrirEdicaoOrcamento(registro)} className="rounded-xl border border-blue-200 px-3 py-2.5 text-xs font-black text-blue-700"><Pencil size={15} className="mr-1 inline" /> Editar</button>}
                   {registro.status === "aberto" && <button type="button" onClick={() => onLevarParaVenda(registro)} className="rounded-xl bg-blue-700 px-3 py-2.5 text-xs font-black text-white"><ArrowRight size={15} className="mr-1 inline" /> Levar à venda</button>}
-                  <button type="button" onClick={() => excluirOrcamento(registro)} className="col-span-2 rounded-xl border border-red-200 px-3 py-2.5 text-xs font-black text-red-700"><Trash2 size={15} className="mr-1 inline" /> Excluir orçamento</button>
+                  {gerente && <button type="button" onClick={() => excluirOrcamento(registro)} className="col-span-2 rounded-xl border border-red-200 px-3 py-2.5 text-xs font-black text-red-700"><Trash2 size={15} className="mr-1 inline" /> Excluir orçamento</button>}
                 </div>
               </article>
             ))}
@@ -904,7 +906,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
                       <button type="button" onClick={() => { setOrcamentoPreview(registro); setPreviewOpen(true); }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700"><Eye size={14} className="mr-1 inline" /> Ver</button>
                       {registro.status === "aberto" && <button type="button" onClick={() => abrirEdicaoOrcamento(registro)} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-black text-blue-700"><Pencil size={14} className="mr-1 inline" /> Editar</button>}
                       {registro.status === "aberto" && <button type="button" onClick={() => onLevarParaVenda(registro)} className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-black text-white"><ArrowRight size={14} className="mr-1 inline" /> Levar para venda</button>}
-                      <button type="button" aria-label={`Excluir orçamento ${registro.numeroSequencial}`} onClick={() => excluirOrcamento(registro)} className="rounded-lg border border-red-200 p-2 text-red-700"><Trash2 size={15} /></button>
+                      {gerente && <button type="button" aria-label={`Excluir orçamento ${registro.numeroSequencial}`} onClick={() => excluirOrcamento(registro)} className="rounded-lg border border-red-200 p-2 text-red-700"><Trash2 size={15} /></button>}
                     </div></td>
                   </tr>
                 ))}
@@ -1024,7 +1026,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
           <div className={compact ? "flex items-end" : "space-y-2 border-t border-slate-200 pt-4"}>
             <button type="button" disabled={salvando} onClick={() => salvar(false)} className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-50"><Save size={15} /> {salvando ? "SALVANDO..." : "SALVAR ORÇAMENTO"}</button>
             {!compact && orcamento && <button type="button" onClick={() => { setOrcamentoPreview(orcamento); setPreviewOpen(true); }} className="flex w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-800"><Printer size={17} /> Visualizar e imprimir</button>}
-            {!compact && orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
+            {gerente && !compact && orcamento && <button type="button" disabled={salvando} onClick={() => excluirOrcamento(orcamento)} className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 px-4 py-3 text-sm font-black text-red-700"><Trash2 size={17} /> Excluir orçamento</button>}
           </div>
         </aside>
       </div>

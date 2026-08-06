@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from "react";
 import {
   BarChart3, FileClock,
-  Menu, Package, Settings, ShoppingBag, ShoppingCart, Truck, Users, X
+  LockKeyhole, Menu, Package, Settings, ShoppingBag, ShoppingCart, Truck, Users, X
 } from "lucide-react";
 import logo from "../img/logo.png";
 import { APP_VERSION } from "../lib/version";
+import { UsuarioSistema } from "../types";
 
 interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
+  usuario: UsuarioSistema;
+  onBloquear: () => void;
 }
 
 interface MenuItem {
@@ -31,14 +34,15 @@ const menuItems: MenuItem[] = [
   { id: "config", label: "Configurações", compactLabel: "Config.", icon: Settings },
 ];
 
-export function Sidebar({ currentView, onViewChange }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, usuario, onBloquear }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const itensVisiveis = menuItems.filter((item) => item.id !== "config" || usuario.perfil === "administrador");
 
   useEffect(() => {
     setMobileOpen(false);
   }, [currentView]);
 
-  const activeItem = menuItems.find((item) => item.id === currentView);
+  const activeItem = itensVisiveis.find((item) => item.id === currentView);
 
   const selectView = (view: string) => {
     onViewChange(view);
@@ -64,13 +68,13 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
               <button type="button" onClick={() => setMobileOpen(false)} aria-label="Fechar menu" className="rounded-xl bg-slate-100 p-2 text-slate-700"><X size={19} /></button>
             </div>
             <nav className="flex-1 space-y-1 overflow-y-auto p-3">
-              {menuItems.map((item) => {
+              {itensVisiveis.map((item) => {
                 const Icon = item.icon;
                 const active = currentView === item.id;
                 return <button key={item.id} type="button" onClick={() => selectView(item.id)} aria-current={active ? "page" : undefined} className={`flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-bold ${active ? item.purchase ? "bg-amber-600 text-white" : "bg-emerald-600 text-white" : item.highlight ? "bg-emerald-950/50 text-emerald-300" : item.purchase ? "bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800"}`}><Icon size={23} /><span>{item.label}</span></button>;
               })}
             </nav>
-            <div className="border-t border-slate-800 p-4 text-center text-[10px] text-slate-400">v{APP_VERSION} • Servidor local</div>
+            <div className="space-y-2 border-t border-slate-800 p-3"><p className="truncate text-center text-xs font-black text-white">{usuario.nome}</p><p className="text-center text-[9px] uppercase text-slate-400">{usuario.perfil === "administrador" ? "Gerente" : "Vendedor"}</p><button type="button" onClick={onBloquear} className="flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-800 text-xs font-black text-white"><LockKeyhole size={15} /> Bloquear / trocar</button><p className="text-center text-[9px] text-slate-500">v{APP_VERSION}</p></div>
           </aside>
         </div>
       )}
@@ -78,13 +82,13 @@ export function Sidebar({ currentView, onViewChange }: SidebarProps) {
       <aside className="relative hidden h-screen w-20 shrink-0 select-none flex-col border-r border-slate-800 bg-slate-900 text-slate-100 md:flex">
         <div className="flex h-16 items-center justify-center overflow-hidden border-b border-slate-200 bg-white px-1"><img src={logo} alt="Luciano Couros" className="h-12 w-12 object-contain" /></div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-1.5 py-2">
-          {menuItems.map((item) => {
+          {itensVisiveis.map((item) => {
             const Icon = item.icon;
             const active = currentView === item.id;
             return <button key={item.id} type="button" onClick={() => selectView(item.id)} title={item.label} aria-label={item.label} aria-current={active ? "page" : undefined} className={`group relative flex min-h-10 w-full flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-center text-sm font-medium transition-all ${active ? item.purchase ? "bg-amber-600 text-white" : item.highlight ? "bg-emerald-600 text-white" : "bg-slate-800 text-emerald-400" : item.highlight ? "border border-emerald-800/30 bg-emerald-950/40 text-emerald-300" : item.purchase ? "border border-amber-800/30 bg-amber-950/40 text-amber-300" : "text-slate-300 hover:bg-slate-800/60 hover:text-white"}`}><Icon size={22} className="shrink-0" /><span className="w-full truncate text-center text-[9px] font-semibold leading-none">{item.compactLabel}</span></button>;
           })}
         </nav>
-        <div className="border-t border-slate-800 bg-slate-950/40 p-2 text-center text-[10px] text-slate-400">v{APP_VERSION}</div>
+        <div className="border-t border-slate-800 bg-slate-950/40 p-1.5 text-center"><button type="button" onClick={onBloquear} title={`Bloquear sessão de ${usuario.nome}`} aria-label="Bloquear ou trocar usuário" className="flex w-full flex-col items-center gap-0.5 rounded-lg p-1.5 text-slate-300 hover:bg-slate-800"><LockKeyhole size={18} /><span className="max-w-full truncate text-[8px] font-bold">{usuario.nome}</span></button><span className="text-[8px] text-slate-500">v{APP_VERSION}</span></div>
       </aside>
     </>
   );

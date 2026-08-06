@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type NextFunction, type Request, type Response } from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -31,17 +31,38 @@ initDatabase();
 type UsuarioAdministrador = {
   id: string;
   nome: string;
+  login: string | null;
+  perfil: string;
+  ativo: number;
+  deveTrocarSenha: number;
   pinHash: string | null;
   pinSalt: string | null;
 };
 
+type UsuarioAutenticado = Pick<UsuarioAdministrador, "id" | "nome" | "login" | "perfil" | "deveTrocarSenha">;
+type SessaoLocal = { usuario: UsuarioAutenticado; expiraEm: number };
+
+const COOKIE_SESSAO = "luciano_sessao";
+const DURACAO_SESSAO_MS = 16 * 60 * 60 * 1000;
+const SENHA_RESET_LOCAL = "Altinopolis";
+const sessoesLocais = new Map<string, SessaoLocal>();
+const tentativasLogin = new Map<string, { quantidade: number; bloqueadoAte: number }>();
+
 function getUsuarioAdministrador(): UsuarioAdministrador | undefined {
   return queryOne<UsuarioAdministrador>(
-    `SELECT id, nome, pinHash, pinSalt
+    `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt
      FROM usuarios
      WHERE perfil = 'administrador' AND ativo = 1
      ORDER BY createdAt ASC
      LIMIT 1`
+  );
+}
+
+function getUsuarioPorId(id: string): UsuarioAdministrador | undefined {
+  return queryOne<UsuarioAdministrador>(
+    `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt
+     FROM usuarios WHERE id = ? AND ativo = 1`,
+    [id]
   );
 }
 
@@ -63,6 +84,104 @@ function validarPinAdministrador(pin: unknown): UsuarioAdministrador | null {
   return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado)
     ? administrador
     : null;
+}
+
+function validarSenhaUsuario(usuario: UsuarioAdministrador | undefined, senha: unknown) {
+  if (!usuario?.pinHash || !usuario.pinSalt || typeof senha !== "string") return false;
+  const informado = Buffer.from(gerarHashPin(senha, usuario.pinSalt).hash, "hex");
+  const esperado = Buffer.from(usuario.pinHash, "hex");
+  return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado);
+}
+
+function senhaValida(senha: unknown) {
+  return typeof senha === "string" && senha.length >= 4 && senha.length <= 64;
+}
+
+function cookiesDaRequisicao(req: Request) {
+  return String(req.headers.cookie || "").split(";").reduce<Record<string, string>>((cookies, parte) => {
+    const separador = parte.indexOf("=");
+    if (separador < 0) return cookies;
+    const chave = parte.slice(0, separador).trim();
+    const valor = parte.slice(separador + 1).trim();
+    if (chave) cookies[chave] = decodeURIComponent(valor);
+    return cookies;
+  }, {});
+}
+
+function tokenSessao(req: Request) {
+  return cookiesDaRequisicao(req)[COOKIE_SESSAO] || "";
+}
+
+function obterSessao(req: Request): SessaoLocal | null {
+  const token = tokenSessao(req);
+  const sessao = token ? sessoesLocais.get(token) : undefined;
+  if (!sessao) return null;
+  if (sessao.expiraEm <= Date.now()) {
+    sessoesLocais.delete(token);
+    return null;
+  }
+  return sessao;
+}
+
+function definirCookieSessao(res: Response, token: string) {
+  res.setHeader(
+    "Set-Cookie",
+    `${COOKIE_SESSAO}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(DURACAO_SESSAO_MS / 1000)}`
+  );
+}
+
+function limparCookieSessao(res: Response) {
+  res.setHeader("Set-Cookie", `${COOKIE_SESSAO}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+}
+
+function criarSessao(usuario: UsuarioAdministrador, res: Response) {
+  const token = crypto.randomBytes(32).toString("hex");
+  const autenticado: UsuarioAutenticado = {
+    id: usuario.id,
+    nome: usuario.nome,
+    login: usuario.login,
+    perfil: usuario.perfil,
+    deveTrocarSenha: Number(usuario.deveTrocarSenha || 0),
+  };
+  sessoesLocais.set(token, { usuario: autenticado, expiraEm: Date.now() + DURACAO_SESSAO_MS });
+  definirCookieSessao(res, token);
+  return autenticado;
+}
+
+function invalidarSessoesUsuario(usuarioId?: string) {
+  for (const [token, sessao] of sessoesLocais) {
+    if (!usuarioId || sessao.usuario.id === usuarioId) sessoesLocais.delete(token);
+  }
+}
+
+function usuarioDaRequisicao(req: Request) {
+  return obterSessao(req)?.usuario || null;
+}
+
+function exigirAutenticacao(req: Request, res: Response, next: NextFunction) {
+  const sessao = obterSessao(req);
+  if (!sessao) return res.status(401).json({ error: "Sessão expirada. Entre novamente no sistema." });
+  const atual = getUsuarioPorId(sessao.usuario.id);
+  if (!atual) {
+    sessoesLocais.delete(tokenSessao(req));
+    limparCookieSessao(res);
+    return res.status(401).json({ error: "Este usuário não está mais ativo." });
+  }
+  sessao.usuario = {
+    id: atual.id,
+    nome: atual.nome,
+    login: atual.login,
+    perfil: atual.perfil,
+    deveTrocarSenha: Number(atual.deveTrocarSenha || 0),
+  };
+  next();
+}
+
+function exigirGerente(req: Request, res: Response, next: NextFunction) {
+  if (usuarioDaRequisicao(req)?.perfil !== "administrador") {
+    return res.status(403).json({ error: "Esta operação é exclusiva do gerente." });
+  }
+  next();
 }
 
 function registrarAuditoria(
@@ -393,6 +512,263 @@ app.get("/api/system/version", (_req, res) => {
   });
 });
 
+function origemEhServidor(req: Request) {
+  return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || req.socket.remoteAddress || "");
+}
+
+app.get("/api/auth/status", (req, res) => {
+  try {
+    const gerente = getUsuarioAdministrador();
+    res.json({
+      configuracaoInicialPendente: !gerente?.pinHash,
+      configuracaoPermitida: origemEhServidor(req),
+      sessaoAtiva: Boolean(obterSessao(req)),
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/auth/usuarios", (_req, res) => {
+  try {
+    res.json(queryAll(
+      `SELECT id, nome, login, perfil FROM usuarios
+       WHERE ativo = 1 AND pinHash IS NOT NULL
+       ORDER BY CASE WHEN perfil = 'administrador' THEN 0 ELSE 1 END, nome`
+    ));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/configurar-gerente", (req, res) => {
+  try {
+    if (!origemEhServidor(req)) {
+      return res.status(403).json({ error: "A configuração inicial deve ser feita no computador servidor." });
+    }
+    const gerente = getUsuarioAdministrador();
+    if (!gerente || gerente.pinHash) {
+      return res.status(409).json({ error: "O acesso do gerente já foi configurado." });
+    }
+    const nome = String(req.body?.nome || "Gerente").trim();
+    const senha = req.body?.senha;
+    if (!nome || !senhaValida(senha)) {
+      return res.status(400).json({ error: "Informe o nome e uma senha de 4 a 64 caracteres." });
+    }
+    const protegida = gerarHashPin(String(senha));
+    execute(
+      `UPDATE usuarios SET nome = ?, login = 'gerente', pinHash = ?, pinSalt = ?,
+       deveTrocarSenha = 0, ativo = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [nome, protegida.hash, protegida.salt, gerente.id]
+    );
+    registrarAuditoria(gerente.id, "acesso_gerente_configurado", "usuario", gerente.id, { origem: req.ip || null });
+    res.status(201).json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/login", (req, res) => {
+  try {
+    const login = String(req.body?.login || "").trim().toLowerCase();
+    const senha = req.body?.senha;
+    const chaveTentativa = `${req.ip || "local"}::${login}`;
+    const tentativa = tentativasLogin.get(chaveTentativa);
+    if (tentativa?.bloqueadoAte && tentativa.bloqueadoAte > Date.now()) {
+      return res.status(429).json({ error: "Muitas tentativas. Aguarde 5 minutos e tente novamente." });
+    }
+    const usuario = queryOne<UsuarioAdministrador>(
+      `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt
+       FROM usuarios WHERE LOWER(login) = ? AND ativo = 1`,
+      [login]
+    );
+    if (!validarSenhaUsuario(usuario, senha)) {
+      const quantidade = Number(tentativa?.quantidade || 0) + 1;
+      tentativasLogin.set(chaveTentativa, {
+        quantidade: quantidade >= 5 ? 0 : quantidade,
+        bloqueadoAte: quantidade >= 5 ? Date.now() + 5 * 60 * 1000 : 0,
+      });
+      return res.status(403).json({ error: "Usuário ou senha inválidos." });
+    }
+    tentativasLogin.delete(chaveTentativa);
+    execute("UPDATE usuarios SET ultimoAcesso = CURRENT_TIMESTAMP WHERE id = ?", [usuario!.id]);
+    const autenticado = criarSessao(usuario!, res);
+    registrarAuditoria(usuario!.id, "login_realizado", "usuario", usuario!.id, { origem: req.ip || null });
+    res.json({ usuario: autenticado, expiraEm: new Date(Date.now() + DURACAO_SESSAO_MS).toISOString() });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const token = tokenSessao(req);
+  if (token) sessoesLocais.delete(token);
+  limparCookieSessao(res);
+  res.json({ success: true });
+});
+
+app.get("/api/auth/me", exigirAutenticacao, (req, res) => {
+  res.json({ usuario: usuarioDaRequisicao(req) });
+});
+
+app.put("/api/auth/senha", exigirAutenticacao, (req, res) => {
+  try {
+    const sessao = obterSessao(req)!;
+    const usuario = getUsuarioPorId(sessao.usuario.id);
+    const senhaAtual = req.body?.senhaAtual;
+    const novaSenha = req.body?.novaSenha;
+    if (!usuario || (!usuario.deveTrocarSenha && !validarSenhaUsuario(usuario, senhaAtual))) {
+      return res.status(403).json({ error: "Senha atual inválida." });
+    }
+    if (!senhaValida(novaSenha)) {
+      return res.status(400).json({ error: "A nova senha deve possuir de 4 a 64 caracteres." });
+    }
+    const protegida = gerarHashPin(String(novaSenha));
+    execute(
+      `UPDATE usuarios SET pinHash = ?, pinSalt = ?, deveTrocarSenha = 0,
+       updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [protegida.hash, protegida.salt, usuario.id]
+    );
+    sessao.usuario.deveTrocarSenha = 0;
+    registrarAuditoria(usuario.id, "senha_alterada", "usuario", usuario.id);
+    res.json({ success: true, usuario: sessao.usuario });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/reset-gerente", (req, res) => {
+  try {
+    if (!origemEhServidor(req) || req.body?.senhaPadrao !== SENHA_RESET_LOCAL) {
+      return res.status(403).json({ error: "Recuperação permitida somente no computador servidor." });
+    }
+    const gerente = getUsuarioAdministrador();
+    if (!gerente) return res.status(404).json({ error: "Gerente não encontrado." });
+    const protegida = gerarHashPin(SENHA_RESET_LOCAL);
+    execute(
+      `UPDATE usuarios SET login = 'gerente', pinHash = ?, pinSalt = ?, deveTrocarSenha = 1,
+       ativo = 1, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [protegida.hash, protegida.salt, gerente.id]
+    );
+    invalidarSessoesUsuario();
+    registrarAuditoria(gerente.id, "senha_gerente_redefinida_localmente", "usuario", gerente.id, { origem: req.ip || null });
+    res.json({
+      success: true,
+      login: "gerente",
+      senhaTemporaria: SENHA_RESET_LOCAL,
+      mensagem: "Senha redefinida. Entre como gerente e cadastre uma nova senha.",
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.use("/api", exigirAutenticacao);
+app.use("/api", (req, res, next) => {
+  if (usuarioDaRequisicao(req)?.deveTrocarSenha) {
+    return res.status(403).json({ error: "Troque a senha temporária antes de usar o sistema." });
+  }
+  next();
+});
+app.use(["/api/mock", "/api/backups", "/api/usuarios"], exigirGerente);
+app.use("/api", (req, res, next) => {
+  const operacaoGerencial = req.method === "DELETE"
+    || /\/(cancelar|devolucoes)(\/|$)/.test(req.path);
+  if (operacaoGerencial) return exigirGerente(req, res, next);
+  next();
+});
+
+app.get("/api/usuarios", (_req, res) => {
+  try {
+    res.json(queryAll(
+      `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, ultimoAcesso, createdAt, updatedAt
+       FROM usuarios ORDER BY CASE WHEN perfil = 'administrador' THEN 0 ELSE 1 END, nome`
+    ));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/usuarios", (req, res) => {
+  try {
+    const nome = String(req.body?.nome || "").trim();
+    const login = String(req.body?.login || "").trim().toLowerCase();
+    const senha = req.body?.senha;
+    if (!nome || !/^[a-z0-9._-]{3,30}$/.test(login) || !senhaValida(senha)) {
+      return res.status(400).json({ error: "Informe nome, login válido e senha de 4 a 64 caracteres." });
+    }
+    if (queryOne("SELECT id FROM usuarios WHERE LOWER(login) = ?", [login])) {
+      return res.status(409).json({ error: "Este login já está em uso." });
+    }
+    const id = "usu_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+    const protegida = gerarHashPin(String(senha));
+    execute(
+      `INSERT INTO usuarios (id, nome, login, perfil, pinHash, pinSalt, deveTrocarSenha, ativo)
+       VALUES (?, ?, ?, 'vendedor', ?, ?, 1, 1)`,
+      [id, nome, login, protegida.hash, protegida.salt]
+    );
+    registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "vendedor_cadastrado", "usuario", id, { nome, login });
+    res.status(201).json(queryOne("SELECT id, nome, login, perfil, ativo, deveTrocarSenha FROM usuarios WHERE id = ?", [id]));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/usuarios/:id", (req, res) => {
+  try {
+    const atual = queryOne<UsuarioAdministrador>(
+      `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt FROM usuarios WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!atual) return res.status(404).json({ error: "Usuário não encontrado." });
+    const nome = String(req.body?.nome || atual.nome).trim();
+    const login = String(req.body?.login || atual.login || "").trim().toLowerCase();
+    const ativo = atual.perfil === "administrador" ? 1 : req.body?.ativo === false || req.body?.ativo === 0 ? 0 : 1;
+    if (!nome || !/^[a-z0-9._-]{3,30}$/.test(login)) {
+      return res.status(400).json({ error: "Informe nome e login válido." });
+    }
+    const duplicado = queryOne("SELECT id FROM usuarios WHERE LOWER(login) = ? AND id <> ?", [login, atual.id]);
+    if (duplicado) return res.status(409).json({ error: "Este login já está em uso." });
+    execute(
+      `UPDATE usuarios SET nome = ?, login = ?, ativo = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+      [nome, login, ativo, atual.id]
+    );
+    if (senhaValida(req.body?.novaSenha)) {
+      const protegida = gerarHashPin(String(req.body.novaSenha));
+      execute(
+        `UPDATE usuarios SET pinHash = ?, pinSalt = ?, deveTrocarSenha = 1,
+         updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+        [protegida.hash, protegida.salt, atual.id]
+      );
+      invalidarSessoesUsuario(atual.id);
+    }
+    if (!ativo) invalidarSessoesUsuario(atual.id);
+    registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "usuario_atualizado", "usuario", atual.id, { nome, login, ativo });
+    res.json(queryOne("SELECT id, nome, login, perfil, ativo, deveTrocarSenha, ultimoAcesso FROM usuarios WHERE id = ?", [atual.id]));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/usuarios/:id", (req, res) => {
+  try {
+    const usuario = queryOne<UsuarioAdministrador>(
+      `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt FROM usuarios WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!usuario) return res.status(404).json({ error: "Usuário não encontrado." });
+    if (usuario.perfil === "administrador") {
+      return res.status(409).json({ error: "O gerente principal não pode ser removido." });
+    }
+    execute("UPDATE usuarios SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [usuario.id]);
+    invalidarSessoesUsuario(usuario.id);
+    registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "vendedor_desativado", "usuario", usuario.id, { nome: usuario.nome });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 0. MOCK DATA CONTROL
 app.get("/api/mock/status", (req, res) => {
   try {
@@ -409,7 +785,25 @@ app.post("/api/mock/toggle", (req, res) => {
     if (typeof enabled !== "boolean") {
       return res.status(400).json({ error: "Campo 'enabled' deve ser um booleano." });
     }
+    const usuariosAtuais = queryAll<any>(
+      `SELECT id, nome, login, perfil, pinHash, pinSalt, deveTrocarSenha, ultimoAcesso,
+              ativo, createdAt, updatedAt FROM usuarios`
+    );
     setMockMode(enabled);
+    const salvarUsuario = db.prepare(
+      `INSERT INTO usuarios (id, nome, login, perfil, pinHash, pinSalt, deveTrocarSenha, ultimoAcesso, ativo, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET nome = excluded.nome, login = excluded.login,
+         perfil = excluded.perfil, pinHash = excluded.pinHash, pinSalt = excluded.pinSalt,
+         deveTrocarSenha = excluded.deveTrocarSenha, ultimoAcesso = excluded.ultimoAcesso,
+         ativo = excluded.ativo, updatedAt = excluded.updatedAt`
+    );
+    db.transaction(() => {
+      for (const usuario of usuariosAtuais) salvarUsuario.run(
+        usuario.id, usuario.nome, usuario.login, usuario.perfil, usuario.pinHash, usuario.pinSalt,
+        usuario.deveTrocarSenha, usuario.ultimoAcesso, usuario.ativo, usuario.createdAt, usuario.updatedAt
+      );
+    })();
     res.json({ success: true, mockEnabled: enabled });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -430,7 +824,7 @@ app.get("/api/config", (req, res) => {
   }
 });
 
-app.put("/api/config", (req, res) => {
+app.put("/api/config", exigirGerente, (req, res) => {
   try {
     const updates = req.body; // { chave: valor, ... }
     db.transaction(() => {
@@ -490,7 +884,7 @@ app.post("/api/seguranca/verificar-pin", (req, res) => {
   }
 });
 
-app.put("/api/seguranca/admin-pin", (req, res) => {
+app.put("/api/seguranca/admin-pin", exigirGerente, (req, res) => {
   try {
     const { nome, pinAtual, novoPin } = req.body || {};
     const administrador = getUsuarioAdministrador();
@@ -501,8 +895,8 @@ app.put("/api/seguranca/admin-pin", (req, res) => {
     if (!administrador.pinHash && !origemLocal) {
       return res.status(403).json({ error: "A configuração inicial do PIN deve ser feita diretamente no computador servidor." });
     }
-    if (typeof novoPin !== "string" || !/^\d{4,8}$/.test(novoPin)) {
-      return res.status(400).json({ error: "O novo PIN deve possuir de 4 a 8 números." });
+    if (!senhaValida(novoPin)) {
+      return res.status(400).json({ error: "A nova senha deve possuir de 4 a 64 caracteres." });
     }
     if (administrador.pinHash && !validarPinAdministrador(pinAtual)) {
       return res.status(403).json({ error: "PIN atual inválido." });
@@ -1145,6 +1539,9 @@ app.post("/api/fornecedores", (req, res) => {
     if (!referencia) {
       return res.status(400).json({ error: "A referência do fornecedor é obrigatória." });
     }
+    if (referencia.length > 4) {
+      return res.status(400).json({ error: "A referência do fornecedor deve possuir no máximo 4 caracteres." });
+    }
     const referenciaExistente = queryOne(
       "SELECT id FROM fornecedores WHERE LOWER(referencia) = LOWER(?) AND deletedAt IS NULL",
       [referencia]
@@ -1175,6 +1572,9 @@ app.put("/api/fornecedores/:id", (req, res) => {
     }
     if (!referencia) {
       return res.status(400).json({ error: "A referência do fornecedor é obrigatória." });
+    }
+    if (referencia.length > 4) {
+      return res.status(400).json({ error: "A referência do fornecedor deve possuir no máximo 4 caracteres." });
     }
     const referenciaExistente = queryOne(
       "SELECT id FROM fornecedores WHERE LOWER(referencia) = LOWER(?) AND id <> ? AND deletedAt IS NULL",
@@ -2057,6 +2457,7 @@ app.get("/api/vendas", (req, res) => {
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
                 CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
@@ -2095,6 +2496,7 @@ app.get("/api/vendas/:id", (req, res) => {
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
                 CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
@@ -2297,9 +2699,9 @@ app.post("/api/vendas", (req, res) => {
 
       // Insert Venda
       execute(
-        `INSERT INTO vendas (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante, status, vencimento, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [vendaId, nextSeq, clienteId, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimentoPrincipal, observacoesVenda || null]
+        `INSERT INTO vendas (id, numeroSequencial, clienteId, vendedorId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante, status, vencimento, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [vendaId, nextSeq, clienteId, usuarioDaRequisicao(req)?.id || null, data, subtotal, descGeral, totalLiquido, vPago, saldoRestante, status, vencimentoPrincipal, observacoesVenda || null]
       );
       if (parcelasResolvidas.length > 0) {
         inserirParcelasVale(vendaId, parcelasResolvidas);
@@ -3756,7 +4158,9 @@ app.get("/api/relatorios", (req, res) => {
     const rankingProdutos = queryAll<any>(
       `SELECT 
          iv.produtoId, 
-         iv.descricao, 
+         iv.descricao,
+         iv.unidade,
+         COALESCE(SUM(iv.quantidade - ${quantidadeDevolvidaSql}), 0) as totalQuantidade,
          COALESCE(SUM(
            (iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END)
            * ((iv.quantidade - ${quantidadeDevolvidaSql}) / NULLIF(iv.quantidade, 0))
@@ -3781,7 +4185,7 @@ app.get("/api/relatorios", (req, res) => {
        JOIN vendas v ON iv.vendaId = v.id
        JOIN produtos p ON p.id = iv.produtoId
        ${itemWhere}
-       GROUP BY iv.produtoId, iv.descricao
+       GROUP BY iv.produtoId, iv.descricao, iv.unidade
        ORDER BY totalLucro DESC`,
       itemParams
     );

@@ -4,13 +4,14 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api";
 import { SegurancaStatus } from "../types";
+import { UsuariosConfigView } from "./UsuariosConfigView";
 
 interface BackupConfigViewProps {
   onRefreshConfig?: () => void;
 }
 
 export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
-  const [activeTab, setActiveTab] = useState<"loja" | "sistema">("loja");
+  const [activeTab, setActiveTab] = useState<"loja" | "usuarios" | "sistema">("loja");
   const [storeName, setStoreName] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
   const [storePhone, setStorePhone] = useState("");
@@ -111,8 +112,8 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     e.preventDefault();
     setPinFeedback(null);
 
-    if (!/^\d{4,8}$/.test(novoPin)) {
-      setPinFeedback({ type: "error", text: "O novo PIN deve possuir de 4 a 8 números." });
+    if (novoPin.length < 4 || novoPin.length > 64) {
+      setPinFeedback({ type: "error", text: "A nova senha deve possuir de 4 a 64 caracteres." });
       return;
     }
     if (novoPin !== confirmarPin) {
@@ -210,6 +211,9 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
         <button type="button" onClick={() => setActiveTab("loja")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "loja" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
           Informações da loja
         </button>
+        <button type="button" onClick={() => setActiveTab("usuarios")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "usuarios" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+          Usuários e acessos
+        </button>
         <button type="button" onClick={() => setActiveTab("sistema")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "sistema" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
           Sistema, PIN e backups
         </button>
@@ -251,6 +255,8 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
           </div>
           <div className="mt-6 flex justify-end"><button type="submit" disabled={savingConfig} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50"><Save size={15} /> {savingConfig ? "Salvando..." : "Salvar informações da loja"}</button></div>
         </form>
+      ) : activeTab === "usuarios" ? (
+        <UsuariosConfigView />
       ) : (
         
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
@@ -263,7 +269,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
               <div className="flex items-start justify-between gap-3 border-b border-slate-50 pb-3">
                 <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                   <KeyRound size={16} className="text-amber-600" />
-                  PIN Administrativo
+                  Senha do gerente
                 </h3>
                 <span className={`rounded-full px-2 py-1 text-[9px] font-extrabold uppercase ${
                   seguranca?.pinConfigurado ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
@@ -273,7 +279,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
               </div>
 
               <p className="text-[11px] leading-relaxed text-slate-500">
-                Usado pelo proprietário para ver custos e lucros, autorizar preços abaixo do permitido e proteger ações administrativas.
+                Usada pelo gerente para entrar no sistema, ver custos e lucros e autorizar ações administrativas.
               </p>
 
               <div className="space-y-1">
@@ -289,13 +295,12 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
 
               {seguranca?.pinConfigurado && (
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-400 uppercase">PIN atual</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Senha atual</label>
                   <input
                     type="password"
-                    inputMode="numeric"
                     autoComplete="current-password"
                     value={pinAtual}
-                    onChange={(e) => setPinAtual(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    onChange={(e) => setPinAtual(e.target.value.slice(0, 64))}
                     className="w-full bg-amber-50 border border-amber-200 text-lg tracking-[0.35em] px-3.5 py-2.5 rounded-xl font-black text-slate-950 focus:border-amber-500 outline-none"
                     required
                   />
@@ -304,13 +309,12 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-400 uppercase">Novo PIN</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Nova senha</label>
                   <input
                     type="password"
-                    inputMode="numeric"
                     autoComplete="new-password"
                     value={novoPin}
-                    onChange={(e) => setNovoPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    onChange={(e) => setNovoPin(e.target.value.slice(0, 64))}
                     className="w-full bg-slate-50 border border-slate-200 text-lg tracking-[0.28em] px-3 py-2.5 rounded-xl font-black text-slate-950 focus:border-emerald-500 outline-none"
                     required
                   />
@@ -319,10 +323,9 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
                   <label className="block text-xs font-bold text-slate-400 uppercase">Confirmar</label>
                   <input
                     type="password"
-                    inputMode="numeric"
                     autoComplete="new-password"
                     value={confirmarPin}
-                    onChange={(e) => setConfirmarPin(e.target.value.replace(/\D/g, "").slice(0, 8))}
+                    onChange={(e) => setConfirmarPin(e.target.value.slice(0, 64))}
                     className="w-full bg-slate-50 border border-slate-200 text-lg tracking-[0.28em] px-3 py-2.5 rounded-xl font-black text-slate-950 focus:border-emerald-500 outline-none"
                     required
                   />
@@ -344,7 +347,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
                 disabled={savingPin}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition-colors disabled:opacity-50"
               >
-                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar PIN" : "Configurar PIN"}
+                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar senha" : "Configurar senha"}
               </button>
             </form>
 

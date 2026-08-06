@@ -152,7 +152,15 @@ Para instalar ou restaurar um banco real com o servidor parado, coloque-o em `da
    ```bash
    npm run dev
    ```
-   O sistema estará disponível localmente em: `http://localhost:3000`
+O sistema estará disponível localmente em: `http://localhost:3000`
+
+## Acesso de usuários
+
+- O primeiro acesso no computador servidor solicita o nome e a senha do gerente.
+- O gerente cadastra vendedores em **Configurações → Usuários e acessos**. A senha informada no cadastro é provisória e deve ser alterada pelo vendedor no primeiro login.
+- A sessão permanece válida por até 16 horas. O botão de cadeado encerra a sessão imediatamente e volta para a tela de login.
+- Somente o gerente visualiza Configurações e pode excluir, cancelar, estornar ou registrar devoluções.
+- Se o gerente perder a senha, execute `RESETAR SENHA DO GERENTE.cmd` no computador servidor. A senha temporária será `Altinopolis` e deverá ser trocada no acesso seguinte.
 
 ### Compilação de Produção
 Para gerar o build de produção compilado e encapsulado:

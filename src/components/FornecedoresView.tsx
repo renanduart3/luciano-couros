@@ -4,11 +4,13 @@ import { Fornecedor } from "../types";
 import { api } from "../lib/api";
 import { paginate, Pagination } from "./Pagination";
 import { useConfirmacao } from "./ConfirmacaoDialog";
+import { useEhGerente } from "../auth/AuthContext";
 
 const PAGE_SIZE = 10;
 
 export function FornecedoresView() {
   const confirmacao = useConfirmacao();
+  const gerente = useEhGerente();
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [busca, setBusca] = useState("");
   const [page, setPage] = useState(1);
@@ -49,7 +51,7 @@ export function FornecedoresView() {
     if (forn) {
       setEditingFor(forn);
       setNome(forn.nome);
-      setReferencia(forn.referencia || "");
+      setReferencia((forn.referencia || "").slice(0, 4));
       setTelefone(forn.telefone || "");
       setIsWhatsapp(forn.isWhatsapp === 1);
       setDocumento(forn.documento || "");
@@ -79,6 +81,10 @@ export function FornecedoresView() {
     }
     if (!referencia.trim()) {
       setFormError("A referência do fornecedor é obrigatória.");
+      return;
+    }
+    if (referencia.trim().length > 4) {
+      setFormError("A referência do fornecedor deve possuir no máximo 4 caracteres.");
       return;
     }
 
@@ -250,7 +256,7 @@ export function FornecedoresView() {
                           </button>
                           <button 
                             onClick={() => handleDelete(f.id)}
-                            className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold"
+                            className={`${gerente ? "" : "hidden"} p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-bold`}
                             title="Excluir"
                           >
                             <Trash2 size={15} /> <span>Excluir</span>
@@ -299,8 +305,9 @@ export function FornecedoresView() {
                 <input
                   type="text"
                   value={referencia}
-                  placeholder="EX.: FABRICIO"
-                  onChange={(e) => setReferencia(e.target.value)}
+                  maxLength={4}
+                  placeholder="EX.: FABR"
+                  onChange={(e) => setReferencia(e.target.value.toUpperCase())}
                   className="w-full bg-blue-50 border border-blue-200 text-sm px-3.5 py-2.5 rounded-xl font-mono font-black text-blue-900 focus:border-blue-500 outline-none"
                   required
                 />

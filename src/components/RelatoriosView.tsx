@@ -3,7 +3,7 @@ import { AlertTriangle, Eye, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api } from "../lib/api";
 import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { Pagination, paginate } from "./Pagination";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 
@@ -243,7 +243,7 @@ export function RelatoriosView() {
               <button type="button" aria-label="Fechar PIN" onClick={() => setPinOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={18} /></button>
             </div>
             <div className="space-y-3 p-5">
-              {seguranca?.pinConfigurado ? <input type="password" inputMode="numeric" autoFocus value={pin} onChange={(event) => { setPin(event.target.value.replace(/\D/g, "").slice(0, 8)); setPinErro(""); }} aria-label="PIN do relatório de cliente" placeholder="Digite o PIN" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" /> : <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure o PIN administrativo em Configurações.</p>}
+              {seguranca?.pinConfigurado ? <input type="password" autoFocus value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setPinErro(""); }} aria-label="Senha do gerente para o relatório de cliente" placeholder="Digite a senha do gerente" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /> : <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure a senha do gerente em Configurações.</p>}
               {pinErro && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{pinErro}</p>}
             </div>
             <div className="flex gap-3 border-t border-slate-200 bg-slate-50 p-4"><button type="button" onClick={() => setPinOpen(false)} className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black">Cancelar</button>{seguranca?.pinConfigurado && <button type="submit" className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white">Desbloquear</button>}</div>
@@ -317,8 +317,8 @@ export function RelatoriosView() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[650px] text-sm">
-                  <thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead>
-                  <tbody className="divide-y">{produtosGeraisPagina.length ? produtosGeraisPagina.map((item: any, index: number) => <tr key={item.produtoId} className={index < 3 && geralProdutosPage === 1 ? "bg-amber-50/60" : ""}><td className="p-3 font-black"><span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] text-slate-950">{(geralProdutosPage - 1) * rankingPageSize + index + 1}</span>{item.descricao}</td><td className="p-3 text-right text-base font-black text-amber-900">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>) : <tr><td colSpan={5} className="p-10 text-center font-bold text-slate-500">NENHUM MATERIAL VENDIDO NO PERÍODO.</td></tr>}</tbody>
+                  <thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">MATERIAL</th><th className="p-3 text-right">QUANTIDADE</th><th className="p-3 text-right">VENDAS</th><th className="p-3 text-right">RECEITA</th><th className="p-3 text-right">CUSTO</th><th className="p-3 text-right">LUCRO</th></tr></thead>
+                  <tbody className="divide-y">{produtosGeraisPagina.length ? produtosGeraisPagina.map((item: any, index: number) => <tr key={`${item.produtoId}-${item.unidade}`} className={index < 3 && geralProdutosPage === 1 ? "bg-amber-50/60" : ""}><td className="p-3 font-black"><span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] text-slate-950">{(geralProdutosPage - 1) * rankingPageSize + index + 1}</span>{item.descricao}</td><td className="whitespace-nowrap p-3 text-right font-mono font-black text-slate-800">{formatDecimal(Number(item.totalQuantidade))} <span className="text-[10px] uppercase text-slate-500">{item.unidade}</span></td><td className="p-3 text-right text-base font-black text-amber-900">{item.totalVendas}</td><td className="p-3 text-right font-bold">{formatCurrency(item.totalValor)}</td><td className="p-3 text-right">{formatCurrency(item.totalCusto)}</td><td className="p-3 text-right font-black text-emerald-800">{formatCurrency(item.totalLucro)}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUM MATERIAL VENDIDO NO PERÍODO.</td></tr>}</tbody>
                 </table>
               </div>
               <Pagination page={geralProdutosPage} pageSize={rankingPageSize} totalItems={geral.produtos.length} onPageChange={setGeralProdutosPage} />

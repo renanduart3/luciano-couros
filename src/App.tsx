@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { ClientesView } from "./components/ClientesView";
 import { ProdutosView } from "./components/ProdutosView";
@@ -8,13 +8,43 @@ import { VendaModuleView } from "./components/VendaModuleView";
 import { FornecedoresModuleView } from "./components/FornecedoresModuleView";
 import { ValesView } from "./components/ValesView";
 import { ComprasView } from "./components/ComprasView";
+import { AlterarSenhaObrigatoria, LoginView } from "./components/LoginView";
+import { api } from "./lib/api";
+import { UsuarioSistema } from "./types";
+import { AuthProvider } from "./auth/AuthContext";
 
 export default function App() {
   const [currentView, setCurrentView] = useState("venda");
+  const [usuario, setUsuario] = useState<UsuarioSistema | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [statsKey, setStatsKey] = useState(0); // Reactive trigger for other views to refresh data
   
   // Pivot shortcut state (e.g. going from dashboard overdue alert to sales ledger)
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    api.getUsuarioAtual().then((resultado) => {
+      if (ativo) setUsuario(resultado.usuario);
+    }).catch(() => {
+      if (ativo) setUsuario(null);
+    }).finally(() => {
+      if (ativo) setAuthLoading(false);
+    });
+    const expirada = () => { setUsuario(null); setCurrentView("venda"); };
+    window.addEventListener("auth-expired", expirada);
+    return () => { ativo = false; window.removeEventListener("auth-expired", expirada); };
+  }, []);
+
+  useEffect(() => {
+    if (usuario?.perfil !== "administrador" && currentView === "config") setCurrentView("venda");
+  }, [usuario, currentView]);
+
+  const bloquearSessao = async () => {
+    try { await api.logout(); } catch { /* o bloqueio local deve ocorrer mesmo sem resposta */ }
+    setUsuario(null);
+    setCurrentView("venda");
+  };
 
   // Helper to force-update stats in other views
   const handleRefreshStats = () => {
@@ -74,13 +104,21 @@ export default function App() {
     }
   };
 
+  if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-slate-950 font-black text-white">Iniciando sistema...</div>;
+  if (!usuario) return <LoginView onAuthenticated={setUsuario} />;
+  if (usuario.deveTrocarSenha) return <AlterarSenhaObrigatoria usuario={usuario} onChanged={setUsuario} />;
+
   return (
+    <AuthProvider value={usuario}>
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
       
       {/* Sidebar Navigation */}
       <Sidebar 
         currentView={currentView}
+        usuario={usuario}
+        onBloquear={() => void bloquearSessao()}
         onViewChange={(view) => {
+          if (view === "config" && usuario.perfil !== "administrador") return;
           setCurrentView(view);
           // If moving away from sales list, clear any selection shortcut
           if (view !== "venda") {
@@ -99,7 +137,7 @@ export default function App() {
           </div>
           <div className="text-xs text-slate-500 font-medium flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-            Operação Unificada
+            {usuario.nome} • {usuario.perfil === "administrador" ? "Gerente" : "Vendedor"}
           </div>
         </header>
 
@@ -113,5 +151,6 @@ export default function App() {
       </main>
 
     </div>
+    </AuthProvider>
   );
 }

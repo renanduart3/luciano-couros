@@ -133,6 +133,7 @@ export function initDatabase() {
         id TEXT PRIMARY KEY,
         numeroSequencial INTEGER NOT NULL,
         clienteId TEXT NOT NULL,
+        vendedorId TEXT,
         data TEXT NOT NULL, -- ISO date string (YYYY-MM-DD)
         subtotal REAL NOT NULL,
         desconto REAL NOT NULL,
@@ -463,9 +464,12 @@ export function initDatabase() {
       CREATE TABLE IF NOT EXISTS usuarios (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
+        login TEXT,
         perfil TEXT NOT NULL DEFAULT 'operador',
         pinHash TEXT,
         pinSalt TEXT,
+        deveTrocarSenha INTEGER NOT NULL DEFAULT 0,
+        ultimoAcesso TEXT,
         ativo INTEGER NOT NULL DEFAULT 1,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP
@@ -673,6 +677,12 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE clientes ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN referencia TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE usuarios ADD COLUMN login TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE usuarios ADD COLUMN deveTrocarSenha INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE usuarios ADD COLUMN ultimoAcesso TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE vendas ADD COLUMN vendedorId TEXT`).run(); } catch (e) {}
+  db.prepare(`UPDATE usuarios SET login = 'gerente' WHERE id = 'usuario_admin' AND TRIM(COALESCE(login, '')) = ''`).run();
+  db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios (LOWER(login)) WHERE login IS NOT NULL`).run();
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeCompra TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeVenda TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN fatorConversao REAL DEFAULT 1.0`).run(); } catch (e) {}

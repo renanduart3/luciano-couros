@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.11.2 — 2026-08-06
+
+- Comprovantes antigos passam a recuperar a referência do fornecedor pelo vínculo atual do produto quando o item não possui fornecedor gravado e existe uma única associação ativa.
+- Resolução da referência deixa de depender de colunas SQL duplicadas, garantindo o preenchimento consistente na venda e no orçamento.
+
 ## 1.11.1 — 2026-08-06
 
 - Tela de login redesenhada com área da marca clara, painel vinho e fechadura interativa para revelar ou recolher os campos de acesso.

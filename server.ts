@@ -1979,16 +1979,27 @@ function carregarOrcamentoCompleto(id: string) {
     [id]
   );
   if (!orcamento) return null;
-  orcamento.items = queryAll(
+  orcamento.items = queryAll<any>(
     `SELECT io.*, p.codigo AS referencia,
-            COALESCE(NULLIF(io.fornecedorReferencia, ''), f.referencia) AS fornecedorReferencia
+            COALESCE(
+              NULLIF(io.fornecedorReferencia, ''),
+              NULLIF(f.referencia, ''),
+              (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(fu.referencia) END
+               FROM fornecedor_produtos fpu
+               JOIN fornecedores fu ON fu.id = fpu.fornecedorId
+               WHERE fpu.produtoId = io.produtoId AND fpu.ativo = 1
+                 AND fu.ativo = 1 AND fu.deletedAt IS NULL)
+            ) AS fornecedorReferenciaResolvida
      FROM itens_orcamento io
      LEFT JOIN produtos p ON p.id = io.produtoId
      LEFT JOIN fornecedores f ON f.id = io.fornecedorId
      WHERE io.orcamentoId = ?
      ORDER BY io.rowid ASC`,
     [id]
-  );
+  ).map((item) => ({
+    ...item,
+    fornecedorReferencia: item.fornecedorReferenciaResolvida || item.fornecedorReferencia || null,
+  }));
   return orcamento;
 }
 
@@ -2278,10 +2289,18 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 
 
 function carregarDetalhesVenda(venda: any) {
-  venda.items = queryAll(
+  venda.items = queryAll<any>(
     `SELECT iv.*,
             p.codigo as referencia,
-            COALESCE(NULLIF(iv.fornecedorReferencia, ''), f.referencia) as fornecedorReferencia,
+            COALESCE(
+              NULLIF(iv.fornecedorReferencia, ''),
+              NULLIF(f.referencia, ''),
+              (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(fu.referencia) END
+               FROM fornecedor_produtos fpu
+               JOIN fornecedores fu ON fu.id = fpu.fornecedorId
+               WHERE fpu.produtoId = iv.produtoId AND fpu.ativo = 1
+                 AND fu.ativo = 1 AND fu.deletedAt IS NULL)
+            ) as fornecedorReferenciaResolvida,
             COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
             iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
      FROM itens_venda iv
@@ -2289,7 +2308,10 @@ function carregarDetalhesVenda(venda: any) {
      LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
      WHERE iv.vendaId = ?`,
     [venda.id]
-  );
+  ).map((item) => ({
+    ...item,
+    fornecedorReferencia: item.fornecedorReferenciaResolvida || item.fornecedorReferencia || null,
+  }));
   venda.devolucoes = queryAll<any>(
     `SELECT * FROM devolucoes_venda WHERE vendaId = ? ORDER BY createdAt DESC`,
     [venda.id]
@@ -2355,14 +2377,25 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   const itensPorVenda = agrupar(queryAll<any>(
     `SELECT iv.*,
             p.codigo as referencia,
-            COALESCE(NULLIF(iv.fornecedorReferencia, ''), f.referencia) as fornecedorReferencia,
+            COALESCE(
+              NULLIF(iv.fornecedorReferencia, ''),
+              NULLIF(f.referencia, ''),
+              (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(fu.referencia) END
+               FROM fornecedor_produtos fpu
+               JOIN fornecedores fu ON fu.id = fpu.fornecedorId
+               WHERE fpu.produtoId = iv.produtoId AND fpu.ativo = 1
+                 AND fu.ativo = 1 AND fu.deletedAt IS NULL)
+            ) as fornecedorReferenciaResolvida,
             COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
             iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
      FROM itens_venda iv
      LEFT JOIN produtos p ON p.id = iv.produtoId
      LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
      WHERE iv.vendaId IN (${marcadores})`, ids
-  ), "vendaId");
+  ).map((item) => ({
+    ...item,
+    fornecedorReferencia: item.fornecedorReferenciaResolvida || item.fornecedorReferencia || null,
+  })), "vendaId");
   const devolucoes = queryAll<any>(
     `SELECT * FROM devolucoes_venda WHERE vendaId IN (${marcadores}) ORDER BY createdAt DESC`, ids
   );

@@ -2802,7 +2802,7 @@ app.post("/api/vendas", (req, res) => {
     });
 
     const fullVenda = queryOne("SELECT * FROM vendas WHERE id = ?", [resultVenda.id]);
-    res.status(210).json(fullVenda);
+    res.status(201).json(carregarDetalhesVenda(fullVenda));
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

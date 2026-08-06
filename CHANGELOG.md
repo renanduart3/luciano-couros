@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.11.3 — 2026-08-06
+
+- Corrigida a prévia aberta imediatamente após finalizar uma venda, que reconstruía os itens no navegador e descartava a referência do fornecedor retornada pelo servidor.
+- Criação da venda passa a devolver o documento completo com itens e referências já resolvidos, mantendo fallback compatível com servidores anteriores.
+
 ## 1.11.2 — 2026-08-06
 
 - Comprovantes antigos passam a recuperar a referência do fornecedor pelo vínculo atual do produto quando o item não possui fornecedor gravado e existe uma única associação ativa.

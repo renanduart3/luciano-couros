@@ -968,7 +968,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           vencimento: instrumentoVencimento,
           status: "a_receber"
         } : undefined,
-        items: itensPreenchidos.map(it => ({
+        items: result.items?.length ? result.items : itensPreenchidos.map(it => ({
+          produtoId: it.produtoId,
+          fornecedorId: it.fornecedorId,
+          fornecedorReferencia: it.fornecedorReferencia,
           referencia: it.codigo,
           descricao: it.nome,
           quantidade: parseBrazilianNumber(it.quantidade),

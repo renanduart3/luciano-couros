@@ -201,6 +201,17 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
     }).then(r => handleResponse<{ success: boolean }>(r)),
+  atualizarFornecedorProduto: (fornecedorId: string, produtoId: string, dados: {
+    custoFornecedor: number;
+    precoVendaFornecedor: number;
+    observacao?: string;
+    pin: string;
+  }) =>
+    fetch(`${API_BASE}/fornecedores/${fornecedorId}/produtos/${produtoId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ success: boolean }>(r)),
   desvincularFornecedorProduto: (fornecedorId: string, produtoId: string) =>
     fetch(`${API_BASE}/fornecedores/${fornecedorId}/produtos/${produtoId}`, { method: "DELETE" })
       .then(r => handleResponse<{ success: boolean }>(r)),

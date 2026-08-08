@@ -1657,6 +1657,13 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
     const fornecedor = queryOne("SELECT id FROM fornecedores WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
     const produto = queryOne("SELECT id FROM produtos WHERE id = ? AND deletedAt IS NULL", [req.body?.produtoId]);
     if (!fornecedor || !produto) return res.status(404).json({ error: "Fornecedor ou produto não encontrado." });
+    const associacaoAtiva = queryOne(
+      "SELECT produtoId FROM fornecedor_produtos WHERE fornecedorId = ? AND produtoId = ? AND ativo = 1",
+      [req.params.id, req.body.produtoId]
+    );
+    if (associacaoAtiva) {
+      return res.status(409).json({ error: "Produto já associado. Use a edição protegida por PIN para alterar os valores." });
+    }
 
     const custoFornecedor = Number(req.body?.custoFornecedor ?? 0);
     const precoVendaFornecedor = Number(req.body?.precoVendaFornecedor ?? 0);
@@ -1684,6 +1691,46 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
     res.status(201).json({ success: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.put("/api/fornecedores/:id/produtos/:produtoId", (req, res) => {
+  try {
+    const autorizador = validarPinAdministrador(req.body?.pin);
+    if (!autorizador) return res.status(403).json({ error: "PIN administrativo inválido." });
+
+    const associacao = queryOne(
+      `SELECT fornecedorId, produtoId FROM fornecedor_produtos
+       WHERE fornecedorId = ? AND produtoId = ? AND ativo = 1`,
+      [req.params.id, req.params.produtoId]
+    );
+    if (!associacao) return res.status(404).json({ error: "Associação ativa não encontrada." });
+
+    const custoFornecedor = Number(req.body?.custoFornecedor);
+    const precoVendaFornecedor = Number(req.body?.precoVendaFornecedor);
+    if (!Number.isFinite(custoFornecedor) || custoFornecedor < 0 || !Number.isFinite(precoVendaFornecedor) || precoVendaFornecedor < 0) {
+      return res.status(400).json({ error: "Custo e preço-base do fornecedor devem ser valores válidos." });
+    }
+
+    execute(
+      `UPDATE fornecedor_produtos
+       SET custoFornecedor = ?, precoVendaFornecedor = ?, observacao = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE fornecedorId = ? AND produtoId = ? AND ativo = 1`,
+      [
+        custoFornecedor,
+        precoVendaFornecedor,
+        String(req.body?.observacao || "").trim() || null,
+        req.params.id,
+        req.params.produtoId
+      ]
+    );
+    registrarAuditoria(autorizador.id, "fornecedor_produto_atualizado", "fornecedor_produto", `${req.params.id}:${req.params.produtoId}`, {
+      custoFornecedor,
+      precoVendaFornecedor
+    });
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

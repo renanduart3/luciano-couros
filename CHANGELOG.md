@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.14.0 — 2026-08-08
+
+- Nova compra passa a carregar automaticamente a lista consolidada e sem duplicidades dos produtos presentes nas cinco compras mais recentes do fornecedor selecionado.
+- Cada produto recente mantém o custo da ocorrência mais nova, enquanto o catálogo completo continua disponível pela busca manual.
+- Produtos associados ao fornecedor recebem edição de custo, preço-base e observação com PIN administrativo obrigatório.
+- Proteção da edição é validada também na API, registrada em auditoria e impede que o cadastro comum sobrescreva uma associação ativa.
+
 ## 1.13.1 — 2026-08-08
 
 - Comprovante de venda remove a faixa de forma de pagamento e saldo do Vale abaixo dos itens.

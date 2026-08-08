@@ -146,6 +146,15 @@ export function ComprasView() {
     return mapa;
   }, [compras, fornecedorId]);
 
+  const ultimasCincoComprasFornecedor = useMemo(
+    () => compras.filter((compra) => compra.fornecedorId === fornecedorId).slice(0, 5),
+    [compras, fornecedorId]
+  );
+  const quantidadeProdutosRecentes = useMemo(
+    () => new Set(ultimasCincoComprasFornecedor.flatMap((compra) => (compra.items || []).map((item) => item.produtoId))).size,
+    [ultimasCincoComprasFornecedor]
+  );
+
   const custoSugerido = (produto: Produto) => {
     const ultimo = historicoPrecos.get(produto.id)?.[0]?.custo;
     const habitual = catalogo.find((item) => item.produtoId === produto.id);
@@ -168,6 +177,29 @@ export function ComprasView() {
     const custo = Number(item.ultimoCustoCompra ?? item.custoFornecedor ?? produto.custoPadrao ?? 0);
     return { ...itemDoProduto(produto), custo: custo > 0 ? custo.toFixed(2).replace(".", ",") : "", habitual: true };
   }).filter(Boolean) as ItemRascunho[];
+
+  const itensDasUltimasCincoCompras = (id = fornecedorId, catalogoAtual = catalogo) => {
+    const idsAssociados = new Set(catalogoAtual.map((item) => item.produtoId));
+    const unicos = new Map<string, ItemRascunho>();
+    const recentes = compras.filter((compra) => compra.fornecedorId === id).slice(0, 5);
+    for (const compra of recentes) {
+      for (const item of compra.items || []) {
+        if (unicos.has(item.produtoId)) continue;
+        const produto = produtos.find((registro) => registro.id === item.produtoId);
+        if (!produto) continue;
+        unicos.set(item.produtoId, {
+          produtoId: produto.id,
+          nome: produto.nome,
+          codigo: produto.codigo,
+          unidade: item.unidade || produto.unidade,
+          quantidade: "",
+          custo: Number(item.custoUnitario) > 0 ? numeroBR(Number(item.custoUnitario)) : "",
+          habitual: idsAssociados.has(produto.id)
+        });
+      }
+    }
+    return [...unicos.values()];
+  };
 
   const carregarOrcamentoNoFormulario = (orcamento: OrcamentoCompra, catalogoAtual = catalogo) => {
     const idsHabituais = new Set(catalogoAtual.map((item) => item.produtoId));
@@ -210,6 +242,7 @@ export function ComprasView() {
       if (requisicao !== catalogoRequest.current) return;
       const ativos = lista.filter((item) => item.ativo === 1);
       setCatalogo(ativos);
+      setCompraItems(itensDasUltimasCincoCompras(id, ativos));
       const solicitado = orcamentoParaAbrirId
         ? orcamentos.find((item) => item.id === orcamentoParaAbrirId && item.fornecedorId === id && item.status === "aberto")
         : null;
@@ -305,7 +338,11 @@ export function ComprasView() {
 
   const carregarHabituaisNaCompra = () => {
     setOrcamentoOrigemCompraId("");
-    setCompraItems(itensHabituais(catalogo));
+    const recentes = itensDasUltimasCincoCompras();
+    setCompraItems(recentes);
+    setMensagem(recentes.length > 0
+      ? { tipo: "ok", texto: `${recentes.length} produto(s) único(s) carregado(s) das últimas ${ultimasCincoComprasFornecedor.length} compra(s) deste fornecedor.` }
+      : { tipo: "erro", texto: "Este fornecedor ainda não possui compras anteriores para carregar. Adicione os produtos pela busca." });
   };
 
   const finalizarCompra = async () => {
@@ -506,8 +543,8 @@ export function ComprasView() {
         {fornecedor && <section id="entrada-compra" className="overflow-hidden rounded-xl bg-slate-50 shadow-sm"><div className="flex items-center justify-between bg-amber-700 px-3 py-2 text-white"><div className="flex items-center gap-2"><ShoppingBag size={18}/><strong className="text-sm uppercase">Compra • entrada conferida</strong></div><span className="rounded bg-white/15 px-2 py-1 text-[10px] font-black">{compraEmEdicao ? "EDIÇÃO" : "CONFIRA O QUE CHEGOU"}</span></div><div className="space-y-3 p-2">
           {!compraEmEdicao && <div className="grid gap-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 lg:grid-cols-[minmax(240px,1fr)_auto_auto] lg:items-end"><label className="text-[10px] font-black uppercase text-amber-950">Carregar orçamento para conferência<select value={orcamentoOrigemCompraId} onChange={(event) => setOrcamentoOrigemCompraId(event.target.value)} className="mt-1 min-h-12 w-full rounded-xl border border-amber-300 bg-white px-3 text-sm font-bold normal-case"><option value="">SELECIONE UM ORÇAMENTO ABERTO...</option>{orcamentosDoFornecedor.map((item) => <option key={item.id} value={item.id}>ORÇAMENTO #{item.numeroSequencial} • {formatDate(item.data)} • {item.items.length} itens</option>)}</select></label><button type="button" disabled={!orcamentoOrigemCompraId} onClick={carregarOrcamentoSelecionadoNaCompra} className="min-h-12 rounded-xl bg-amber-700 px-4 text-sm font-black text-white disabled:opacity-40">Carregar para conferência</button><input type="date" aria-label="Data da compra" value={compraData} onChange={(event) => setCompraData(event.target.value)} className="min-h-12 rounded-xl border border-amber-300 bg-white px-3 text-sm font-bold"/></div>}
           {compraEmEdicao && <input type="date" aria-label="Data da compra" value={compraData} onChange={(event) => setCompraData(event.target.value)} className="min-h-11 rounded-xl border border-amber-300 bg-white px-3 text-sm font-bold"/>}
-          <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-white p-2 sm:flex-row"><SeletorProduto produtos={produtos} associados={associados} bloqueados={new Set(compraItems.map((item) => item.produtoId))} onAdicionar={(produto) => adicionarItem("compra", produto)} cor="amber"/>{!compraEmEdicao && <button type="button" onClick={carregarHabituaisNaCompra} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-900"><PackagePlus size={15}/> Carregar habituais</button>}</div>
-          {compraItems.length === 0 ? <div className="rounded-lg border border-dashed border-amber-300 p-8 text-center text-sm font-bold text-slate-500">Carregue um orçamento, os habituais ou pesquise um produto.</div> : renderTabelaItens("compra", compraItems)}
+          <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-white p-2 sm:flex-row"><SeletorProduto produtos={produtos} associados={associados} bloqueados={new Set(compraItems.map((item) => item.produtoId))} onAdicionar={(produto) => adicionarItem("compra", produto)} cor="amber"/>{!compraEmEdicao && <button type="button" onClick={carregarHabituaisNaCompra} title="Reúne os produtos sem duplicidade das cinco compras mais recentes deste fornecedor" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-black text-amber-900"><PackagePlus size={15}/> Últimas 5 compras ({quantidadeProdutosRecentes})</button>}</div>
+          {compraItems.length === 0 ? <div className="rounded-lg border border-dashed border-amber-300 p-8 text-center text-sm font-bold text-slate-500">Carregue um orçamento, os produtos das últimas cinco compras ou pesquise um produto.</div> : renderTabelaItens("compra", compraItems)}
           <div className="grid gap-3 xl:grid-cols-[1fr_340px]"><div className="space-y-2"><textarea rows={2} value={compraObservacao} onChange={(event) => setCompraObservacao(event.target.value)} placeholder="Nota fiscal, prazo ou observações..." className="w-full rounded-lg border border-amber-200 p-3 text-sm"/><div className="grid gap-2 sm:grid-cols-3"><label className="text-xs font-bold">{compraEmEdicao ? "Pago já registrado" : "Valor pago agora"}<input disabled={Boolean(compraEmEdicao)} value={valorPago} onChange={(event) => setValorPago(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"/></label><label className="text-xs font-bold">Forma / condição<select disabled={Boolean(compraEmEdicao)} value={formaPagamento} onChange={(event) => { const forma = event.target.value; setFormaPagamento(forma); if (forma === "vale" && !vencimento) setVencimento(emDias(30)); }} className="mt-1 w-full rounded-lg border px-3 py-2 disabled:bg-slate-100"><option value="pix">PIX</option><option value="dinheiro">Dinheiro</option><option value="boleto">Boleto</option><option value="transferencia">Transferência</option><option value="cartao">Cartão</option><option value="vale">Vale — pagar depois</option></select></label><label className="text-xs font-bold">Vencimento do saldo<input type="date" value={vencimento} onChange={(event) => setVencimento(event.target.value)} className="mt-1 w-full rounded-lg border px-3 py-2"/></label></div>{!compraEmEdicao && formaPagamento === "vale" && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">O valor pago agora será abatido e o restante ficará no Vale de compras para pagamentos parciais.</p>}</div><div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm"><div className="flex justify-between"><span>Subtotal</span><strong>{formatCurrency(totaisCompra.subtotal)}</strong></div><label className="flex items-center justify-between">Desconto<input value={compraDesconto} onChange={(event) => setCompraDesconto(event.target.value)} className="w-24 rounded border px-2 py-1 text-right"/></label><div className="flex justify-between border-t border-amber-200 pt-2 text-base"><strong>Total</strong><strong>{formatCurrency(totaisCompra.total)}</strong></div><button type="button" disabled={salvando} onClick={finalizarCompra} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><Save size={17}/>{compraEmEdicao ? "Salvar alterações" : "Finalizar compra"}</button></div></div>
         </div></section>}
       </div>}

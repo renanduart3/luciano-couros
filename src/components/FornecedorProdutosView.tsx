@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link2, Package, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Link2, Package, Pencil, Plus, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import { Fornecedor, FornecedorProduto, Produto } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
 
@@ -20,6 +20,12 @@ export function FornecedorProdutosView() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [editando, setEditando] = useState<FornecedorProduto | null>(null);
+  const [edicaoCusto, setEdicaoCusto] = useState("");
+  const [edicaoPrecoVenda, setEdicaoPrecoVenda] = useState("");
+  const [edicaoObservacao, setEdicaoObservacao] = useState("");
+  const [edicaoPin, setEdicaoPin] = useState("");
+  const [erroEdicao, setErroEdicao] = useState("");
 
   useEffect(() => {
     Promise.all([api.getFornecedores(), api.getProdutos()])
@@ -37,6 +43,9 @@ export function FornecedorProdutosView() {
     setPrecoVendaFornecedor("");
     setObservacao("");
     setFeedback("");
+    setEditando(null);
+    setEdicaoPin("");
+    setErroEdicao("");
     if (!id) return setCatalogo([]);
     setLoading(true);
     try {
@@ -101,6 +110,45 @@ export function FornecedorProdutosView() {
     }
   };
 
+  const iniciarEdicao = (item: FornecedorProduto) => {
+    setEditando(item);
+    setEdicaoCusto(String(Number(item.custoFornecedor ?? item.ultimoCustoCompra ?? 0)).replace(".", ","));
+    setEdicaoPrecoVenda(String(Number(item.precoVendaFornecedor ?? item.precoVendaPadrao ?? 0)).replace(".", ","));
+    setEdicaoObservacao(item.observacao || "");
+    setEdicaoPin("");
+    setErroEdicao("");
+  };
+
+  const salvarEdicao = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!editando) return;
+    const custo = parseBrazilianNumber(edicaoCusto);
+    const precoVenda = parseBrazilianNumber(edicaoPrecoVenda);
+    if (!Number.isFinite(custo) || custo < 0 || !Number.isFinite(precoVenda) || precoVenda < 0) {
+      return setErroEdicao("Informe custo e preço-base válidos.");
+    }
+    if (edicaoPin.length < 4 || edicaoPin.length > 64) return setErroEdicao("Informe o PIN do administrador.");
+    setSaving(true);
+    setErroEdicao("");
+    try {
+      await api.atualizarFornecedorProduto(fornecedorId, editando.produtoId, {
+        custoFornecedor: custo,
+        precoVendaFornecedor: precoVenda,
+        observacao: edicaoObservacao.trim() || undefined,
+        pin: edicaoPin
+      });
+      setCatalogo(await api.getFornecedorProdutos(fornecedorId));
+      setEditando(null);
+      setEdicaoPin("");
+      setFeedback("Valores do produto atualizados com autorização administrativa.");
+    } catch (error: any) {
+      setEdicaoPin("");
+      setErroEdicao(error.message || "Não foi possível atualizar os valores do produto.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading && fornecedores.length === 0) return <div className="py-20 text-center font-bold text-slate-600">Carregando catálogo...</div>;
 
   return (
@@ -133,9 +181,21 @@ export function FornecedorProdutosView() {
             {feedback && <p className="mt-3 text-xs font-bold text-slate-700">{feedback}</p>}
           </form>
 
+          {editando && <form onSubmit={salvarEdicao} className="rounded-2xl border border-blue-300 bg-blue-50 p-5 shadow-sm">
+            <div className="mb-4 flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Pencil size={17} className="text-blue-800" /><h3 className="font-black text-blue-950">Editar valores de {editando.produtoNome}</h3></div><p className="mt-1 text-xs font-bold text-blue-700">A alteração será salva somente após validar o PIN do administrador.</p></div><button type="button" aria-label="Fechar edição" onClick={() => { setEditando(null); setEdicaoPin(""); setErroEdicao(""); }} className="rounded-lg border border-blue-200 bg-white p-2 text-blue-800"><X size={16} /></button></div>
+            <div className="grid gap-3 lg:grid-cols-12 lg:items-end">
+              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Custo *</span><input required inputMode="decimal" value={edicaoCusto} onChange={(event) => { setEdicaoCusto(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
+              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Preço-base *</span><input required inputMode="decimal" value={edicaoPrecoVenda} onChange={(event) => { setEdicaoPrecoVenda(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
+              <label className="lg:col-span-4"><span className="mb-1 block text-xs font-extrabold text-blue-950">Observação</span><input value={edicaoObservacao} onChange={(event) => setEdicaoObservacao(event.target.value)} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
+              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">PIN administrador *</span><input required type="password" autoComplete="off" value={edicaoPin} onChange={(event) => { setEdicaoPin(event.target.value.slice(0, 64)); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-300 bg-white px-3 py-3 text-center text-sm font-black tracking-widest" /></label>
+              <button disabled={saving || !edicaoPin} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 text-xs font-black text-white disabled:opacity-40 lg:col-span-2"><ShieldCheck size={16} /> {saving ? "Validando" : "Validar e salvar"}</button>
+            </div>
+            {erroEdicao && <p className="mt-3 rounded-xl border border-red-200 bg-white p-3 text-xs font-bold text-red-800">{erroEdicao}</p>}
+          </form>}
+
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-200 p-4"><div><h3 className="font-black text-slate-950">Catálogo deste fornecedor</h3><p className="text-xs text-slate-600">A configuração comercial principal é mantida no cadastro do produto.</p></div><button type="button" aria-label="Atualizar catálogo" onClick={() => carregarCatalogo(fornecedorId)} className="rounded-xl border border-slate-300 p-2 text-slate-700"><RefreshCw size={16} /></button></div>
-            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[950px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">REF. fornecedor</th><th className="p-4 text-right">Custo configurado</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th>{gerente && <th className="p-4 text-right">Ações</th>}</tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.fornecedorReferencia || "—"}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.custoFornecedor || 0))}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.precoVendaFornecedor || 0))}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td>{gerente && <td className="p-4 text-right"><button type="button" disabled={saving} onClick={() => desvincularProduto(item)} aria-label={`Remover associação de ${item.produtoNome}`} className="rounded-lg border border-red-200 p-2 text-red-700 disabled:opacity-40"><Trash2 size={15}/></button></td>}</tr>)}</tbody></table></div>}
+            {catalogo.length === 0 ? <div className="p-10 text-center"><Package className="mx-auto text-slate-400" /><p className="mt-3 text-sm font-bold text-slate-600">Nenhum produto vinculado.</p></div> : <div className="overflow-x-auto"><table className="w-full min-w-[1000px] text-left text-sm"><thead><tr><th className="p-4">Produto</th><th className="p-4">REF. fornecedor</th><th className="p-4 text-right">Custo configurado</th><th className="p-4 text-right">Preço-base</th><th className="p-4">Última compra</th><th className="p-4 text-center">Compras</th><th className="p-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-200">{catalogo.map((item) => <tr key={item.produtoId}><td className="p-4"><p className="font-extrabold text-slate-950">{item.produtoNome}</p><p className="text-xs text-slate-600">REF. {item.produtoCodigo || "SEM REFERÊNCIA"} • {item.unidade}</p></td><td className="p-4 font-mono font-bold">{item.fornecedorReferencia || "—"}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.custoFornecedor || 0))}</td><td className="p-4 text-right font-mono font-black">{formatCurrency(Number(item.precoVendaFornecedor || 0))}</td><td className="p-4 font-bold">{item.ultimaCompraEm ? formatDate(item.ultimaCompraEm) : "Sem compra"}</td><td className="p-4 text-center font-black">{Number(item.comprasRealizadas || 0)}</td><td className="p-4"><div className="flex justify-end gap-2"><button type="button" disabled={saving} onClick={() => iniciarEdicao(item)} aria-label={`Editar valores de ${item.produtoNome}`} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-800 disabled:opacity-40"><Pencil size={14}/> Editar</button>{gerente && <button type="button" disabled={saving} onClick={() => desvincularProduto(item)} aria-label={`Remover associação de ${item.produtoNome}`} className="rounded-lg border border-red-200 p-2 text-red-700 disabled:opacity-40"><Trash2 size={15}/></button>}</div></td></tr>)}</tbody></table></div>}
           </div>
         </>
       )}

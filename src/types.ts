@@ -82,6 +82,7 @@ export interface ProdutoHabitual {
   ultimaQuantidade?: number;
   ultimaUnidade: string;
   vezesComprado: number;
+  quantidadeTotal?: number;
   ultimaCompraEm: string;
   precoAutorizado?: number;
   unidade: Produto["unidade"];
@@ -100,6 +101,7 @@ export interface OrcamentoPadraoClienteItem {
   precoUnitario: number;
   faltante: number;
   personalizado: number;
+  quantidadeTotal?: number;
 }
 
 export interface ItemVenda {

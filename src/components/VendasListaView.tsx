@@ -1,13 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Trash2, Printer, Eye, Filter, FileText, Pencil, X
+  Search, Trash2, Printer, Eye, Filter, FileText, Pencil, X, ShieldCheck
 } from "lucide-react";
 import { Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { paginate, Pagination } from "./Pagination";
-import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
 
 const PAGE_SIZE = 12;
@@ -20,7 +19,6 @@ interface VendasListaViewProps {
 }
 
 export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelectedSaleId, onEditarVenda }: VendasListaViewProps) {
-  const confirmacao = useConfirmacao();
   const gerente = useEhGerente();
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [busca, setBusca] = useState("");
@@ -31,6 +29,9 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
 
   // Active viewing sale
   const [vendaDetalhada, setVendaDetalhada] = useState<Venda | null>(null);
+  const [vendaCancelamento, setVendaCancelamento] = useState<Venda | null>(null);
+  const [pinCancelamento, setPinCancelamento] = useState("");
+  const [erroCancelamento, setErroCancelamento] = useState("");
   const [canceling, setCanceling] = useState(false);
 
   const fetchVendas = async () => {
@@ -77,15 +78,20 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
   });
   const vendasPagina = paginate<Venda>(filteredVendas, page, PAGE_SIZE);
 
-  const handleCancelVenda = async (id: string) => {
+  const handleCancelVenda = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!vendaCancelamento) return;
     setCanceling(true);
+    setErroCancelamento("");
     try {
-      await api.cancelarVenda(id);
+      await api.cancelarVenda(vendaCancelamento.id, pinCancelamento);
       setVendaDetalhada(null);
-      fetchVendas();
+      setVendaCancelamento(null);
+      setPinCancelamento("");
+      await fetchVendas();
       if (onRefreshStats) onRefreshStats();
     } catch (err: any) {
-      alert(err.message || "Erro ao cancelar venda.");
+      setErroCancelamento(err.message || "Erro ao cancelar venda.");
     } finally {
       setCanceling(false);
     }
@@ -97,7 +103,22 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
 
   return (
     <div id="sales-list-view" className="space-y-6">
-      {confirmacao.dialogo}
+      {vendaCancelamento && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
+          <form onSubmit={handleCancelVenda} role="dialog" aria-modal="true" aria-labelledby="cancelar-venda-titulo" className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-start justify-between border-b border-red-200 bg-red-50 p-5">
+              <div className="flex gap-3"><span className="rounded-xl bg-red-700 p-2 text-white"><Trash2 size={19} /></span><div><h3 id="cancelar-venda-titulo" className="font-black text-red-950">Cancelar venda #{vendaCancelamento.numeroSequencial}</h3><p className="mt-1 text-xs font-semibold text-red-800">A venda ficará registrada como cancelada no histórico.</p></div></div>
+              <button type="button" aria-label="Fechar cancelamento" onClick={() => { setVendaCancelamento(null); setPinCancelamento(""); setErroCancelamento(""); }} className="rounded-lg p-2 text-red-700 hover:bg-white"><X size={18} /></button>
+            </div>
+            <div className="space-y-3 p-5">
+              <p className="text-sm font-bold text-slate-700">Digite a senha do gerente para confirmar o cancelamento.</p>
+              <input type="password" autoFocus autoComplete="off" value={pinCancelamento} onChange={(event) => { setPinCancelamento(event.target.value.slice(0, 64)); setErroCancelamento(""); }} aria-label="Senha do gerente para cancelar venda" placeholder="Senha do gerente" className="w-full rounded-xl border border-red-300 px-4 py-3 text-center text-lg font-black tracking-widest outline-none focus:border-red-600" />
+              {erroCancelamento && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{erroCancelamento}</p>}
+            </div>
+            <div className="flex gap-3 border-t border-slate-200 bg-slate-50 p-4"><button type="button" disabled={canceling} onClick={() => { setVendaCancelamento(null); setPinCancelamento(""); setErroCancelamento(""); }} className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black disabled:opacity-50">Voltar</button><button type="submit" disabled={canceling || !pinCancelamento} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 py-3 text-sm font-black text-white disabled:opacity-50"><ShieldCheck size={17} /> {canceling ? "Cancelando..." : "Confirmar"}</button></div>
+          </form>
+        </div>
+      )}
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
@@ -204,7 +225,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                         <div className="flex flex-wrap justify-center gap-1.5">
                           <button onClick={() => setVendaDetalhada(v)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-200 hover:text-slate-900"><Eye size={14} /> Detalhe</button>
                           {v.status !== "cancelada" && <button onClick={() => onEditarVenda?.(v)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"><Pencil size={14} /> Editar</button>}
-                          {gerente && v.status !== "cancelada" && <button disabled={canceling} onClick={async () => { if (await confirmacao.confirmar({ titulo: "Cancelar venda", mensagem: `Excluir a venda #${v.numeroSequencial}? Ela permanecerá registrada como cancelada no histórico.`, textoConfirmar: "Cancelar venda" })) void handleCancelVenda(v.id); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
+                          {gerente && v.status !== "cancelada" && <button disabled={canceling} onClick={() => { setVendaCancelamento(v); setPinCancelamento(""); setErroCancelamento(""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
                         </div>
                       </td>
                     </tr>

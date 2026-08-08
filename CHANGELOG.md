@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.12.0 — 2026-08-08
+
+- Produtos habituais do cliente passam a ser ordenados pela quantidade líquida acumulada, desconsiderando vendas canceladas e quantidades devolvidas.
+- Botão de expandir ou recolher o orçamento reposicionado ao lado direito do título, com espaçamento próprio.
+- Referências de produto e fornecedor limitadas a quatro caracteres no cadastro e na API.
+- Comprovante de venda recebe colunas compactas e equivalentes para referência do produto e do fornecedor, ambas com até quatro caracteres.
+- Cancelamento de venda no histórico passa a exigir a senha do gerente, com validação obrigatória no servidor e registro na auditoria.
+- Relatório individual do cliente recebe a coluna administrativa “Lucro / qtd.”, protegida pela mesma senha dos dados de custo e incluída na exportação liberada.
+
 ## 1.11.3 — 2026-08-06
 
 - Corrigida a prévia aberta imediatamente após finalizar uma venda, que reconstruía os itens no navegador e descartava a referência do fornecedor retornada pelo servidor.

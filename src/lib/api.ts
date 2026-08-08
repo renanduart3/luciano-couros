@@ -264,8 +264,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(vendaData)
     }).then(r => handleResponse<Venda>(r)),
-  cancelarVenda: (id: string) => 
-    fetch(`${API_BASE}/vendas/${id}/cancelar`, { method: "POST" }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+  cancelarVenda: (id: string, pin: string) =>
+    fetch(`${API_BASE}/vendas/${id}/cancelar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin })
+    }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
   updateVale: (id: string, dados: { pin: string; observacoes?: string; parcelas: Array<{ vencimento: string; valor: number }> }) =>
     fetch(`${API_BASE}/vales/${id}`, {
       method: "PUT",

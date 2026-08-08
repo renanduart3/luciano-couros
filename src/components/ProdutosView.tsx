@@ -89,6 +89,7 @@ export function ProdutosView() {
     const preco = parseBrazilianNumber(precoVendaPadrao);
     const custo = parseBrazilianNumber(custoPadrao);
     if (!nome.trim()) return setFormError("O nome é obrigatório.");
+    if (referencia.trim().length > 4) return setFormError("A referência do produto deve possuir no máximo 4 caracteres.");
     if (!Number.isFinite(preco) || preco < 0) return setFormError("Informe um preço-base válido.");
     if (!Number.isFinite(custo) || custo < 0) return setFormError("Informe um preço de custo válido.");
     const fornecedoresSelecionados = configuracoesFornecedores.map((item) => item.fornecedorId);
@@ -112,7 +113,7 @@ export function ProdutosView() {
 
     const payload = {
       nome: nome.trim(),
-      codigo: referencia.trim() || undefined,
+      codigo: referencia.trim().toUpperCase() || undefined,
       unidade,
       precoVendaPadrao: preco,
       custoPadrao: custo,
@@ -218,7 +219,7 @@ export function ProdutosView() {
           <form onSubmit={handleSave} className="space-y-5 p-5 sm:p-6">
             <label className="block"><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Nome / descrição *</span><input value={nome} onChange={(e) => setNome(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold outline-none focus:border-emerald-500" required /></label>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Referência</span><span className="flex items-center rounded-xl border border-slate-200 bg-slate-50"><Tag size={15} className="ml-3 text-slate-400" /><input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: NAPA-FLY-01" className="w-full bg-transparent px-3 py-3 text-sm font-bold uppercase outline-none" /></span></label>
+              <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Referência (máx. 4)</span><span className="flex items-center rounded-xl border border-slate-200 bg-slate-50"><Tag size={15} className="ml-3 text-slate-400" /><input value={referencia} maxLength={4} onChange={(e) => setReferencia(e.target.value.toUpperCase())} placeholder="Ex: NAPA" className="w-full bg-transparent px-3 py-3 text-sm font-bold uppercase outline-none" /></span></label>
               <label><span className="mb-1 block text-xs font-bold uppercase text-slate-500">Unidade *</span><select value={unidade} onChange={(e) => setUnidade(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm font-bold">{UNIDADES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

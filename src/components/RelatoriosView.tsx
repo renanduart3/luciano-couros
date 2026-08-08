@@ -196,12 +196,13 @@ export function RelatoriosView() {
       linhasVendas.forEach((item: any) => { csv += `${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.totalVendas};${item.totalComprado};${item.totalRecebido};${item.ultimaCompra}\n`; });
     } else if (aba === "clientes") {
       csv += dadosClienteLiberados
-        ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;FORNECEDOR\n"
+        ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE;FORNECEDOR\n"
         : "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO\n";
       analiseCliente.itens.forEach((item: any) => {
         const lucro = Number(item.valorVendaLiquido) - Number(item.custoTotal);
+        const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
         csv += dadosClienteLiberados
-          ? `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario};${item.valorVendaLiquido};${item.custoTotal};${lucro};${csvCelula(item.fornecedorNome)}\n`
+          ? `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario};${item.valorVendaLiquido};${item.custoTotal};${lucro};${lucroPorQuantidade};${csvCelula(item.fornecedorNome)}\n`
           : `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario}\n`;
       });
       csv += `\nTOTAL QUANTIDADE;${analiseCliente.quantidade}\nVALOR BRUTO;${analiseCliente.valorBruto}\nDESCONTO;${analiseCliente.desconto}\nVALOR LÍQUIDO;${analiseCliente.valorLiquido}\n`;
@@ -365,13 +366,14 @@ function TabelaVendas({ linhas }: { linhas: any[] }) {
 }
 
 function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boolean }) {
-  const colunas = liberado ? 11 : 6;
-  return <div className="overflow-x-auto"><table className={`w-full text-xs ${liberado ? "min-w-[1080px]" : "min-w-[720px]"}`}><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-2.5 text-left">Data</th><th className="p-2.5 text-left">Venda</th><th className="p-2.5 text-right">Qtd.</th><th className="p-2.5 text-left">Unid.</th><th className="p-2.5 text-left">Artigo / material</th><th className="p-2.5 text-right">V. unitário</th>{liberado && <><th className="p-2.5 text-right">V. venda</th><th className="bg-slate-100 p-2.5 text-right">Custo</th><th className="bg-slate-100 p-2.5 text-right">Lucro</th><th className="bg-slate-100 p-2.5 text-left">Fornecedor</th><th className="bg-slate-100 p-2.5 text-right">Margem</th></>}</tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
+  const colunas = liberado ? 12 : 6;
+  return <div className="overflow-x-auto"><table className={`w-full text-xs ${liberado ? "min-w-[1180px]" : "min-w-[720px]"}`}><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-2.5 text-left">Data</th><th className="p-2.5 text-left">Venda</th><th className="p-2.5 text-right">Qtd.</th><th className="p-2.5 text-left">Unid.</th><th className="p-2.5 text-left">Artigo / material</th><th className="p-2.5 text-right">V. unitário</th>{liberado && <><th className="p-2.5 text-right">V. venda</th><th className="bg-slate-100 p-2.5 text-right">Custo</th><th className="bg-slate-100 p-2.5 text-right">Lucro</th><th className="bg-slate-100 p-2.5 text-right">Lucro / qtd.</th><th className="bg-slate-100 p-2.5 text-left">Fornecedor</th><th className="bg-slate-100 p-2.5 text-right">Margem</th></>}</tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
     const valorVenda = Number(item.valorVendaLiquido || 0);
     const custo = Number(item.custoTotal || 0);
     const lucro = valorVenda - custo;
+    const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
     const margem = valorVenda > 0 ? lucro / valorVenda * 100 : 0;
-    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-2.5 font-mono">{formatDate(item.data)}</td><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-2.5 font-bold">{item.unidade}</td><td className="p-2.5 font-black text-slate-900">{item.descricao}</td><td className="p-2.5 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>{liberado && <><td className="p-2.5 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-2.5 text-right font-mono">{formatCurrency(custo)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{formatCurrency(lucro)}</td><td className="bg-slate-50 p-2.5 font-bold">{item.fornecedorNome || "Sem compra registrada"}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{margem.toFixed(1)}%</td></>}</tr>;
+    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-2.5 font-mono">{formatDate(item.data)}</td><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-2.5 font-bold">{item.unidade}</td><td className="p-2.5 font-black text-slate-900">{item.descricao}</td><td className="p-2.5 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>{liberado && <><td className="p-2.5 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-2.5 text-right font-mono">{formatCurrency(custo)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{formatCurrency(lucro)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black text-emerald-800">{formatCurrency(lucroPorQuantidade)}</td><td className="bg-slate-50 p-2.5 font-bold">{item.fornecedorNome || "Sem compra registrada"}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{margem.toFixed(1)}%</td></>}</tr>;
   }) : <tr><td colSpan={colunas} className="p-12 text-center font-bold text-slate-500">Nenhum item vendido para este cliente no período.</td></tr>}</tbody></table></div>;
 }
 

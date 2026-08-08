@@ -380,10 +380,11 @@ textarea {
   font-weight: 800;
 }
 
-.receipt-ref { width: 18mm; }
+.receipt-ref { width: 14mm; }
 .receipt-supplier-ref { width: 14mm; }
 .receipt-qty { width: 18mm; }
 .receipt-money { width: 31mm; }
+.receipt-product-code,
 .receipt-supplier-code { text-align: center; font-family: monospace; font-weight: 800; }
 .receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
 

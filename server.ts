@@ -1164,6 +1164,18 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
          cph.vezesComprado,
          cph.ultimaCompraEm,
          cph.precoAutorizado,
+         COALESCE((
+           SELECT SUM(ivq.quantidade - COALESCE((
+             SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = ivq.id
+           ), 0))
+           FROM itens_venda ivq
+           JOIN vendas vq ON vq.id = ivq.vendaId
+           WHERE vq.clienteId = cph.clienteId
+             AND ivq.produtoId = cph.produtoId
+             AND ivq.fornecedorId IS NULL
+             AND vq.status <> 'cancelada'
+             AND vq.deletedAt IS NULL
+         ), 0) AS quantidadeTotal,
          p.nome,
          p.codigo,
          p.unidade,
@@ -1191,6 +1203,18 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
          cpf.vezesComprado,
          cpf.ultimaCompraEm,
          cpf.precoAutorizado,
+         COALESCE((
+           SELECT SUM(ivq.quantidade - COALESCE((
+             SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = ivq.id
+           ), 0))
+           FROM itens_venda ivq
+           JOIN vendas vq ON vq.id = ivq.vendaId
+           WHERE vq.clienteId = cpf.clienteId
+             AND ivq.produtoId = cpf.produtoId
+             AND ivq.fornecedorId = cpf.fornecedorId
+             AND vq.status <> 'cancelada'
+             AND vq.deletedAt IS NULL
+         ), 0) AS quantidadeTotal,
          p.nome,
          p.codigo,
          p.unidade,
@@ -1211,7 +1235,8 @@ app.get("/api/clientes/:id/produtos-habituais", (req, res) => {
       [req.params.id]
     );
     const produtos = [...produtosSemFornecedor, ...produtosPorFornecedor].sort((a, b) =>
-      String(b.ultimaCompraEm || "").localeCompare(String(a.ultimaCompraEm || ""))
+      Number(b.quantidadeTotal || 0) - Number(a.quantidadeTotal || 0)
+      || String(b.ultimaCompraEm || "").localeCompare(String(a.ultimaCompraEm || ""))
       || Number(b.vezesComprado || 0) - Number(a.vezesComprado || 0)
       || String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR")
       || String(a.fornecedorReferencia || "").localeCompare(String(b.fornecedorReferencia || ""), "pt-BR")
@@ -1242,6 +1267,18 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
            COALESCE(cph.precoAutorizado, cph.ultimoPreco, p.precoVendaPadrao) AS precoUnitario,
            0 AS faltante,
            CASE WHEN cph.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado,
+           COALESCE((
+             SELECT SUM(ivq.quantidade - COALESCE((
+               SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = ivq.id
+             ), 0))
+             FROM itens_venda ivq
+             JOIN vendas vq ON vq.id = ivq.vendaId
+             WHERE vq.clienteId = cph.clienteId
+               AND ivq.produtoId = cph.produtoId
+               AND ivq.fornecedorId IS NULL
+               AND vq.status <> 'cancelada'
+               AND vq.deletedAt IS NULL
+           ), 0) AS quantidadeTotal,
            cph.ultimaCompraEm
          FROM cliente_produtos_habituais cph
          JOIN produtos p ON p.id = cph.produtoId
@@ -1261,6 +1298,18 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
            COALESCE(cpf.precoAutorizado, cpf.ultimoPreco, fp.precoVendaFornecedor, p.precoVendaPadrao) AS precoUnitario,
            0 AS faltante,
            CASE WHEN cpf.precoAutorizado IS NULL THEN 0 ELSE 1 END AS personalizado,
+           COALESCE((
+             SELECT SUM(ivq.quantidade - COALESCE((
+               SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = ivq.id
+             ), 0))
+             FROM itens_venda ivq
+             JOIN vendas vq ON vq.id = ivq.vendaId
+             WHERE vq.clienteId = cpf.clienteId
+               AND ivq.produtoId = cpf.produtoId
+               AND ivq.fornecedorId = cpf.fornecedorId
+               AND vq.status <> 'cancelada'
+               AND vq.deletedAt IS NULL
+           ), 0) AS quantidadeTotal,
            cpf.ultimaCompraEm
          FROM cliente_produto_fornecedor_precos cpf
          JOIN produtos p ON p.id = cpf.produtoId
@@ -1274,7 +1323,7 @@ app.get("/api/clientes/:id/orcamento-padrao", (req, res) => {
            AND f.ativo = 1
            AND f.deletedAt IS NULL
        )
-       ORDER BY ultimaCompraEm DESC, nome ASC, fornecedorReferencia ASC`,
+       ORDER BY quantidadeTotal DESC, ultimaCompraEm DESC, nome ASC, fornecedorReferencia ASC`,
       [req.params.id, req.params.id]
     );
 
@@ -1867,6 +1916,7 @@ function salvarConfiguracoesFornecedoresProduto(
 app.post("/api/produtos", (req, res) => {
   try {
     const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo } = req.body;
+    const referenciaProduto = String(codigo || "").trim().toUpperCase();
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
@@ -1875,6 +1925,9 @@ app.post("/api/produtos", (req, res) => {
     }
     if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
       return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
+    }
+    if (referenciaProduto.length > 4) {
+      return res.status(400).json({ error: "A referência do produto deve possuir no máximo 4 caracteres." });
     }
     const configuracoesFornecedores = normalizarConfiguracoesFornecedores(
       req.body,
@@ -1889,7 +1942,7 @@ app.post("/api/produtos", (req, res) => {
         [
           id,
           nome,
-          codigo || null,
+          referenciaProduto || null,
           unidade,
           Number(precoVendaPadrao),
           Number(custoPadrao),
@@ -1914,6 +1967,7 @@ app.put("/api/produtos/:id", (req, res) => {
   try {
     const { id } = req.params;
     const { nome, codigo, unidade, precoVendaPadrao, custoPadrao, ativo } = req.body;
+    const referenciaProduto = String(codigo || "").trim().toUpperCase();
     if (!nome || !unidade) {
       return res.status(400).json({ error: "Nome e unidade são obrigatórios." });
     }
@@ -1922,6 +1976,9 @@ app.put("/api/produtos/:id", (req, res) => {
     }
     if (!Number.isFinite(Number(custoPadrao)) || Number(custoPadrao) < 0) {
       return res.status(400).json({ error: "O preço de custo não pode ser negativo." });
+    }
+    if (referenciaProduto.length > 4) {
+      return res.status(400).json({ error: "A referência do produto deve possuir no máximo 4 caracteres." });
     }
     const configuracoesFornecedores = normalizarConfiguracoesFornecedores(
       req.body,
@@ -1936,7 +1993,7 @@ app.put("/api/produtos/:id", (req, res) => {
          WHERE id = ? AND deletedAt IS NULL`,
         [
           nome,
-          codigo || null,
+          referenciaProduto || null,
           unidade,
           Number(precoVendaPadrao),
           Number(custoPadrao),
@@ -3263,10 +3320,14 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
 app.post("/api/vendas/:id/cancelar", (req, res) => {
   try {
     const { id } = req.params;
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) {
+      return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi cancelada." });
+    }
     const nowStr = new Date().toISOString();
     
     runInTransaction(() => {
-      const venda = queryOne<any>("SELECT clienteId FROM vendas WHERE id = ? AND deletedAt IS NULL", [id]);
+      const venda = queryOne<any>("SELECT clienteId, numeroSequencial, totalLiquido FROM vendas WHERE id = ? AND deletedAt IS NULL", [id]);
       if (!venda) {
         throw new Error("Venda não encontrada ou já cancelada.");
       }
@@ -3310,6 +3371,12 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
         "UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE vendaId = ? AND deletedAt IS NULL",
         [nowStr, id]
       );
+
+      registrarAuditoria(administrador.id, "venda_cancelada", "venda", id, {
+        clienteId: venda.clienteId,
+        numeroSequencial: venda.numeroSequencial,
+        totalLiquido: venda.totalLiquido
+      });
 
       rebuildClienteProdutosHabituais(venda.clienteId);
     });

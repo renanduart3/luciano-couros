@@ -4167,19 +4167,31 @@ app.get("/api/relatorios", (req, res) => {
            iv.total
            - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
          ) AS valorVendaLiquido,
-         (
-           SELECT f.nome
-           FROM itens_compra ic
-           JOIN compras cp ON cp.id = ic.compraId
-           JOIN fornecedores f ON f.id = cp.fornecedorId
-           WHERE ic.produtoId = iv.produtoId AND cp.deletedAt IS NULL
-           ORDER BY cp.data DESC, cp.createdAt DESC, ic.id DESC
-           LIMIT 1
+         COALESCE(
+           fv.nome,
+           (SELECT fr.nome
+            FROM fornecedores fr
+            WHERE fr.referencia = iv.fornecedorReferencia
+            ORDER BY CASE WHEN fr.deletedAt IS NULL THEN 0 ELSE 1 END, fr.createdAt DESC
+            LIMIT 1),
+           (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(fu.nome) END
+            FROM fornecedor_produtos fpu
+            JOIN fornecedores fu ON fu.id = fpu.fornecedorId
+            WHERE fpu.produtoId = iv.produtoId
+              AND fpu.ativo = 1 AND fu.ativo = 1 AND fu.deletedAt IS NULL),
+           (SELECT f.nome
+            FROM itens_compra ic
+            JOIN compras cp ON cp.id = ic.compraId
+            JOIN fornecedores f ON f.id = cp.fornecedorId
+            WHERE ic.produtoId = iv.produtoId AND cp.deletedAt IS NULL
+            ORDER BY cp.data DESC, cp.createdAt DESC, ic.id DESC
+            LIMIT 1)
          ) AS fornecedorNome
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
        JOIN clientes c ON v.clienteId = c.id
        JOIN produtos p ON p.id = iv.produtoId
+       LEFT JOIN fornecedores fv ON fv.id = iv.fornecedorId
        ${itemWhere}
        ORDER BY v.data DESC`,
       itemParams
@@ -4202,6 +4214,45 @@ app.get("/api/relatorios", (req, res) => {
         lucroBruto: valorVendaLiquido - custoTotal
       };
     });
+
+    // O topo do relatório individual usa o histórico completo do cliente.
+    // A consulta é agregada no SQLite e devolve somente uma linha, evitando
+    // carregar vendas antigas no navegador apenas para calcular totalizadores.
+    const clienteResumoGeral = clienteId ? queryOne<any>(
+      `SELECT
+         COUNT(DISTINCT v.id) AS totalVendas,
+         COUNT(iv.id) AS totalItensVenda,
+         COALESCE(SUM(CASE WHEN LOWER(iv.unidade) LIKE '%metro%' THEN
+           iv.quantidade - COALESCE(dev.quantidade, 0) ELSE 0 END), 0) AS quantidadeMetros,
+         COALESCE(SUM(CASE WHEN LOWER(iv.unidade) NOT LIKE '%metro%' THEN
+           iv.quantidade - COALESCE(dev.quantidade, 0) ELSE 0 END), 0) AS quantidadeUnidades,
+         COALESCE((
+           SELECT SUM(vg.totalLiquido)
+           FROM vendas vg
+           WHERE vg.clienteId = ?
+             AND vg.deletedAt IS NULL
+             AND vg.status <> 'cancelada'
+         ), 0) AS valorLiquido,
+         COALESCE(SUM(
+           CASE WHEN iv.custoUnitario > 0
+             THEN iv.custoUnitario * (iv.quantidade - COALESCE(dev.quantidade, 0))
+             ELSE COALESCE(p.custoPadrao, 0) * (iv.quantidade - COALESCE(dev.quantidade, 0))
+           END
+         ), 0) AS custoTotal
+       FROM itens_venda iv
+       JOIN vendas v ON v.id = iv.vendaId
+       JOIN produtos p ON p.id = iv.produtoId
+       LEFT JOIN (
+         SELECT itemVendaId, SUM(quantidade) AS quantidade
+         FROM itens_devolucao
+         GROUP BY itemVendaId
+       ) dev ON dev.itemVendaId = iv.id
+       WHERE v.clienteId = ?
+         AND v.deletedAt IS NULL
+         AND v.status <> 'cancelada'
+         AND (iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005`,
+      [clienteId, clienteId]
+    ) : null;
 
     // C. PAGAMENTOS RECEBIDOS
     let pagFilters = ["p.deletedAt IS NULL"];
@@ -4385,6 +4436,7 @@ app.get("/api/relatorios", (req, res) => {
     res.json({
       vendas,
       itensVendidos,
+      clienteResumoGeral,
       pagamentos,
       carteiraVencida,
       clientesResumo,

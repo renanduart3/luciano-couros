@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.13.0 — 2026-08-08
+
+- Fornecedor dos itens vendidos no relatório de clientes passa a priorizar o fornecedor registrado na própria venda, com recuperações seguras para dados antigos.
+- Relatórios recebem carregamento progressivo durante a rolagem, reduzindo a quantidade de linhas renderizadas simultaneamente.
+- Relatório individual do cliente separa o total geral histórico, no topo, dos totalizadores exclusivos do período filtrado, posicionados ao final da listagem.
+- Quantidades vendidas em metros deixam de ser somadas com unidades e outras medidas; abas próprias permitem analisar e comparar cada grupo.
+- Totais históricos do cliente passam a ser calculados diretamente pelo SQLite em uma única consulta agregada, sem carregar vendas antigas no navegador.
+
 ## 1.12.0 — 2026-08-08
 
 - Produtos habituais do cliente passam a ser ordenados pela quantidade líquida acumulada, desconsiderando vendas canceladas e quantidades devolvidas.

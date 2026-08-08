@@ -24,22 +24,6 @@ const LOJA_PADRAO: LojaComprovante = {
   email: "lucianocouros@hotmail.com",
 };
 
-const FORMAS: Record<string, string> = {
-  avista_dinheiro: "À vista — dinheiro",
-  avista_debito: "À vista — débito",
-  dinheiro: "À vista — dinheiro",
-  cartao_debito: "À vista — débito",
-  cartao_credito: "Cartão de crédito",
-  pix: "PIX",
-  cheque_emitente: "Cheque do emitente",
-  cheque_terceiro: "Cheque de terceiro",
-  duplicata_emitente: "Duplicata do emitente",
-  duplicata_terceiro: "Duplicata de terceiro",
-  bonus: "Bônus / crédito",
-  vale: "Vale",
-  boleto: "Boleto",
-};
-
 const ITENS_POR_FOLHA = 18;
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
@@ -52,7 +36,8 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
   const instrumento = venda.instrumentoRecebimento;
   const ehVale = Boolean(venda.vencimento);
-  const forma = instrumento?.tipo || (ehVale ? "vale" : venda.formaPagamento || "");
+  const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
+  const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
   const titulo = instrumento?.tipo?.startsWith("cheque")
     ? "VENDA / CHEQUE"
     : ehVale
@@ -100,20 +85,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </tbody>
       </table>
 
-      <div className="receipt-payment-line">
-        <span><b>Forma:</b> {FORMAS[forma] || forma || "Não informada"}</span>
-        {(venda.devolucoes || []).length > 0 && <span><b>Atualizado após devolução:</b> {(venda.devolucoes || []).length} registro(s)</span>}
-        {Number(venda.desconto) > 0 && <span><b>Desconto:</b> {formatCurrency(venda.desconto)}</span>}
-        {instrumento && <span><b>Nº:</b> {instrumento.numeroDocumento} • <b>Emitente:</b> {instrumento.emitente}</span>}
-        {venda.saldoRestante > 0 && <span><b>Saldo do Vale:</b> {formatCurrency(venda.saldoRestante)}</span>}
+      <div className="receipt-observation-line">
+        <b>OBSERVAÇÃO:</b>
+        <span title={observacaoComprovante}>{observacaoComprovante}</span>
       </div>
-
-      {venda.observacoes && (
-        <div className="receipt-observation-line">
-          <b>OBSERVAÇÃO:</b>
-          <span>{venda.observacoes.slice(0, 100)}</span>
-        </div>
-      )}
 
       <footer className="receipt-footer">
         <div className="receipt-counts"><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></div>

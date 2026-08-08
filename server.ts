@@ -2915,7 +2915,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       execute(
         `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, observacoes)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, String(observacoes || "").trim() || null]
+        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, String(observacoes || "").trim().slice(0, 100) || null]
       );
       for (const item of resolvidos) {
         execute(

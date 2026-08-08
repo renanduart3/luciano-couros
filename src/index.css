@@ -407,14 +407,14 @@ textarea {
   max-height: 6mm;
   flex: 0 0 6mm;
   grid-template-columns: max-content minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   column-gap: 1mm;
   overflow: hidden;
   border-top: 0.2mm solid #64748b;
   padding: 0.6mm 1mm 0.4mm;
   font-size: 6.4pt;
   line-height: 2.2mm;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 .receipt-observation-line > b,
@@ -422,6 +422,12 @@ textarea {
   display: block;
   min-width: 0;
   line-height: inherit;
+}
+
+.receipt-observation-line > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .receipt-footer {

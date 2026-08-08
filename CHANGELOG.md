@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.13.1 — 2026-08-08
+
+- Comprovante de venda remove a faixa de forma de pagamento e saldo do Vale abaixo dos itens.
+- O mesmo espaço passa a exibir sempre uma linha fixa de observação, vazia quando não preenchida e limitada a 100 caracteres sem expansão vertical.
+- Devoluções recebem observação opcional de até 100 caracteres, exibida prioritariamente no comprovante atualizado quando informada.
+
 ## 1.13.0 — 2026-08-08
 
 - Fornecedor dos itens vendidos no relatório de clientes passa a priorizar o fornecedor registrado na própria venda, com recuperações seguras para dados antigos.

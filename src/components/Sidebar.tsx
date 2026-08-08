@@ -36,7 +36,9 @@ const menuItems: MenuItem[] = [
 
 export function Sidebar({ currentView, onViewChange, usuario, onBloquear }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const itensVisiveis = menuItems.filter((item) => item.id !== "config" || usuario.perfil === "administrador");
+  const itensVisiveis = usuario.perfil === "administrador"
+    ? menuItems
+    : menuItems.filter((item) => item.id === "venda");
 
   useEffect(() => {
     setMobileOpen(false);

@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.15.0 — 2026-08-08
+
+- Usuários com perfil vendedor passam a visualizar somente o menu de Vendas no desktop e no celular.
+- Navegações internas ou estados antigos que apontem para outros módulos são bloqueados e retornam o vendedor para Vendas.
+- O perfil gerente preserva acesso integral a todos os módulos do sistema.
+
 ## 1.14.0 — 2026-08-08
 
 - Nova compra passa a carregar automaticamente a lista consolidada e sem duplicidades dos produtos presentes nas cinco compras mais recentes do fornecedor selecionado.

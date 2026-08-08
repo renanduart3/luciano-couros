@@ -37,7 +37,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (usuario?.perfil !== "administrador" && currentView === "config") setCurrentView("venda");
+    if (usuario && usuario.perfil !== "administrador" && currentView !== "venda") setCurrentView("venda");
   }, [usuario, currentView]);
 
   const bloquearSessao = async () => {
@@ -51,8 +51,15 @@ export default function App() {
     setStatsKey(prev => prev + 1);
   };
 
+  const navegarParaView = (view: string) => {
+    if (usuario?.perfil !== "administrador" && view !== "venda") return;
+    setCurrentView(view);
+    if (view !== "venda") setSelectedSaleId(null);
+  };
+
   const renderActiveView = () => {
-    switch (currentView) {
+    const viewPermitida = usuario?.perfil === "administrador" ? currentView : "venda";
+    switch (viewPermitida) {
       case "venda":
         return (
           <VendaModuleView
@@ -60,7 +67,7 @@ export default function App() {
             onRefreshStats={handleRefreshStats}
             selectedSaleId={selectedSaleId}
             onClearSelectedSaleId={() => setSelectedSaleId(null)}
-            onNavigateToView={(view) => setCurrentView(view)}
+            onNavigateToView={navegarParaView}
           />
         );
       case "clientes":
@@ -117,14 +124,7 @@ export default function App() {
         currentView={currentView}
         usuario={usuario}
         onBloquear={() => void bloquearSessao()}
-        onViewChange={(view) => {
-          if (view === "config" && usuario.perfil !== "administrador") return;
-          setCurrentView(view);
-          // If moving away from sales list, clear any selection shortcut
-          if (view !== "venda") {
-            setSelectedSaleId(null);
-          }
-        }}
+        onViewChange={navegarParaView}
       />
 
       {/* Main Workspace */}

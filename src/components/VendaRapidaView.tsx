@@ -417,7 +417,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setDescontoGeral(percentualDesconto.toFixed(2).replace(".", ","));
     if (orcamentoInicial.observacoes) setObservacoes(orcamentoInicial.observacoes);
     setOrcamentoOrigemId(orcamentoInicial.id);
-    setToastMsg(`${itensRecebidos.length} ${itensRecebidos.length === 1 ? "ITEM INSERIDO" : "ITENS INSERIDOS"} NA VENDA.`);
+    setToastMsg(`${itensRecebidos.length} ${itensRecebidos.length === 1 ? "ITEM ADICIONADO" : "ITENS ADICIONADOS"} À VENDA.`);
     onOrcamentoCarregado?.();
   }, [orcamentoInicial, clientes, produtos, onOrcamentoCarregado]);
 

@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.15.1 — 2026-08-10
+
+- Enviar itens do orçamento para a venda mantém o orçamento expandido, permitindo incluir vários materiais em sequência.
+- Inclusões bem-sucedidas exibem um toast confirmando quantos itens foram adicionados à venda.
+- Colunas de quantidade e preço ficam mais compactas, liberando espaço para o material e para o indicador reduzido “NA VENDA”.
+
 ## 1.15.0 — 2026-08-08
 
 - Usuários com perfil vendedor passam a visualizar somente o menu de Vendas no desktop e no celular.

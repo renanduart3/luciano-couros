@@ -113,7 +113,6 @@ export function VendaModuleView(props: VendaModuleViewProps) {
                 produtosNaVenda={produtosNaVenda}
                 onLevarParaVenda={(orcamento) => {
                   setOrcamentoParaVenda(orcamento);
-                  setOrcamentoExpandido(false);
                 }}
               />
             </div>}

@@ -241,7 +241,7 @@ textarea {
   width: 210mm;
   height: 297mm;
   margin: 0 auto;
-  padding: 25mm 25mm 50mm;
+  padding: 25mm 25mm 45mm;
   background: white;
   color: #111827;
   box-shadow: 0 18px 50px rgb(15 23 42 / 25%);
@@ -432,7 +432,9 @@ textarea {
 
 .receipt-footer {
   display: grid;
+  height: 8mm;
   min-height: 8mm;
+  flex: 0 0 8mm;
   grid-template-columns: 1fr 42mm;
   margin-top: auto;
   border-top: 0.3mm solid #111827;
@@ -466,16 +468,85 @@ textarea {
 .receipt-due { border-top: 0.2mm solid #111827; }
 .receipt-total strong { font-size: 9pt; }
 
+/* Variante de avaliação com 15 itens por via. As medidas compactas acima
+   permanecem como padrão: para desfazer o teste, basta restaurar
+   ITENS_POR_FOLHA para 18 em VendaComprovante.tsx. */
+.receipt-pages[data-items-per-sheet="15"] .receipt-header {
+  height: 20mm;
+  min-height: 20mm;
+  flex: 0 0 20mm;
+  padding-top: 1.2mm;
+  padding-bottom: 1.2mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-client-grid {
+  height: 13mm;
+  min-height: 13mm;
+  flex: 0 0 13mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-field {
+  min-height: 6.5mm;
+  padding: 0.2mm 1mm 0;
+  font-size: 7.4pt;
+  font-weight: 500;
+  line-height: 5.8mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-field b {
+  margin-right: 0.8mm;
+  font-weight: 600;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-qty {
+  width: 15mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-unit-money {
+  width: 25mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-observation-line {
+  height: 7mm;
+  min-height: 7mm;
+  max-height: 7mm;
+  flex-basis: 7mm;
+  padding-top: 0.8mm;
+  padding-bottom: 0.6mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-footer {
+  height: 9.5mm;
+  min-height: 9.5mm;
+  flex-basis: 9.5mm;
+}
+
 .receipt-cut {
   box-sizing: border-box;
+  position: relative;
   display: flex;
-  height: 4mm;
+  height: 10mm;
+  flex: 0 0 10mm;
   align-items: center;
   justify-content: center;
-  border-top: 0.3mm dashed #64748b;
-  border-bottom: 0.3mm dashed #64748b;
   color: #64748b;
   font-size: 7pt;
+}
+
+.receipt-cut::before {
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 50%;
+  border-top: 0.3mm dashed #64748b;
+  content: "";
+}
+
+.receipt-cut span {
+  position: relative;
+  z-index: 1;
+  padding: 0 1.5mm;
+  background: white;
 }
 
 .budget-pages {
@@ -543,10 +614,24 @@ textarea {
     background-color: white !important;
     color: #0f172a !important;
     font-size: 11px !important;
+    width: 210mm !important;
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
     margin: 0 !important;
+  }
+
+  /* O shell normal usa h-screen. Na impressão ele precisa sair do cálculo,
+     senão o navegador reserva uma folha vazia antes/depois do comprovante. */
+  #root,
+  #root > div {
+    display: block !important;
+    width: 210mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
   
   /* Hide interactive margins */
@@ -565,9 +650,8 @@ textarea {
     max-width: 100% !important;
     height: auto !important;
     overflow: visible !important;
-    position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
+    position: static !important;
+    inset: auto !important;
   }
 
   /* Make containers print full-width and remove screen-specific shadows/borders */
@@ -603,6 +687,22 @@ textarea {
   #relatorios-view:has(#print-vale-detail-overlay) > *:not(#print-vale-detail-overlay),
   #vales-view:has(#print-cobranca-vales) > *:not(#print-cobranca-vales) {
     display: none !important;
+  }
+
+  #quick-sale-view:has(#print-receipt),
+  #sales-list-view:has(#print-sale-detail-overlay),
+  #orcamento-view:has(#print-orcamento),
+  #compras-view:has(#print-orcamento-compra),
+  #vales-view:has(#print-vale-detail-overlay),
+  #relatorios-view:has(#print-vale-detail-overlay),
+  #vales-view:has(#print-cobranca-vales) {
+    display: block !important;
+    width: 210mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   #print-receipt,
@@ -668,6 +768,13 @@ textarea {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
     overflow: hidden !important;
+  }
+
+  .receipt-sheet-a4 {
+    /* Três milímetros de folga eliminam a página vazia causada pelo
+       arredondamento de medidas físicas do navegador. */
+    height: 294mm !important;
+    padding-bottom: 42mm !important;
   }
 
   .receipt-sheet-a4:not(:last-child),

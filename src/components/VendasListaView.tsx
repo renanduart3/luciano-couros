@@ -247,7 +247,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                 <span className="rounded-lg bg-slate-900 p-1.5 text-white"><FileText size={16} /></span>
                 <h3 className="text-base font-extrabold text-slate-900">Detalhes da Venda #{vendaDetalhada.numeroSequencial}</h3>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <button type="button" onClick={triggerPrintDetail} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase text-white hover:bg-emerald-700"><Printer size={16} /> Imprimir</button>
                 <button type="button" onClick={() => setVendaDetalhada(null)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700 hover:bg-slate-100"><X size={16} /> Fechar</button>
               </div>

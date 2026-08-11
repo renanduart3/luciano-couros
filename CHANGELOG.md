@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.15.2 — 2026-08-11
+
+- Na variante de 15 itens, dados do cliente ganham 5 mm de altura e tipografia mais legível, enquanto as colunas `QTD.` e `UNITÁRIO` ficam mais compactas para ampliar a discriminação; o retorno para 18 itens restaura automaticamente o layout anterior.
+- Versão de avaliação do comprovante reduz o limite de 18 para 15 itens por folha e usa o espaço liberado para ampliar o respiro do cabeçalho, da observação e do rodapé, mantendo o retorno ao layout compacto em uma única configuração.
+- Comprovante reserva 5 mm entre cada via e a linha de corte, com rodapé de altura fixa para evitar sobreposição em diferentes níveis de zoom.
+- Impressão do comprovante recebe folga física dentro da folha A4 e remove a altura fixa do shell da aplicação, impedindo a geração de uma página adicional em branco.
+
 ## 1.15.1 — 2026-08-10
 
 - Enviar itens do orçamento para a venda mantém o orçamento expandido, permitindo incluir vários materiais em sequência.

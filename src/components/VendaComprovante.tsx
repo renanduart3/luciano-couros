@@ -24,9 +24,12 @@ const LOJA_PADRAO: LojaComprovante = {
   email: "lucianocouros@hotmail.com",
 };
 
-const ITENS_POR_FOLHA = 18;
+// Versão de avaliação com mais respiro. Voltar para 18 reativa
+// automaticamente as medidas compactas preservadas no CSS.
+const ITENS_POR_FOLHA = 15;
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
+  const layoutRespirado = ITENS_POR_FOLHA === 15;
   const todosItens = (venda.items || itens)
     .map((item) => ({ ...item, quantidade: Number(item.quantidadeDisponivel ?? item.quantidade) }))
     .filter((item) => item.quantidade > 0.005);
@@ -69,7 +72,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       </div>
 
       <table className="receipt-items-table">
-        <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-supplier-ref">FORN.</th><th className="receipt-qty">QUANT.</th><th>DISCRIMINAÇÃO</th><th className="receipt-money">P. UNITÁRIO</th><th className="receipt-money">PREÇO TOTAL</th></tr></thead>
+        <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-supplier-ref">FORN.</th><th className="receipt-qty">{layoutRespirado ? "QTD." : "QUANT."}</th><th>DISCRIMINAÇÃO</th><th className="receipt-money receipt-unit-money">{layoutRespirado ? "UNITÁRIO" : "P. UNITÁRIO"}</th><th className="receipt-money">PREÇO TOTAL</th></tr></thead>
         <tbody>
           {itens.map((item, index) => (
             <tr key={item.id || index}>
@@ -139,7 +142,7 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
   }, [itensAtuais]);
 
   return (
-    <div className="receipt-pages" data-receipt={chave}>
+    <div className="receipt-pages" data-receipt={chave} data-items-per-sheet={ITENS_POR_FOLHA}>
       {paginas.map((itens, pagina) => {
         const complemento = paginas.length > 1 ? ` • FOLHA ${pagina + 1}/${paginas.length}` : "";
         return (

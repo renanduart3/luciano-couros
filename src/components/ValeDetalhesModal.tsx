@@ -1,43 +1,23 @@
 import React, { useEffect, useState } from "react";
-import { CalendarClock, FileText, List, Pencil, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
-import { Venda } from "../types";
-import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
+import { CalendarClock, Coins, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { OrdemCobranca, Venda } from "../types";
+import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
-import { ParcelaValeRascunho, ParcelasValeEditor } from "./ParcelasValeEditor";
 import { useEhGerente } from "../auth/AuthContext";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
   onClose: () => void;
   onUpdated?: (vale: Venda | null) => void;
+  ordemCobranca?: OrdemCobranca | null;
+  onOpenOrdem?: () => void;
 }
 
-function obterParcelasDoVale(vale: Venda): NonNullable<Venda["parcelas"]> {
-  if ((vale.parcelas || []).length > 0) return vale.parcelas!;
-  if (!vale.vencimento) return [];
-
-  const valor = Number(vale.totalLiquido || 0);
-  const valorPago = Math.min(valor, Math.max(0, Number(vale.valorPago || 0)));
-  const saldo = Math.max(0, valor - valorPago);
-  return [{
-    id: `parcela-legada-${vale.id}`,
-    vendaId: vale.id,
-    numero: 1,
-    vencimento: vale.vencimento,
-    valor,
-    valorPago,
-    saldo,
-    status: vale.status === "cancelada" ? "cancelada" : saldo <= 0.005 ? "paga" : "pendente"
-  }];
-}
-
-export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModalProps) {
+export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
   const gerente = useEhGerente();
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
-  const [modo, setModo] = useState<"editar" | "devolver" | "cancelar" | null>(null);
-  const [parcelas, setParcelas] = useState<ParcelaValeRascunho[]>([]);
-  const [observacoes, setObservacoes] = useState(vale.observacoes || "");
+  const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [pin, setPin] = useState("");
   const [motivo, setMotivo] = useState("");
   const [dataDevolucao, setDataDevolucao] = useState(new Date().toISOString().slice(0, 10));
@@ -45,17 +25,19 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
   const [resultadoDevolucao, setResultadoDevolucao] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
+  const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  const [bonusPagamento, setBonusPagamento] = useState("");
+  const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [saldoBonus, setSaldoBonus] = useState(0);
+  const [feedbackPagamento, setFeedbackPagamento] = useState("");
   const itens = vale.items || [];
-  const parcelasSalvas = obterParcelasDoVale(vale);
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
 
   useEffect(() => {
-    setParcelas(obterParcelasDoVale(vale).map((parcela) => ({
-      vencimento: parcela.vencimento,
-      valor: Number(parcela.valor).toFixed(2).replace(".", ",")
-    })));
-    setObservacoes(vale.observacoes || "");
+    setValorPagamento(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    api.getCarteiraResumo(vale.clienteId).then((carteira) => setSaldoBonus(Number(carteira.saldoBonus || 0))).catch(() => setSaldoBonus(0));
   }, [vale]);
 
   const imprimir = () => {
@@ -65,25 +47,32 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
     });
   };
 
-  const salvarPlanejamento = async () => {
-    if (pin.length < 4 || pin.length > 64) return setErro("Informe a senha do gerente.");
+  const registrarPagamentoVale = async () => {
+    const recebido = parseBrazilianNumber(valorPagamento);
+    const bonusUtilizado = parseBrazilianNumber(bonusPagamento);
+    if (recebido + bonusUtilizado <= 0) return setErro("Informe o pagamento ou o bônus utilizado.");
+    if (bonusUtilizado > saldoBonus + 0.005) return setErro("O bônus utilizado ultrapassa o saldo disponível.");
+    const valorAplicado = Math.min(Number(vale.saldoRestante), recebido + bonusUtilizado);
     setSalvando(true);
     setErro("");
+    setFeedbackPagamento("");
     try {
-      const atualizado = await api.updateVale(vale.id, {
-        pin,
-        observacoes,
-        parcelas: parcelas.map((parcela) => ({
-          vencimento: parcela.vencimento,
-          valor: Number(parcela.valor.replace(/\./g, "").replace(",", "."))
-        }))
+      const resultado = await api.createRecebimentoCliente(vale.clienteId, {
+        data: dataPagamento,
+        valorRecebido: recebido,
+        bonusUtilizado,
+        formaPagamento,
+        observacao: `Pagamento direto do vale #${vale.numeroSequencial}`,
+        alocacoes: [{ vendaId: vale.id, valor: valorAplicado }]
       });
-      setModo(null);
-      setPin("");
+      const atualizado = await api.getVenda(vale.id);
+      const carteira = await api.getCarteiraResumo(vale.clienteId);
+      setSaldoBonus(Number(carteira.saldoBonus || 0));
+      setBonusPagamento("");
+      setFeedbackPagamento(`${formatCurrency(resultado.valorAplicado)} abatido do vale` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
       onUpdated?.(atualizado);
     } catch (error: any) {
-      setPin("");
-      setErro(error.message || "Não foi possível alterar o vale.");
+      setErro(error.message || "Não foi possível registrar o pagamento.");
     } finally {
       setSalvando(false);
     }
@@ -199,61 +188,20 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated }: ValeDetalhesModa
               <Resumo titulo="Vencimento" valor={vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} icone />
             </div>
 
-            <div className={`overflow-hidden rounded-xl border ${modo === "editar" ? "border-blue-300 bg-blue-50" : "border-amber-300 bg-white"}`}>
-              <div className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${modo === "editar" ? "border-blue-200 bg-blue-100" : "border-amber-200 bg-amber-50"}`}>
-                <h3 className={`text-xs font-black uppercase ${modo === "editar" ? "text-blue-950" : "text-amber-900"}`}>Períodos de pagamento</h3>
-                {onUpdated && vale.status !== "cancelada" && (modo === "editar"
-                  ? <button type="button" onClick={() => {
-                      setParcelas(parcelasSalvas.map((parcela) => ({
-                        vencimento: parcela.vencimento,
-                        valor: Number(parcela.valor).toFixed(2).replace(".", ",")
-                      })));
-                      setObservacoes(vale.observacoes || "");
-                      setModo(null);
-                      setErro("");
-                      setPin("");
-                    }} className="inline-flex items-center gap-1 rounded-lg border border-blue-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-blue-900"><X size={13} /> Cancelar edição</button>
-                  : <button type="button" onClick={() => {
-                      setParcelas(parcelasSalvas.map((parcela) => ({
-                        vencimento: parcela.vencimento,
-                        valor: Number(parcela.valor).toFixed(2).replace(".", ",")
-                      })));
-                      setObservacoes(vale.observacoes || "");
-                      setModo("editar");
-                      setErro("");
-                      setPin("");
-                    }} className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-[10px] font-black uppercase text-amber-900"><Pencil size={13} /> Alterar parcelas</button>)}
+            {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
+
+            {vale.status === "pendente" && Number(vale.saldoRestante) > 0.005 && <div className="overflow-hidden rounded-xl border border-emerald-300 bg-white">
+              <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-emerald-950">Registrar pagamento deste vale</h3><p className="text-[10px] font-bold text-emerald-800">Bônus disponível: {formatCurrency(saldoBonus)}. O uso do bônus só ocorre quando informado abaixo.</p></div>
+              <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+                <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={dataPagamento} onChange={(event) => setDataPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold"/></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Pagamento<input type="text" inputMode="decimal" value={valorPagamento} onChange={(event) => setValorPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Usar bônus<input type="text" inputMode="decimal" value={bonusPagamento} onChange={(event) => setBonusPagamento(event.target.value)} placeholder="0,00" disabled={saldoBonus <= 0.005} className="mt-1 min-h-10 w-full rounded-lg border border-violet-300 bg-violet-50 px-3 text-right font-mono font-black text-violet-900 disabled:opacity-40"/></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold"><option value="pix">PIX</option><option value="avista_dinheiro">Dinheiro</option><option value="avista_debito">Débito</option><option value="cartao_credito">Cartão de crédito</option><option value="cheque_emitente">Cheque</option><option value="duplicata_emitente">Duplicata</option></select></label>
+                <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
               </div>
-              {modo === "editar" ? <div className="space-y-3 p-3">
-                <ParcelasValeEditor total={Number(vale.totalLiquido)} parcelas={parcelas} onChange={setParcelas} compacto />
-                <label className="block text-[10px] font-black uppercase text-blue-900">Observações<textarea value={observacoes} onChange={(event) => setObservacoes(event.target.value.slice(0, 100))} maxLength={100} rows={2} className="mt-1 w-full rounded-xl border border-blue-200 bg-white px-3 py-2 text-sm font-bold normal-case" /></label>
-                <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha do gerente" className="min-h-11 flex-1 rounded-xl border border-blue-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={salvarPlanejamento} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Validar e salvar parcelas</button></div>
-                {erro && <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
-              </div> : <div className="overflow-x-auto">
-                <table className="w-full min-w-[700px] text-xs">
-                  <thead className="bg-amber-100 text-[10px] font-black uppercase text-amber-950">
-                    <tr>
-                      <th className="px-3 py-2 text-center">Parcela</th>
-                      <th className="px-3 py-2 text-left">Data prevista</th>
-                      <th className="px-3 py-2 text-right">Valor previsto</th>
-                      <th className="px-3 py-2 text-right">Pago</th>
-                      <th className="px-3 py-2 text-right">Saldo</th>
-                      <th className="px-3 py-2 text-center">Situação</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-amber-100 bg-white">
-                    {parcelasSalvas.map((parcela) => <tr key={parcela.id}>
-                      <td className="px-3 py-3 text-center font-black text-amber-900">{parcela.numero}ª</td>
-                      <td className="px-3 py-3 font-black text-slate-900">{formatDate(parcela.vencimento)}</td>
-                      <td className="px-3 py-3 text-right font-mono font-black text-slate-950">{formatCurrency(parcela.valor)}</td>
-                      <td className="px-3 py-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(parcela.valorPago)}</td>
-                      <td className="px-3 py-3 text-right font-mono font-black text-slate-950">{formatCurrency(parcela.saldo)}</td>
-                      <td className="px-3 py-3 text-center"><span className={`rounded-lg px-2 py-1 text-[10px] font-black uppercase ${parcela.status === "paga" ? "bg-emerald-100 text-emerald-800" : parcela.status === "cancelada" ? "bg-slate-200 text-slate-700" : "bg-amber-100 text-amber-800"}`}>{parcela.status === "paga" ? "Quitada" : parcela.status === "cancelada" ? "Cancelada" : "Em aberto"}</span></td>
-                    </tr>)}
-                  </tbody>
-                </table>
-              </div>}
-            </div>
+              {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
+              {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
+            </div>}
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">
               <table className="w-full min-w-[820px] text-sm">

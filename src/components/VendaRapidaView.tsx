@@ -10,7 +10,7 @@ import { Cliente, Orcamento, Produto, ProdutoHabitual, SegurancaStatus, Venda } 
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
-import { dataComPrazo, ParcelaValeRascunho, ParcelasValeEditor, VALOR_MINIMO_PARCELA_VALE } from "./ParcelasValeEditor";
+import { dataComPrazo, ParcelaValeRascunho } from "./ParcelasValeEditor";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 
 interface VendaRapidaViewProps {
@@ -328,7 +328,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       Promise.all([
         api.getClienteHistorico(clienteSelecionado.id),
         api.getClienteProdutosHabituais(clienteSelecionado.id),
-        api.getCarteiraCliente(clienteSelecionado.id),
+        api.getCarteiraResumo(clienteSelecionado.id),
         api.getClienteOrcamentoVigente(clienteSelecionado.id)
       ])
         .then(([historico, habituais, carteira, orcamentoVigente]) => {
@@ -926,10 +926,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         valorPago: vPago,
         formaPagamento,
         vencimento: vencimento || undefined,
-        parcelas: vendaNoVale ? parcelasVale.map((parcela) => ({
-          vencimento: parcela.vencimento,
-          valor: parseBrazilianNumber(parcela.valor)
-        })) : undefined,
+        parcelas: vendaNoVale && vencimento ? [{ vencimento, valor: totalLiquido }] : undefined,
         observacoes: observacoes || undefined,
         instrumentoRecebimento: formaExigeInstrumento ? {
           emitente: instrumentoEmitente.trim(),
@@ -939,15 +936,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         autorizacaoPreco,
         orcamentoId: orcamentoOrigemId || undefined
       };
-
-      if (vendaNoVale && parcelasVale.length > 1) {
-        const systemInfo = await api.getSystemInfo();
-        if (!systemInfo.capabilities?.valeParcelas) {
-          throw new Error(
-            "O servidor precisa ser reiniciado antes de registrar um Vale parcelado. Nenhuma venda foi criada."
-          );
-        }
-      }
 
       const result = await api.createVenda(vendaData);
       setShowAutorizacaoPreco(false);
@@ -1021,19 +1009,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       vencimentoRef.current?.focus();
       return;
     }
-    if (vendaNoVale) {
-      const somaParcelas = parcelasVale.reduce((total, parcela) => total + parseBrazilianNumber(parcela.valor), 0);
-      const maximoParcelas = Math.max(1, Math.floor(totalLiquido / VALOR_MINIMO_PARCELA_VALE));
-      if (parcelasVale.length === 0 || parcelasVale.some((parcela) => !parcela.vencimento || parseBrazilianNumber(parcela.valor) <= 0) || Math.abs(somaParcelas - totalLiquido) > 0.01) {
-        setFeedbackMsg({ type: "error", text: "Confira as datas e os valores das condições do vale. A soma deve ser igual ao total da venda." });
-        return;
-      }
-      if (parcelasVale.length > maximoParcelas || (totalLiquido >= VALOR_MINIMO_PARCELA_VALE && parcelasVale.some((parcela) => parseBrazilianNumber(parcela.valor) < VALOR_MINIMO_PARCELA_VALE))) {
-        setFeedbackMsg({ type: "error", text: `Cada parcela do vale deve ser de pelo menos ${formatCurrency(VALOR_MINIMO_PARCELA_VALE)}. Para este total, use no máximo ${maximoParcelas} parcela(s).` });
-        return;
-      }
-    }
-
     if (formaExigeInstrumento && (!instrumentoEmitente.trim() || !instrumentoNumero.trim() || !instrumentoVencimento)) {
       setFeedbackMsg({ type: "error", text: "Informe emitente, número e vencimento do cheque ou duplicata." });
       return;
@@ -1618,7 +1593,26 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 </div>
               )}
 
-              {!vendaEmEdicao && vendaNoVale && saldoRestante > 0 && <ParcelasValeEditor total={totalLiquido} parcelas={parcelasVale} onChange={setParcelasVale} compacto={compact} />}
+              {!vendaEmEdicao && vendaNoVale && saldoRestante > 0 && (
+                <div className="space-y-1.5 rounded-xl border border-amber-200/50 bg-amber-50/60 p-2.5 text-[10px] animate-fade-in">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="font-bold uppercase text-amber-800">Vencimento do vale</label>
+                    <input
+                      ref={vencimentoRef}
+                      type="date"
+                      value={vencimento}
+                      onChange={(event) => {
+                        setVencimento(event.target.value);
+                        setParcelasVale([{ vencimento: event.target.value, valor: totalLiquido.toFixed(2).replace(".", ",") }]);
+                      }}
+                      onKeyDown={(event) => handleKeyDown(event, observacoesRef)}
+                      required
+                      className="rounded border border-amber-200 bg-white px-2 py-1 font-bold text-slate-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="font-semibold text-amber-800">O parcelamento será definido somente quando uma ordem de cobrança for criada.</p>
+                </div>
+              )}
 
               {/* Vencimento único para outras formas com saldo a prazo */}
               {!vendaEmEdicao && !vendaNoVale && saldoRestante > 0 && (

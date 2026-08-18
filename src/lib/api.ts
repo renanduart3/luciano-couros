@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, UsuarioSistema, AuthStatus
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca
 } from "../types";
 
 const API_BASE = "/api";
@@ -118,7 +118,18 @@ export const api = {
       produtosMaisComprados: Array<{ produtoId: string; descricao: string; totalValor: number }>;
       vendas: Venda[];
       pagamentos: Pagamento[];
+      pagamentosPaginacao: { page: number; pageSize: number; totalItems: number; totalPages: number };
     }>(r)),
+  getClientePagamentos: (id: string, page = 1, pageSize = 10) => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    return fetch(`${API_BASE}/clientes/${id}/historico/pagamentos?${params.toString()}`).then(r => handleResponse<{
+      items: Pagamento[];
+      page: number;
+      pageSize: number;
+      totalItems: number;
+      totalPages: number;
+    }>(r));
+  },
   getClienteProdutosHabituais: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/produtos-habituais`).then(r => handleResponse<ProdutoHabitual[]>(r)),
   getClienteOrcamentoPadrao: (id: string) =>
@@ -147,11 +158,15 @@ export const api = {
     }).then(r => handleResponse<{ success: boolean }>(r)),
   getCarteiraCliente: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira`).then(r => handleResponse<CarteiraCliente>(r)),
+  getCarteiraResumo: (id: string) =>
+    fetch(`${API_BASE}/clientes/${id}/carteira/resumo`).then(r => handleResponse<CarteiraResumo>(r)),
   createRecebimentoCliente: (clienteId: string, dados: {
     data: string;
     valorRecebido: number;
+    bonusUtilizado?: number;
     formaPagamento: string;
     observacao?: string;
+    parcelaOrdemId?: string;
     alocacoes: Array<{ vendaId: string; valor: number }>;
   }) => fetch(`${API_BASE}/clientes/${clienteId}/carteira/recebimentos`, {
     method: "POST",
@@ -171,6 +186,31 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin })
     }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+
+  // ORDENS DE COBRANÇA
+  getOrdensCobranca: (clienteId?: string) => {
+    const params = new URLSearchParams();
+    if (clienteId) params.set("clienteId", clienteId);
+    return fetch(`${API_BASE}/ordens-cobranca${params.size ? `?${params.toString()}` : ""}`)
+      .then(r => handleResponse<OrdemCobranca[]>(r));
+  },
+  createOrdemCobranca: (dados: {
+    clienteId: string;
+    dataEmissao: string;
+    vendaIds: string[];
+    observacao?: string;
+    parcelas: Array<{ vencimento: string; valor: number }>;
+  }) => fetch(`${API_BASE}/ordens-cobranca`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<OrdemCobranca>(r)),
+  encerrarOrdemCobranca: (id: string, dados: { pin: string; status: "renegociada" | "cancelada"; motivo?: string }) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/encerrar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dados)
+    }).then(r => handleResponse<OrdemCobranca>(r)),
 
   // FORNECEDORES
   getFornecedores: () => fetch(`${API_BASE}/fornecedores`).then(r => handleResponse<Fornecedor[]>(r)),

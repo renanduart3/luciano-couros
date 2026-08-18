@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { 
   Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards, ShieldCheck, RotateCcw
 } from "lucide-react";
-import { CarteiraCliente, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
+import { CarteiraResumo, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
@@ -62,6 +62,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   // Customer History Modal State
   const [activeHistory, setActiveHistory] = useState<any | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loadingPagamentosHistory, setLoadingPagamentosHistory] = useState(false);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
   const [precosCliente, setPrecosCliente] = useState<Record<string, string>>({});
   const [salvandoPrecoProduto, setSalvandoPrecoProduto] = useState("");
@@ -69,7 +70,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [pinRemocao, setPinRemocao] = useState("");
   const [erroRemocao, setErroRemocao] = useState("");
   const [orcamentoVigente, setOrcamentoVigente] = useState<Orcamento | null>(null);
-  const [carteiraCliente, setCarteiraCliente] = useState<CarteiraCliente | null>(null);
+  const [carteiraCliente, setCarteiraCliente] = useState<CarteiraResumo | null>(null);
 
   const fetchClientes = async () => {
     setLoading(true);
@@ -173,7 +174,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
         api.getClienteHistorico(cli.id),
         api.getClienteProdutosHabituais(cli.id),
         api.getClienteOrcamentoVigente(cli.id),
-        api.getCarteiraCliente(cli.id)
+        api.getCarteiraResumo(cli.id)
       ]);
       setActiveHistory(data);
       setProdutosCliente(produtosHabituais);
@@ -187,6 +188,29 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       alert(err.message || "Erro ao carregar perfil do cliente.");
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const carregarPaginaPagamentos = async (novaPagina: number) => {
+    if (!activeHistory || loadingPagamentosHistory) return;
+    const clienteId = activeHistory.cliente.id;
+    setLoadingPagamentosHistory(true);
+    try {
+      const paginaPagamentos = await api.getClientePagamentos(clienteId, novaPagina, 10);
+      setActiveHistory((atual: any) => atual?.cliente?.id === clienteId ? {
+        ...atual,
+        pagamentos: paginaPagamentos.items,
+        pagamentosPaginacao: {
+          page: paginaPagamentos.page,
+          pageSize: paginaPagamentos.pageSize,
+          totalItems: paginaPagamentos.totalItems,
+          totalPages: paginaPagamentos.totalPages
+        }
+      } : atual);
+    } catch (err: any) {
+      alert(err.message || "Não foi possível carregar esta página de pagamentos.");
+    } finally {
+      setLoadingPagamentosHistory(false);
     }
   };
 
@@ -770,10 +794,11 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
               <div className="space-y-3">
                 <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                   <AlertCircle size={14} className="text-slate-500" />
-                  Histórico de Pagamentos
+                  Histórico de Pagamentos ({activeHistory.pagamentosPaginacao?.totalItems ?? activeHistory.pagamentos.length})
                 </h4>
-                <div className="border border-slate-100 rounded-xl overflow-hidden max-h-[250px] overflow-y-auto">
-                  <table className="w-full text-xs text-left">
+                <div className="overflow-hidden rounded-xl border border-slate-100">
+                  <div className={`max-h-[250px] overflow-y-auto transition-opacity ${loadingPagamentosHistory ? "pointer-events-none opacity-50" : ""}`}>
+                    <table className="w-full text-xs text-left">
                     <thead>
                       <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 sticky top-0">
                         <th className="p-3">Data</th>
@@ -806,7 +831,14 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                         ))
                       )}
                     </tbody>
-                  </table>
+                    </table>
+                  </div>
+                  <Pagination
+                    page={activeHistory.pagamentosPaginacao?.page || 1}
+                    pageSize={activeHistory.pagamentosPaginacao?.pageSize || 10}
+                    totalItems={activeHistory.pagamentosPaginacao?.totalItems || 0}
+                    onPageChange={(novaPagina) => void carregarPaginaPagamentos(novaPagina)}
+                  />
                 </div>
               </div>
 

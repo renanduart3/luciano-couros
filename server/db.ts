@@ -152,6 +152,7 @@ export function initDatabase() {
 
     // Index on sequential number and client
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vendas_seq ON vendas (numeroSequencial)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_vendas_cliente_historico ON vendas (clienteId, deletedAt, numeroSequencial DESC)`).run();
 
     // 4.1 Orçamentos vinculados aos respectivos clientes.
     db.prepare(`
@@ -602,6 +603,101 @@ export function initDatabase() {
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_alocacoes_recebimento ON recebimento_alocacoes (recebimentoId, deletedAt)`).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_alocacoes_venda ON recebimento_alocacoes (vendaId, deletedAt)`).run();
 
+    // Ordens de cobrança formalizam uma negociação sem substituir os vales.
+    // O vínculo ativo em ordem_cobranca_vales impede que o mesmo saldo seja
+    // prometido simultaneamente em duas negociações abertas.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ordens_cobranca (
+        id TEXT PRIMARY KEY,
+        numeroSequencial INTEGER NOT NULL,
+        clienteId TEXT NOT NULL,
+        dataEmissao TEXT NOT NULL,
+        totalOriginal REAL NOT NULL,
+        valorPago REAL NOT NULL DEFAULT 0,
+        saldo REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'aberta',
+        observacao TEXT,
+        motivoEncerramento TEXT,
+        substituidaPorId TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (clienteId) REFERENCES clientes (id),
+        FOREIGN KEY (substituidaPorId) REFERENCES ordens_cobranca (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ordens_cobranca_seq ON ordens_cobranca (numeroSequencial)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ordens_cobranca_cliente ON ordens_cobranca (clienteId, status, dataEmissao DESC)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ordem_cobranca_vales (
+        id TEXT PRIMARY KEY,
+        ordemId TEXT NOT NULL,
+        vendaId TEXT NOT NULL,
+        valorVinculado REAL NOT NULL,
+        valorPago REAL NOT NULL DEFAULT 0,
+        saldo REAL NOT NULL,
+        ativo INTEGER NOT NULL DEFAULT 1,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ordemId) REFERENCES ordens_cobranca (id),
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ordem_cobranca_vale_documento ON ordem_cobranca_vales (ordemId, vendaId)`).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ordem_cobranca_vale_ativo ON ordem_cobranca_vales (vendaId) WHERE ativo = 1`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ordem_cobranca_parcelas (
+        id TEXT PRIMARY KEY,
+        ordemId TEXT NOT NULL,
+        numero INTEGER NOT NULL,
+        vencimento TEXT NOT NULL,
+        valor REAL NOT NULL,
+        valorPago REAL NOT NULL DEFAULT 0,
+        saldo REAL NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pendente',
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ordemId) REFERENCES ordens_cobranca (id)
+      )
+    `).run();
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ordem_cobranca_parcela_numero ON ordem_cobranca_parcelas (ordemId, numero)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ordem_cobranca_parcela_vencimento ON ordem_cobranca_parcelas (status, vencimento)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ordem_cobranca_recebimentos (
+        id TEXT PRIMARY KEY,
+        ordemId TEXT NOT NULL,
+        recebimentoId TEXT NOT NULL,
+        vendaId TEXT NOT NULL,
+        valor REAL NOT NULL,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ordemId) REFERENCES ordens_cobranca (id),
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
+        FOREIGN KEY (vendaId) REFERENCES vendas (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ordem_cobranca_recebimento ON ordem_cobranca_recebimentos (recebimentoId, deletedAt)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ordem_cobranca_recebimento_ordem ON ordem_cobranca_recebimentos (ordemId, deletedAt)`).run();
+
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS ordem_cobranca_parcela_recebimentos (
+        id TEXT PRIMARY KEY,
+        ordemId TEXT NOT NULL,
+        parcelaId TEXT NOT NULL,
+        recebimentoId TEXT NOT NULL,
+        valor REAL NOT NULL,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (ordemId) REFERENCES ordens_cobranca (id),
+        FOREIGN KEY (parcelaId) REFERENCES ordem_cobranca_parcelas (id),
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_ordem_parcela_recebimento ON ordem_cobranca_parcela_recebimentos (recebimentoId, deletedAt)`).run();
+
     db.prepare(`
       CREATE TABLE IF NOT EXISTS cliente_bonus_movimentos (
         id TEXT PRIMARY KEY,
@@ -808,7 +904,8 @@ export function initDatabase() {
     SET abatimentoVale = MAX(0, valorCredito - COALESCE(bonusGerado, 0))
     WHERE abatimentoVale IS NULL
   `).run();
-  db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_recebimento ON pagamentos (recebimentoId)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_pagamentos_cliente_historico ON pagamentos (clienteId, deletedAt, data DESC, createdAt DESC)`).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_cliente_bonus_venda ON cliente_bonus_movimentos (vendaId, deletedAt)`).run();
 
   // A partir desta versão compra e venda usam a mesma unidade. Mantemos as

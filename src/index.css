@@ -109,12 +109,19 @@ textarea {
 @media screen {
   body {
     color: #0f172a;
+    font-size: 0.875rem;
     font-weight: 500;
     letter-spacing: 0.01em;
   }
 
-  main :where(p, label, button, td, th, span) {
-    font-size: max(0.8125rem, 1em);
+  /*
+   * A caixa alta continua sendo a identidade do sistema, mas textos de apoio
+   * precisam obedecer à escala dos componentes (text-xs, text-sm etc.). A
+   * antiga regra com `1em` fazia subtítulos herdarem quase o mesmo tamanho do
+   * conteúdo principal e eliminava a hierarquia visual.
+   */
+  main :where(p, label, td, th) {
+    line-height: 1.35;
   }
 
   main .text-slate-400 {

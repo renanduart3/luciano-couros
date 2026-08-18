@@ -4,6 +4,17 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.16.0 — 2026-08-18
+
+- Vales ganham ordens de cobrança próprias, com seleção por cliente, planejamento flexível de até 36 parcelas, demonstrativo e histórico completo da negociação.
+- Pagamentos das ordens podem ser baixados por parcela e continuam vinculados aos vales de origem, com suporte a pagamentos parciais, estornos e saldo de bônus do cliente.
+- Renegociação encerra somente a estratégia atual, preserva tudo o que já foi pago e libera o restante de cada vale para uma nova ordem e outro parcelamento.
+- Confirmação de renegociação e cancelamento passa a usar o modal visual do sistema, incluindo senha do gerente e motivo opcional, sem diálogos nativos do navegador.
+- Detalhes do vale exibem um botão destacado para abrir a ordem ativa vinculada, e saldos parcialmente pagos são identificados como “restante do vale” ao preparar a próxima cobrança.
+- Ordens de vales recebem filtros independentes por número do vale, cliente, data inicial, data final e situação.
+- Hierarquia tipográfica de tela volta a respeitar os tamanhos menores de subtítulos, rótulos e textos auxiliares, reduzindo a densidade visual sem alterar os layouts de impressão.
+- Tela de vales remove a descrição redundante do cabeçalho e mantém a operação concentrada nos filtros, saldos e ações úteis.
+
 ## 1.15.2 — 2026-08-11
 
 - Na variante de 15 itens, dados do cliente ganham 5 mm de altura e tipografia mais legível, enquanto as colunas `QTD.` e `UNITÁRIO` ficam mais compactas para ampliar a discriminação; o retorno para 18 itens restaura automaticamente o layout anterior.

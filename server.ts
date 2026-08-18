@@ -320,15 +320,10 @@ type ParcelaValeInformada = { vencimento: string; valor: number };
 
 function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): ParcelaValeInformada[] {
   if (!Array.isArray(parcelas) || parcelas.length === 0) {
-    throw erroHttp("Informe ao menos uma condição de pagamento para o vale.", 400);
+    throw erroHttp("Informe o vencimento inicial do vale.", 400);
   }
-  const maximoParcelasPorValor = Math.max(1, Math.floor(totalEsperado / 100));
-  const maximoParcelas = Math.min(24, maximoParcelasPorValor);
-  if (parcelas.length > maximoParcelas) {
-    throw erroHttp(
-      `Para parcelas mínimas de R$ 100,00, este vale pode possuir no máximo ${maximoParcelas} parcela(s).`,
-      400
-    );
+  if (parcelas.length > 1) {
+    throw erroHttp("O parcelamento deve ser criado em uma ordem de cobrança. O vale aceita somente o vencimento inicial.", 400);
   }
   const normalizadas = parcelas.map((item: any) => ({
     vencimento: String(item?.vencimento || ""),
@@ -337,9 +332,6 @@ function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): Parce
   for (const parcela of normalizadas) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0) {
       throw erroHttp("Todas as parcelas precisam de uma data e um valor maior que zero.", 400);
-    }
-    if (totalEsperado >= 100 && parcela.valor < 100) {
-      throw erroHttp("Cada parcela do vale deve possuir valor mínimo de R$ 100,00.", 400);
     }
   }
   normalizadas.sort((a, b) => a.vencimento.localeCompare(b.vencimento));
@@ -514,6 +506,119 @@ app.get("/api/system/version", (_req, res) => {
 
 function origemEhServidor(req: Request) {
   return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || req.socket.remoteAddress || "");
+}
+
+function recalcularOrdemCobranca(ordemId: string) {
+  const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND deletedAt IS NULL", [ordemId]);
+  if (!ordem) return;
+
+  const vinculos = queryAll<any>("SELECT * FROM ordem_cobranca_vales WHERE ordemId = ?", [ordemId]);
+  for (const vinculo of vinculos) {
+    const recebido = queryOne<{ total: number }>(
+      `SELECT COALESCE(SUM(valor), 0) AS total
+       FROM ordem_cobranca_recebimentos
+       WHERE ordemId = ? AND vendaId = ? AND deletedAt IS NULL`,
+      [ordemId, vinculo.vendaId]
+    );
+    const valorPago = Math.round(Math.min(Number(vinculo.valorVinculado), Number(recebido?.total || 0)) * 100) / 100;
+    const saldo = Math.round(Math.max(0, Number(vinculo.valorVinculado) - valorPago) * 100) / 100;
+    execute(
+      `UPDATE ordem_cobranca_vales
+       SET valorPago = ?, saldo = ?, ativo = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [valorPago, saldo, ordem.status === "aberta" && saldo > 0.005 ? 1 : 0, vinculo.id]
+    );
+  }
+
+  const parcelas = queryAll<any>("SELECT * FROM ordem_cobranca_parcelas WHERE ordemId = ?", [ordemId]);
+  for (const parcela of parcelas) {
+    const recebido = queryOne<{ total: number }>(
+      `SELECT COALESCE(SUM(valor), 0) AS total
+       FROM ordem_cobranca_parcela_recebimentos
+       WHERE parcelaId = ? AND deletedAt IS NULL`,
+      [parcela.id]
+    );
+    const valorPago = Math.round(Math.min(Number(parcela.valor), Number(recebido?.total || 0)) * 100) / 100;
+    const saldo = Math.round(Math.max(0, Number(parcela.valor) - valorPago) * 100) / 100;
+    execute(
+      `UPDATE ordem_cobranca_parcelas
+       SET valorPago = ?, saldo = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [valorPago, saldo, ordem.status === "cancelada" || ordem.status === "renegociada" ? ordem.status : saldo <= 0.005 ? "paga" : "pendente", parcela.id]
+    );
+  }
+
+  const totalPagoRow = queryOne<{ total: number }>(
+    "SELECT COALESCE(SUM(valor), 0) AS total FROM ordem_cobranca_recebimentos WHERE ordemId = ? AND deletedAt IS NULL",
+    [ordemId]
+  );
+  const totalPago = Math.round(Math.min(Number(ordem.totalOriginal), Number(totalPagoRow?.total || 0)) * 100) / 100;
+  const saldo = Math.round(Math.max(0, Number(ordem.totalOriginal) - totalPago) * 100) / 100;
+  const status = ordem.status === "cancelada" || ordem.status === "renegociada"
+    ? ordem.status
+    : saldo <= 0.005 ? "quitada" : "aberta";
+  execute(
+    "UPDATE ordens_cobranca SET valorPago = ?, saldo = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+    [totalPago, saldo, status, ordemId]
+  );
+  execute(
+    "UPDATE ordem_cobranca_vales SET ativo = CASE WHEN ? = 'aberta' AND saldo > 0.005 THEN 1 ELSE 0 END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ?",
+    [status, ordemId]
+  );
+}
+
+function aplicarRecebimentoEmOrdens(recebimentoId: string, alocacoes: Array<{ vendaId: string; valor: number }>, parcelaPreferidaId?: string) {
+  const totaisPorOrdem = new Map<string, number>();
+  for (const alocacao of alocacoes) {
+    const vinculo = queryOne<any>(
+      `SELECT ocv.*, oc.status
+       FROM ordem_cobranca_vales ocv
+       JOIN ordens_cobranca oc ON oc.id = ocv.ordemId
+       WHERE ocv.vendaId = ? AND ocv.ativo = 1 AND oc.status = 'aberta' AND oc.deletedAt IS NULL`,
+      [alocacao.vendaId]
+    );
+    if (!vinculo) continue;
+    const aplicado = Math.round(Math.min(Number(alocacao.valor), Number(vinculo.saldo)) * 100) / 100;
+    if (aplicado <= 0.005) continue;
+    execute(
+      `INSERT INTO ordem_cobranca_recebimentos (id, ordemId, recebimentoId, vendaId, valor)
+       VALUES (?, ?, ?, ?, ?)`,
+      ["ocr_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), vinculo.ordemId, recebimentoId, alocacao.vendaId, aplicado]
+    );
+    totaisPorOrdem.set(vinculo.ordemId, Math.round(((totaisPorOrdem.get(vinculo.ordemId) || 0) + aplicado) * 100) / 100);
+  }
+
+  for (const [ordemId, total] of totaisPorOrdem) {
+    let restante = total;
+    const parcelas = queryAll<any>(
+      `SELECT * FROM ordem_cobranca_parcelas
+       WHERE ordemId = ? AND saldo > 0.005
+       ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, vencimento ASC, numero ASC`,
+      [ordemId, parcelaPreferidaId || ""]
+    );
+    for (const parcela of parcelas) {
+      if (restante <= 0.005) break;
+      const aplicado = Math.round(Math.min(restante, Number(parcela.saldo)) * 100) / 100;
+      execute(
+        `INSERT INTO ordem_cobranca_parcela_recebimentos (id, ordemId, parcelaId, recebimentoId, valor)
+         VALUES (?, ?, ?, ?, ?)`,
+        ["ocpr_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), ordemId, parcela.id, recebimentoId, aplicado]
+      );
+      restante = Math.round(Math.max(0, restante - aplicado) * 100) / 100;
+    }
+    recalcularOrdemCobranca(ordemId);
+  }
+}
+
+function estornarRecebimentoEmOrdens(recebimentoId: string) {
+  const ordens = queryAll<{ ordemId: string }>(
+    "SELECT DISTINCT ordemId FROM ordem_cobranca_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL",
+    [recebimentoId]
+  );
+  const agora = new Date().toISOString();
+  execute("UPDATE ordem_cobranca_recebimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, recebimentoId]);
+  execute("UPDATE ordem_cobranca_parcela_recebimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, recebimentoId]);
+  for (const ordem of ordens) recalcularOrdemCobranca(ordem.ordemId);
 }
 
 app.get("/api/auth/status", (req, res) => {
@@ -1038,6 +1143,34 @@ app.delete("/api/clientes/:id", (req, res) => {
   }
 });
 
+const PAGAMENTOS_HISTORICO_POR_PAGINA = 10;
+
+function listarPagamentosHistoricoCliente(clienteId: string, paginaInformada: unknown, tamanhoInformado: unknown) {
+  const tamanhoSolicitado = Math.floor(Number(tamanhoInformado));
+  const tamanhoPagina = Number.isFinite(tamanhoSolicitado)
+    ? Math.max(1, Math.min(50, tamanhoSolicitado))
+    : PAGAMENTOS_HISTORICO_POR_PAGINA;
+  const totalItems = Number(queryOne<{ total: number }>(
+    "SELECT COUNT(*) AS total FROM pagamentos WHERE clienteId = ? AND deletedAt IS NULL",
+    [clienteId]
+  )?.total || 0);
+  const totalPages = Math.max(1, Math.ceil(totalItems / tamanhoPagina));
+  const paginaSolicitada = Math.floor(Number(paginaInformada));
+  const page = Number.isFinite(paginaSolicitada)
+    ? Math.min(totalPages, Math.max(1, paginaSolicitada))
+    : 1;
+  const items = queryAll<any>(
+    `SELECT p.*, v.numeroSequencial as vendaSequencial
+     FROM pagamentos p
+     LEFT JOIN vendas v ON p.vendaId = v.id
+     WHERE p.clienteId = ? AND p.deletedAt IS NULL
+     ORDER BY p.data DESC, p.createdAt DESC
+     LIMIT ? OFFSET ?`,
+    [clienteId, tamanhoPagina, (page - 1) * tamanhoPagina]
+  );
+  return { items, page, pageSize: tamanhoPagina, totalItems, totalPages };
+}
+
 // GET CLIENTS HISTORY & STATS
 app.get("/api/clientes/:id/historico", (req, res) => {
   try {
@@ -1119,14 +1252,7 @@ app.get("/api/clientes/:id/historico", (req, res) => {
     }
 
     // 7. Histórico de pagamentos
-    const pagamentos = queryAll<any>(
-      `SELECT p.*, v.numeroSequencial as vendaSequencial
-       FROM pagamentos p
-       LEFT JOIN vendas v ON p.vendaId = v.id
-       WHERE p.clienteId = ? AND p.deletedAt IS NULL
-       ORDER BY p.data DESC, p.createdAt DESC`,
-      [id]
-    );
+    const pagamentosPaginados = listarPagamentosHistoricoCliente(id, 1, PAGAMENTOS_HISTORICO_POR_PAGINA);
 
     res.json({
       cliente,
@@ -1138,8 +1264,24 @@ app.get("/api/clientes/:id/historico", (req, res) => {
       },
       produtosMaisComprados,
       vendas,
-      pagamentos
+      pagamentos: pagamentosPaginados.items,
+      pagamentosPaginacao: {
+        page: pagamentosPaginados.page,
+        pageSize: pagamentosPaginados.pageSize,
+        totalItems: pagamentosPaginados.totalItems,
+        totalPages: pagamentosPaginados.totalPages
+      }
     });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get("/api/clientes/:id/historico/pagamentos", (req, res) => {
+  try {
+    const cliente = queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+    if (!cliente) return res.status(404).json({ error: "Cliente não encontrado." });
+    res.json(listarPagamentosHistoricoCliente(req.params.id, req.query.page, req.query.pageSize));
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -3775,7 +3917,242 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
 });
 
 
-// 8. CARTEIRA DO CLIENTE
+// 8. ORDENS DE COBRANÇA
+function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
+  return queryAll<any>(
+    `SELECT oc.*, c.nome AS clienteNome,
+            COALESCE((
+              SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END)
+              FROM cliente_bonus_movimentos bm
+              WHERE bm.clienteId = oc.clienteId AND bm.deletedAt IS NULL
+            ), 0) AS saldoBonus
+     FROM ordens_cobranca oc
+     JOIN clientes c ON c.id = oc.clienteId
+     WHERE oc.deletedAt IS NULL ${filtro}
+     ORDER BY oc.numeroSequencial DESC`,
+    params
+  ).map((ordem) => {
+    const parcelas = queryAll<any>(
+      `SELECT ocp.id, ocp.ordemId, ocp.numero, ocp.vencimento, ocp.valor,
+              ocp.valorPago, ocp.saldo, ocp.status,
+              (
+                SELECT rc.data
+                FROM ordem_cobranca_parcela_recebimentos ocpr
+                JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
+                WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL
+                  AND rc.deletedAt IS NULL AND rc.status = 'ativo'
+                ORDER BY rc.data DESC, rc.createdAt DESC
+                LIMIT 1
+              ) AS dataPagamento
+       FROM ordem_cobranca_parcelas ocp
+       WHERE ocp.ordemId = ?
+       ORDER BY ocp.vencimento ASC, ocp.numero ASC`,
+      [ordem.id]
+    );
+    const eventosPagamento = queryAll<any>(
+      `SELECT ocpr.id, ocpr.valor, ocpr.deletedAt, ocp.numero AS parcelaNumero,
+              rc.data, rc.formaPagamento, rc.status AS recebimentoStatus, rc.updatedAt
+       FROM ordem_cobranca_parcela_recebimentos ocpr
+       JOIN ordem_cobranca_parcelas ocp ON ocp.id = ocpr.parcelaId
+       JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
+       WHERE ocpr.ordemId = ?
+       ORDER BY rc.data ASC, rc.createdAt ASC, ocp.numero ASC`,
+      [ordem.id]
+    ).flatMap((evento) => {
+      const estornado = Boolean(evento.deletedAt) || evento.recebimentoStatus === "cancelado";
+      const pagamento = {
+        id: evento.id,
+        tipo: "pagamento",
+        data: evento.data,
+        parcelaNumero: Number(evento.parcelaNumero),
+        valor: Number(evento.valor),
+        formaPagamento: evento.formaPagamento,
+        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} registrado na parcela ${evento.parcelaNumero}.`
+      };
+      if (!estornado) return [pagamento];
+      return [pagamento, {
+        id: `${evento.id}_estorno`,
+        tipo: "estorno",
+        data: evento.deletedAt || evento.updatedAt,
+        parcelaNumero: Number(evento.parcelaNumero),
+        valor: Number(evento.valor),
+        formaPagamento: evento.formaPagamento,
+        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} da parcela ${evento.parcelaNumero} foi estornado.`
+      }];
+    });
+    const eventos = [
+      {
+        id: `criacao_${ordem.id}`,
+        tipo: "criacao",
+        data: ordem.dataEmissao,
+        texto: `Ordem de cobrança #${ordem.numeroSequencial} criada com ${parcelas.length} parcela(s).`
+      },
+      ...eventosPagamento
+    ];
+    if (ordem.status === "quitada") eventos.push({
+      id: `conclusao_${ordem.id}`,
+      tipo: "conclusao",
+      data: ordem.updatedAt,
+      texto: "Ordem de cobrança quitada."
+    });
+    if (ordem.status === "cancelada" || ordem.status === "renegociada") eventos.push({
+      id: `encerramento_${ordem.id}`,
+      tipo: "encerramento",
+      data: ordem.updatedAt,
+      texto: ordem.status === "renegociada"
+        ? `Ordem encerrada para renegociação${ordem.motivoEncerramento ? `: ${ordem.motivoEncerramento}` : "."}`
+        : `Ordem cancelada${ordem.motivoEncerramento ? `: ${ordem.motivoEncerramento}` : "."}`
+    });
+    eventos.sort((a, b) => String(a.data).localeCompare(String(b.data)) || String(a.id).localeCompare(String(b.id)));
+    return {
+      ...ordem,
+      vales: queryAll<any>(
+      `SELECT ocv.id, ocv.vendaId, ocv.valorVinculado, ocv.valorPago, ocv.saldo,
+              v.numeroSequencial, v.data, v.vencimento, v.saldoRestante AS saldoAtualVale
+       FROM ordem_cobranca_vales ocv
+       JOIN vendas v ON v.id = ocv.vendaId
+       WHERE ocv.ordemId = ?
+       ORDER BY v.numeroSequencial ASC`,
+      [ordem.id]
+      ),
+      parcelas,
+      eventos
+    };
+  });
+}
+
+app.get("/api/ordens-cobranca", (req, res) => {
+  try {
+    const clienteId = String(req.query.clienteId || "");
+    res.json(listarOrdensCobranca(clienteId ? "AND oc.clienteId = ?" : "", clienteId ? [clienteId] : []));
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/ordens-cobranca", (req, res) => {
+  try {
+    const clienteId = String(req.body?.clienteId || "");
+    const dataEmissao = String(req.body?.dataEmissao || "");
+    const observacao = String(req.body?.observacao || "").trim();
+    const vendaIds = [...new Set((Array.isArray(req.body?.vendaIds) ? req.body.vendaIds : []).map((id: unknown) => String(id)).filter(Boolean))];
+    if (!clienteId || !/^\d{4}-\d{2}-\d{2}$/.test(dataEmissao) || vendaIds.length === 0) {
+      throw erroHttp("Informe o cliente, a data e ao menos um vale para a ordem de cobrança.", 400);
+    }
+
+    const vendas = vendaIds.map((vendaId) => {
+      const venda = queryOne<any>(
+        `SELECT id, numeroSequencial, clienteId, saldoRestante
+         FROM vendas
+         WHERE id = ? AND clienteId = ? AND status = 'pendente' AND saldoRestante > 0.005 AND deletedAt IS NULL`,
+        [vendaId, clienteId]
+      );
+      if (!venda) throw erroHttp("Um dos vales selecionados não está mais em aberto para este cliente.", 409);
+      return venda;
+    });
+    const totalOriginal = Math.round(vendas.reduce((total, venda) => total + Number(venda.saldoRestante), 0) * 100) / 100;
+    const parcelas = (Array.isArray(req.body?.parcelas) ? req.body.parcelas : []).map((item: any) => ({
+      vencimento: String(item?.vencimento || ""),
+      valor: Math.round(Number(item?.valor || 0) * 100) / 100,
+    })).sort((a: any, b: any) => a.vencimento.localeCompare(b.vencimento));
+    if (parcelas.length < 1 || parcelas.length > 36 || parcelas.some((item: any) => !/^\d{4}-\d{2}-\d{2}$/.test(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
+      throw erroHttp("Informe entre 1 e 36 parcelas, todas com data e valor maior que zero.", 400);
+    }
+    const totalParcelas = Math.round(parcelas.reduce((total: number, item: any) => total + item.valor, 0) * 100) / 100;
+    if (Math.abs(totalParcelas - totalOriginal) > 0.01) {
+      throw erroHttp(`A soma das parcelas deve ser R$ ${totalOriginal.toFixed(2).replace(".", ",")}.`, 400);
+    }
+
+    const conflitos = queryAll<any>(
+      `SELECT DISTINCT oc.numeroSequencial, v.numeroSequencial AS valeNumero
+       FROM ordem_cobranca_vales ocv
+       JOIN ordens_cobranca oc ON oc.id = ocv.ordemId
+       JOIN vendas v ON v.id = ocv.vendaId
+       WHERE ocv.vendaId IN (${vendaIds.map(() => "?").join(",")})
+         AND ocv.ativo = 1 AND oc.status = 'aberta' AND oc.deletedAt IS NULL`,
+      vendaIds
+    );
+    if (conflitos.length) {
+      const ordens = [...new Set(conflitos.map((item) => `#${item.numeroSequencial}`))].join(", ");
+      throw erroHttp(`Há saldo selecionado já comprometido nas ordens ${ordens}. Encerre a ordem anterior como renegociada antes de criar a nova.`, 409);
+    }
+
+    const ordemId = "oc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+    runInTransaction(() => {
+      const proximo = Number(queryOne<{ numero: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM ordens_cobranca")?.numero || 1);
+      execute(
+        `INSERT INTO ordens_cobranca
+         (id, numeroSequencial, clienteId, dataEmissao, totalOriginal, valorPago, saldo, status, observacao)
+         VALUES (?, ?, ?, ?, ?, 0, ?, 'aberta', ?)`,
+        [ordemId, proximo, clienteId, dataEmissao, totalOriginal, totalOriginal, observacao || null]
+      );
+      for (const venda of vendas) {
+        const saldo = Math.round(Number(venda.saldoRestante) * 100) / 100;
+        execute(
+          `INSERT INTO ordem_cobranca_vales
+           (id, ordemId, vendaId, valorVinculado, valorPago, saldo, ativo)
+           VALUES (?, ?, ?, ?, 0, ?, 1)`,
+          ["ocv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), ordemId, venda.id, saldo, saldo]
+        );
+      }
+      parcelas.forEach((parcela: any, index: number) => execute(
+        `INSERT INTO ordem_cobranca_parcelas
+         (id, ordemId, numero, vencimento, valor, valorPago, saldo, status)
+         VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente')`,
+        ["ocp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), ordemId, index + 1, parcela.vencimento, parcela.valor, parcela.valor]
+      ));
+      registrarAuditoria(null, "ordem_cobranca_criada", "ordem_cobranca", ordemId, { clienteId, vendaIds, totalOriginal, parcelas });
+    });
+    res.status(201).json(listarOrdensCobranca("AND oc.id = ?", [ordemId])[0]);
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.post("/api/ordens-cobranca/:id/encerrar", (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) return res.status(403).json({ error: "PIN do administrador inválido." });
+    const status = req.body?.status === "cancelada" ? "cancelada" : "renegociada";
+    const motivo = String(req.body?.motivo || "").trim();
+    const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status = 'aberta' AND deletedAt IS NULL", [req.params.id]);
+    if (!ordem) throw erroHttp("A ordem não está aberta ou não foi encontrada.", 404);
+    runInTransaction(() => {
+      execute(
+        "UPDATE ordens_cobranca SET status = ?, motivoEncerramento = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [status, motivo || null, ordem.id]
+      );
+      execute("UPDATE ordem_cobranca_vales SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ?", [ordem.id]);
+      execute("UPDATE ordem_cobranca_parcelas SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND status = 'pendente'", [status, ordem.id]);
+      registrarAuditoria(administrador.id, "ordem_cobranca_encerrada", "ordem_cobranca", ordem.id, { status, motivo });
+    });
+    res.json(listarOrdensCobranca("AND oc.id = ?", [ordem.id])[0]);
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// 9. CARTEIRA DO CLIENTE
+app.get("/api/clientes/:id/carteira/resumo", (req, res) => {
+  try {
+    const cliente = queryOne("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+    if (!cliente) return res.status(404).json({ error: "Cliente não encontrado." });
+    const saldoDevedor = Number(queryOne<{ saldo: number }>(
+      `SELECT COALESCE(SUM(saldoRestante), 0) AS saldo FROM vendas
+       WHERE clienteId = ? AND status = 'pendente' AND saldoRestante > 0.005 AND deletedAt IS NULL`,
+      [req.params.id]
+    )?.saldo || 0);
+    const saldoBonus = Number(queryOne<{ saldo: number }>(
+      `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
+       FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`,
+      [req.params.id]
+    )?.saldo || 0);
+    res.json({ saldoDevedor, saldoBonus });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/api/clientes/:id/carteira", (req, res) => {
   try {
     const { id } = req.params;
@@ -3834,7 +4211,7 @@ app.get("/api/clientes/:id/carteira", (req, res) => {
 app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
   try {
     const { id: clienteId } = req.params;
-    const { data, formaPagamento, observacao, alocacoes } = req.body;
+    const { data, formaPagamento, observacao, alocacoes, parcelaOrdemId } = req.body;
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) {
@@ -3856,11 +4233,18 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     }
     const listaAlocacoes = [...agrupadas].map(([vendaId, valor]) => ({ vendaId, valor }));
     const totalAplicado = arredondar(listaAlocacoes.reduce((total, item) => total + item.valor, 0));
-    // Na carteira, cada valor aplicado é dinheiro efetivamente recebido.
-    // Créditos de devolução são tratados quando a devolução reduz o vale.
-    const recebido = totalAplicado;
-    const bonusUtilizado = 0;
-    const bonusGerado = 0;
+    const recebido = arredondar(req.body?.valorRecebido);
+    const bonusUtilizado = arredondar(req.body?.bonusUtilizado);
+    if (recebido < 0 || bonusUtilizado < 0) {
+      throw erroHttp("Os valores do recebimento e do bônus não podem ser negativos.", 400);
+    }
+    if (totalAplicado > arredondar(recebido + bonusUtilizado) + 0.005) {
+      throw erroHttp("O valor abatido não pode ultrapassar o pagamento somado ao bônus utilizado.", 400);
+    }
+    if (bonusUtilizado > totalAplicado + 0.005) {
+      throw erroHttp("O bônus utilizado não pode ultrapassar o valor abatido das dívidas.", 400);
+    }
+    const bonusGerado = arredondar(Math.max(0, recebido + bonusUtilizado - totalAplicado));
 
     if (totalAplicado <= 0) {
       throw erroHttp("Informe o valor pago em pelo menos uma dívida.", 400);
@@ -3870,6 +4254,14 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     const pagamentoId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
 
     runInTransaction(() => {
+      const bonusDisponivel = Number(queryOne<{ saldo: number }>(
+        `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
+         FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`,
+        [clienteId]
+      )?.saldo || 0);
+      if (bonusUtilizado > bonusDisponivel + 0.005) {
+        throw erroHttp(`O cliente possui somente R$ ${bonusDisponivel.toFixed(2).replace(".", ",")} de bônus disponível.`, 409);
+      }
       for (const item of listaAlocacoes) {
         const venda = queryOne<any>(
           `SELECT * FROM vendas
@@ -3896,6 +4288,21 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
         [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, formaPagamento, observacao || null, pagamentoId]
       );
 
+      if (bonusUtilizado > 0.005) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, ?, NULL, ?, 'debito', ?, ?)`,
+          ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), clienteId, recebimentoId, data, bonusUtilizado, "Bônus aplicado manualmente em recebimento"]
+        );
+      }
+      if (bonusGerado > 0.005) {
+        execute(
+          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+           VALUES (?, ?, ?, NULL, ?, 'credito', ?, ?)`,
+          ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), clienteId, recebimentoId, data, bonusGerado, "Crédito excedente de pagamento"]
+        );
+      }
+
       for (const item of listaAlocacoes) {
         const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ?", [item.vendaId])!;
         const novoPago = arredondar(Number(venda.valorPago) + item.valor);
@@ -3910,6 +4317,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
           ["alo_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), recebimentoId, item.vendaId, item.valor]
         );
       }
+      aplicarRecebimentoEmOrdens(recebimentoId, listaAlocacoes, String(parcelaOrdemId || "") || undefined);
 
       registrarAuditoria(null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
         clienteId, recebido, totalAplicado, dividas: listaAlocacoes
@@ -3958,6 +4366,8 @@ app.post("/api/recebimentos-cliente/:id/cancelar", (req, res) => {
         );
         recalcularParcelasVale(venda.id);
       }
+
+      estornarRecebimentoEmOrdens(id);
 
       execute("UPDATE recebimento_alocacoes SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);
       execute("UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);

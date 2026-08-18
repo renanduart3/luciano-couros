@@ -316,6 +316,65 @@ export interface CarteiraCliente {
   movimentosBonus: MovimentoBonus[];
 }
 
+export interface CarteiraResumo {
+  saldoDevedor: number;
+  saldoBonus: number;
+}
+
+export interface OrdemCobrancaParcela {
+  id: string;
+  ordemId: string;
+  numero: number;
+  vencimento: string;
+  valor: number;
+  valorPago: number;
+  saldo: number;
+  status: "pendente" | "paga" | "cancelada" | "renegociada";
+  dataPagamento?: string;
+}
+
+export interface OrdemCobrancaEvento {
+  id: string;
+  tipo: "criacao" | "pagamento" | "estorno" | "encerramento" | "conclusao";
+  data: string;
+  parcelaNumero?: number;
+  valor?: number;
+  formaPagamento?: string;
+  texto: string;
+}
+
+export interface OrdemCobrancaVale {
+  id: string;
+  vendaId: string;
+  numeroSequencial: number;
+  data: string;
+  vencimento?: string;
+  valorVinculado: number;
+  valorPago: number;
+  saldo: number;
+  saldoAtualVale: number;
+}
+
+export interface OrdemCobranca {
+  id: string;
+  numeroSequencial: number;
+  clienteId: string;
+  clienteNome: string;
+  dataEmissao: string;
+  totalOriginal: number;
+  valorPago: number;
+  saldo: number;
+  saldoBonus: number;
+  status: "aberta" | "quitada" | "cancelada" | "renegociada";
+  observacao?: string;
+  motivoEncerramento?: string;
+  createdAt: string;
+  updatedAt: string;
+  vales: OrdemCobrancaVale[];
+  parcelas: OrdemCobrancaParcela[];
+  eventos: OrdemCobrancaEvento[];
+}
+
 export interface ItemCompra {
   id: string;
   compraId: string;

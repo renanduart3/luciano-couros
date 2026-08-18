@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, CheckSquare2, Eye, Filter, HandCoins, History, MessageCircle, WalletCards, X } from "lucide-react";
-import { Cliente, Venda } from "../types";
+import { AlertCircle, CalendarClock, CheckSquare2, Eye, FileClock, Filter, HandCoins, MessageCircle, WalletCards, X } from "lucide-react";
+import { Cliente, OrdemCobranca, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
-import { CarteiraClienteView } from "./CarteiraClienteView";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
 import { CobrancaValesModal } from "./CobrancaValesModal";
+import { OrdemCobrancaDetalhesModal, OrdensCobrancaView } from "./OrdensCobrancaView";
 
 interface ValesViewProps {
   onRefreshStats?: () => void;
@@ -27,9 +27,10 @@ const diasEmAtraso = (vencimento?: string) => {
 const estaEmAberto = (vale: Venda) => vale.status === "pendente" && Number(vale.saldoRestante) > 0.005;
 
 export function ValesView({ onRefreshStats }: ValesViewProps) {
-  const [tab, setTab] = useState<"abertos" | "recebimentos">("abertos");
+  const [tab, setTab] = useState<"abertos" | "ordens">("abertos");
   const [vales, setVales] = useState<Venda[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
@@ -41,12 +42,14 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [page, setPage] = useState(1);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [cobrancaAberta, setCobrancaAberta] = useState(false);
+  const [ordensRefreshKey, setOrdensRefreshKey] = useState(0);
+  const [ordemDetalhada, setOrdemDetalhada] = useState<OrdemCobranca | null>(null);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.all([api.getVendas(), api.getClientes()])
-      .then(([vendas, listaClientes]) => {
+    Promise.all([api.getVendas(), api.getClientes(), api.getOrdensCobranca()])
+      .then(([vendas, listaClientes, listaOrdens]) => {
         if (!active) return;
         setVales(
           vendas
@@ -58,6 +61,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
             )
         );
         setClientes(listaClientes);
+        setOrdens(listaOrdens);
       })
       .catch((err) => active && setError(err.message || "Não foi possível carregar os vales."))
       .finally(() => active && setLoading(false));
@@ -101,6 +105,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const valesSelecionados = useMemo(() => vales.filter((vale) => selecionados.has(vale.id)), [vales, selecionados]);
   const clienteSelecionado = clientesFiltro.find((cliente) => cliente.id === clienteId);
   const valesDoCliente = useMemo(() => clienteId ? vales.filter((vale) => vale.clienteId === clienteId) : [], [vales, clienteId]);
+  const ordemAtivaPorVale = useMemo(() => {
+    const mapa = new Map<string, OrdemCobranca>();
+    ordens.filter((ordem) => ordem.status === "aberta").forEach((ordem) => ordem.vales.filter((vale) => Number(vale.saldo) > 0.005).forEach((vale) => mapa.set(vale.vendaId, ordem)));
+    return mapa;
+  }, [ordens]);
   useEffect(() => {
     const ultimaPagina = Math.max(1, Math.ceil(valesFiltrados.length / PAGE_SIZE));
     setPage((paginaAtual) => Math.min(paginaAtual, ultimaPagina));
@@ -152,21 +161,32 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
 
   return (
     <section id="vales-view" className="space-y-5">
-      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
-      {cobrancaAberta && clienteSelecionado && <CobrancaValesModal clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => setCobrancaAberta(false)} />}
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); api.getOrdensCobranca().then(setOrdens); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
+      {ordemDetalhada && (
+        <OrdemCobrancaDetalhesModal
+          ordem={ordemDetalhada}
+          onClose={() => setOrdemDetalhada(null)}
+          onChanged={(atualizada) => {
+            setOrdemDetalhada(atualizada);
+            setOrdens((atuais) => atuais.map((ordem) => ordem.id === atualizada.id ? atualizada : ordem));
+            api.getVendas().then((vendas) => setVales(vendas.filter((venda) => Boolean(venda.vencimento))));
+            onRefreshStats?.();
+          }}
+        />
+      )}
+      {cobrancaAberta && clienteSelecionado && <CobrancaValesModal clienteId={clienteSelecionado.id} clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => { setCobrancaAberta(false); setSelecionados(new Set()); }} onSaved={(ordem) => { setOrdens((atuais) => [ordem, ...atuais]); setOrdensRefreshKey((atual) => atual + 1); }} />}
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Vales</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Cobrança, consulta e recebimento dos débitos dos clientes.</p>
         </div>
         <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           <button type="button" onClick={() => setTab("abertos")} className={`module-tab ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={17} /> Cobranças</button>
-          <button type="button" onClick={() => setTab("recebimentos")} className={`module-tab ${tab === "recebimentos" ? "module-tab-active" : ""}`}><History size={17} /> Recebimentos</button>
+          <button type="button" onClick={() => setTab("ordens")} className={`module-tab ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={17} /> Ordens</button>
         </div>
       </div>
 
-      {tab === "recebimentos" ? (
-        <CarteiraClienteView onRefreshStats={onRefreshStats} />
+      {tab === "ordens" ? (
+        <OrdensCobrancaView refreshKey={ordensRefreshKey} />
       ) : (
         <>
           <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
@@ -206,7 +226,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
                     <tbody className="divide-y divide-slate-100">
                       {valesPagina.map((vale) => {
                         const atraso = diasEmAtraso(vale.vencimento);
-                        return <tr key={vale.id} className={selecionados.has(vale.id) ? "bg-emerald-50" : "hover:bg-slate-50"}>{clienteId && <td className="p-2 text-center"><input aria-label={`Selecionar vale ${vale.numeroSequencial}`} type="checkbox" checked={selecionados.has(vale.id)} disabled={!estaEmAberto(vale)} onChange={() => alternarVale(vale)} className="h-5 w-5 accent-emerald-700"/></td>}<td className="p-2 font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</td><td className="p-2 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-2 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-2">{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-extrabold text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-extrabold text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">A vencer</span>}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td><td className="p-2 text-right font-mono text-blue-800">{formatCurrency(vale.valorPago)}</td><td className="p-2 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td><td className="p-2 text-center"><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>;
+                        const ordemAtiva = ordemAtivaPorVale.get(vale.id);
+                        return <tr key={vale.id} className={selecionados.has(vale.id) ? "bg-emerald-50" : "hover:bg-slate-50"}>{clienteId && <td className="p-2 text-center"><input aria-label={`Selecionar vale ${vale.numeroSequencial}`} type="checkbox" checked={selecionados.has(vale.id)} disabled={!estaEmAberto(vale)} onChange={() => alternarVale(vale)} className="h-5 w-5 accent-emerald-700"/></td>}<td className="p-2"><span className="font-mono font-extrabold text-slate-700">#{vale.numeroSequencial}</span>{ordemAtiva && <button type="button" onClick={() => setOrdemDetalhada(ordemAtiva)} className="ml-2 rounded-md bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-800 hover:bg-blue-200">ORDEM #{ordemAtiva.numeroSequencial}</button>}</td><td className="p-2 font-extrabold text-slate-950">{vale.clienteNome || "Cliente não informado"}</td><td className="p-2 text-slate-600">{vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</td><td className="p-2">{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-extrabold text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-extrabold text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-xs font-extrabold text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-xs font-extrabold text-amber-700">A vencer</span>}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td><td className="p-2 text-right font-mono text-blue-800">{formatCurrency(vale.valorPago)}</td><td className="p-2 text-right font-mono text-base font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</td><td className="p-2 text-center"><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Detalhes</button></td></tr>;
                       })}
                     </tbody>
                   </table>
@@ -215,7 +236,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
                 <div className="divide-y divide-slate-100 md:hidden">
                   {valesPagina.map((vale) => {
                     const atraso = diasEmAtraso(vale.vencimento);
-                    return <article key={vale.id} className={`space-y-2 p-3 ${selecionados.has(vale.id) ? "bg-emerald-50" : ""}`}><div className="flex items-start gap-3">{clienteId && <input aria-label={`Selecionar vale ${vale.numeroSequencial}`} type="checkbox" checked={selecionados.has(vale.id)} disabled={!estaEmAberto(vale)} onChange={() => alternarVale(vale)} className="mt-1 h-6 w-6 shrink-0 accent-emerald-700"/>}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p><h2 className="text-base font-black uppercase text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">A vencer</span>}</div></div></div><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
+                    const ordemAtiva = ordemAtivaPorVale.get(vale.id);
+                    return <article key={vale.id} className={`space-y-2 p-3 ${selecionados.has(vale.id) ? "bg-emerald-50" : ""}`}><div className="flex items-start gap-3">{clienteId && <input aria-label={`Selecionar vale ${vale.numeroSequencial}`} type="checkbox" checked={selecionados.has(vale.id)} disabled={!estaEmAberto(vale)} onChange={() => alternarVale(vale)} className="mt-1 h-6 w-6 shrink-0 accent-emerald-700"/>}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p>{ordemAtiva && <button type="button" onClick={() => setOrdemDetalhada(ordemAtiva)} className="mt-1 rounded-md bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-800">ORDEM #{ordemAtiva.numeroSequencial}</button>}<h2 className="mt-1 text-base font-black uppercase text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.saldoRestante)}</p></div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"}</span>{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">A vencer</span>}</div></div></div><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
                   })}
                 </div>
                 <Pagination page={page} pageSize={PAGE_SIZE} totalItems={valesFiltrados.length} onPageChange={setPage} alwaysVisible />

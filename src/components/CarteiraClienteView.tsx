@@ -8,12 +8,14 @@ import { useEhGerente } from "../auth/AuthContext";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
+  clienteInicialId?: string;
+  onRecebimentoRegistrado?: () => void;
 }
 
 const hoje = () => new Date().toISOString().slice(0, 10);
 const dinheiro = (valor: number) => valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps) {
+export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebimentoRegistrado }: CarteiraClienteViewProps) {
   const confirmacao = useConfirmacao();
   const gerente = useEhGerente();
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -52,6 +54,12 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!clienteInicialId) return;
+    setClienteId(clienteInicialId);
+    void carregarCarteira(clienteInicialId);
+  }, [clienteInicialId]);
 
   const clientesFiltrados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -131,6 +139,7 @@ export function CarteiraClienteView({ onRefreshStats }: CarteiraClienteViewProps
       setObservacao("");
       await carregarCarteira(carteira.cliente.id);
       onRefreshStats?.();
+      onRecebimentoRegistrado?.();
     } catch (err: any) {
       alert(err.message || "NÃO FOI POSSÍVEL REGISTRAR O RECEBIMENTO.");
     } finally {

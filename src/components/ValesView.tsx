@@ -172,7 +172,6 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
             setOrdemDetalhada(atualizada);
             setOrdens((atuais) => atuais.map((ordem) => ordem.id === atualizada.id ? atualizada : ordem));
             api.getVendas().then((vendas) => setVales(vendas.filter((venda) => Boolean(venda.vencimento))));
-            onRefreshStats?.();
           }}
         />
       )}

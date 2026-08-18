@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.18.3 — 2026-08-18
+
+- Registrar um pagamento na ordem de cobrança atualiza ordem, parcelas e vales de forma assíncrona sem fechar a modal.
+- Removida a remontagem global redundante após o lançamento, preservando a posição e o contexto para registros sucessivos.
+
 ## 1.18.2 — 2026-08-18
 
 - Forma de pagamento da ordem é movida para o canto direito da faixa de navegação entre parcelas e histórico, ficando fora do cabeçalho capturado junto à tabela.

@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.18.1 — 2026-08-18
+
+- Removida a área separada de Compensação; pagamentos e cheques voltam a ser gerenciados nos detalhes do próprio vale e da ordem de cobrança.
+- Cada recebimento mantém sua própria forma de pagamento e pode ser alterado pelo gerente entre dinheiro, cartões, cheques, duplicatas, bônus e PIX.
+- Detalhes do vale passam a listar inclusive pagamentos já quitados ou recusados, com acesso direto à edição de valor, data, forma, situação, cheque, observação e rateio.
+- Parcelas e histórico da ordem passam a abrir o mesmo editor gerencial, preservando uma única regra para pagamentos individuais, múltiplos e negociados.
+- Trocas sucessivas entre cheque e outras formas reutilizam o instrumento existente, recalculam vales, parcelas, ordens e bônus e registram cada alteração na auditoria.
+- Cheque recusado restaura os valores aplicados e não gera nem consome bônus do cliente; o registro continua disponível para correção posterior.
+- Os layouts de impressão permanecem inalterados.
+
 ## 1.18.0 — 2026-08-18
 
 - Vales recebem uma área de Compensação com filtros para cheques aguardando, compensados, recusados ou todos, incluindo busca por cliente, cheque e número do vale.

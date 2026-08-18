@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CalendarClock, Coins, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { OrdemCobranca, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
 import { CamposCheque } from "./CamposCheque";
 import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { EditarPagamentoModal } from "./EditarPagamentoModal";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -33,6 +34,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: vale.clienteDocumento || "" }));
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [feedbackPagamento, setFeedbackPagamento] = useState("");
+  const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
   const itens = vale.items || [];
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
@@ -136,6 +138,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
+      {editandoRecebimentoId && <EditarPagamentoModal recebimentoId={editandoRecebimentoId} onClose={() => setEditandoRecebimentoId(null)} onSaved={() => { api.getVenda(vale.id).then((atualizado) => onUpdated?.(atualizado)); }} />}
       <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
         <header className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <div className="flex items-center gap-3">
@@ -207,6 +210,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
               {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
+
+            <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos deste vale</h3><span className="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-slate-600">{vale.recebimentos?.length || 0}</span></div>
+              {!vale.recebimentos?.length ? <p className="p-5 text-center text-xs font-bold text-slate-500">Nenhum pagamento registrado para este vale.</p> : <div className="divide-y divide-slate-200">{vale.recebimentos.map((recebimento) => <article key={recebimento.id} className="grid items-center gap-3 p-3 text-xs sm:grid-cols-[0.7fr_1fr_0.8fr_auto]"><div><p className="text-[10px] font-black uppercase text-slate-500">Data</p><p className="font-bold text-slate-900">{formatDate(recebimento.data)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Forma</p><p className="font-black uppercase text-slate-900">{recebimento.formaPagamento.replaceAll("_", " ")}</p>{recebimento.statusPagamento !== "compensado" && <span className={`mt-1 inline-block rounded-lg px-2 py-1 text-[9px] font-black ${recebimento.statusPagamento === "recusado" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>{recebimento.statusPagamento.toUpperCase()}</span>}</div><div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>{gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}</article>)}</div>}
+            </div>
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">
               <table className="w-full min-w-[820px] text-sm">

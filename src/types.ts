@@ -184,6 +184,7 @@ export interface Venda {
   } | null;
   items?: ItemVenda[];
   devolucoes?: DevolucaoVenda[];
+  recebimentos?: PagamentoGerenciavel[];
   deletedAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -298,27 +299,28 @@ export interface RecebimentoCliente {
   }>;
 }
 
-export interface TituloCompensacao {
+export interface PagamentoGerenciavel {
   id: string;
   recebimentoId: string;
   clienteId: string;
   clienteNome: string;
   clienteDocumento?: string;
-  tipo: "cheque_emitente" | "cheque_terceiro";
+  tipo?: "cheque_emitente" | "cheque_terceiro";
   data: string;
-  vencimento: string;
+  vencimento?: string;
   valorRecebido: number;
   valorAplicado: number;
+  bonusUtilizado: number;
   bonusGerado: number;
-  formaPagamento: "cheque_emitente" | "cheque_terceiro";
-  cpfTitular: string;
+  formaPagamento: string;
+  cpfTitular?: string;
   cpfTerceiro?: string;
-  banco: string;
-  numeroCheque: string;
-  status: "aguardando" | "compensado" | "recusado";
+  banco?: string;
+  numeroCheque?: string;
+  status: "ativo" | "recusado" | "cancelado";
+  statusPagamento: "aguardando" | "compensado" | "recusado";
   motivoStatus?: string;
   observacao?: string;
-  recebimentoStatus: "ativo" | "recusado" | "cancelado";
   createdAt: string;
   updatedAt: string;
   alocacoes: Array<{
@@ -385,6 +387,7 @@ export interface OrdemCobrancaEvento {
   parcelaNumero?: number;
   valor?: number;
   formaPagamento?: string;
+  recebimentoId?: string;
   texto: string;
 }
 

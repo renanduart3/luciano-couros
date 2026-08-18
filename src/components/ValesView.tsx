@@ -8,7 +8,6 @@ import { Pagination, paginate } from "./Pagination";
 import { CobrancaValesModal } from "./CobrancaValesModal";
 import { OrdemCobrancaDetalhesModal, OrdensCobrancaView } from "./OrdensCobrancaView";
 import { PagamentoValesModal } from "./PagamentoValesModal";
-import { TitulosCompensacaoView } from "./TitulosCompensacaoView";
 
 interface ValesViewProps {
   onRefreshStats?: () => void;
@@ -29,7 +28,7 @@ const diasEmAtraso = (vencimento?: string) => {
 const estaEmAberto = (vale: Venda) => vale.status === "pendente" && Number(vale.saldoRestante) > 0.005;
 
 export function ValesView({ onRefreshStats }: ValesViewProps) {
-  const [tab, setTab] = useState<"abertos" | "ordens" | "titulos">("abertos");
+  const [tab, setTab] = useState<"abertos" | "ordens">("abertos");
   const [vales, setVales] = useState<Venda[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
@@ -186,14 +185,11 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           <button type="button" onClick={() => setTab("abertos")} className={`module-tab ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={17} /> Cobranças</button>
           <button type="button" onClick={() => setTab("ordens")} className={`module-tab ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={17} /> Ordens</button>
-          <button type="button" onClick={() => setTab("titulos")} className={`module-tab ${tab === "titulos" ? "module-tab-active" : ""}`}><HandCoins size={17} /> Compensação</button>
         </div>
       </div>
 
       {tab === "ordens" ? (
         <OrdensCobrancaView refreshKey={ordensRefreshKey} />
-      ) : tab === "titulos" ? (
-        <TitulosCompensacaoView onChanged={() => { Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendasAtualizadas, ordensAtualizadas]) => { setVales(vendasAtualizadas.filter((venda) => Boolean(venda.vencimento))); setOrdens(ordensAtualizadas); setOrdensRefreshKey((atual) => atual + 1); }); onRefreshStats?.(); }} />
       ) : (
         <>
           <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">

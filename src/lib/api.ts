@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, TituloCompensacao
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel
 } from "../types";
 
 const API_BASE = "/api";
@@ -193,17 +193,17 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin })
     }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
-  getTitulosCompensacao: () =>
-    fetch(`${API_BASE}/titulos-compensacao`).then(r => handleResponse<TituloCompensacao[]>(r)),
-  updateTituloCompensacao: (recebimentoId: string, dados: {
+  getRecebimentoGerenciavel: (recebimentoId: string) =>
+    fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/gerenciar`).then(r => handleResponse<PagamentoGerenciavel>(r)),
+  updateRecebimentoCliente: (recebimentoId: string, dados: {
     pin: string;
-    status: TituloCompensacao["status"];
+    status: PagamentoGerenciavel["statusPagamento"];
     data: string;
     valorRecebido: number;
-    formaPagamento: "cheque_emitente" | "cheque_terceiro";
+    formaPagamento: string;
     observacao?: string;
     motivoStatus?: string;
-    dadosCheque: {
+    dadosCheque?: {
       vencimento: string;
       cpfTitular: string;
       cpfTerceiro?: string;
@@ -211,11 +211,11 @@ export const api = {
       numeroCheque: string;
     };
     alocacoes: Array<{ vendaId: string; valor: number }>;
-  }) => fetch(`${API_BASE}/titulos-compensacao/${recebimentoId}`, {
+  }) => fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
-  }).then(r => handleResponse<TituloCompensacao>(r)),
+  }).then(r => handleResponse<PagamentoGerenciavel>(r)),
 
   // ORDENS DE COBRANÇA
   getOrdensCobranca: (clienteId?: string) => {

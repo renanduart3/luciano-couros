@@ -605,6 +605,8 @@ export function initDatabase() {
         cpfTerceiro TEXT,
         banco TEXT NOT NULL,
         numeroCheque TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'aguardando',
+        motivoStatus TEXT,
         deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -806,6 +808,9 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTitular TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTerceiro TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN banco TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE recebimento_instrumentos ADD COLUMN status TEXT NOT NULL DEFAULT 'aguardando'`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE recebimento_instrumentos ADD COLUMN motivoStatus TEXT`).run(); } catch (e) {}
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_instrumentos_status ON recebimento_instrumentos (status, vencimento, deletedAt)`).run();
   db.prepare(`UPDATE usuarios SET login = 'gerente' WHERE id = 'usuario_admin' AND TRIM(COALESCE(login, '')) = ''`).run();
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios (LOWER(login)) WHERE login IS NOT NULL`).run();
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeCompra TEXT`).run(); } catch (e) {}

@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.18.0 — 2026-08-18
+
+- Vales recebem uma área de Compensação com filtros para cheques aguardando, compensados, recusados ou todos, incluindo busca por cliente, cheque e número do vale.
+- Gerente pode editar situação, data, valor recebido, distribuição entre vales, tipo, vencimento, documentos, banco, número, observação e motivo do cheque mediante senha.
+- Cheque recusado restaura automaticamente os saldos dos vales e das ordens, remove bônus originado pelo recebimento e nunca utiliza bônus do cliente como parte do cheque.
+- Títulos recusados permanecem acessíveis e podem ser corrigidos ou reativados, preservando a liberdade operacional sem apagar o histórico.
+- Cada alteração gerencial registra situação e valores anteriores e novos na auditoria, com histórico visível dentro da própria edição do título.
+- Modais de cobrança, ordem, pagamento múltiplo e edição de títulos passam a reservar 5% de respiro vertical e 10% lateral na tela.
+- O respiro é exclusivamente visual; os layouts de impressão permanecem inalterados.
+
 ## 1.17.0 — 2026-08-18
 
 - Vales selecionados do mesmo cliente passam a aceitar um pagamento múltiplo direto, distribuído automaticamente dos saldos mais antigos para os mais novos, sem exigir uma ordem de cobrança.

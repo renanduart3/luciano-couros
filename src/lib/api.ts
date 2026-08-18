@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, TituloCompensacao
 } from "../types";
 
 const API_BASE = "/api";
@@ -193,6 +193,29 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin })
     }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+  getTitulosCompensacao: () =>
+    fetch(`${API_BASE}/titulos-compensacao`).then(r => handleResponse<TituloCompensacao[]>(r)),
+  updateTituloCompensacao: (recebimentoId: string, dados: {
+    pin: string;
+    status: TituloCompensacao["status"];
+    data: string;
+    valorRecebido: number;
+    formaPagamento: "cheque_emitente" | "cheque_terceiro";
+    observacao?: string;
+    motivoStatus?: string;
+    dadosCheque: {
+      vencimento: string;
+      cpfTitular: string;
+      cpfTerceiro?: string;
+      banco: string;
+      numeroCheque: string;
+    };
+    alocacoes: Array<{ vendaId: string; valor: number }>;
+  }) => fetch(`${API_BASE}/titulos-compensacao/${recebimentoId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dados)
+  }).then(r => handleResponse<TituloCompensacao>(r)),
 
   // ORDENS DE COBRANÇA
   getOrdensCobranca: (clienteId?: string) => {

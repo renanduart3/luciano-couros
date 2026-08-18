@@ -102,8 +102,8 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, valesDoClien
     }
   };
 
-  return <div id="print-cobranca-vales" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-2 backdrop-blur-sm sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="titulo-cobranca-vales" className="flex max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+  return <div id="print-cobranca-vales" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-[10vw] py-[5vh] backdrop-blur-sm print:p-0">
+    <div role="dialog" aria-modal="true" aria-labelledby="titulo-cobranca-vales" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
       <div className="print:hidden flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-3 py-2">
         <div><h2 id="titulo-cobranca-vales" className="font-black uppercase text-slate-950">Demonstrativo para cobrança</h2></div>
         <button type="button" onClick={onClose} aria-label="Fechar cobrança" className="rounded-lg p-2 text-slate-600 hover:bg-white"><X size={20}/></button>

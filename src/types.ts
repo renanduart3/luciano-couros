@@ -288,13 +288,53 @@ export interface RecebimentoCliente {
   bonusGerado: number;
   formaPagamento: string;
   observacao?: string;
-  status: "ativo" | "cancelado";
+  status: "ativo" | "recusado" | "cancelado";
   createdAt: string;
   alocacoes: Array<{
     id: string;
     vendaId: string;
     numeroSequencial: number;
     valor: number;
+  }>;
+}
+
+export interface TituloCompensacao {
+  id: string;
+  recebimentoId: string;
+  clienteId: string;
+  clienteNome: string;
+  clienteDocumento?: string;
+  tipo: "cheque_emitente" | "cheque_terceiro";
+  data: string;
+  vencimento: string;
+  valorRecebido: number;
+  valorAplicado: number;
+  bonusGerado: number;
+  formaPagamento: "cheque_emitente" | "cheque_terceiro";
+  cpfTitular: string;
+  cpfTerceiro?: string;
+  banco: string;
+  numeroCheque: string;
+  status: "aguardando" | "compensado" | "recusado";
+  motivoStatus?: string;
+  observacao?: string;
+  recebimentoStatus: "ativo" | "recusado" | "cancelado";
+  createdAt: string;
+  updatedAt: string;
+  alocacoes: Array<{
+    id: string;
+    vendaId: string;
+    numeroSequencial: number;
+    valor: number;
+    saldoRestante: number;
+    deletedAt?: string;
+  }>;
+  historico: Array<{
+    id: string;
+    acao: string;
+    createdAt: string;
+    usuarioNome: string;
+    detalhes: Record<string, any>;
   }>;
 }
 

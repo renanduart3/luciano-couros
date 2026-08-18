@@ -5,6 +5,8 @@ import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from 
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
+import { CamposCheque } from "./CamposCheque";
+import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -27,8 +29,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [salvando, setSalvando] = useState(false);
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
   const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  const [bonusPagamento, setBonusPagamento] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: vale.clienteDocumento || "" }));
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [feedbackPagamento, setFeedbackPagamento] = useState("");
   const itens = vale.items || [];
@@ -48,10 +50,13 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   };
 
   const registrarPagamentoVale = async () => {
-    const recebido = parseBrazilianNumber(valorPagamento);
-    const bonusUtilizado = parseBrazilianNumber(bonusPagamento);
-    if (recebido + bonusUtilizado <= 0) return setErro("Informe o pagamento ou o bônus utilizado.");
+    const valorInformado = parseBrazilianNumber(valorPagamento);
+    const recebido = formaPagamento === "bonus" ? 0 : valorInformado;
+    const bonusUtilizado = formaPagamento === "bonus" ? valorInformado : 0;
+    if (valorInformado <= 0) return setErro("Informe o valor do pagamento.");
     if (bonusUtilizado > saldoBonus + 0.005) return setErro("O bônus utilizado ultrapassa o saldo disponível.");
+    if (formaPagamento === "bonus" && bonusUtilizado > Number(vale.saldoRestante) + 0.005) return setErro("O bônus utilizado não pode ultrapassar o saldo deste vale.");
+    if (ehCheque(formaPagamento) && (!dadosCheque.vencimento || !dadosCheque.cpfTitular.trim() || !dadosCheque.banco.trim() || !dadosCheque.numeroCheque.trim() || (formaPagamento === "cheque_terceiro" && !dadosCheque.cpfTerceiro.trim()))) return setErro("Preencha todos os dados obrigatórios do cheque.");
     const valorAplicado = Math.min(Number(vale.saldoRestante), recebido + bonusUtilizado);
     setSalvando(true);
     setErro("");
@@ -63,12 +68,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         bonusUtilizado,
         formaPagamento,
         observacao: `Pagamento direto do vale #${vale.numeroSequencial}`,
+        dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
         alocacoes: [{ vendaId: vale.id, valor: valorAplicado }]
       });
       const atualizado = await api.getVenda(vale.id);
       const carteira = await api.getCarteiraResumo(vale.clienteId);
       setSaldoBonus(Number(carteira.saldoBonus || 0));
-      setBonusPagamento("");
       setFeedbackPagamento(`${formatCurrency(resultado.valorAplicado)} abatido do vale` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
       onUpdated?.(atualizado);
     } catch (error: any) {
@@ -192,13 +197,13 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
             {vale.status === "pendente" && Number(vale.saldoRestante) > 0.005 && <div className="overflow-hidden rounded-xl border border-emerald-300 bg-white">
               <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-emerald-950">Registrar pagamento deste vale</h3><p className="text-[10px] font-bold text-emerald-800">Bônus disponível: {formatCurrency(saldoBonus)}. O uso do bônus só ocorre quando informado abaixo.</p></div>
-              <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+              <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto]">
                 <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={dataPagamento} onChange={(event) => setDataPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold"/></label>
                 <label className="text-[10px] font-black uppercase text-slate-600">Pagamento<input type="text" inputMode="decimal" value={valorPagamento} onChange={(event) => setValorPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
-                <label className="text-[10px] font-black uppercase text-slate-600">Usar bônus<input type="text" inputMode="decimal" value={bonusPagamento} onChange={(event) => setBonusPagamento(event.target.value)} placeholder="0,00" disabled={saldoBonus <= 0.005} className="mt-1 min-h-10 w-full rounded-lg border border-violet-300 bg-violet-50 px-3 text-right font-mono font-black text-violet-900 disabled:opacity-40"/></label>
-                <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold"><option value="pix">PIX</option><option value="avista_dinheiro">Dinheiro</option><option value="avista_debito">Débito</option><option value="cartao_credito">Cartão de crédito</option><option value="cheque_emitente">Cheque</option><option value="duplicata_emitente">Duplicata</option></select></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
                 <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
               </div>
+              <div className="px-3 pb-3"><CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={vale.clienteDocumento} /></div>
               {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
               {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}

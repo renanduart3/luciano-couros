@@ -4,6 +4,18 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.17.0 — 2026-08-18
+
+- Vales selecionados do mesmo cliente passam a aceitar um pagamento múltiplo direto, distribuído automaticamente dos saldos mais antigos para os mais novos, sem exigir uma ordem de cobrança.
+- Pagamentos acima da dívida geram bônus para o cliente; pagamentos parciais mantêm o restante identificado no próprio vale para cobranças futuras.
+- Formas de pagamento são unificadas entre vendas, vales individuais, baixas múltiplas e ordens: dinheiro, débito, crédito, cheque do emitente ou de terceiro, duplicata do emitente ou de terceiro, bônus e PIX.
+- Cheques recebem vencimento, CPF do titular, CPF do terceiro quando aplicável, banco e número, com validação e persistência dos dados no recebimento.
+- Modal da ordem ganha mais espaço útil, identifica cliente e CPF/CNPJ no parcelamento e simplifica os vales vinculados para vale, emissão, valor e totalizador final.
+- Ações das parcelas ficam alinhadas e reduzidas a `Registrar` e `Editar`; a edição preserva o histórico por meio de estorno controlado antes do novo lançamento.
+- Registro de pagamentos mantém a modal aberta e atualiza saldos e ordens de forma assíncrona, permitindo lançamentos sucessivos sem interromper o atendimento.
+- O botão redundante de renegociação é removido; `Cancelar ordem` preserva pagamentos já realizados e libera o saldo restante dos vales para uma nova estratégia.
+- Filtros e tabelas de ordens são compactados para priorizar número do vale, cliente, período e situação, sem alterações nos layouts de impressão.
+
 ## 1.16.0 — 2026-08-18
 
 - Vales ganham ordens de cobrança próprias, com seleção por cliente, planejamento flexível de até 36 parcelas, demonstrativo e histórico completo da negociação.

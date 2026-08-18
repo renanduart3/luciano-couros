@@ -174,6 +174,9 @@ export interface Venda {
     tipo: string;
     emitente: string;
     numeroDocumento: string;
+    cpfTitular?: string;
+    cpfTerceiro?: string;
+    banco?: string;
     valor: number;
     vencimento: string;
     status: string;
@@ -331,6 +334,8 @@ export interface OrdemCobrancaParcela {
   saldo: number;
   status: "pendente" | "paga" | "cancelada" | "renegociada";
   dataPagamento?: string;
+  ultimoRecebimentoId?: string;
+  ultimoPagamentoValor?: number;
 }
 
 export interface OrdemCobrancaEvento {
@@ -360,6 +365,7 @@ export interface OrdemCobranca {
   numeroSequencial: number;
   clienteId: string;
   clienteNome: string;
+  clienteDocumento?: string;
   dataEmissao: string;
   totalOriginal: number;
   valorPago: number;

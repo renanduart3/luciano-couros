@@ -55,6 +55,7 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, valesDoClien
   // A devolução já reduz o saldo persistido. Para o demonstrativo seletivo,
   // recompomos a base e abatemos somente os itens que o usuário marcar.
   const totalVales = vales.reduce((total, vale) => total + Number(vale.saldoRestante) + creditoDevolvido(vale), 0);
+  const totalDocumentos = vales.reduce((total, vale) => total + Number(vale.totalLiquido) + creditoDevolvido(vale), 0);
   const totalDevolucoes = devolucoes.reduce((total, item) => total + item.totalCredito, 0);
   const totalGeral = Math.max(0, totalVales - totalDevolucoes);
 
@@ -152,18 +153,13 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, valesDoClien
           <div className="border-b-2 border-slate-900 bg-amber-50 px-4 py-3"><span className="text-[11px] font-black uppercase text-amber-800">Cliente</span><h3 className="text-lg font-black uppercase text-slate-950">{clienteNome}</h3></div>
 
           <div className="hidden overflow-x-auto sm:block">
-            <table className="w-full min-w-[540px] text-sm">
-              <thead className="bg-slate-100 text-[11px] font-black uppercase"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-left">Vencimento</th><th className="p-2 text-right">Total do vale</th><th className="p-2 text-right">Em aberto</th></tr></thead>
-              <tbody className="divide-y divide-slate-200">{vales.map((vale) => <tr key={vale.id}><td className="p-2 font-mono font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 font-black text-amber-800">{vale.vencimento ? formatDate(vale.vencimento) : "—"}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(Number(vale.totalLiquido) + creditoDevolvido(vale))}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(Number(vale.saldoRestante) + creditoDevolvido(vale))}</td></tr>)}</tbody>
-              <tfoot><tr className="border-t-2 border-slate-900 bg-slate-100"><td colSpan={4} className="p-2 text-right text-xs font-black uppercase">Subtotal dos vales</td><td className="p-2 text-right font-mono text-base font-black">{formatCurrency(totalVales)}</td></tr></tfoot>
+            <table className="w-full min-w-[460px] text-sm">
+              <thead className="bg-slate-100 text-[11px] font-black uppercase"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Total do vale</th></tr></thead>
+              <tbody className="divide-y divide-slate-200">{vales.map((vale) => <tr key={vale.id}><td className="p-2 font-mono font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(Number(vale.totalLiquido) + creditoDevolvido(vale))}</td></tr>)}</tbody>
+              <tfoot><tr className="border-t-2 border-slate-900 bg-slate-100"><td colSpan={2} className="p-2 text-right text-xs font-black uppercase">Total dos vales selecionados</td><td className="p-2 text-right font-mono text-base font-black">{formatCurrency(totalDocumentos)}</td></tr></tfoot>
             </table>
           </div>
-          <div className="divide-y divide-slate-300 sm:hidden">{vales.map((vale) => <div key={vale.id} className="grid grid-cols-2 gap-x-3 gap-y-1 p-3 text-xs">
-            <div><span className="block text-[10px] font-black uppercase text-slate-500">Vale / emissão</span><strong className="font-mono text-sm">#{vale.numeroSequencial}</strong> • {formatDate(vale.data)}</div>
-            <div className="text-right"><span className="block text-[10px] font-black uppercase text-slate-500">Vencimento</span><strong className="text-amber-800">{vale.vencimento ? formatDate(vale.vencimento) : "—"}</strong></div>
-            <div><span className="block text-[10px] font-black uppercase text-slate-500">Total do vale</span><strong>{formatCurrency(Number(vale.totalLiquido) + creditoDevolvido(vale))}</strong></div>
-            <div className="text-right"><span className="block text-[10px] font-black uppercase text-slate-500">Em aberto</span><strong className="font-mono text-sm">{formatCurrency(Number(vale.saldoRestante) + creditoDevolvido(vale))}</strong></div>
-          </div>)}<div className="flex items-center justify-between border-t-2 border-slate-900 bg-slate-100 p-3 text-xs font-black uppercase"><span>Subtotal dos vales</span><strong className="font-mono text-base">{formatCurrency(totalVales)}</strong></div></div>
+          <div className="divide-y divide-slate-300 sm:hidden">{vales.map((vale) => <div key={vale.id} className="flex items-center justify-between gap-3 p-3 text-xs"><div><span className="block text-[10px] font-black uppercase text-slate-500">Vale / emissão</span><strong className="font-mono text-sm">#{vale.numeroSequencial}</strong> • {formatDate(vale.data)}</div><div className="text-right"><span className="block text-[10px] font-black uppercase text-slate-500">Total do vale</span><strong className="font-mono text-sm">{formatCurrency(Number(vale.totalLiquido) + creditoDevolvido(vale))}</strong></div></div>)}<div className="flex items-center justify-between border-t-2 border-slate-900 bg-slate-100 p-3 text-xs font-black uppercase"><span>Total dos vales selecionados</span><strong className="font-mono text-base">{formatCurrency(totalDocumentos)}</strong></div></div>
 
           {totalDevolucoes > 0 && <div className="border-t-2 border-violet-300 bg-violet-50 p-3">
             <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-violet-900"><MinusCircle size={16}/> Itens devolvidos abatidos</div>

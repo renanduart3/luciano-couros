@@ -167,6 +167,13 @@ export const api = {
     formaPagamento: string;
     observacao?: string;
     parcelaOrdemId?: string;
+    dadosCheque?: {
+      vencimento: string;
+      cpfTitular: string;
+      cpfTerceiro?: string;
+      banco: string;
+      numeroCheque: string;
+    };
     alocacoes: Array<{ vendaId: string; valor: number }>;
   }) => fetch(`${API_BASE}/clientes/${clienteId}/carteira/recebimentos`, {
     method: "POST",
@@ -303,6 +310,9 @@ export const api = {
       emitente: string;
       numeroDocumento: string;
       vencimento: string;
+      cpfTitular?: string;
+      cpfTerceiro?: string;
+      banco?: string;
       observacao?: string;
     };
     autorizacaoPreco?: {

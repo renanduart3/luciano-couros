@@ -508,6 +508,36 @@ function origemEhServidor(req: Request) {
   return ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || req.socket.remoteAddress || "");
 }
 
+const FORMAS_PAGAMENTO_CLIENTE = new Set([
+  "avista_dinheiro",
+  "avista_debito",
+  "cartao_credito",
+  "cheque_emitente",
+  "cheque_terceiro",
+  "duplicata_emitente",
+  "duplicata_terceiro",
+  "bonus",
+  "pix",
+]);
+
+function validarDadosCheque(formaPagamento: string, entrada: any) {
+  if (formaPagamento !== "cheque_emitente" && formaPagamento !== "cheque_terceiro") return null;
+  const dados = {
+    vencimento: String(entrada?.vencimento || ""),
+    cpfTitular: String(entrada?.cpfTitular || "").trim(),
+    cpfTerceiro: String(entrada?.cpfTerceiro || "").trim(),
+    banco: String(entrada?.banco || "").trim(),
+    numeroCheque: String(entrada?.numeroCheque || "").trim(),
+  };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dados.vencimento) || !dados.cpfTitular || !dados.banco || !dados.numeroCheque) {
+    throw erroHttp("Informe vencimento, CPF/CNPJ do titular, banco e número do cheque.", 400);
+  }
+  if (formaPagamento === "cheque_terceiro" && !dados.cpfTerceiro) {
+    throw erroHttp("Informe o CPF/CNPJ do terceiro responsável pelo cheque.", 400);
+  }
+  return dados;
+}
+
 function recalcularOrdemCobranca(ordemId: string) {
   const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND deletedAt IS NULL", [ordemId]);
   if (!ordem) return;
@@ -2572,7 +2602,7 @@ function carregarDetalhesVenda(venda: any) {
     );
   }
   venda.instrumentoRecebimento = queryOne(
-    `SELECT tipo, emitente, numeroDocumento, valor, vencimento, status, observacao
+    `SELECT tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao
      FROM instrumentos_recebimento
      WHERE vendaId = ? AND deletedAt IS NULL
      ORDER BY createdAt DESC LIMIT 1`,
@@ -2658,7 +2688,7 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   devolucoes.forEach((devolucao) => { devolucao.items = itensPorDevolucao.get(devolucao.id) || []; });
 
   const instrumentos = queryAll<any>(
-    `SELECT vendaId, tipo, emitente, numeroDocumento, valor, vencimento, status, observacao, createdAt
+    `SELECT vendaId, tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao, createdAt
      FROM instrumentos_recebimento
      WHERE vendaId IN (${marcadores}) AND deletedAt IS NULL
      ORDER BY createdAt DESC`, ids
@@ -2873,9 +2903,7 @@ app.post("/api/vendas", (req, res) => {
 
       const formasComInstrumento = new Set([
         "cheque_emitente",
-        "cheque_terceiro",
-        "duplicata_emitente",
-        "duplicata_terceiro"
+        "cheque_terceiro"
       ]);
       const exigeInstrumento = formasComInstrumento.has(String(formaPagamento || ""));
 
@@ -2883,9 +2911,14 @@ app.post("/api/vendas", (req, res) => {
         const emitente = String(instrumentoRecebimento?.emitente || "").trim();
         const numeroDocumento = String(instrumentoRecebimento?.numeroDocumento || "").trim();
         const vencimentoInstrumento = String(instrumentoRecebimento?.vencimento || "").trim();
-        if (!emitente || !numeroDocumento || !/^\d{4}-\d{2}-\d{2}$/.test(vencimentoInstrumento)) {
-          throw erroHttp("Informe emitente, número e vencimento do cheque ou duplicata.", 400);
-        }
+        validarDadosCheque(String(formaPagamento), {
+          vencimento: vencimentoInstrumento,
+          cpfTitular: instrumentoRecebimento?.cpfTitular,
+          cpfTerceiro: instrumentoRecebimento?.cpfTerceiro,
+          banco: instrumentoRecebimento?.banco,
+          numeroCheque: numeroDocumento,
+        });
+        if (!emitente) throw erroHttp("Não foi possível identificar o emitente do cheque.", 400);
         if (vPago <= 0) {
           throw erroHttp("Cheque ou duplicata exige um valor recebido maior que zero.", 400);
         }
@@ -2991,8 +3024,8 @@ app.post("/api/vendas", (req, res) => {
       if (exigeInstrumento) {
         execute(
           `INSERT INTO instrumentos_recebimento
-             (id, vendaId, clienteId, tipo, emitente, numeroDocumento, valor, vencimento, status, observacao)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'em_carteira', ?)`,
+             (id, vendaId, clienteId, tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'em_carteira', ?)`,
           [
             "ins_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
             vendaId,
@@ -3000,6 +3033,9 @@ app.post("/api/vendas", (req, res) => {
             formaPagamento,
             String(instrumentoRecebimento.emitente).trim(),
             String(instrumentoRecebimento.numeroDocumento).trim(),
+            String(instrumentoRecebimento.cpfTitular || "").trim(),
+            String(instrumentoRecebimento.cpfTerceiro || "").trim() || null,
+            String(instrumentoRecebimento.banco || "").trim(),
             vPago,
             instrumentoRecebimento.vencimento,
             instrumentoRecebimento.observacao || null
@@ -3920,7 +3956,7 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
 // 8. ORDENS DE COBRANÇA
 function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
   return queryAll<any>(
-    `SELECT oc.*, c.nome AS clienteNome,
+    `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento,
             COALESCE((
               SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END)
               FROM cliente_bonus_movimentos bm
@@ -3943,7 +3979,25 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
                   AND rc.deletedAt IS NULL AND rc.status = 'ativo'
                 ORDER BY rc.data DESC, rc.createdAt DESC
                 LIMIT 1
-              ) AS dataPagamento
+              ) AS dataPagamento,
+              (
+                SELECT ocpr.recebimentoId
+                FROM ordem_cobranca_parcela_recebimentos ocpr
+                JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
+                WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL
+                  AND rc.deletedAt IS NULL AND rc.status = 'ativo'
+                ORDER BY rc.data DESC, rc.createdAt DESC
+                LIMIT 1
+              ) AS ultimoRecebimentoId,
+              (
+                SELECT ocpr.valor
+                FROM ordem_cobranca_parcela_recebimentos ocpr
+                JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
+                WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL
+                  AND rc.deletedAt IS NULL AND rc.status = 'ativo'
+                ORDER BY rc.data DESC, rc.createdAt DESC
+                LIMIT 1
+              ) AS ultimoPagamentoValor
        FROM ordem_cobranca_parcelas ocp
        WHERE ocp.ordemId = ?
        ORDER BY ocp.vencimento ASC, ocp.numero ASC`,
@@ -4217,9 +4271,11 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) {
       throw erroHttp("Informe uma data válida para o recebimento.", 400);
     }
-    if (!String(formaPagamento || "").trim()) {
-      throw erroHttp("Informe a forma de pagamento.", 400);
+    const forma = String(formaPagamento || "").trim();
+    if (!FORMAS_PAGAMENTO_CLIENTE.has(forma)) {
+      throw erroHttp("Informe uma forma de pagamento válida.", 400);
     }
+    const dadosCheque = validarDadosCheque(forma, req.body?.dadosCheque);
 
     const cliente = queryOne<any>("SELECT id FROM clientes WHERE id = ? AND deletedAt IS NULL AND ativo = 1", [clienteId]);
     if (!cliente) throw erroHttp("Cliente não encontrado ou inativo.", 404);
@@ -4235,6 +4291,9 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     const totalAplicado = arredondar(listaAlocacoes.reduce((total, item) => total + item.valor, 0));
     const recebido = arredondar(req.body?.valorRecebido);
     const bonusUtilizado = arredondar(req.body?.bonusUtilizado);
+    if (forma === "bonus" && recebido > 0.005) {
+      throw erroHttp("Na forma Bônus, informe o valor somente como bônus utilizado.", 400);
+    }
     if (recebido < 0 || bonusUtilizado < 0) {
       throw erroHttp("Os valores do recebimento e do bônus não podem ser negativos.", 400);
     }
@@ -4279,14 +4338,33 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       execute(
         `INSERT INTO pagamentos (id, clienteId, vendaId, data, valor, formaPagamento, observacao, recebimentoId)
          VALUES (?, ?, NULL, ?, ?, ?, ?, ?)`,
-        [pagamentoId, clienteId, data, recebido, formaPagamento, observacao || "Recebimento pela carteira do cliente", recebimentoId]
+        [pagamentoId, clienteId, data, recebido, forma, observacao || "Recebimento pela carteira do cliente", recebimentoId]
       );
       execute(
         `INSERT INTO recebimentos_cliente
          (id, clienteId, data, valorRecebido, valorAplicado, bonusUtilizado, bonusGerado, formaPagamento, observacao, pagamentoId)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, formaPagamento, observacao || null, pagamentoId]
+        [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, forma, observacao || null, pagamentoId]
       );
+
+      if (dadosCheque) {
+        execute(
+          `INSERT INTO recebimento_instrumentos
+           (id, recebimentoId, clienteId, tipo, vencimento, cpfTitular, cpfTerceiro, banco, numeroCheque)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            "rins_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
+            recebimentoId,
+            clienteId,
+            forma,
+            dadosCheque.vencimento,
+            dadosCheque.cpfTitular,
+            dadosCheque.cpfTerceiro || null,
+            dadosCheque.banco,
+            dadosCheque.numeroCheque,
+          ]
+        );
+      }
 
       if (bonusUtilizado > 0.005) {
         execute(
@@ -4371,6 +4449,7 @@ app.post("/api/recebimentos-cliente/:id/cancelar", (req, res) => {
 
       execute("UPDATE recebimento_alocacoes SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);
       execute("UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);
+      execute("UPDATE recebimento_instrumentos SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, id]);
       if (recebimento.pagamentoId) {
         execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND deletedAt IS NULL", [agora, recebimento.pagamentoId]);
       }

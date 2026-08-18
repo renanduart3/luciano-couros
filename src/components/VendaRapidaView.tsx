@@ -12,6 +12,7 @@ import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from 
 import { VendaComprovante } from "./VendaComprovante";
 import { dataComPrazo, ParcelaValeRascunho } from "./ParcelasValeEditor";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
+import { ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -67,23 +68,13 @@ const getUnidadeVendaPrincipal = (produto: ProdutoComUnidades) => produto.unidad
 const getUnidadesVendaPermitidas = (produto: ProdutoComUnidades) => [produto.unidade];
 
 const FORMAS_RECEBIMENTO = [
-  { value: "avista_dinheiro", label: "À vista — dinheiro" },
-  { value: "avista_debito", label: "À vista — débito" },
-  { value: "cartao_credito", label: "Cartão de crédito" },
-  { value: "pix", label: "PIX" },
-  { value: "cheque_emitente", label: "Cheque do emitente" },
-  { value: "cheque_terceiro", label: "Cheque de terceiro" },
-  { value: "duplicata_emitente", label: "Duplicata do emitente" },
-  { value: "duplicata_terceiro", label: "Duplicata de terceiro" },
-  { value: "bonus", label: "Crédito da carteira" },
+  ...FORMAS_PAGAMENTO,
   { value: "vale", label: "Vale — pagar depois" },
 ] as const;
 
 const FORMAS_COM_INSTRUMENTO = new Set([
   "cheque_emitente",
   "cheque_terceiro",
-  "duplicata_emitente",
-  "duplicata_terceiro",
 ]);
 
 export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicial, onOrcamentoCarregado, compact = false, clienteExterno, ocultarSeletorCliente = false, onItensChange, vendaEmEdicao, onCancelarEdicao }: VendaRapidaViewProps) {
@@ -165,6 +156,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [instrumentoEmitente, setInstrumentoEmitente] = useState("");
   const [instrumentoNumero, setInstrumentoNumero] = useState("");
   const [instrumentoVencimento, setInstrumentoVencimento] = useState("");
+  const [instrumentoCpfTitular, setInstrumentoCpfTitular] = useState("");
+  const [instrumentoCpfTerceiro, setInstrumentoCpfTerceiro] = useState("");
+  const [instrumentoBanco, setInstrumentoBanco] = useState("");
   const [pinEdicao, setPinEdicao] = useState("");
   const [dataVendaEdicao, setDataVendaEdicao] = useState("");
 
@@ -258,6 +252,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setInstrumentoEmitente(vendaEmEdicao.instrumentoRecebimento?.emitente || "");
     setInstrumentoNumero(vendaEmEdicao.instrumentoRecebimento?.numeroDocumento || "");
     setInstrumentoVencimento(vendaEmEdicao.instrumentoRecebimento?.vencimento || "");
+    setInstrumentoCpfTitular(vendaEmEdicao.instrumentoRecebimento?.cpfTitular || vendaEmEdicao.clienteDocumento || "");
+    setInstrumentoCpfTerceiro(vendaEmEdicao.instrumentoRecebimento?.cpfTerceiro || "");
+    setInstrumentoBanco(vendaEmEdicao.instrumentoRecebimento?.banco || "");
     setDataVendaEdicao(vendaEmEdicao.data);
     setPinEdicao("");
     setFeedbackMsg(null);
@@ -929,9 +926,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         parcelas: vendaNoVale && vencimento ? [{ vencimento, valor: totalLiquido }] : undefined,
         observacoes: observacoes || undefined,
         instrumentoRecebimento: formaExigeInstrumento ? {
-          emitente: instrumentoEmitente.trim(),
+          emitente: instrumentoEmitente.trim() || (formaPagamento === "cheque_terceiro" ? `TERCEIRO ${instrumentoCpfTerceiro.trim()}` : clienteSelecionado.nome),
           numeroDocumento: instrumentoNumero.trim(),
-          vencimento: instrumentoVencimento
+          vencimento: instrumentoVencimento,
+          cpfTitular: instrumentoCpfTitular.trim(),
+          cpfTerceiro: instrumentoCpfTerceiro.trim() || undefined,
+          banco: instrumentoBanco.trim(),
         } : undefined,
         autorizacaoPreco,
         orcamentoId: orcamentoOrigemId || undefined
@@ -950,8 +950,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         formaPagamento,
         instrumentoRecebimento: formaExigeInstrumento ? {
           tipo: formaPagamento,
-          emitente: instrumentoEmitente.trim(),
+          emitente: instrumentoEmitente.trim() || (formaPagamento === "cheque_terceiro" ? `TERCEIRO ${instrumentoCpfTerceiro.trim()}` : clienteSelecionado.nome),
           numeroDocumento: instrumentoNumero.trim(),
+          cpfTitular: instrumentoCpfTitular.trim(),
+          cpfTerceiro: instrumentoCpfTerceiro.trim() || undefined,
+          banco: instrumentoBanco.trim(),
           valor: vPago,
           vencimento: instrumentoVencimento,
           status: "a_receber"
@@ -1009,8 +1012,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       vencimentoRef.current?.focus();
       return;
     }
-    if (formaExigeInstrumento && (!instrumentoEmitente.trim() || !instrumentoNumero.trim() || !instrumentoVencimento)) {
-      setFeedbackMsg({ type: "error", text: "Informe emitente, número e vencimento do cheque ou duplicata." });
+    if (ehCheque(formaPagamento) && (!instrumentoNumero.trim() || !instrumentoVencimento || !instrumentoCpfTitular.trim() || !instrumentoBanco.trim() || (formaPagamento === "cheque_terceiro" && !instrumentoCpfTerceiro.trim()))) {
+      setFeedbackMsg({ type: "error", text: "Informe vencimento, CPF/CNPJ, banco e número do cheque." });
       return;
     }
     if (vendaComCredito && saldoCreditoCarteira <= 0) {
@@ -1075,6 +1078,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setInstrumentoEmitente("");
     setInstrumentoNumero("");
     setInstrumentoVencimento("");
+    setInstrumentoCpfTitular("");
+    setInstrumentoCpfTerceiro("");
+    setInstrumentoBanco("");
     setFeedbackMsg(null);
     setShowAutorizacaoPreco(false);
     setAdminPin("");
@@ -1560,6 +1566,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       setInstrumentoEmitente("");
                       setInstrumentoNumero("");
                       setInstrumentoVencimento("");
+                      setInstrumentoCpfTitular("");
+                      setInstrumentoCpfTerceiro("");
+                      setInstrumentoBanco("");
+                    } else if (!instrumentoCpfTitular) {
+                      setInstrumentoCpfTitular(clienteSelecionado?.documento || "");
                     }
                   }}
                   onKeyDown={(e) => {
@@ -1585,11 +1596,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               )}
 
               {!vendaEmEdicao && formaExigeInstrumento && (
-                <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-3">
-                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Emitente *</label><input type="text" value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value)} placeholder={formaPagamento.includes("terceiro") ? "Nome do terceiro" : clienteSelecionado?.nome || "Nome do emitente"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
-                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque/documento *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="Número" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-2 xl:grid-cols-5">
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Vencimento *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
-                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-3">O vencimento gera alerta; não marca o cheque ou a duplicata como recebido automaticamente.</p>
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ titular *</label><input value={instrumentoCpfTitular} onChange={(event) => setInstrumentoCpfTitular(event.target.value.slice(0, 24))} placeholder={clienteSelecionado?.documento || "CPF/CNPJ"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  {formaPagamento === "cheque_terceiro" && <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ terceiro *</label><input value={instrumentoCpfTerceiro} onChange={(event) => setInstrumentoCpfTerceiro(event.target.value.slice(0, 24))} placeholder="CPF/CNPJ DO TERCEIRO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>}
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Banco *</label><input value={instrumentoBanco} onChange={(event) => setInstrumentoBanco(event.target.value.slice(0, 80))} placeholder="BANCO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="NÚMERO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
+                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-5">O vencimento gera alerta; não marca o cheque como recebido automaticamente.</p>
                 </div>
               )}
 

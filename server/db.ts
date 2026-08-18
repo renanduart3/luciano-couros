@@ -549,6 +549,9 @@ export function initDatabase() {
         tipo TEXT NOT NULL,
         emitente TEXT NOT NULL,
         numeroDocumento TEXT NOT NULL,
+        cpfTitular TEXT,
+        cpfTerceiro TEXT,
+        banco TEXT,
         valor REAL NOT NULL,
         vencimento TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'em_carteira',
@@ -587,6 +590,29 @@ export function initDatabase() {
       )
     `).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimentos_cliente_data ON recebimentos_cliente (clienteId, data DESC, createdAt DESC)`).run();
+
+    // Dados bancários de cheques usados em baixas individuais, múltiplas ou
+    // vinculadas a ordens. O recebimento continua sendo o fato financeiro e
+    // este registro guarda apenas os dados do instrumento apresentado.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS recebimento_instrumentos (
+        id TEXT PRIMARY KEY,
+        recebimentoId TEXT NOT NULL UNIQUE,
+        clienteId TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        vencimento TEXT NOT NULL,
+        cpfTitular TEXT NOT NULL,
+        cpfTerceiro TEXT,
+        banco TEXT NOT NULL,
+        numeroCheque TEXT NOT NULL,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_instrumentos_vencimento ON recebimento_instrumentos (vencimento, deletedAt)`).run();
 
     db.prepare(`
       CREATE TABLE IF NOT EXISTS recebimento_alocacoes (
@@ -777,6 +803,9 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE usuarios ADD COLUMN deveTrocarSenha INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE usuarios ADD COLUMN ultimoAcesso TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN vendedorId TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTitular TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTerceiro TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN banco TEXT`).run(); } catch (e) {}
   db.prepare(`UPDATE usuarios SET login = 'gerente' WHERE id = 'usuario_admin' AND TRIM(COALESCE(login, '')) = ''`).run();
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios (LOWER(login)) WHERE login IS NOT NULL`).run();
   try { db.prepare(`ALTER TABLE produtos ADD COLUMN unidadeCompra TEXT`).run(); } catch (e) {}

@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.18.2 — 2026-08-18
+
+- Forma de pagamento da ordem é movida para o canto direito da faixa de navegação entre parcelas e histórico, ficando fora do cabeçalho capturado junto à tabela.
+- Ao selecionar cheque, seus campos são exibidos em uma linha própria logo abaixo da navegação e antes da tabela de parcelamento.
+- O cabeçalho de parcelamento preserva somente a identificação do cliente e CPF/CNPJ; tabela, regras de pagamento e layouts de impressão permanecem inalterados.
+
 ## 1.18.1 — 2026-08-18
 
 - Removida a área separada de Compensação; pagamentos e cheques voltam a ser gerenciados nos detalhes do próprio vale e da ordem de cobrança.

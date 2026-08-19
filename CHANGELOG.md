@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.18.4 — 2026-08-18
+
+- Dados completos do cheque passam a aparecer no histórico da ordem, nos pagamentos de cada vale e no histórico da carteira do cliente.
+- Pagamentos individuais, múltiplos e vinculados a ordens identificam tipo, número, banco, vencimento, CPF do titular, CPF do terceiro quando aplicável e situação do cheque.
+- Fluxo legado da carteira passa a solicitar e persistir os mesmos campos obrigatórios ao selecionar cheque.
+- Listagem principal de vales troca vencimento por emissão, remove a coluna saldo e adiciona a data do último pagamento ativo de cada vale.
+- Layouts de impressão permanecem inalterados.
+
 ## 1.18.3 — 2026-08-18
 
 - Registrar um pagamento na ordem de cobrança atualiza ordem, parcelas e vales de forma assíncrona sem fechar a modal.

@@ -169,6 +169,7 @@ export interface Venda {
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
   formaPagamento?: string;
+  ultimoPagamentoData?: string;
   parcelas?: ValeParcela[];
   instrumentoRecebimento?: {
     tipo: string;
@@ -290,6 +291,14 @@ export interface RecebimentoCliente {
   formaPagamento: string;
   observacao?: string;
   status: "ativo" | "recusado" | "cancelado";
+  chequeTipo?: "cheque_emitente" | "cheque_terceiro";
+  chequeVencimento?: string;
+  cpfTitular?: string;
+  cpfTerceiro?: string;
+  banco?: string;
+  numeroCheque?: string;
+  chequeStatus?: "aguardando" | "compensado" | "recusado";
+  chequeMotivo?: string;
   createdAt: string;
   alocacoes: Array<{
     id: string;

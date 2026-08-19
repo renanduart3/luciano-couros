@@ -5,6 +5,8 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
+import { CamposCheque } from "./CamposCheque";
+import { dadosChequeVazios, DadosCheque, ehCheque } from "../lib/pagamentos";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
@@ -30,6 +32,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const [data, setData] = useState(hoje());
   const [valorRecebido, setValorRecebido] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("avista_dinheiro");
+  const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => dadosChequeVazios());
   const [observacao, setObservacao] = useState("");
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
     try {
       const dados = await api.getCarteiraCliente(id);
       setCarteira(dados);
+      setDadosCheque((atuais) => ({ ...atuais, cpfTitular: atuais.cpfTitular || dados.cliente.documento || "" }));
       setSelecionadas(new Set());
       setValores({});
     } catch (err: any) {
@@ -119,6 +123,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
       .filter((item) => item.valor > 0);
     if (totalAplicado <= 0) return alert("INFORME O VALOR PAGO EM PELO MENOS UMA DÍVIDA.");
     if (distribuicaoDivergente) return alert("O VALOR INFORMADO PARA DISTRIBUIÇÃO AUTOMÁTICA DEVE SER TODO APLICADO NAS DÍVIDAS.");
+    if (ehCheque(formaPagamento) && (!dadosCheque.vencimento || !dadosCheque.cpfTitular.trim() || !dadosCheque.banco.trim() || !dadosCheque.numeroCheque.trim() || (formaPagamento === "cheque_terceiro" && !dadosCheque.cpfTerceiro.trim()))) return alert("PREENCHA TODOS OS DADOS OBRIGATÓRIOS DO CHEQUE.");
     if (!await confirmacao.confirmar({
       titulo: "Confirmar recebimento",
       mensagem: `VALOR RECEBIDO: ${formatCurrency(recebido)}\nTOTAL ABATIDO DOS VALES: ${formatCurrency(totalAplicado)}`,
@@ -133,10 +138,12 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
         valorRecebido: recebido,
         formaPagamento,
         observacao: observacao || undefined,
+        dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
         alocacoes
       });
       setValorRecebido("");
       setObservacao("");
+      setDadosCheque({ ...dadosChequeVazios(), cpfTitular: carteira.cliente.documento || "" });
       await carregarCarteira(carteira.cliente.id);
       onRefreshStats?.();
       onRecebimentoRegistrado?.();
@@ -197,6 +204,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
               <label className="text-xs font-black text-slate-700">DATA<input type="date" value={data} onChange={(e) => setData(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
               <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option></select></label>
             </div>
+            <CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={carteira.cliente.documento} />
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
@@ -212,7 +220,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 p-4"><History size={18} /><h3 className="font-black text-slate-950">HISTÓRICO DA CARTEIRA</h3></div>
-            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="grid gap-3 p-4 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold text-slate-600">{recebimento.formaPagamento}</p>{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</article>)}</div>}
+            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-3 p-4"><div className="grid gap-3 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold text-slate-600">{recebimento.formaPagamento}</p>{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</div>{recebimento.numeroCheque && <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950"><p className="font-black">CHEQUE {recebimento.chequeTipo === "cheque_terceiro" ? "DE TERCEIRO" : "DO EMITENTE"} Nº {recebimento.numeroCheque}</p><p className="mt-1 text-[10px]">BANCO: {recebimento.banco || "NÃO INFORMADO"} · VENCIMENTO: {recebimento.chequeVencimento ? formatDate(recebimento.chequeVencimento) : "NÃO INFORMADO"} · CPF TITULAR: {recebimento.cpfTitular || "NÃO INFORMADO"}{recebimento.cpfTerceiro ? ` · CPF TERCEIRO: ${recebimento.cpfTerceiro}` : ""} · SITUAÇÃO: {(recebimento.chequeStatus || "aguardando").toUpperCase()}</p></div>}</article>)}</div>}
           </div>
         </form>
       )}

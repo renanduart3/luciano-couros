@@ -2745,7 +2745,15 @@ app.get("/api/vendas", (req, res) => {
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
                 CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
-              ) as formaPagamento
+              ) as formaPagamento,
+              NULLIF(MAX(
+                COALESCE((SELECT MAX(p.data) FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL), ''),
+                COALESCE((SELECT MAX(rc.data)
+                          FROM recebimento_alocacoes ra
+                          JOIN recebimentos_cliente rc ON rc.id = ra.recebimentoId
+                          WHERE ra.vendaId = v.id AND ra.deletedAt IS NULL
+                            AND rc.deletedAt IS NULL AND rc.status = 'ativo'), '')
+              ), '') as ultimoPagamentoData
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
        WHERE v.deletedAt IS NULL
@@ -2784,7 +2792,15 @@ app.get("/api/vendas/:id", (req, res) => {
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
                 CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
-              ) as formaPagamento
+              ) as formaPagamento,
+              NULLIF(MAX(
+                COALESCE((SELECT MAX(p.data) FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL), ''),
+                COALESCE((SELECT MAX(rc.data)
+                          FROM recebimento_alocacoes ra
+                          JOIN recebimentos_cliente rc ON rc.id = ra.recebimentoId
+                          WHERE ra.vendaId = v.id AND ra.deletedAt IS NULL
+                            AND rc.deletedAt IS NULL AND rc.status = 'ativo'), '')
+              ), '') as ultimoPagamentoData
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
        WHERE v.id = ? AND v.deletedAt IS NULL`,
@@ -4013,15 +4029,21 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
     );
     const eventosPagamento = queryAll<any>(
       `SELECT ocpr.id, ocpr.recebimentoId, ocpr.valor, ocpr.deletedAt, ocp.numero AS parcelaNumero,
-              rc.data, rc.formaPagamento, rc.status AS recebimentoStatus, rc.updatedAt
+              rc.data, rc.formaPagamento, rc.status AS recebimentoStatus, rc.updatedAt,
+              ri.tipo AS chequeTipo, ri.vencimento AS chequeVencimento, ri.cpfTitular,
+              ri.cpfTerceiro, ri.banco, ri.numeroCheque, ri.status AS chequeStatus
        FROM ordem_cobranca_parcela_recebimentos ocpr
        JOIN ordem_cobranca_parcelas ocp ON ocp.id = ocpr.parcelaId
        JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
+       LEFT JOIN recebimento_instrumentos ri ON ri.recebimentoId = rc.id AND ri.deletedAt IS NULL
        WHERE ocpr.ordemId = ?
        ORDER BY rc.data ASC, rc.createdAt ASC, ocp.numero ASC`,
       [ordem.id]
     ).flatMap((evento) => {
       const estornado = Boolean(evento.deletedAt) || evento.recebimentoStatus === "cancelado";
+      const detalheCheque = evento.numeroCheque
+        ? ` Cheque ${evento.chequeTipo === "cheque_terceiro" ? "de terceiro" : "do emitente"} nº ${evento.numeroCheque}, banco ${evento.banco}, vencimento ${evento.chequeVencimento}, CPF titular ${evento.cpfTitular}${evento.cpfTerceiro ? `, CPF terceiro ${evento.cpfTerceiro}` : ""}, situação ${String(evento.chequeStatus || "aguardando").toUpperCase()}.`
+        : "";
       const pagamento = {
         id: evento.id,
         recebimentoId: evento.recebimentoId,
@@ -4030,7 +4052,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
         parcelaNumero: Number(evento.parcelaNumero),
         valor: Number(evento.valor),
         formaPagamento: evento.formaPagamento,
-        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} registrado na parcela ${evento.parcelaNumero}.`
+        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} registrado na parcela ${evento.parcelaNumero}.${detalheCheque}`
       };
       if (!estornado) return [pagamento];
       return [pagamento, {
@@ -4236,8 +4258,11 @@ app.get("/api/clientes/:id/carteira", (req, res) => {
       [id]
     );
     const recebimentos = queryAll<any>(
-      `SELECT r.*
+      `SELECT r.*, ri.tipo AS chequeTipo, ri.vencimento AS chequeVencimento,
+              ri.cpfTitular, ri.cpfTerceiro, ri.banco, ri.numeroCheque,
+              ri.status AS chequeStatus, ri.motivoStatus AS chequeMotivo
        FROM recebimentos_cliente r
+       LEFT JOIN recebimento_instrumentos ri ON ri.recebimentoId = r.id AND ri.deletedAt IS NULL
        WHERE r.clienteId = ? AND r.deletedAt IS NULL
        ORDER BY r.data DESC, r.createdAt DESC LIMIT 50`,
       [id]

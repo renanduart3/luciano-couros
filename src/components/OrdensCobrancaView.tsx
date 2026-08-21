@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { CamposCheque } from "./CamposCheque";
 import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { EditarPagamentoModal } from "./EditarPagamentoModal";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 interface Props {
   refreshKey?: number;
@@ -34,6 +35,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   const [feedback, setFeedback] = useState("");
   const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico">("parcelas");
   const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: ordem.clienteDocumento || "" }));
   const [valoresPagamento, setValoresPagamento] = useState<Record<string, string>>(() => Object.fromEntries(ordem.parcelas.filter((parcela) => parcela.status === "pendente").map((parcela) => [parcela.id, dinheiroInput(parcela.saldo)])));
   const [datasPagamento, setDatasPagamento] = useState<Record<string, string>>(() => Object.fromEntries(ordem.parcelas.map((parcela) => [parcela.id, hojeIso()])));
@@ -71,6 +73,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
         valorRecebido,
         bonusUtilizado,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
         parcelaOrdemId: parcelaId,
         observacao: `Pagamento da ordem de cobrança #${ordem.numeroSequencial}`,
@@ -149,6 +152,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
             <label className="ml-auto text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 block min-h-9 min-w-56 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
           </div>
           {ehCheque(formaPagamento) && <div className="mt-2 border-t border-slate-200 pt-2"><CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={ordem.clienteDocumento} /></div>}
+          <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="mt-2 max-w-xs border-t border-slate-200 pt-2" />
           {formaPagamento === "bonus" && <p className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(ordem.saldoBonus)}</p>}
         </div>
 

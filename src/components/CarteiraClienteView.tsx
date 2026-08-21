@@ -7,6 +7,7 @@ import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
 import { CamposCheque } from "./CamposCheque";
 import { dadosChequeVazios, DadosCheque, ehCheque } from "../lib/pagamentos";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
@@ -32,6 +33,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const [data, setData] = useState(hoje());
   const [valorRecebido, setValorRecebido] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("avista_dinheiro");
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => dadosChequeVazios());
   const [observacao, setObservacao] = useState("");
 
@@ -137,6 +139,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
         data,
         valorRecebido: recebido,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         observacao: observacao || undefined,
         dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
         alocacoes
@@ -205,6 +208,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
               <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option></select></label>
             </div>
             <CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={carteira.cliente.documento} />
+            <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="mt-3 max-w-xs" />
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">

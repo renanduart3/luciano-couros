@@ -5,6 +5,7 @@ import { PagamentoGerenciavel } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { CamposCheque } from "./CamposCheque";
 import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 const dinheiro = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -43,9 +44,11 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
       const atualizado = await api.updateRecebimentoCliente(recebimentoId, {
         pin,
         status: ehCheque(pagamento.formaPagamento) ? pagamento.statusPagamento : "compensado",
+        dataCompensacao: pagamento.statusPagamento === "compensado" ? pagamento.dataCompensacao : undefined,
         data: pagamento.data,
         valorRecebido: parseBrazilianNumber(valorRecebido),
         formaPagamento: pagamento.formaPagamento,
+        parcelasCartao: pagamento.formaPagamento === "cartao_credito" ? pagamento.parcelasCartao || 1 : undefined,
         observacao: pagamento.observacao,
         motivoStatus: pagamento.motivoStatus,
         dadosCheque: ehCheque(pagamento.formaPagamento) ? dadosCheque : undefined,
@@ -71,8 +74,10 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
             <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={pagamento.data} onChange={(event) => setPagamento({ ...pagamento, data: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"/></label>
             <label className="text-[10px] font-black uppercase text-slate-600">Valor recebido<input value={valorRecebido} onChange={(event) => setValorRecebido(event.target.value)} inputMode="decimal" className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
             <label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={pagamento.formaPagamento} onChange={(event) => setPagamento({ ...pagamento, formaPagamento: event.target.value, statusPagamento: ehCheque(event.target.value) ? pagamento.statusPagamento : "compensado" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
-            {ehCheque(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={pagamento.statusPagamento} onChange={(event) => setPagamento({ ...pagamento, statusPagamento: event.target.value as PagamentoGerenciavel["statusPagamento"] })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
+            {ehCheque(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={pagamento.statusPagamento} onChange={(event) => { const statusPagamento = event.target.value as PagamentoGerenciavel["statusPagamento"]; setPagamento({ ...pagamento, statusPagamento, dataCompensacao: statusPagamento === "compensado" ? pagamento.dataCompensacao || new Date().toISOString().slice(0, 10) : undefined }); }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
           </div>
+          <ParcelamentoCartaoSelect formaPagamento={pagamento.formaPagamento} parcelas={pagamento.parcelasCartao || 1} onChange={(parcelasCartao) => setPagamento({ ...pagamento, parcelasCartao })} className="max-w-xs" />
+          {ehCheque(pagamento.formaPagamento) && pagamento.statusPagamento === "compensado" && <label className="block max-w-xs text-[10px] font-black uppercase text-slate-600">Data da compensação<input type="date" value={pagamento.dataCompensacao || ""} onChange={(event) => setPagamento({ ...pagamento, dataCompensacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 font-bold"/></label>}
           {ehCheque(pagamento.formaPagamento) && <CamposCheque formaPagamento={pagamento.formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={pagamento.clienteDocumento} />}
           {pagamento.statusPagamento === "recusado" && <p className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900">Ao salvar como recusado, o valor será retirado dos vales e das ordens e qualquer bônus gerado por este pagamento será removido.</p>}
           <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Valores aplicados nos vales</div><div className="divide-y divide-slate-200">{pagamento.alocacoes.map((item) => <label key={item.vendaId} className="grid grid-cols-[1fr_160px] items-center gap-3 p-3 text-xs"><span><strong className="block text-slate-950">VALE #{item.numeroSequencial}</strong><span className="font-bold text-slate-500">Saldo atual: {formatCurrency(item.saldoRestante)}</span></span><input value={valores[item.vendaId] || ""} onChange={(event) => setValores((atuais) => ({ ...atuais, [item.vendaId]: event.target.value }))} inputMode="decimal" className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>)}</div></div>

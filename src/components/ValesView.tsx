@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, CheckSquare2, Coins, Eye, FileClock, Filter, HandCoins, MessageCircle, WalletCards, X } from "lucide-react";
+import { AlertCircle, CalendarClock, CheckSquare2, Coins, Eye, FileClock, Filter, HandCoins, Landmark, MessageCircle, WalletCards, X } from "lucide-react";
 import { Cliente, OrdemCobranca, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate } from "../lib/utils";
@@ -8,6 +8,7 @@ import { Pagination, paginate } from "./Pagination";
 import { CobrancaValesModal } from "./CobrancaValesModal";
 import { OrdemCobrancaDetalhesModal, OrdensCobrancaView } from "./OrdensCobrancaView";
 import { PagamentoValesModal } from "./PagamentoValesModal";
+import { ChequesView } from "./ChequesView";
 
 interface ValesViewProps {
   onRefreshStats?: () => void;
@@ -28,7 +29,7 @@ const diasEmAtraso = (vencimento?: string) => {
 const estaEmAberto = (vale: Venda) => vale.status === "pendente" && Number(vale.saldoRestante) > 0.005;
 
 export function ValesView({ onRefreshStats }: ValesViewProps) {
-  const [tab, setTab] = useState<"abertos" | "ordens">("abertos");
+  const [tab, setTab] = useState<"abertos" | "ordens" | "cheques">("abertos");
   const [vales, setVales] = useState<Venda[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
@@ -181,14 +182,32 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Vales</h1>
         </div>
-        <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          <button type="button" onClick={() => setTab("abertos")} className={`module-tab ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={17} /> Cobranças</button>
-          <button type="button" onClick={() => setTab("ordens")} className={`module-tab ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={17} /> Ordens</button>
+        <div className="grid w-full grid-cols-3 gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:w-auto sm:gap-2">
+          <button type="button" onClick={() => setTab("abertos")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={16} /> Cobranças</button>
+          <button type="button" onClick={() => setTab("ordens")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={16} /> Ordens</button>
+          <button type="button" onClick={() => setTab("cheques")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "cheques" ? "module-tab-active" : ""}`}><Landmark size={16} /> Cheques</button>
         </div>
       </div>
 
       {tab === "ordens" ? (
         <OrdensCobrancaView refreshKey={ordensRefreshKey} />
+      ) : tab === "cheques" ? (
+        <ChequesView
+          onOpenVale={(vendaId) => {
+            const vale = vales.find((item) => item.id === vendaId);
+            if (vale) void abrirDetalhesVale(vale);
+          }}
+          onOpenOrdem={(ordemId) => {
+            const ordem = ordens.find((item) => item.id === ordemId);
+            if (ordem) setOrdemDetalhada(ordem);
+          }}
+          onChanged={() => {
+            Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendasAtualizadas, ordensAtualizadas]) => {
+              setVales(vendasAtualizadas.filter((venda) => Boolean(venda.vencimento)));
+              setOrdens(ordensAtualizadas);
+            });
+          }}
+        />
       ) : (
         <>
           <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">

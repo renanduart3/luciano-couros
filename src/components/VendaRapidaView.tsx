@@ -13,6 +13,7 @@ import { VendaComprovante } from "./VendaComprovante";
 import { dataComPrazo, ParcelaValeRascunho } from "./ParcelasValeEditor";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -150,6 +151,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [descontoGeral, setDescontoGeral] = useState("");
   const [valorPago, setValorPago] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("vale");
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [vencimento, setVencimento] = useState("");
   const [parcelasVale, setParcelasVale] = useState<ParcelaValeRascunho[]>([]);
   const [observacoes, setObservacoes] = useState("");
@@ -922,6 +924,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         })),
         valorPago: vPago,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         vencimento: vencimento || undefined,
         parcelas: vendaNoVale && vencimento ? [{ vencimento, valor: totalLiquido }] : undefined,
         observacoes: observacoes || undefined,
@@ -948,6 +951,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         clienteDocumento: clienteSelecionado.documento,
         clienteIsWhatsapp: clienteSelecionado.isWhatsapp,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         instrumentoRecebimento: formaExigeInstrumento ? {
           tipo: formaPagamento,
           emitente: instrumentoEmitente.trim() || (formaPagamento === "cheque_terceiro" ? `TERCEIRO ${instrumentoCpfTerceiro.trim()}` : clienteSelecionado.nome),
@@ -1075,6 +1079,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setParcelasVale([]);
     setObservacoes("");
     setFormaPagamento("vale");
+    setParcelasCartao(1);
     setInstrumentoEmitente("");
     setInstrumentoNumero("");
     setInstrumentoVencimento("");
@@ -1587,6 +1592,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               </div>
 
               {vendaEmEdicao && <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold text-slate-600">Forma de pagamento e recebimentos preservados nesta edição.</p>}
+
+              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="ml-auto max-w-xs" />}
 
               {vendaComCredito && (
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">

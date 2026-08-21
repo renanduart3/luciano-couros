@@ -8,6 +8,7 @@ import { useEhGerente } from "../auth/AuthContext";
 import { CamposCheque } from "./CamposCheque";
 import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { EditarPagamentoModal } from "./EditarPagamentoModal";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -31,6 +32,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
   const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: vale.clienteDocumento || "" }));
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [feedbackPagamento, setFeedbackPagamento] = useState("");
@@ -69,6 +71,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         valorRecebido: recebido,
         bonusUtilizado,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         observacao: `Pagamento direto do vale #${vale.numeroSequencial}`,
         dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
         alocacoes: [{ vendaId: vale.id, valor: valorAplicado }]
@@ -207,6 +210,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                 <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
               </div>
               <div className="px-3 pb-3"><CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={vale.clienteDocumento} /></div>
+              <div className="px-3 pb-3"><ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} /></div>
               {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
               {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}

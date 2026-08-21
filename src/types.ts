@@ -169,6 +169,7 @@ export interface Venda {
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
   formaPagamento?: string;
+  parcelasCartao?: number;
   ultimoPagamentoData?: string;
   parcelas?: ValeParcela[];
   instrumentoRecebimento?: {
@@ -263,6 +264,7 @@ export interface Pagamento {
     | "dinheiro"
     | "cartao_debito"
     | "boleto";
+  parcelasCartao?: number;
   observacao?: string;
   deletedAt?: string;
   createdAt: string;
@@ -289,6 +291,7 @@ export interface RecebimentoCliente {
   bonusUtilizado: number;
   bonusGerado: number;
   formaPagamento: string;
+  parcelasCartao?: number;
   observacao?: string;
   status: "ativo" | "recusado" | "cancelado";
   chequeTipo?: "cheque_emitente" | "cheque_terceiro";
@@ -322,12 +325,14 @@ export interface PagamentoGerenciavel {
   bonusUtilizado: number;
   bonusGerado: number;
   formaPagamento: string;
+  parcelasCartao?: number;
   cpfTitular?: string;
   cpfTerceiro?: string;
   banco?: string;
   numeroCheque?: string;
   status: "ativo" | "recusado" | "cancelado";
   statusPagamento: "aguardando" | "compensado" | "recusado";
+  dataCompensacao?: string;
   motivoStatus?: string;
   observacao?: string;
   createdAt: string;
@@ -346,6 +351,40 @@ export interface PagamentoGerenciavel {
     createdAt: string;
     usuarioNome: string;
     detalhes: Record<string, any>;
+  }>;
+}
+
+export interface ChequeGerencial {
+  id: string;
+  recebimentoId: string;
+  clienteId: string;
+  clienteNome: string;
+  clienteDocumento?: string;
+  tipo: "cheque_emitente" | "cheque_terceiro";
+  dataRecebimento: string;
+  vencimento: string;
+  dataCompensacao?: string;
+  valorRecebido: number;
+  valorAplicado: number;
+  banco: string;
+  numeroCheque: string;
+  cpfTitular: string;
+  cpfTerceiro?: string;
+  status: "aguardando" | "compensado" | "recusado";
+  motivoStatus?: string;
+  observacao?: string;
+  createdAt: string;
+  updatedAt: string;
+  vales: Array<{
+    vendaId: string;
+    numeroSequencial: number;
+    valor: number;
+    ativo: boolean;
+  }>;
+  ordens: Array<{
+    ordemId: string;
+    numeroSequencial: number;
+    valor: number;
   }>;
 }
 

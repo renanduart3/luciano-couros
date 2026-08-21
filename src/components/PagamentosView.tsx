@@ -7,6 +7,7 @@ import { paginate, Pagination } from "./Pagination";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 const PAGE_SIZE = 12;
 
@@ -37,6 +38,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
   const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().split("T")[0]);
   const [valor, setValor] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("pix");
+  const [parcelasCartao, setParcelasCartao] = useState(1);
   const [observacao, setObservacao] = useState("");
 
   const fetchData = async () => {
@@ -101,6 +103,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
         data: dataPagamento,
         valor: val,
         formaPagamento,
+        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         observacao: observacao || undefined
       });
 
@@ -109,6 +112,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
       setClienteBusca("");
       setVendaId("");
       setValor("");
+      setParcelasCartao(1);
       setObservacao("");
       setModoCadastro(false);
       fetchData();
@@ -316,6 +320,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                 <option value="cartao_debito">Cartão de Débito</option>
                 <option value="boleto">Boleto</option>
               </select>
+              <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="mt-2" />
             </div>
 
             <div className="space-y-1">

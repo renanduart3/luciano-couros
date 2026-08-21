@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.19.0 — 2026-08-21
+
+- Vales ganham uma Central de Cheques enxuta, reunindo em uma linha cada cheque recebido e seus vínculos com vales e ordens de cobrança.
+- A central oferece indicadores, busca e filtros por situação, vencimento e origem, além de atalhos para abrir a origem, compensar ou recusar o cheque sem perder o contexto da tela.
+- Compensação passa a registrar sua data efetiva; recusas continuam restaurando os saldos e todas as ações gerenciais permanecem protegidas e auditadas.
+- Pagamentos por cartão de crédito passam a solicitar o número de parcelas, de 1x a 12x, em vendas, vales, carteira do cliente, ordens de cobrança, edição gerencial e fluxo legado.
+- O parcelamento é persistido, validado no servidor e apresentado no histórico das ordens, com 1x como padrão para compatibilidade com lançamentos anteriores.
+- A nova experiência de cheques foi ajustada para desktop e celular, preservando filtros e a aba selecionada após cada ação.
+
 ## 1.18.4 — 2026-08-18
 
 - Dados completos do cheque passam a aparecer no histórico da ordem, nos pagamentos de cada vale e no histórico da carteira do cliente.

@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel, ChequeGerencial
 } from "../types";
 
 const API_BASE = "/api";
@@ -165,6 +165,7 @@ export const api = {
     valorRecebido: number;
     bonusUtilizado?: number;
     formaPagamento: string;
+    parcelasCartao?: number;
     observacao?: string;
     parcelaOrdemId?: string;
     dadosCheque?: {
@@ -201,8 +202,10 @@ export const api = {
     data: string;
     valorRecebido: number;
     formaPagamento: string;
+    parcelasCartao?: number;
     observacao?: string;
     motivoStatus?: string;
+    dataCompensacao?: string;
     dadosCheque?: {
       vencimento: string;
       cpfTitular: string;
@@ -216,6 +219,8 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<PagamentoGerenciavel>(r)),
+
+  getCheques: () => fetch(`${API_BASE}/cheques`).then(r => handleResponse<ChequeGerencial[]>(r)),
 
   // ORDENS DE COBRANÇA
   getOrdensCobranca: (clienteId?: string) => {
@@ -326,6 +331,7 @@ export const api = {
     }>;
     valorPago: number;
     formaPagamento: string;
+    parcelasCartao?: number;
     vencimento?: string;
     parcelas?: Array<{ vencimento: string; valor: number }>;
     observacoes?: string;
@@ -503,6 +509,7 @@ export const api = {
     data: string;
     valor: number;
     formaPagamento: string;
+    parcelasCartao?: number;
     observacao?: string;
   }) => 
     fetch(`${API_BASE}/pagamentos`, {

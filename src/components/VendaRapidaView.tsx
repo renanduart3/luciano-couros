@@ -1593,7 +1593,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
               {vendaEmEdicao && <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold text-slate-600">Forma de pagamento e recebimentos preservados nesta edição.</p>}
 
-              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="ml-auto max-w-xs" />}
+              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={vPago} className="ml-auto max-w-xs" />}
 
               {vendaComCredito && (
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">

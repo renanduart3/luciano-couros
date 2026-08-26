@@ -4057,9 +4057,6 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
       const detalheCheque = evento.numeroCheque
         ? ` Cheque ${evento.chequeTipo === "cheque_terceiro" ? "de terceiro" : "do emitente"} nº ${evento.numeroCheque}, banco ${evento.banco}, vencimento ${evento.chequeVencimento}, CPF titular ${evento.cpfTitular}${evento.cpfTerceiro ? `, CPF terceiro ${evento.cpfTerceiro}` : ""}, situação ${String(evento.chequeStatus || "aguardando").toUpperCase()}.`
         : "";
-      const detalheCartao = evento.formaPagamento === "cartao_credito"
-        ? ` Cartão de crédito em ${Number(evento.parcelasCartao || 1)}x.`
-        : "";
       const pagamento = {
         id: evento.id,
         recebimentoId: evento.recebimentoId,
@@ -4068,7 +4065,8 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
         parcelaNumero: Number(evento.parcelaNumero),
         valor: Number(evento.valor),
         formaPagamento: evento.formaPagamento,
-        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} registrado na parcela ${evento.parcelaNumero}.${detalheCartao}${detalheCheque}`
+        parcelasCartao: evento.parcelasCartao ? Number(evento.parcelasCartao) : undefined,
+        texto: `Pagamento de R$ ${Number(evento.valor).toFixed(2).replace(".", ",")} registrado na parcela ${evento.parcelaNumero}.${detalheCheque}`
       };
       if (!estornado) return [pagamento];
       return [pagamento, {
@@ -4450,7 +4448,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       aplicarRecebimentoEmOrdens(recebimentoId, listaAlocacoes, String(parcelaOrdemId || "") || undefined);
 
       registrarAuditoria(null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
-        clienteId, recebido, totalAplicado, dividas: listaAlocacoes
+        clienteId, recebido, formaPagamento: forma, parcelasCartao, totalAplicado, dividas: listaAlocacoes
       });
     });
 
@@ -4731,8 +4729,8 @@ app.put("/api/recebimentos-cliente/:recebimentoId", exigirGerente, (req, res) =>
         [data, valorRecebido, forma, parcelasCartao, observacao || "Recebimento pela carteira do cliente", financeiroFicaraAtivo ? null : agora, atual.pagamentoId]
       );
       registrarAuditoria(administrador.id, "pagamento_alterado", "recebimento_cliente", recebimentoId, {
-        antes: { status: atual.tituloStatus, data: atual.data, valorRecebido: Number(atual.valorRecebido || 0) + Number(atual.bonusUtilizado || 0), formaPagamento: atual.formaPagamento },
-        depois: { status, data, valorRecebido: valorInformado, formaPagamento: forma, totalAplicado, motivoStatus },
+        antes: { status: atual.tituloStatus, data: atual.data, valorRecebido: Number(atual.valorRecebido || 0) + Number(atual.bonusUtilizado || 0), formaPagamento: atual.formaPagamento, parcelasCartao: atual.parcelasCartao },
+        depois: { status, data, valorRecebido: valorInformado, formaPagamento: forma, parcelasCartao, totalAplicado, motivoStatus },
       });
       return carregarRecebimentoGerenciavel(recebimentoId);
     });
@@ -4884,7 +4882,7 @@ app.post("/api/pagamentos", (req, res) => {
 
     res.json({ success: true, id: pagId });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(error.statusCode || 500).json({ error: error.message });
   }
 });
 

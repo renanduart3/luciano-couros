@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.19.1 — 2026-08-26
+
+- Pagamentos com cartão de crédito passam a mostrar, antes da confirmação, a quantidade e o valor das parcelas junto ao valor total.
+- Forma de pagamento e parcelamento ficam visíveis posteriormente nas vendas, comprovantes, caixa, histórico do cliente, carteira, vales e ordens de cobrança.
+- Divisões com diferença de centavos apresentam a composição exata das parcelas; lançamentos anteriores sem quantidade registrada permanecem compatíveis como 1x.
+- Validação do servidor mantém o limite de 1x a 12x e agora devolve erro de entrada adequado no fluxo legado quando o limite é ultrapassado.
+
 ## 1.19.0 — 2026-08-21
 
 - Vales ganham uma Central de Cheques enxuta, reunindo em uma linha cada cheque recebido e seus vínculos com vales e ordens de cobrança.

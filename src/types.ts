@@ -435,6 +435,7 @@ export interface OrdemCobrancaEvento {
   parcelaNumero?: number;
   valor?: number;
   formaPagamento?: string;
+  parcelasCartao?: number;
   recebimentoId?: string;
   texto: string;
 }

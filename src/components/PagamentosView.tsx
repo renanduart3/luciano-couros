@@ -7,7 +7,7 @@ import { paginate, Pagination } from "./Pagination";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
-import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
+import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 
 const PAGE_SIZE = 12;
 
@@ -320,7 +320,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                 <option value="cartao_debito">Cartão de Débito</option>
                 <option value="boleto">Boleto</option>
               </select>
-              <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="mt-2" />
+              <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={parseBrazilianNumber(valor)} className="mt-2" />
             </div>
 
             <div className="space-y-1">
@@ -385,6 +385,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                           <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded text-[9px] font-extrabold uppercase">
                             {p.formaPagamento}
                           </span>
+                          <ResumoParcelamentoCartao formaPagamento={p.formaPagamento} parcelasCartao={p.parcelasCartao} valorTotal={p.valor} />
                           <span className="text-[10px] text-slate-500 font-medium">
                             {p.vendaSequencial ? `Venda #${p.vendaSequencial}` : "Amortização"}
                           </span>

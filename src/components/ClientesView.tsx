@@ -9,6 +9,7 @@ import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
+import { ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 
 const chavePrecoCliente = (produtoId: string, fornecedorId?: string | null) =>
   `${produtoId}::${fornecedorId || ""}`;
@@ -818,7 +819,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           <tr key={p.id} className="hover:bg-slate-50/20">
                             <td className="p-3 font-mono">{formatDate(p.data)}</td>
                             <td className="p-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(p.valor)}</td>
-                            <td className="p-3 font-bold text-slate-700 uppercase">{p.formaPagamento}</td>
+                            <td className="p-3 font-bold text-slate-700 uppercase"><span>{p.formaPagamento.replaceAll("_", " ")}</span><ResumoParcelamentoCartao formaPagamento={p.formaPagamento} parcelasCartao={p.parcelasCartao} valorTotal={p.valor} className="mt-1 normal-case" /></td>
                             <td className="p-3">
                               {p.vendaSequencial ? (
                                 <span className="font-semibold text-slate-500">Venda #{p.vendaSequencial}</span>

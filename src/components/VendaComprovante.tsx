@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { Venda } from "../types";
 import logo from "../img/logo.png";
+import { descreverParcelamentoCartao, normalizarQuantidadeParcelas } from "./ParcelamentoCartaoSelect";
 
 interface VendaComprovanteProps {
   venda: Venda;
@@ -39,6 +40,9 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
   const instrumento = venda.instrumentoRecebimento;
   const ehVale = Boolean(venda.vencimento);
+  const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
+  const parcelasCartao = normalizarQuantidadeParcelas(venda.parcelasCartao);
+  const valorRecebido = Number(venda.valorPago || 0);
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
   const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
   const titulo = instrumento?.tipo?.startsWith("cheque")
@@ -91,6 +95,12 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       <div className="receipt-observation-line">
         <b>OBSERVAÇÃO:</b>
         <span title={observacaoComprovante}>{observacaoComprovante}</span>
+      </div>
+
+      <div className="receipt-payment-line">
+        <span><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}</span>
+        {formaPagamento === "cartao_credito" && <span><b>PARCELAMENTO:</b> {descreverParcelamentoCartao(valorRecebido, parcelasCartao)}</span>}
+        <span><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
       </div>
 
       <footer className="receipt-footer">

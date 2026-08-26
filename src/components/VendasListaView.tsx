@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { paginate, Pagination } from "./Pagination";
 import { useEhGerente } from "../auth/AuthContext";
+import { ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 
 const PAGE_SIZE = 12;
 
@@ -205,7 +206,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                         <p className="font-bold text-slate-900">{v.clienteNome}</p>
                         {v.clienteTelefone && <p className="text-[10px] text-slate-400 font-medium">{v.clienteTelefone}</p>}
                       </td>
-                      <td className="p-4 text-right font-mono font-extrabold text-slate-900">{formatCurrency(v.totalLiquido)}</td>
+                      <td className="p-4 text-right font-mono font-extrabold text-slate-900"><span>{formatCurrency(v.totalLiquido)}</span><ResumoParcelamentoCartao formaPagamento={v.formaPagamento || ""} parcelasCartao={v.parcelasCartao} valorTotal={v.valorPago} className="mt-1 text-left font-sans" /></td>
                       <td className="p-4 text-center">
                         {v.status === "paga" ? (
                           <span className="inline-block px-2.5 py-1 text-[10px] font-bold uppercase rounded-full bg-emerald-100 text-emerald-800">

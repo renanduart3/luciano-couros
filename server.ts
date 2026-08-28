@@ -5109,7 +5109,7 @@ app.get("/api/relatorios", (req, res) => {
 
     // A. VENDAS POR PERÍODO / CLIENTE
     const vendas = queryAll<any>(
-      `SELECT v.*, c.nome as clienteNome
+      `SELECT v.*, c.nome as clienteNome, printf('%04d', c.rowid) as clienteCodigo
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
        ${whereClause}

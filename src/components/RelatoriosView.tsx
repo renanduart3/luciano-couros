@@ -5,9 +5,11 @@ import { api } from "../lib/api";
 import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
+import { Pagination, paginate } from "./Pagination";
 
 type AbaRelatorio = "geral" | "vendas" | "clientes" | "fornecedores" | "vales";
 type CategoriaItemCliente = "metros" | "unidades";
+const VENDAS_POR_PAGINA = 20;
 
 const iso = (data: Date) => data.toISOString().slice(0, 10);
 const inicioPadrao = () => { const data = new Date(); data.setDate(data.getDate() - 30); return iso(data); };
@@ -68,6 +70,7 @@ export function RelatoriosView() {
   const [pinErro, setPinErro] = useState("");
   const [categoriaCliente, setCategoriaCliente] = useState<CategoriaItemCliente>("metros");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
+  const [paginaVendas, setPaginaVendas] = useState(1);
 
   useEffect(() => {
     Promise.all([api.getClientes(), api.getFornecedores(), api.getProdutos(), api.getSegurancaStatus()])
@@ -84,6 +87,7 @@ export function RelatoriosView() {
   useEffect(() => {
     setDadosClienteLiberados(false);
     setCategoriaCliente("metros");
+    setPaginaVendas(1);
   }, [clienteId, dataInicio, dataFim]);
 
   const carregar = async () => {
@@ -138,17 +142,26 @@ export function RelatoriosView() {
   }, [dados]);
 
   const linhasVendas = useMemo(() => {
-    const linhas = (dados?.clientesResumo || []).filter((item: any) => Number(item.totalVendas) > 0);
-    if (clienteId) return linhas;
-    const total = linhas.reduce((resumo: any, item: any) => ({
-      ...resumo,
-      totalVendas: resumo.totalVendas + Number(item.totalVendas),
-      totalComprado: resumo.totalComprado + Number(item.totalComprado),
-      totalRecebido: resumo.totalRecebido + Number(item.totalRecebido),
-      ultimaCompra: !resumo.ultimaCompra || item.ultimaCompra > resumo.ultimaCompra ? item.ultimaCompra : resumo.ultimaCompra,
-    }), { clienteId: "todos", clienteCodigo: "—", clienteNome: "TODOS", totalVendas: 0, totalComprado: 0, totalRecebido: 0, ultimaCompra: "" });
-    return [total, ...linhas];
-  }, [dados, clienteId]);
+    const itensPorVenda = new Map<string, any[]>();
+    for (const item of dados?.itensVendidos || []) itensPorVenda.set(item.vendaId, [...(itensPorVenda.get(item.vendaId) || []), item]);
+    return (dados?.vendas || []).map((venda: any) => {
+      const itens = itensPorVenda.get(venda.id) || [];
+      const metragem = itens.filter(ehItemEmMetros).reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
+      const unidades = itens.filter((item: any) => !ehItemEmMetros(item)).reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
+      const custo = itens.reduce((total: number, item: any) => total + Number(item.custoTotal || 0), 0);
+      const totalVenda = Number(venda.totalLiquido || 0);
+      return { ...venda, metragem, unidades, custo, lucro: totalVenda - custo };
+    });
+  }, [dados]);
+
+  const resumoVendas = useMemo(() => linhasVendas.reduce((resumo: any, venda: any) => ({
+    quantidade: resumo.quantidade + 1,
+    total: resumo.total + Number(venda.totalLiquido || 0),
+    metragem: resumo.metragem + Number(venda.metragem || 0),
+    unidades: resumo.unidades + Number(venda.unidades || 0),
+    custo: resumo.custo + Number(venda.custo || 0),
+    lucro: resumo.lucro + Number(venda.lucro || 0),
+  }), { quantidade: 0, total: 0, metragem: 0, unidades: 0, custo: 0, lucro: 0 }), [linhasVendas]);
 
   const linhasFornecedores = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -199,7 +212,7 @@ export function RelatoriosView() {
   const itensCategoriaCliente = categoriaCliente === "metros" ? analiseCliente.itensMetros : analiseCliente.itensUnidades;
   const chaveProgressiva = `${aba}:${dataInicio}:${dataFim}:${clienteId}:${fornecedorId}:${produtoId}:${formaPagamento}:${valeStatus}:${vencimentoInicio}:${vencimentoFim}`;
   const produtosProgressivos = useListaProgressiva<any>(geral?.produtos || [], `${chaveProgressiva}:produtos`, 20);
-  const vendasProgressivas = useListaProgressiva<any>(linhasVendas, `${chaveProgressiva}:vendas`, 30);
+  const vendasPaginadas = paginate<any>(linhasVendas, paginaVendas, VENDAS_POR_PAGINA);
   const clienteProgressivo = useListaProgressiva<any>(itensCategoriaCliente, `${chaveProgressiva}:cliente:${categoriaCliente}`, 40);
   const fornecedoresProgressivos = useListaProgressiva<any>(linhasFornecedores, `${chaveProgressiva}:fornecedores`, 30);
   const valesProgressivos = useListaProgressiva<Venda>(dados?.vales || [], `${chaveProgressiva}:vales`, 30);
@@ -239,8 +252,8 @@ export function RelatoriosView() {
     if (!dados) return;
     let csv = "\uFEFF";
     if (aba === "vendas") {
-      csv += "CÓDIGO CLIENTE;CLIENTE;VENDAS;VALOR TOTAL;VALOR RECEBIDO;DATA DA ÚLTIMA VENDA\n";
-      linhasVendas.forEach((item: any) => { csv += `${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.totalVendas};${item.totalComprado};${item.totalRecebido};${item.ultimaCompra}\n`; });
+      csv += "CÓDIGO VENDA;CÓDIGO CLIENTE;CLIENTE;DESCONTO;VALOR TOTAL;METRAGEM;UNIDADES;CUSTO;LUCRO;DATA DA VENDA\n";
+      linhasVendas.forEach((item: any) => { csv += `${item.numeroSequencial};${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.desconto};${item.totalLiquido};${item.metragem};${item.unidades};${item.custo};${item.lucro};${item.data}\n`; });
     } else if (aba === "clientes") {
       csv += dadosClienteLiberados
         ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE;FORNECEDOR\n"
@@ -375,10 +388,13 @@ export function RelatoriosView() {
           </div>
         )}
 
-        {aba === "vendas" && <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-          <div className="border-b border-slate-200 bg-emerald-50 p-3"><h3 className="font-black text-emerald-950">VENDAS POR CLIENTE</h3><p className="text-xs font-bold text-emerald-800">Valores agregados conforme o período selecionado. A linha TODOS consolida a carteira.</p></div>
-          <TabelaVendas linhas={vendasProgressivas.itensVisiveis} />
-          <MarcadorListaProgressiva {...vendasProgressivas} />
+        {aba === "vendas" && <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6"><Card titulo="VENDAS" valor={String(resumoVendas.quantidade)} /><Card titulo="VALOR TOTAL" valor={formatCurrency(resumoVendas.total)} destaque="text-blue-800" /><Card titulo="METRAGEM" valor={`${formatDecimal(resumoVendas.metragem)} m`} destaque="text-amber-800" /><Card titulo="UNIDADES / OUTROS" valor={formatDecimal(resumoVendas.unidades)} /><Card titulo="CUSTO" valor={formatCurrency(resumoVendas.custo)} /><Card titulo="LUCRO" valor={formatCurrency(resumoVendas.lucro)} destaque={resumoVendas.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></div>
+          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+            <div className="border-b border-slate-200 bg-emerald-50 p-3"><h3 className="font-black text-emerald-950">VENDAS DO PERÍODO</h3><p className="text-xs font-bold text-emerald-800">Uma linha por venda. Metragem e unidades são apresentadas separadamente para não misturar grandezas diferentes.</p></div>
+            <TabelaVendas linhas={vendasPaginadas} />
+            <Pagination page={paginaVendas} pageSize={VENDAS_POR_PAGINA} totalItems={linhasVendas.length} onPageChange={setPaginaVendas} alwaysVisible />
+          </div>
         </div>}
 
         {aba === "clientes" && <div className="space-y-4">
@@ -416,7 +432,13 @@ export function RelatoriosView() {
 }
 
 function TabelaVendas({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-2.5 text-left">CÓD. CLIENTE</th><th className="p-2.5 text-left">NOME CLIENTE</th><th className="p-2.5 text-right">VENDAS</th><th className="p-2.5 text-right">VALOR TOTAL DA VENDA</th><th className="p-2.5 text-right">VALOR RECEBIDO</th><th className="p-2.5 text-right">DATA DA VENDA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.clienteId} className={item.clienteId === "todos" ? "bg-emerald-100 text-emerald-950" : "hover:bg-slate-50"}><td className="p-2.5 font-mono font-black">{item.clienteCodigo || String(item.clienteId).slice(-6).toUpperCase()}</td><td className="p-2.5 font-black">{item.clienteNome}</td><td className="p-2.5 text-right font-black">{item.totalVendas}</td><td className="p-2.5 text-right font-mono text-base font-black">{formatCurrency(item.totalComprado)}</td><td className="p-2.5 text-right font-mono font-black text-blue-800">{formatCurrency(item.totalRecebido)}</td><td className="p-2.5 text-right font-bold">{item.ultimaCompra ? formatDate(item.ultimaCompra) : "—"}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA VENDA NESTE FILTRO.</td></tr>}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1320px] text-xs">
+    <thead className="bg-slate-100 font-black uppercase text-slate-600"><tr><th className="p-2.5 text-left">Cód. venda</th><th className="p-2.5 text-left">Cód. cliente</th><th className="p-2.5 text-left">Nome cliente</th><th className="p-2.5 text-right">Desconto</th><th className="bg-blue-50 p-2.5 text-right text-blue-900">Valor total</th><th className="bg-amber-50 p-2.5 text-right text-amber-900">Metragem</th><th className="bg-violet-50 p-2.5 text-right text-violet-900">Unidades</th><th className="bg-slate-200 p-2.5 text-right">Custo</th><th className="bg-emerald-50 p-2.5 text-right text-emerald-900">Lucro</th><th className="p-2.5 text-right">Data da venda</th></tr></thead>
+    <tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
+      const descontoPercentual = Number(item.subtotal) > 0 ? Number(item.desconto) / Number(item.subtotal) * 100 : 0;
+      return <tr key={item.id} className="hover:bg-slate-50"><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 font-mono font-black text-slate-600">{item.clienteCodigo || String(item.clienteId).slice(-6).toUpperCase()}</td><td className="p-2.5 font-black text-slate-950">{item.clienteNome}</td><td className="p-2.5 text-right"><span className="font-mono font-black">{formatCurrency(item.desconto)}</span><span className="block text-[9px] font-bold text-slate-500">{descontoPercentual.toFixed(1)}%</span></td><td className="bg-blue-50/50 p-2.5 text-right font-mono text-sm font-black text-blue-900">{formatCurrency(item.totalLiquido)}</td><td className="bg-amber-50/50 p-2.5 text-right font-mono font-black text-amber-900">{formatDecimal(item.metragem)} m</td><td className="bg-violet-50/50 p-2.5 text-right font-mono font-black text-violet-900">{formatDecimal(item.unidades)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-bold">{formatCurrency(item.custo)}</td><td className={`bg-emerald-50/50 p-2.5 text-right font-mono text-sm font-black ${Number(item.lucro) >= 0 ? "text-emerald-800" : "text-red-800"}`}>{formatCurrency(item.lucro)}</td><td className="p-2.5 text-right font-mono font-bold">{formatDate(item.data)}</td></tr>;
+    }) : <tr><td colSpan={10} className="p-10 text-center font-bold text-slate-500">NENHUMA VENDA NESTE FILTRO.</td></tr>}</tbody>
+  </table></div>;
 }
 
 function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boolean }) {

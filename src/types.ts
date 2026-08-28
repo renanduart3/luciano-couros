@@ -373,12 +373,20 @@ export interface TituloRecebimento {
 export interface ComprovanteRecebimento {
   id: string;
   data: string;
+  createdAt?: string;
   clienteNome: string;
   clienteDocumento?: string;
+  clienteTelefone?: string;
+  clienteEndereco?: string;
+  operadorNome?: string;
   formaPagamento: string;
+  parcelasCartao?: number;
+  status?: "ativo" | "recusado" | "cancelado";
   valorDevidoAntes: number;
   valorRecebido: number;
   valorAplicado: number;
+  bonusUtilizado?: number;
+  bonusGerado?: number;
   observacao?: string;
   titulos: TituloRecebimento[];
   vales: Array<{
@@ -386,6 +394,10 @@ export interface ComprovanteRecebimento {
     valorAplicado: number;
     saldoAntes: number;
     saldoDepois: number;
+  }>;
+  ordens?: Array<{
+    numeroSequencial: number;
+    valor: number;
   }>;
 }
 

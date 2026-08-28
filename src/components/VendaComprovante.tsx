@@ -92,15 +92,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </tbody>
       </table>
 
-      <div className="receipt-observation-line">
-        <b>OBSERVAÇÃO:</b>
-        <span title={observacaoComprovante}>{observacaoComprovante}</span>
-      </div>
-
       <div className="receipt-payment-line">
-        <span><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}</span>
-        {formaPagamento === "cartao_credito" && <span><b>PARCELAMENTO:</b> {descreverParcelamentoCartao(valorRecebido, parcelasCartao)}</span>}
-        <span><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
+        <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
+        <span className="receipt-payment-value"><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
+        <span className="receipt-payment-observation"><b>OBSERVAÇÃO:</b> <span title={observacaoComprovante}>{observacaoComprovante || "—"}</span></span>
       </div>
 
       <footer className="receipt-footer">

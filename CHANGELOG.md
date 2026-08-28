@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.23.0 — 2026-08-28
+
+- Comprovantes de recebimento de cheques e duplicatas passam a seguir o padrão visual do sistema, com cliente, títulos pagos, formas de pagamento, vencimentos, situação, bônus, observação e assinaturas.
+- Comprovantes ficam disponíveis para consulta e reimpressão na gestão de cheques e boletos, no histórico da carteira, nos pagamentos do vale e nos eventos da ordem de cobrança.
+- Dados do comprovante são carregados novamente ao abrir, refletindo edições, compensações e recusas feitas depois do lançamento.
+- Recebimentos antigos permanecem compatíveis mesmo quando não possuem os novos dados de ordens, bônus, operador, endereço ou telefone.
+- Comprovantes de venda mantêm forma, valor recebido e observação na mesma linha, sem quebra que prejudique a leitura.
+
 ## 1.19.1 — 2026-08-26
 
 - Pagamentos com cartão de crédito passam a mostrar, antes da confirmação, a quantidade e o valor das parcelas junto ao valor total.

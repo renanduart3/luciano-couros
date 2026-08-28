@@ -145,6 +145,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     }
   };
 
+  const abrirComprovanteRecebimento = async (recebimentoId: string) => {
+    setErro("");
+    try { setComprovante(await api.getComprovanteRecebimento(recebimentoId)); }
+    catch (error: any) { setErro(error.message || "Não foi possível abrir o comprovante."); }
+  };
+
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
@@ -230,7 +236,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                     <div><p className="text-[10px] font-black uppercase text-slate-500">Data</p><p className="font-bold text-slate-900">{formatDate(recebimento.data)}</p></div>
                     <div><p className="text-[10px] font-black uppercase text-slate-500">Forma</p><p className="font-black uppercase text-slate-900">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.statusPagamento !== "compensado" && <span className={`mt-1 inline-block rounded-lg px-2 py-1 text-[9px] font-black ${recebimento.statusPagamento === "recusado" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>{recebimento.statusPagamento.toUpperCase()}</span>}</div>
                     <div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>
-                    {gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}
+                    <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void abrirComprovanteRecebimento(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-[10px] font-black uppercase text-blue-800"><FileText size={14}/>Comprovante</button>{gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}</div>
                   </div>
                   {recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">{titulo.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"} nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</span><span className="block text-[10px]">{titulo.nomeTitular} · CPF/CNPJ: {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</span>{titulo.observacao && <span className="mt-1 block text-[10px] text-slate-700">Obs.: {titulo.observacao}</span>}</div>)}
                 </article>)}

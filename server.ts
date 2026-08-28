@@ -4563,7 +4563,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       }
       aplicarRecebimentoEmOrdens(recebimentoId, listaAlocacoes, String(parcelaOrdemId || "") || undefined);
 
-      registrarAuditoria(null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
+      registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
         clienteId, recebido, formaPagamento: forma, parcelasCartao, totalAplicado, dividas: listaAlocacoes
       });
     });
@@ -4849,7 +4849,16 @@ app.put("/api/recebimento-titulos/:id/status", exigirGerente, (req, res) => {
 app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
   try {
     const recebimento = queryOne<any>(
-      `SELECT rc.*, c.nome AS clienteNome, c.documento AS clienteDocumento
+      `SELECT rc.*, c.nome AS clienteNome, c.documento AS clienteDocumento,
+              c.telefone AS clienteTelefone, c.endereco AS clienteEndereco,
+              COALESCE((
+                SELECT u.nome
+                FROM auditoria a
+                LEFT JOIN usuarios u ON u.id = a.usuarioId
+                WHERE a.entidade = 'recebimento_cliente' AND a.entidadeId = rc.id
+                  AND a.acao = 'registrar_recebimento'
+                ORDER BY a.createdAt ASC LIMIT 1
+              ), 'Sistema') AS operadorNome
        FROM recebimentos_cliente rc JOIN clientes c ON c.id = rc.clienteId
        WHERE rc.id = ? AND rc.deletedAt IS NULL`,
       [req.params.id]
@@ -4869,18 +4878,39 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       saldoAntes: Number(vale.saldoAntes),
       saldoDepois: Number(vale.saldoDepois),
     }));
+    const ordens = queryAll<any>(
+      `SELECT oc.numeroSequencial, SUM(ocr.valor) AS valor
+       FROM ordem_cobranca_recebimentos ocr
+       JOIN ordens_cobranca oc ON oc.id = ocr.ordemId
+       WHERE ocr.recebimentoId = ? AND ocr.deletedAt IS NULL
+       GROUP BY oc.id, oc.numeroSequencial
+       ORDER BY oc.numeroSequencial ASC`,
+      [recebimento.id]
+    ).map((ordem) => ({
+      numeroSequencial: Number(ordem.numeroSequencial),
+      valor: Number(ordem.valor),
+    }));
     res.json({
       id: recebimento.id,
       data: recebimento.data,
+      createdAt: recebimento.createdAt,
       clienteNome: recebimento.clienteNome,
       clienteDocumento: recebimento.clienteDocumento,
+      clienteTelefone: recebimento.clienteTelefone,
+      clienteEndereco: recebimento.clienteEndereco,
+      operadorNome: recebimento.operadorNome,
       formaPagamento: recebimento.formaPagamento,
+      parcelasCartao: recebimento.parcelasCartao ? Number(recebimento.parcelasCartao) : undefined,
+      status: recebimento.status,
       valorDevidoAntes: vales.reduce((total, vale) => total + vale.saldoAntes, 0),
       valorRecebido: Number(recebimento.valorRecebido),
       valorAplicado: Number(recebimento.valorAplicado),
+      bonusUtilizado: Number(recebimento.bonusUtilizado || 0),
+      bonusGerado: Number(recebimento.bonusGerado || 0),
       observacao: recebimento.observacao,
       titulos: listarTitulosRecebimento(recebimento.id),
       vales,
+      ordens,
     });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });

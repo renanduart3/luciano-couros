@@ -146,11 +146,21 @@ export function RelatoriosView() {
     for (const item of dados?.itensVendidos || []) itensPorVenda.set(item.vendaId, [...(itensPorVenda.get(item.vendaId) || []), item]);
     return (dados?.vendas || []).map((venda: any) => {
       const itens = itensPorVenda.get(venda.id) || [];
-      const metragem = itens.filter(ehItemEmMetros).reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
-      const unidades = itens.filter((item: any) => !ehItemEmMetros(item)).reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
+      const itensMetros = itens.filter(ehItemEmMetros);
+      const itensUnidades = itens.filter((item: any) => !ehItemEmMetros(item));
+      const metragem = itensMetros.reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
+      const unidades = itensUnidades.reduce((total: number, item: any) => total + Number(item.quantidade || 0), 0);
+      const baseValorMetros = itensMetros.reduce((total: number, item: any) => total + Number(item.valorVendaLiquido || 0), 0);
+      const baseValorUnidades = itensUnidades.reduce((total: number, item: any) => total + Number(item.valorVendaLiquido || 0), 0);
       const custo = itens.reduce((total: number, item: any) => total + Number(item.custoTotal || 0), 0);
       const totalVenda = Number(venda.totalLiquido || 0);
-      return { ...venda, metragem, unidades, custo, lucro: totalVenda - custo };
+      const baseValorItens = baseValorMetros + baseValorUnidades;
+      // Concilia descontos e arredondamentos para que os dois grupos sempre
+      // recomponham exatamente o valor total registrado na venda.
+      const fatorConciliacao = baseValorItens > 0 ? totalVenda / baseValorItens : 0;
+      const valorMetros = baseValorMetros * fatorConciliacao;
+      const valorUnidades = baseValorUnidades * fatorConciliacao;
+      return { ...venda, metragem, unidades, valorMetros, valorUnidades, custo, lucro: totalVenda - custo };
     });
   }, [dados]);
 
@@ -159,9 +169,11 @@ export function RelatoriosView() {
     total: resumo.total + Number(venda.totalLiquido || 0),
     metragem: resumo.metragem + Number(venda.metragem || 0),
     unidades: resumo.unidades + Number(venda.unidades || 0),
+    valorMetros: resumo.valorMetros + Number(venda.valorMetros || 0),
+    valorUnidades: resumo.valorUnidades + Number(venda.valorUnidades || 0),
     custo: resumo.custo + Number(venda.custo || 0),
     lucro: resumo.lucro + Number(venda.lucro || 0),
-  }), { quantidade: 0, total: 0, metragem: 0, unidades: 0, custo: 0, lucro: 0 }), [linhasVendas]);
+  }), { quantidade: 0, total: 0, metragem: 0, unidades: 0, valorMetros: 0, valorUnidades: 0, custo: 0, lucro: 0 }), [linhasVendas]);
 
   const linhasFornecedores = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -252,8 +264,8 @@ export function RelatoriosView() {
     if (!dados) return;
     let csv = "\uFEFF";
     if (aba === "vendas") {
-      csv += "CÓDIGO VENDA;CÓDIGO CLIENTE;CLIENTE;DESCONTO;VALOR TOTAL;METRAGEM;UNIDADES;CUSTO;LUCRO;DATA DA VENDA\n";
-      linhasVendas.forEach((item: any) => { csv += `${item.numeroSequencial};${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.desconto};${item.totalLiquido};${item.metragem};${item.unidades};${item.custo};${item.lucro};${item.data}\n`; });
+      csv += "CÓDIGO VENDA;CÓDIGO CLIENTE;CLIENTE;DESCONTO;VALOR TOTAL;METRAGEM;VALOR EM METROS;UNIDADES;VALOR EM UNIDADES;CUSTO;LUCRO;DATA DA VENDA\n";
+      linhasVendas.forEach((item: any) => { csv += `${item.numeroSequencial};${item.clienteCodigo || item.clienteId};${csvCelula(item.clienteNome)};${item.desconto};${item.totalLiquido};${item.metragem};${item.valorMetros};${item.unidades};${item.valorUnidades};${item.custo};${item.lucro};${item.data}\n`; });
     } else if (aba === "clientes") {
       csv += dadosClienteLiberados
         ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE;FORNECEDOR\n"
@@ -389,9 +401,8 @@ export function RelatoriosView() {
         )}
 
         {aba === "vendas" && <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6"><Card titulo="VENDAS" valor={String(resumoVendas.quantidade)} /><Card titulo="VALOR TOTAL" valor={formatCurrency(resumoVendas.total)} destaque="text-blue-800" /><Card titulo="METRAGEM" valor={`${formatDecimal(resumoVendas.metragem)} m`} destaque="text-amber-800" /><Card titulo="UNIDADES / OUTROS" valor={formatDecimal(resumoVendas.unidades)} /><Card titulo="CUSTO" valor={formatCurrency(resumoVendas.custo)} /><Card titulo="LUCRO" valor={formatCurrency(resumoVendas.lucro)} destaque={resumoVendas.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6"><Card titulo="VENDAS" valor={String(resumoVendas.quantidade)} /><Card titulo="VALOR TOTAL" valor={formatCurrency(resumoVendas.total)} destaque="text-blue-800" /><Card titulo="METROS / VALOR" valor={`${formatDecimal(resumoVendas.metragem)} m • ${formatCurrency(resumoVendas.valorMetros)}`} destaque="text-amber-800" /><Card titulo="UNIDADES / VALOR" valor={`${formatDecimal(resumoVendas.unidades)} • ${formatCurrency(resumoVendas.valorUnidades)}`} destaque="text-violet-800" /><Card titulo="CUSTO" valor={formatCurrency(resumoVendas.custo)} /><Card titulo="LUCRO" valor={formatCurrency(resumoVendas.lucro)} destaque={resumoVendas.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></div>
           <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-            <div className="border-b border-slate-200 bg-emerald-50 p-3"><h3 className="font-black text-emerald-950">VENDAS DO PERÍODO</h3><p className="text-xs font-bold text-emerald-800">Uma linha por venda. Metragem e unidades são apresentadas separadamente para não misturar grandezas diferentes.</p></div>
             <TabelaVendas linhas={vendasPaginadas} />
             <Pagination page={paginaVendas} pageSize={VENDAS_POR_PAGINA} totalItems={linhasVendas.length} onPageChange={setPaginaVendas} alwaysVisible />
           </div>
@@ -432,12 +443,12 @@ export function RelatoriosView() {
 }
 
 function TabelaVendas({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[1320px] text-xs">
-    <thead className="bg-slate-100 font-black uppercase text-slate-600"><tr><th className="p-2.5 text-left">Cód. venda</th><th className="p-2.5 text-left">Cód. cliente</th><th className="p-2.5 text-left">Nome cliente</th><th className="p-2.5 text-right">Desconto</th><th className="bg-blue-50 p-2.5 text-right text-blue-900">Valor total</th><th className="bg-amber-50 p-2.5 text-right text-amber-900">Metragem</th><th className="bg-violet-50 p-2.5 text-right text-violet-900">Unidades</th><th className="bg-slate-200 p-2.5 text-right">Custo</th><th className="bg-emerald-50 p-2.5 text-right text-emerald-900">Lucro</th><th className="p-2.5 text-right">Data da venda</th></tr></thead>
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1560px] text-xs">
+    <thead className="bg-slate-100 font-black uppercase text-slate-600"><tr><th className="p-2.5 text-left">Cód. venda</th><th className="p-2.5 text-left">Cód. cliente</th><th className="p-2.5 text-left">Nome cliente</th><th className="p-2.5 text-right">Desconto</th><th className="bg-blue-50 p-2.5 text-right text-blue-900">Valor total</th><th className="bg-amber-50 p-2.5 text-right text-amber-900">Metragem</th><th className="bg-amber-100 p-2.5 text-right text-amber-950">Valor em metros</th><th className="bg-violet-50 p-2.5 text-right text-violet-900">Unidades</th><th className="bg-violet-100 p-2.5 text-right text-violet-950">Valor em unidades</th><th className="bg-slate-200 p-2.5 text-right">Custo</th><th className="bg-emerald-50 p-2.5 text-right text-emerald-900">Lucro</th><th className="p-2.5 text-right">Data da venda</th></tr></thead>
     <tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
       const descontoPercentual = Number(item.subtotal) > 0 ? Number(item.desconto) / Number(item.subtotal) * 100 : 0;
-      return <tr key={item.id} className="hover:bg-slate-50"><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 font-mono font-black text-slate-600">{item.clienteCodigo || String(item.clienteId).slice(-6).toUpperCase()}</td><td className="p-2.5 font-black text-slate-950">{item.clienteNome}</td><td className="p-2.5 text-right"><span className="font-mono font-black">{formatCurrency(item.desconto)}</span><span className="block text-[9px] font-bold text-slate-500">{descontoPercentual.toFixed(1)}%</span></td><td className="bg-blue-50/50 p-2.5 text-right font-mono text-sm font-black text-blue-900">{formatCurrency(item.totalLiquido)}</td><td className="bg-amber-50/50 p-2.5 text-right font-mono font-black text-amber-900">{formatDecimal(item.metragem)} m</td><td className="bg-violet-50/50 p-2.5 text-right font-mono font-black text-violet-900">{formatDecimal(item.unidades)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-bold">{formatCurrency(item.custo)}</td><td className={`bg-emerald-50/50 p-2.5 text-right font-mono text-sm font-black ${Number(item.lucro) >= 0 ? "text-emerald-800" : "text-red-800"}`}>{formatCurrency(item.lucro)}</td><td className="p-2.5 text-right font-mono font-bold">{formatDate(item.data)}</td></tr>;
-    }) : <tr><td colSpan={10} className="p-10 text-center font-bold text-slate-500">NENHUMA VENDA NESTE FILTRO.</td></tr>}</tbody>
+      return <tr key={item.id} className="hover:bg-slate-50"><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 font-mono font-black text-slate-600">{item.clienteCodigo || String(item.clienteId).slice(-6).toUpperCase()}</td><td className="p-2.5 font-black text-slate-950">{item.clienteNome}</td><td className="p-2.5 text-right"><span className="font-mono font-black">{formatCurrency(item.desconto)}</span><span className="block text-[9px] font-bold text-slate-500">{descontoPercentual.toFixed(1)}%</span></td><td className="bg-blue-50/50 p-2.5 text-right font-mono text-sm font-black text-blue-900">{formatCurrency(item.totalLiquido)}</td><td className="bg-amber-50/50 p-2.5 text-right font-mono font-black text-amber-900">{formatDecimal(item.metragem)} m</td><td className="bg-amber-100/60 p-2.5 text-right font-mono font-black text-amber-950">{formatCurrency(item.valorMetros)}</td><td className="bg-violet-50/50 p-2.5 text-right font-mono font-black text-violet-900">{formatDecimal(item.unidades)}</td><td className="bg-violet-100/60 p-2.5 text-right font-mono font-black text-violet-950">{formatCurrency(item.valorUnidades)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-bold">{formatCurrency(item.custo)}</td><td className={`bg-emerald-50/50 p-2.5 text-right font-mono text-sm font-black ${Number(item.lucro) >= 0 ? "text-emerald-800" : "text-red-800"}`}>{formatCurrency(item.lucro)}</td><td className="p-2.5 text-right font-mono font-bold">{formatDate(item.data)}</td></tr>;
+    }) : <tr><td colSpan={12} className="p-10 text-center font-bold text-slate-500">NENHUMA VENDA NESTE FILTRO.</td></tr>}</tbody>
   </table></div>;
 }
 

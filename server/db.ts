@@ -610,6 +610,7 @@ export function initDatabase() {
         status TEXT NOT NULL DEFAULT 'aguardando',
         dataCompensacao TEXT,
         motivoStatus TEXT,
+        observacao TEXT,
         deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -846,6 +847,7 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE recebimento_titulos ADD COLUMN observacao TEXT`).run(); } catch (e) {}
   // Copia os instrumentos da estrutura antiga uma única vez. O campo banco
   // deixa de fazer parte da operação, mas permanece na tabela legada.
   db.prepare(`

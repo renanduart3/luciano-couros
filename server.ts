@@ -549,14 +549,15 @@ function normalizarTitulosPagamento(formaPagamento: string, entrada: unknown, le
     const valor = Math.round(Number(item?.valor || 0) * 100) / 100;
     const vencimento = String(item?.vencimento || "");
     const numeroDocumento = String(item?.numeroDocumento || "").trim().slice(0, 60);
+    const observacao = String(item?.observacao || "").trim().slice(0, 300);
     if (!nomeTitular || !documentoTitular || valor <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(vencimento) || !numeroDocumento) {
       const documento = formaPagamento.startsWith("duplicata") ? "boleto" : "cheque";
       throw erroHttp(`Preencha nome, CPF/CNPJ, valor, vencimento e número do ${documento} na linha ${indice + 1}.`, 400);
     }
     const statusTitulo = ["aguardando", "compensado", "recusado"].includes(String(item?.status || "")) ? String(item.status) : undefined;
-    return { tipo: formaPagamento, nomeTitular, documentoTitular, valor, vencimento, numeroDocumento, status: statusTitulo, dataCompensacao: item?.dataCompensacao };
+    return { tipo: formaPagamento, nomeTitular, documentoTitular, valor, vencimento, numeroDocumento, observacao, status: statusTitulo, dataCompensacao: item?.dataCompensacao };
   });
-  const totalTitulos = Math.round(titulos.reduce((total, titulo) => total + titulo.valor, 0) * 100) / 100;
+  const totalTitulos = Math.round(titulos.reduce((total, titulo) => total + (titulo.status === "recusado" ? 0 : titulo.valor), 0) * 100) / 100;
   if (Math.abs(totalTitulos - valorRecebido) > 0.005) {
     throw erroHttp(`A soma dos cheques/boletos deve ser igual ao valor recebido: R$ ${valorRecebido.toFixed(2).replace(".", ",")}.`, 400);
   }
@@ -565,16 +566,20 @@ function normalizarTitulosPagamento(formaPagamento: string, entrada: unknown, le
 
 function inserirTitulosRecebimento(recebimentoId: string, clienteId: string, titulos: any[], status = "aguardando", dataCompensacao?: string | null, motivoStatus?: string | null) {
   for (const titulo of titulos) {
-    const statusTitulo = status === "recusado" ? "recusado" : (titulo.status || status);
-    const compensacaoTitulo = statusTitulo === "compensado" ? (titulo.dataCompensacao || dataCompensacao || null) : null;
+    const statusSolicitado = status === "recusado" ? "recusado" : (titulo.status || status);
+    const compensacaoAutomatica = statusSolicitado === "aguardando" && titulo.vencimento <= dataHojeLocal();
+    const statusTitulo = compensacaoAutomatica ? "compensado" : statusSolicitado;
+    const compensacaoTitulo = statusTitulo === "compensado"
+      ? (titulo.dataCompensacao || dataCompensacao || (compensacaoAutomatica ? titulo.vencimento : null))
+      : null;
     execute(
     `INSERT INTO recebimento_titulos
        (id, recebimentoId, clienteId, tipo, nomeTitular, documentoTitular, valor,
-        vencimento, numeroDocumento, status, dataCompensacao, motivoStatus)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        vencimento, numeroDocumento, status, dataCompensacao, motivoStatus, observacao)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ["rtit_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), recebimentoId, clienteId,
       titulo.tipo, titulo.nomeTitular, titulo.documentoTitular, titulo.valor,
-      titulo.vencimento, titulo.numeroDocumento, statusTitulo, compensacaoTitulo, motivoStatus || null]
+      titulo.vencimento, titulo.numeroDocumento, statusTitulo, compensacaoTitulo, motivoStatus || null, titulo.observacao || null]
     );
   }
 }
@@ -582,12 +587,54 @@ function inserirTitulosRecebimento(recebimentoId: string, clienteId: string, tit
 function listarTitulosRecebimento(recebimentoId: string, incluirExcluidos = false) {
   return queryAll<any>(
     `SELECT id, tipo, nomeTitular, documentoTitular, valor, vencimento, numeroDocumento,
-            status, dataCompensacao, motivoStatus, createdAt, updatedAt
+            status, dataCompensacao, motivoStatus, observacao, createdAt, updatedAt
      FROM recebimento_titulos WHERE recebimentoId = ? ${incluirExcluidos ? "" : "AND deletedAt IS NULL"}
      ORDER BY createdAt ASC, id ASC`,
     [recebimentoId]
   ).map((titulo) => ({ ...titulo, valor: Number(titulo.valor) }));
 }
+
+function dataHojeLocal() {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const valor = (tipo: string) => partes.find((parte) => parte.type === tipo)?.value || "";
+  return `${valor("year")}-${valor("month")}-${valor("day")}`;
+}
+
+function compensarTitulosVencidosAutomaticamente() {
+  const hoje = dataHojeLocal();
+  const vencidos = queryAll<any>(
+    `SELECT id, recebimentoId, numeroDocumento, vencimento
+     FROM recebimento_titulos
+     WHERE status = 'aguardando' AND vencimento <= ? AND deletedAt IS NULL`,
+    [hoje]
+  );
+  if (!vencidos.length) return 0;
+  runInTransaction(() => {
+    for (const titulo of vencidos) {
+      execute(
+        `UPDATE recebimento_titulos
+         SET status = 'compensado', dataCompensacao = vencimento, motivoStatus = NULL, updatedAt = CURRENT_TIMESTAMP
+         WHERE id = ? AND status = 'aguardando' AND deletedAt IS NULL`,
+        [titulo.id]
+      );
+      registrarAuditoria(null, "titulo_compensado_automaticamente", "recebimento_cliente", titulo.recebimentoId, {
+        tituloId: titulo.id,
+        numeroDocumento: titulo.numeroDocumento,
+        dataCompensacao: titulo.vencimento,
+      });
+    }
+  });
+  return vencidos.length;
+}
+
+compensarTitulosVencidosAutomaticamente();
+const compensacaoTitulosTimer = setInterval(compensarTitulosVencidosAutomaticamente, 60 * 60 * 1000);
+compensacaoTitulosTimer.unref();
 
 // Compatibilidade temporária com o instrumento único criado diretamente na
 // venda. Novos recebimentos de vales e ordens usam recebimento_titulos.
@@ -4546,6 +4593,11 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
   if (!recebimento) return null;
   const titulos = listarTitulosRecebimento(recebimentoId);
   const tituloPrincipal = titulos[0];
+  const statusPagamento = titulos.length
+    ? (titulos.every((titulo: any) => titulo.status === "recusado")
+      ? "recusado"
+      : titulos.some((titulo: any) => titulo.status === "aguardando") ? "aguardando" : "compensado")
+    : (recebimento.status === "recusado" ? "recusado" : "compensado");
   const alocacoes = queryAll<any>(
     `SELECT a.id, a.vendaId, a.valor, a.deletedAt, a.createdAt,
             v.numeroSequencial, v.saldoRestante
@@ -4580,7 +4632,7 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
     tituloStatus: tituloPrincipal?.status,
     dataCompensacao: tituloPrincipal?.dataCompensacao,
     motivoStatus: tituloPrincipal?.motivoStatus,
-    statusPagamento: tituloPrincipal?.status || (recebimento.status === "recusado" ? "recusado" : "compensado"),
+    statusPagamento,
     alocacoes: [...porVale.values()],
     historico,
   };
@@ -4588,12 +4640,13 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
 
 app.get("/api/cheques", (_req, res) => {
   try {
+    compensarTitulosVencidosAutomaticamente();
     const cheques = queryAll<any>(
       `SELECT rt.id, rt.recebimentoId, rt.clienteId, rt.tipo, rt.vencimento,
               rt.dataCompensacao, rt.nomeTitular, rt.documentoTitular AS cpfTitular,
               '' AS banco, rt.numeroDocumento AS numeroCheque, rt.valor AS valorRecebido,
               rt.valor AS valorAplicado, rt.status, rt.motivoStatus, rt.createdAt, rt.updatedAt,
-              rc.data AS dataRecebimento, rc.observacao,
+              rc.data AS dataRecebimento, rc.observacao, rt.observacao AS tituloObservacao,
               c.nome AS clienteNome, c.documento AS clienteDocumento
        FROM recebimento_titulos rt
        JOIN recebimentos_cliente rc ON rc.id = rt.recebimentoId
@@ -4611,7 +4664,8 @@ app.get("/api/cheques", (_req, res) => {
        `SELECT a.recebimentoId, a.vendaId, a.valor, a.deletedAt, a.createdAt, v.numeroSequencial
        FROM recebimento_alocacoes a
        JOIN vendas v ON v.id = a.vendaId
-       WHERE EXISTS (SELECT 1 FROM recebimento_titulos rt WHERE rt.recebimentoId = a.recebimentoId AND rt.deletedAt IS NULL)
+       WHERE a.deletedAt IS NULL
+         AND EXISTS (SELECT 1 FROM recebimento_titulos rt WHERE rt.recebimentoId = a.recebimentoId AND rt.deletedAt IS NULL)
        ORDER BY a.createdAt DESC`
     )) {
       const titulosRecebimento = porRecebimento.get(vinculo.recebimentoId) || [];
@@ -4640,6 +4694,7 @@ app.get("/api/cheques", (_req, res) => {
 
 app.get("/api/recebimentos-cliente/:id/gerenciar", exigirGerente, (req, res) => {
   try {
+    compensarTitulosVencidosAutomaticamente();
     const recebimento = carregarRecebimentoGerenciavel(req.params.id);
     if (!recebimento) return res.status(404).json({ error: "Pagamento não encontrado ou já cancelado." });
     res.json(recebimento);
@@ -4648,14 +4703,139 @@ app.get("/api/recebimentos-cliente/:id/gerenciar", exigirGerente, (req, res) => 
   }
 });
 
+function recusarTituloIndividual(tituloId: string, motivo: string, administradorId: string) {
+  const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
+  return runInTransaction(() => {
+    const titulo = queryOne<any>(
+      `SELECT rt.*, rc.pagamentoId, rc.data AS dataRecebimento, rc.clienteId, rc.status AS recebimentoStatus
+       FROM recebimento_titulos rt
+       JOIN recebimentos_cliente rc ON rc.id = rt.recebimentoId
+       WHERE rt.id = ? AND rt.deletedAt IS NULL AND rc.deletedAt IS NULL`,
+      [tituloId]
+    );
+    if (!titulo) throw erroHttp("Cheque ou boleto não encontrado.", 404);
+    if (titulo.status === "recusado") throw erroHttp("Este cheque ou boleto já está recusado.", 409);
+    if (titulo.recebimentoStatus !== "ativo") throw erroHttp("O recebimento deste título não está ativo.", 409);
+
+    const agora = new Date().toISOString();
+    const alocacoesAtuais = queryAll<any>(
+      `SELECT * FROM recebimento_alocacoes
+       WHERE recebimentoId = ? AND deletedAt IS NULL
+       ORDER BY createdAt ASC, id ASC`,
+      [titulo.recebimentoId]
+    );
+    const parcelaPreferida = queryOne<any>(
+      `SELECT parcelaId FROM ordem_cobranca_parcela_recebimentos
+       WHERE recebimentoId = ? AND deletedAt IS NULL
+       ORDER BY createdAt ASC LIMIT 1`,
+      [titulo.recebimentoId]
+    )?.parcelaId;
+
+    execute(
+      `UPDATE recebimento_titulos
+       SET status = 'recusado', dataCompensacao = NULL, motivoStatus = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [motivo, titulo.id]
+    );
+
+    const valorRecebido = arredondar(queryOne<{ total: number }>(
+      `SELECT COALESCE(SUM(valor), 0) AS total FROM recebimento_titulos
+       WHERE recebimentoId = ? AND status <> 'recusado' AND deletedAt IS NULL`,
+      [titulo.recebimentoId]
+    )?.total || 0);
+    const totalAplicadoAnterior = arredondar(alocacoesAtuais.reduce((total, item) => total + Number(item.valor), 0));
+    const valorAplicado = arredondar(Math.min(valorRecebido, totalAplicadoAnterior));
+    const bonusGerado = arredondar(Math.max(0, valorRecebido - valorAplicado));
+
+    for (const alocacao of alocacoesAtuais) {
+      const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
+      if (!venda) throw erroHttp("Não foi possível restaurar um vale vinculado ao título.", 409);
+      const novoPago = arredondar(Math.max(0, Number(venda.valorPago) - Number(alocacao.valor)));
+      const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+      execute(
+        "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]
+      );
+      recalcularParcelasVale(venda.id);
+    }
+    estornarRecebimentoEmOrdens(titulo.recebimentoId);
+    execute("UPDATE recebimento_alocacoes SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, titulo.recebimentoId]);
+    execute("UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, titulo.recebimentoId]);
+
+    let restante = valorAplicado;
+    const novasAlocacoes: Array<{ vendaId: string; valor: number }> = [];
+    for (const alocacao of alocacoesAtuais) {
+      if (restante <= 0.005) break;
+      const aplicar = arredondar(Math.min(restante, Number(alocacao.valor)));
+      if (aplicar <= 0.005) continue;
+      const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
+      if (!venda || aplicar > Number(venda.saldoRestante) + 0.005) throw erroHttp("Não foi possível recalcular o vale vinculado ao título.", 409);
+      const saldoAntes = arredondar(venda.saldoRestante);
+      const novoPago = arredondar(Number(venda.valorPago) + aplicar);
+      const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+      execute(
+        "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]
+      );
+      recalcularParcelasVale(venda.id);
+      execute(
+        `INSERT INTO recebimento_alocacoes (id, recebimentoId, vendaId, valor, saldoAntes, saldoDepois)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        ["alo_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), titulo.recebimentoId, venda.id, aplicar, saldoAntes, novoSaldo]
+      );
+      novasAlocacoes.push({ vendaId: venda.id, valor: aplicar });
+      restante = arredondar(restante - aplicar);
+    }
+
+    if (bonusGerado > 0.005) {
+      execute(
+        `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
+         VALUES (?, ?, ?, NULL, ?, 'credito', ?, ?)`,
+        ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), titulo.clienteId, titulo.recebimentoId, titulo.dataRecebimento, bonusGerado, "Crédito excedente após recusa parcial de título"]
+      );
+    }
+    if (novasAlocacoes.length) aplicarRecebimentoEmOrdens(titulo.recebimentoId, novasAlocacoes, parcelaPreferida);
+
+    const recebimentoAtivo = valorRecebido > 0.005;
+    execute(
+      `UPDATE recebimentos_cliente
+       SET valorRecebido = ?, valorAplicado = ?, bonusGerado = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [valorRecebido, valorAplicado, bonusGerado, recebimentoAtivo ? "ativo" : "recusado", titulo.recebimentoId]
+    );
+    if (titulo.pagamentoId) {
+      execute(
+        `UPDATE pagamentos SET valor = ?, deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+        [valorRecebido, recebimentoAtivo ? null : agora, titulo.pagamentoId]
+      );
+    }
+    registrarAuditoria(administradorId, "titulo_recusado", "recebimento_cliente", titulo.recebimentoId, {
+      tituloId: titulo.id,
+      numeroDocumento: titulo.numeroDocumento,
+      motivo,
+      valorRecusado: Number(titulo.valor),
+      valorRecebidoRestante: valorRecebido,
+      valorAplicado,
+      bonusGerado,
+    });
+    return { valorRecebido, valorAplicado, bonusGerado };
+  });
+}
+
 app.put("/api/recebimento-titulos/:id/status", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) return res.status(403).json({ error: "PIN do administrador inválido." });
     const status = String(req.body?.status || "");
-    if (!["aguardando", "compensado"].includes(status)) throw erroHttp("Situação do título inválida.", 400);
+    if (!["aguardando", "compensado", "recusado"].includes(status)) throw erroHttp("Situação do título inválida.", 400);
     const titulo = queryOne<any>("SELECT * FROM recebimento_titulos WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
     if (!titulo) throw erroHttp("Cheque ou boleto não encontrado.", 404);
+    if (status === "recusado") {
+      const motivo = String(req.body?.motivo || "").trim().slice(0, 300);
+      if (!motivo) throw erroHttp("Informe o motivo da recusa ou devolução.", 400);
+      const resultado = recusarTituloIndividual(titulo.id, motivo, administrador.id);
+      return res.json({ success: true, ...resultado });
+    }
     const dataCompensacao = status === "compensado" ? String(req.body?.dataCompensacao || "") : null;
     if (status === "compensado" && !/^\d{4}-\d{2}-\d{2}$/.test(dataCompensacao)) throw erroHttp("Informe a data da compensação.", 400);
     execute("UPDATE recebimento_titulos SET status = ?, dataCompensacao = ?, motivoStatus = NULL, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [status, dataCompensacao, titulo.id]);
@@ -4680,7 +4860,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
               COALESCE(a.saldoAntes, v.saldoRestante + a.valor) AS saldoAntes,
               COALESCE(a.saldoDepois, v.saldoRestante) AS saldoDepois
        FROM recebimento_alocacoes a JOIN vendas v ON v.id = a.vendaId
-       WHERE a.recebimentoId = ?
+       WHERE a.recebimentoId = ? AND a.deletedAt IS NULL
        ORDER BY v.numeroSequencial ASC`,
       [recebimento.id]
     ).map((vale) => ({

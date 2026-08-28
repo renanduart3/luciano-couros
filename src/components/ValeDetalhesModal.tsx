@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
-import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
+import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
@@ -25,12 +25,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [pin, setPin] = useState("");
   const [motivo, setMotivo] = useState("");
-  const [dataDevolucao, setDataDevolucao] = useState(new Date().toISOString().slice(0, 10));
+  const [dataDevolucao, setDataDevolucao] = useState(todayLocalIso());
   const [quantidadesDevolucao, setQuantidadesDevolucao] = useState<Record<string, string>>({});
   const [resultadoDevolucao, setResultadoDevolucao] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [dataPagamento, setDataPagamento] = useState(new Date().toISOString().slice(0, 10));
+  const [dataPagamento, setDataPagamento] = useState(todayLocalIso());
   const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [parcelasCartao, setParcelasCartao] = useState(1);
@@ -42,6 +42,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const itens = vale.items || [];
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
+  const pagamentoTitulo = ehTituloPagamento(formaPagamento);
+  const valorBasePagamento = parseBrazilianNumber(valorPagamento);
+  const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
+  const valorEfetivoPagamento = pagamentoTitulo ? totalTitulos : valorBasePagamento;
+  const valorExibidoPagamento = pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : valorPagamento;
 
   useEffect(() => {
     setValorPagamento(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -56,13 +61,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   };
 
   const registrarPagamentoVale = async () => {
-    const valorInformado = parseBrazilianNumber(valorPagamento);
+    const valorInformado = valorEfetivoPagamento;
     const recebido = formaPagamento === "bonus" ? 0 : valorInformado;
     const bonusUtilizado = formaPagamento === "bonus" ? valorInformado : 0;
     if (valorInformado <= 0) return setErro("Informe o valor do pagamento.");
     if (bonusUtilizado > saldoBonus + 0.005) return setErro("O bônus utilizado ultrapassa o saldo disponível.");
     if (formaPagamento === "bonus" && bonusUtilizado > Number(vale.saldoRestante) + 0.005) return setErro("O bônus utilizado não pode ultrapassar o saldo deste vale.");
-    if (ehTituloPagamento(formaPagamento) && Math.abs(titulos.reduce((soma, titulo) => soma + Number(titulo.valor || 0), 0) - valorInformado) > 0.005) return setErro("A soma dos cheques ou boletos deve ser igual ao valor do pagamento.");
     const valorAplicado = Math.min(Number(vale.saldoRestante), recebido + bonusUtilizado);
     setSalvando(true);
     setErro("");
@@ -208,13 +212,13 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {vale.status === "pendente" && Number(vale.saldoRestante) > 0.005 && <div className="overflow-hidden rounded-xl border border-emerald-300 bg-white">
               <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-emerald-950">Registrar pagamento deste vale</h3><p className="text-[10px] font-bold text-emerald-800">Bônus disponível: {formatCurrency(saldoBonus)}. O uso do bônus só ocorre quando informado abaixo.</p></div>
               <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto]">
-                <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={dataPagamento} onChange={(event) => setDataPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold"/></label>
-                <label className="text-[10px] font-black uppercase text-slate-600">Pagamento<input type="text" inputMode="decimal" value={valorPagamento} onChange={(event) => setValorPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={dataPagamento} onChange={(event) => setDataPagamento(event.target.value)} className={`mt-1 min-h-10 w-full rounded-lg border px-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`}/></label>
+                <label className="text-[10px] font-black uppercase text-slate-600">Pagamento<input type="text" readOnly={pagamentoTitulo} inputMode="decimal" value={valorExibidoPagamento} onChange={(event) => setValorPagamento(event.target.value)} className={`mt-1 min-h-10 w-full rounded-lg border px-3 text-right font-mono font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}/></label>
                 <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
                 <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
               </div>
-              <div className="px-3 pb-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} valorPagamento={parseBrazilianNumber(valorPagamento)} titulos={titulos} onChange={setTitulos} /></div>
-              <div className="px-3 pb-3"><ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={parseBrazilianNumber(valorPagamento)} /></div>
+              <div className="px-3 pb-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} valorPagamento={valorBasePagamento} titulos={titulos} onChange={setTitulos} /></div>
+              <div className="px-3 pb-3"><ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorEfetivoPagamento} /></div>
               {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
               {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
@@ -229,7 +233,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                     <div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>
                     {gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}
                   </div>
-                  {recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">{titulo.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"} nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</span><span className="block text-[10px]">{titulo.nomeTitular} · CPF/CNPJ: {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</span></div>)}
+                  {recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">{titulo.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"} nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</span><span className="block text-[10px]">{titulo.nomeTitular} · CPF/CNPJ: {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</span>{titulo.observacao && <span className="mt-1 block text-[10px] text-slate-700">Obs.: {titulo.observacao}</span>}</div>)}
                 </article>)}
               </div>}
             </div>

@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
 import { api } from "../lib/api";
 import { PagamentoGerenciavel, TituloRecebimento } from "../types";
-import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
@@ -19,6 +19,11 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
   const [feedback, setFeedback] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const pagamentoTitulo = Boolean(pagamento && ehTituloPagamento(pagamento.formaPagamento));
+  const valorBase = parseBrazilianNumber(valorRecebido);
+  const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
+  const valorEfetivo = pagamentoTitulo ? totalTitulos : valorBase;
+  const valorExibido = pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : valorRecebido;
 
   const preencher = (dados: PagamentoGerenciavel) => {
     setPagamento(dados);
@@ -46,7 +51,7 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
         status: ehTituloPagamento(pagamento.formaPagamento) ? pagamento.statusPagamento : "compensado",
         dataCompensacao: pagamento.statusPagamento === "compensado" ? pagamento.dataCompensacao : undefined,
         data: pagamento.data,
-        valorRecebido: parseBrazilianNumber(valorRecebido),
+        valorRecebido: valorEfetivo,
         formaPagamento: pagamento.formaPagamento,
         parcelasCartao: pagamento.formaPagamento === "cartao_credito" ? pagamento.parcelasCartao || 1 : undefined,
         observacao: pagamento.observacao,
@@ -71,14 +76,14 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         {loading ? <p className="p-10 text-center text-sm font-bold text-slate-500">Carregando pagamento...</p> : pagamento && <>
           <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 md:grid-cols-4">
-            <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={pagamento.data} onChange={(event) => setPagamento({ ...pagamento, data: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"/></label>
-            <label className="text-[10px] font-black uppercase text-slate-600">Valor recebido<input value={valorRecebido} onChange={(event) => setValorRecebido(event.target.value)} inputMode="decimal" className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
+            <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={pagamento.data} onChange={(event) => setPagamento({ ...pagamento, data: event.target.value })} className={`mt-1 min-h-10 w-full rounded-lg border px-3 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`}/></label>
+            <label className="text-[10px] font-black uppercase text-slate-600">Valor recebido<input readOnly={pagamentoTitulo} value={valorExibido} onChange={(event) => setValorRecebido(event.target.value)} inputMode="decimal" className={`mt-1 min-h-10 w-full rounded-lg border px-3 text-right font-mono font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}/></label>
             <label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={pagamento.formaPagamento} onChange={(event) => setPagamento({ ...pagamento, formaPagamento: event.target.value, statusPagamento: ehTituloPagamento(event.target.value) ? pagamento.statusPagamento : "compensado" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
-            {ehTituloPagamento(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação de todos<select value={pagamento.statusPagamento} onChange={(event) => { const statusPagamento = event.target.value as PagamentoGerenciavel["statusPagamento"]; const dataCompensacao = statusPagamento === "compensado" ? pagamento.dataCompensacao || new Date().toISOString().slice(0, 10) : undefined; setPagamento({ ...pagamento, statusPagamento, dataCompensacao }); setTitulos((atuais) => atuais.map((titulo) => ({ ...titulo, status: statusPagamento, dataCompensacao }))); }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
+            {ehTituloPagamento(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação de todos<select value={pagamento.statusPagamento} onChange={(event) => { const statusPagamento = event.target.value as PagamentoGerenciavel["statusPagamento"]; const dataCompensacao = statusPagamento === "compensado" ? pagamento.dataCompensacao || todayLocalIso() : undefined; setPagamento({ ...pagamento, statusPagamento, dataCompensacao }); setTitulos((atuais) => atuais.map((titulo) => ({ ...titulo, status: statusPagamento, dataCompensacao }))); }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
           </div>
-          <ParcelamentoCartaoSelect formaPagamento={pagamento.formaPagamento} parcelas={pagamento.parcelasCartao || 1} onChange={(parcelasCartao) => setPagamento({ ...pagamento, parcelasCartao })} valorTotal={parseBrazilianNumber(valorRecebido)} className="max-w-xs" />
+          <ParcelamentoCartaoSelect formaPagamento={pagamento.formaPagamento} parcelas={pagamento.parcelasCartao || 1} onChange={(parcelasCartao) => setPagamento({ ...pagamento, parcelasCartao })} valorTotal={valorEfetivo} className="max-w-xs" />
           {ehTituloPagamento(pagamento.formaPagamento) && pagamento.statusPagamento === "compensado" && <label className="block max-w-xs text-[10px] font-black uppercase text-slate-600">Data da compensação<input type="date" value={pagamento.dataCompensacao || ""} onChange={(event) => setPagamento({ ...pagamento, dataCompensacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 font-bold"/></label>}
-          <TitulosPagamentoEditor formaPagamento={pagamento.formaPagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome} clienteDocumento={pagamento.clienteDocumento} valorPagamento={parseBrazilianNumber(valorRecebido)} titulos={titulos} onChange={setTitulos} />
+          <TitulosPagamentoEditor formaPagamento={pagamento.formaPagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome} clienteDocumento={pagamento.clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
           {pagamento.statusPagamento === "recusado" && <p className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900">Ao salvar como recusado, o valor será retirado dos vales e das ordens e qualquer bônus gerado por este pagamento será removido.</p>}
           <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Valores aplicados nos vales</div><div className="divide-y divide-slate-200">{pagamento.alocacoes.map((item) => <label key={item.vendaId} className="grid grid-cols-[1fr_160px] items-center gap-3 p-3 text-xs"><span><strong className="block text-slate-950">VALE #{item.numeroSequencial}</strong><span className="font-bold text-slate-500">Saldo atual: {formatCurrency(item.saldoRestante)}</span></span><input value={valores[item.vendaId] || ""} onChange={(event) => setValores((atuais) => ({ ...atuais, [item.vendaId]: event.target.value }))} inputMode="decimal" className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>)}</div></div>
           <div className="grid gap-3 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-slate-600">Observação<input value={pagamento.observacao || ""} onChange={(event) => setPagamento({ ...pagamento, observacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>{ehTituloPagamento(pagamento.formaPagamento) && <label className="text-[10px] font-black uppercase text-slate-600">Motivo da situação<input value={pagamento.motivoStatus || ""} onChange={(event) => setPagamento({ ...pagamento, motivoStatus: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>}</div>

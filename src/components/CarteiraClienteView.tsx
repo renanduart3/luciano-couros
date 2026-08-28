@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, Coins, History, RefreshCw, Search, ShieldCheck, WalletCards } from "lucide-react";
 import { CarteiraCliente, Cliente, ComprovanteRecebimento, DividaCarteira, TituloRecebimento } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
 import { ehTituloPagamento } from "../lib/pagamentos";
@@ -16,7 +16,7 @@ interface CarteiraClienteViewProps {
   onRecebimentoRegistrado?: () => void;
 }
 
-const hoje = () => new Date().toISOString().slice(0, 10);
+const hoje = todayLocalIso;
 const dinheiro = (valor: number) => valor.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebimentoRegistrado }: CarteiraClienteViewProps) {
@@ -79,8 +79,15 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
 
   const valorParaDistribuir = parseBrazilianNumber(valorRecebido);
   const totalAplicado = [...selecionadas].reduce((total, id) => total + parseBrazilianNumber(valores[id] || ""), 0);
-  const recebido = totalAplicado;
-  const distribuicaoDivergente = valorParaDistribuir > 0 && Math.abs(valorParaDistribuir - totalAplicado) > 0.005;
+  const pagamentoTitulo = ehTituloPagamento(formaPagamento);
+  const usandoBonus = formaPagamento === "bonus";
+  const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
+  const montantePagamento = pagamentoTitulo ? totalTitulos : valorParaDistribuir;
+  const recebido = usandoBonus ? 0 : montantePagamento;
+  const bonusUtilizado = usandoBonus ? montantePagamento : 0;
+  const bonusGerado = usandoBonus ? 0 : Math.max(0, montantePagamento - totalAplicado);
+  const distribuicaoInvalida = totalAplicado > montantePagamento + 0.005 || (usandoBonus && Math.abs(totalAplicado - montantePagamento) > 0.005);
+  const valorExibido = pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : valorRecebido;
 
   const alternarDivida = (divida: DividaCarteira) => {
     const proxima = new Set(selecionadas);
@@ -104,9 +111,9 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   };
 
   const distribuirAutomaticamente = () => {
-    if (!carteira || valorParaDistribuir <= 0) return;
+    if (!carteira || montantePagamento <= 0) return;
     const ids = selecionadas.size ? selecionadas : new Set(carteira.dividas.map((divida) => divida.id));
-    let restante = valorParaDistribuir;
+    let restante = montantePagamento;
     const novosValores: Record<string, string> = {};
     for (const divida of carteira.dividas) {
       if (!ids.has(divida.id) || restante <= 0) continue;
@@ -126,11 +133,12 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
       .map((divida) => ({ vendaId: divida.id, valor: parseBrazilianNumber(valores[divida.id] || "") }))
       .filter((item) => item.valor > 0);
     if (totalAplicado <= 0) return alert("INFORME O VALOR PAGO EM PELO MENOS UMA DÍVIDA.");
-    if (distribuicaoDivergente) return alert("O VALOR INFORMADO PARA DISTRIBUIÇÃO AUTOMÁTICA DEVE SER TODO APLICADO NAS DÍVIDAS.");
-    if (ehTituloPagamento(formaPagamento) && Math.abs(titulos.reduce((soma, titulo) => soma + Number(titulo.valor || 0), 0) - recebido) > 0.005) return alert("A SOMA DOS CHEQUES OU BOLETOS DEVE SER IGUAL AO VALOR RECEBIDO.");
+    if (montantePagamento <= 0) return alert("INFORME O VALOR RECEBIDO.");
+    if (distribuicaoInvalida) return alert(usandoBonus ? "O BÔNUS UTILIZADO DEVE SER TOTALMENTE APLICADO NAS DÍVIDAS." : "O VALOR ABATIDO NÃO PODE ULTRAPASSAR O PAGAMENTO RECEBIDO.");
+    if (bonusUtilizado > Number(carteira.saldoBonus || 0) + 0.005) return alert("O VALOR ULTRAPASSA O BÔNUS DISPONÍVEL DO CLIENTE.");
     if (!await confirmacao.confirmar({
       titulo: "Confirmar recebimento",
-      mensagem: `VALOR RECEBIDO: ${formatCurrency(recebido)}\nTOTAL ABATIDO DOS VALES: ${formatCurrency(totalAplicado)}`,
+      mensagem: `${usandoBonus ? "BÔNUS UTILIZADO" : "VALOR RECEBIDO"}: ${formatCurrency(montantePagamento)}\nTOTAL ABATIDO DOS VALES: ${formatCurrency(totalAplicado)}${bonusGerado > 0.005 ? `\nBÔNUS GERADO: ${formatCurrency(bonusGerado)}` : ""}`,
       textoConfirmar: "Registrar",
       variante: "atencao"
     })) return;
@@ -140,6 +148,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
       const resultado = await api.createRecebimentoCliente(carteira.cliente.id, {
         data,
         valorRecebido: recebido,
+        bonusUtilizado,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         observacao: observacao || undefined,
@@ -199,36 +208,37 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
 
       {carteira && !loading && (
         <form onSubmit={registrar} className="space-y-5">
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4"><p className="text-xs font-black text-amber-800">SALDO DEVEDOR</p><p className="mt-1 text-2xl font-black text-amber-950">{formatCurrency(carteira.saldoDevedor)}</p></div>
             <div className="rounded-2xl border border-slate-300 bg-white p-4"><p className="text-xs font-black text-slate-600">DÍVIDAS EM ABERTO</p><p className="mt-1 text-2xl font-black text-slate-950">{carteira.dividas.length}</p></div>
+            <div className="rounded-2xl border border-violet-300 bg-violet-50 p-4"><p className="text-xs font-black text-violet-700">BÔNUS DISPONÍVEL</p><p className="mt-1 text-2xl font-black text-violet-950">{formatCurrency(carteira.saldoBonus || 0)}</p></div>
           </div>
 
           <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
             <h3 className="font-black text-slate-950">1. INFORMAR O RECEBIMENTO</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <label className="text-xs font-black text-slate-700">VALOR PARA DISTRIBUIR AUTOMATICAMENTE <span className="text-slate-500">(OPCIONAL)</span><input data-testid="carteira-valor-recebido" value={valorRecebido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 text-base font-black text-emerald-800" /><span className="mt-1 block text-[10px] font-bold text-slate-500">PARA LANÇAR MANUALMENTE, PREENCHA DIRETO EM “APLICAR NESTA DÍVIDA”.</span></label>
-              <label className="text-xs font-black text-slate-700">DATA<input type="date" value={data} onChange={(e) => setData(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
-              <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option></select></label>
+              <label className="text-xs font-black text-slate-700">VALOR DO PAGAMENTO<input data-testid="carteira-valor-recebido" readOnly={pagamentoTitulo} value={valorExibido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" className={`mt-1 min-h-11 w-full rounded-xl border px-3 text-base font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-slate-400 bg-slate-100 text-emerald-800"}`} /><span className="mt-1 block text-[10px] font-bold text-slate-500">{pagamentoTitulo ? "CALCULADO PELAS LINHAS DE TÍTULOS." : "PODE SER MENOR, IGUAL OU MAIOR QUE O TOTAL ABATIDO."}</span></label>
+              <label className="text-xs font-black text-slate-700">DATA<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(e) => setData(e.target.value)} className={`mt-1 min-h-11 w-full rounded-xl border px-3 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-400 bg-slate-100 text-slate-950"}`} /></label>
+              <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option><option value="bonus">BÔNUS</option></select></label>
             </div>
-            <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={recebido} titulos={titulos} onChange={setTitulos} /></div>
-            <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={recebido} className="mt-3 max-w-xs" />
+            <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={valorParaDistribuir || totalAplicado} titulos={titulos} onChange={setTitulos} /></div>
+            <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={montantePagamento} className="mt-3 max-w-xs" />
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-slate-300 bg-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-black text-slate-950">2. SELECIONAR E DISTRIBUIR NAS DÍVIDAS</h3><p className="text-xs font-bold text-slate-600">O VALOR APLICADO É O PAGAMENTO RECEBIDO E SERÁ ABATIDO DO SALDO DO VALE.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={selecionarTodas} className="rounded-xl border border-slate-400 bg-white px-3 py-2 text-xs font-black text-slate-900">{selecionadas.size === carteira.dividas.length && carteira.dividas.length ? "LIMPAR SELEÇÃO" : "SELECIONAR TODAS"}</button><button data-testid="carteira-distribuir" type="button" onClick={distribuirAutomaticamente} disabled={valorParaDistribuir <= 0 || carteira.dividas.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><RefreshCw size={15} />DISTRIBUIR AUTOMATICAMENTE</button></div></div>
+            <div className="flex flex-col gap-3 border-b border-slate-300 bg-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="font-black text-slate-950">2. SELECIONAR E DISTRIBUIR NAS DÍVIDAS</h3><p className="text-xs font-bold text-slate-600">O TOTAL ABATIDO PODE SER MENOR QUE O PAGAMENTO; O EXCEDENTE VIRA BÔNUS.</p></div><div className="flex flex-wrap gap-2"><button type="button" onClick={selecionarTodas} className="rounded-xl border border-slate-400 bg-white px-3 py-2 text-xs font-black text-slate-900">{selecionadas.size === carteira.dividas.length && carteira.dividas.length ? "LIMPAR SELEÇÃO" : "SELECIONAR TODAS"}</button><button data-testid="carteira-distribuir" type="button" onClick={distribuirAutomaticamente} disabled={montantePagamento <= 0 || carteira.dividas.length === 0} className="inline-flex items-center gap-2 rounded-xl bg-blue-700 px-3 py-2 text-xs font-black text-white disabled:opacity-40"><RefreshCw size={15} />DISTRIBUIR AUTOMATICAMENTE</button></div></div>
             {carteira.dividas.length === 0 ? <div className="p-8 text-center font-bold text-emerald-800"><CheckCircle2 className="mx-auto mb-2" />ESTE CLIENTE NÃO POSSUI DÍVIDAS EM ABERTO.</div> : <div className="divide-y divide-slate-200">{carteira.dividas.map((divida) => { const marcada = selecionadas.has(divida.id); const aplicado = parseBrazilianNumber(valores[divida.id] || ""); return <div key={divida.id} className={`grid grid-cols-2 items-center gap-3 p-3 sm:grid-cols-3 lg:grid-cols-[auto_0.5fr_1.15fr_0.75fr_0.75fr_0.75fr_1fr] ${marcada ? "bg-blue-50" : "bg-white"}`}><input aria-label={`Selecionar venda ${divida.numeroSequencial}`} type="checkbox" checked={marcada} onChange={() => alternarDivida(divida)} className="h-5 w-5 accent-blue-700 sm:row-span-2 lg:row-span-1" /><div><p className="text-xs font-black text-slate-500">VENDA</p><p className="font-black text-slate-950">#{divida.numeroSequencial}</p></div><div className="col-span-2 sm:col-span-1"><p className="text-xs font-black text-slate-500">EMISSÃO / VENCIMENTO</p><p className="font-bold text-slate-900">{formatDate(divida.data)} / {divida.vencimento ? formatDate(divida.vencimento) : "SEM DATA"}</p></div><div><p className="text-xs font-black text-slate-500">VALOR ORIGINAL</p><p className="font-black text-slate-950">{formatCurrency(divida.totalLiquido)}</p></div><div><p className="text-xs font-black text-slate-500">TOTAL PAGO</p><p className="font-black text-emerald-800">{formatCurrency(divida.valorPago)}</p></div><div><p className="text-xs font-black text-slate-500">FALTA PAGAR</p><p className="font-black text-amber-900">{formatCurrency(divida.saldoRestante)}</p></div><label className="col-span-2 text-xs font-black text-slate-700 sm:col-span-1">APLICAR NESTA DÍVIDA<input value={valores[divida.id] || ""} onChange={(e) => { setSelecionadas((atual) => new Set(atual).add(divida.id)); setValores((atual) => ({ ...atual, [divida.id]: e.target.value })); }} placeholder="0,00" className={`mt-1 min-h-10 w-full rounded-lg border px-3 font-black ${aplicado > divida.saldoRestante ? "border-red-500 bg-red-50 text-red-800" : "border-slate-400 bg-white text-slate-950"}`} /></label></div>; })}</div>}
           </div>
 
           <div className="rounded-2xl border-2 border-slate-400 bg-slate-950 p-4 text-white shadow-lg">
-            <div className="grid gap-3 sm:grid-cols-2"><div><p className="text-xs font-black text-slate-300">TOTAL RECEBIDO</p><p className="text-xl font-black text-emerald-300">{formatCurrency(recebido)}</p></div><div><p className="text-xs font-black text-slate-300">TOTAL ABATIDO DOS VALES</p><p className="text-xl font-black">{formatCurrency(totalAplicado)}</p></div></div>
-            {distribuicaoDivergente && <p className="mt-3 rounded-lg bg-amber-600 p-2 text-sm font-black text-slate-950">O VALOR PARA DISTRIBUIÇÃO AUTOMÁTICA É {formatCurrency(valorParaDistribuir)}. DISTRIBUA EXATAMENTE ESSE TOTAL OU LIMPE O CAMPO PARA LANÇAR MANUALMENTE.</p>}
-            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]"><input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="OBSERVAÇÃO DO RECEBIMENTO" className="min-h-11 rounded-xl border border-slate-500 bg-slate-800 px-3 font-bold text-white placeholder:text-slate-400" /><button data-testid="carteira-confirmar" disabled={saving || totalAplicado <= 0 || distribuicaoDivergente} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 font-black text-slate-950 hover:bg-emerald-400 disabled:opacity-40"><Coins size={18} />{saving ? "REGISTRANDO..." : "CONFIRMAR RECEBIMENTO"}</button></div>
+            <div className="grid gap-3 sm:grid-cols-3"><div><p className="text-xs font-black text-slate-300">{usandoBonus ? "BÔNUS UTILIZADO" : "TOTAL RECEBIDO"}</p><p className="text-xl font-black text-emerald-300">{formatCurrency(montantePagamento)}</p></div><div><p className="text-xs font-black text-slate-300">TOTAL ABATIDO DOS VALES</p><p className="text-xl font-black">{formatCurrency(totalAplicado)}</p></div><div><p className="text-xs font-black text-slate-300">BÔNUS GERADO</p><p className="text-xl font-black text-violet-300">{formatCurrency(bonusGerado)}</p></div></div>
+            {distribuicaoInvalida && <p className="mt-3 rounded-lg bg-amber-600 p-2 text-sm font-black text-slate-950">{usandoBonus ? "O BÔNUS UTILIZADO DEVE SER TODO APLICADO NAS DÍVIDAS." : "O TOTAL ABATIDO NÃO PODE ULTRAPASSAR O PAGAMENTO."}</p>}
+            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]"><input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="OBSERVAÇÃO DO RECEBIMENTO" className="min-h-11 rounded-xl border border-slate-500 bg-slate-800 px-3 font-bold text-white placeholder:text-slate-400" /><button data-testid="carteira-confirmar" disabled={saving || totalAplicado <= 0 || montantePagamento <= 0 || distribuicaoInvalida} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 font-black text-slate-950 hover:bg-emerald-400 disabled:opacity-40"><Coins size={18} />{saving ? "REGISTRANDO..." : "CONFIRMAR RECEBIMENTO"}</button></div>
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 p-4"><History size={18} /><h3 className="font-black text-slate-950">HISTÓRICO DA CARTEIRA</h3></div>
-            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-3 p-4"><div className="grid gap-3 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold uppercase text-slate-600">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</div>{recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950"><p className="font-black">{titulo.tipo.startsWith("duplicata") ? "BOLETO" : "CHEQUE"} Nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</p><p className="mt-1 text-[10px]">{titulo.nomeTitular} · {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</p></div>)}</article>)}</div>}
+            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-3 p-4"><div className="grid gap-3 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold uppercase text-slate-600">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</div>{recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950"><p className="font-black">{titulo.tipo.startsWith("duplicata") ? "BOLETO" : "CHEQUE"} Nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</p><p className="mt-1 text-[10px]">{titulo.nomeTitular} · {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</p>{titulo.observacao && <p className="mt-1 text-[10px] text-slate-700">OBS.: {titulo.observacao}</p>}</div>)}</article>)}</div>}
           </div>
         </form>
       )}

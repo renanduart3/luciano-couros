@@ -229,7 +229,7 @@ export const api = {
   getComprovanteRecebimento: (recebimentoId: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/comprovante`)
       .then(r => handleResponse<ComprovanteRecebimento>(r)),
-  updateTituloRecebimentoStatus: (id: string, dados: { pin: string; status: "aguardando" | "compensado"; dataCompensacao?: string }) =>
+  updateTituloRecebimentoStatus: (id: string, dados: { pin: string; status: "aguardando" | "compensado" | "recusado"; dataCompensacao?: string; motivo?: string }) =>
     fetch(`${API_BASE}/recebimento-titulos/${id}/status`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<{ success: boolean }>(r)),
 

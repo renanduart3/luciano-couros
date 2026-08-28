@@ -28,6 +28,12 @@ export function formatDate(dateString: string | undefined | null): string {
   return `${day}/${month}/${year}`;
 }
 
+/** Returns today's calendar date in the browser's local timezone. */
+export function todayLocalIso(): string {
+  const agora = new Date();
+  return new Date(agora.getTime() - agora.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
 /**
  * Formats a decimal number with commas instead of dots
  */

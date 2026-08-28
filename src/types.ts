@@ -364,6 +364,7 @@ export interface TituloRecebimento {
   valor: number;
   vencimento: string;
   numeroDocumento: string;
+  observacao?: string;
   status?: "aguardando" | "compensado" | "recusado";
   dataCompensacao?: string;
   motivoStatus?: string;
@@ -408,6 +409,7 @@ export interface ChequeGerencial {
   status: "aguardando" | "compensado" | "recusado";
   motivoStatus?: string;
   observacao?: string;
+  tituloObservacao?: string;
   createdAt: string;
   updatedAt: string;
   vales: Array<{

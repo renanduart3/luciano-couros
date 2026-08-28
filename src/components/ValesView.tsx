@@ -185,7 +185,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <div className="grid w-full grid-cols-3 gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:w-auto sm:gap-2">
           <button type="button" onClick={() => setTab("abertos")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={16} /> Cobranças</button>
           <button type="button" onClick={() => setTab("ordens")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={16} /> Ordens</button>
-          <button type="button" onClick={() => setTab("cheques")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "cheques" ? "module-tab-active" : ""}`}><Landmark size={16} /> Cheques</button>
+          <button type="button" onClick={() => setTab("cheques")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "cheques" ? "module-tab-active" : ""}`}><Landmark size={16} /> Cheques e boletos</button>
         </div>
       </div>
 

@@ -619,12 +619,40 @@ export function initDatabase() {
     `).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_instrumentos_vencimento ON recebimento_instrumentos (vencimento, deletedAt)`).run();
 
+    // Títulos que compõem um recebimento. Diferente da tabela legada acima,
+    // permite vários cheques ou duplicatas no mesmo pagamento.
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS recebimento_titulos (
+        id TEXT PRIMARY KEY,
+        recebimentoId TEXT NOT NULL,
+        clienteId TEXT NOT NULL,
+        tipo TEXT NOT NULL,
+        nomeTitular TEXT NOT NULL,
+        documentoTitular TEXT NOT NULL,
+        valor REAL NOT NULL,
+        vencimento TEXT NOT NULL,
+        numeroDocumento TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'aguardando',
+        dataCompensacao TEXT,
+        motivoStatus TEXT,
+        deletedAt TEXT,
+        createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
+        FOREIGN KEY (clienteId) REFERENCES clientes (id)
+      )
+    `).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_titulos_recebimento ON recebimento_titulos (recebimentoId, deletedAt)`).run();
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_titulos_status ON recebimento_titulos (status, vencimento, deletedAt)`).run();
+
     db.prepare(`
       CREATE TABLE IF NOT EXISTS recebimento_alocacoes (
         id TEXT PRIMARY KEY,
         recebimentoId TEXT NOT NULL,
         vendaId TEXT NOT NULL,
         valor REAL NOT NULL,
+        saldoAntes REAL,
+        saldoDepois REAL,
         deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (recebimentoId) REFERENCES recebimentos_cliente (id),
@@ -816,6 +844,26 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE recebimento_instrumentos ADD COLUMN motivoStatus TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}
+  // Copia os instrumentos da estrutura antiga uma única vez. O campo banco
+  // deixa de fazer parte da operação, mas permanece na tabela legada.
+  db.prepare(`
+    INSERT OR IGNORE INTO recebimento_titulos
+      (id, recebimentoId, clienteId, tipo, nomeTitular, documentoTitular, valor,
+       vencimento, numeroDocumento, status, dataCompensacao, motivoStatus,
+       deletedAt, createdAt, updatedAt)
+    SELECT ri.id, ri.recebimentoId, ri.clienteId, ri.tipo,
+           COALESCE(c.nome, 'NÃO INFORMADO'),
+           CASE WHEN ri.tipo IN ('cheque_terceiro', 'duplicata_terceiro')
+                THEN COALESCE(NULLIF(ri.cpfTerceiro, ''), ri.cpfTitular)
+                ELSE ri.cpfTitular END,
+           rc.valorRecebido, ri.vencimento, ri.numeroCheque, ri.status,
+           ri.dataCompensacao, ri.motivoStatus, ri.deletedAt, ri.createdAt, ri.updatedAt
+    FROM recebimento_instrumentos ri
+    JOIN recebimentos_cliente rc ON rc.id = ri.recebimentoId
+    LEFT JOIN clientes c ON c.id = ri.clienteId
+  `).run();
   db.prepare(`CREATE INDEX IF NOT EXISTS idx_recebimento_instrumentos_status ON recebimento_instrumentos (status, vencimento, deletedAt)`).run();
   db.prepare(`UPDATE usuarios SET login = 'gerente' WHERE id = 'usuario_admin' AND TRIM(COALESCE(login, '')) = ''`).run();
   db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_login ON usuarios (LOWER(login)) WHERE login IS NOT NULL`).run();

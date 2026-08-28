@@ -160,7 +160,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [instrumentoVencimento, setInstrumentoVencimento] = useState("");
   const [instrumentoCpfTitular, setInstrumentoCpfTitular] = useState("");
   const [instrumentoCpfTerceiro, setInstrumentoCpfTerceiro] = useState("");
-  const [instrumentoBanco, setInstrumentoBanco] = useState("");
   const [pinEdicao, setPinEdicao] = useState("");
   const [dataVendaEdicao, setDataVendaEdicao] = useState("");
 
@@ -256,7 +255,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setInstrumentoVencimento(vendaEmEdicao.instrumentoRecebimento?.vencimento || "");
     setInstrumentoCpfTitular(vendaEmEdicao.instrumentoRecebimento?.cpfTitular || vendaEmEdicao.clienteDocumento || "");
     setInstrumentoCpfTerceiro(vendaEmEdicao.instrumentoRecebimento?.cpfTerceiro || "");
-    setInstrumentoBanco(vendaEmEdicao.instrumentoRecebimento?.banco || "");
     setDataVendaEdicao(vendaEmEdicao.data);
     setPinEdicao("");
     setFeedbackMsg(null);
@@ -934,7 +932,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           vencimento: instrumentoVencimento,
           cpfTitular: instrumentoCpfTitular.trim(),
           cpfTerceiro: instrumentoCpfTerceiro.trim() || undefined,
-          banco: instrumentoBanco.trim(),
+          banco: "",
         } : undefined,
         autorizacaoPreco,
         orcamentoId: orcamentoOrigemId || undefined
@@ -958,7 +956,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           numeroDocumento: instrumentoNumero.trim(),
           cpfTitular: instrumentoCpfTitular.trim(),
           cpfTerceiro: instrumentoCpfTerceiro.trim() || undefined,
-          banco: instrumentoBanco.trim(),
+          banco: "",
           valor: vPago,
           vencimento: instrumentoVencimento,
           status: "a_receber"
@@ -1016,8 +1014,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       vencimentoRef.current?.focus();
       return;
     }
-    if (ehCheque(formaPagamento) && (!instrumentoNumero.trim() || !instrumentoVencimento || !instrumentoCpfTitular.trim() || !instrumentoBanco.trim() || (formaPagamento === "cheque_terceiro" && !instrumentoCpfTerceiro.trim()))) {
-      setFeedbackMsg({ type: "error", text: "Informe vencimento, CPF/CNPJ, banco e número do cheque." });
+    if (ehCheque(formaPagamento) && (!instrumentoNumero.trim() || !instrumentoVencimento || !instrumentoCpfTitular.trim() || (formaPagamento === "cheque_terceiro" && !instrumentoCpfTerceiro.trim()))) {
+      setFeedbackMsg({ type: "error", text: "Informe vencimento, CPF/CNPJ e número do cheque." });
       return;
     }
     if (vendaComCredito && saldoCreditoCarteira <= 0) {
@@ -1085,7 +1083,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setInstrumentoVencimento("");
     setInstrumentoCpfTitular("");
     setInstrumentoCpfTerceiro("");
-    setInstrumentoBanco("");
     setFeedbackMsg(null);
     setShowAutorizacaoPreco(false);
     setAdminPin("");
@@ -1573,7 +1570,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       setInstrumentoVencimento("");
                       setInstrumentoCpfTitular("");
                       setInstrumentoCpfTerceiro("");
-                      setInstrumentoBanco("");
                     } else if (!instrumentoCpfTitular) {
                       setInstrumentoCpfTitular(clienteSelecionado?.documento || "");
                     }
@@ -1607,7 +1603,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Vencimento *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ titular *</label><input value={instrumentoCpfTitular} onChange={(event) => setInstrumentoCpfTitular(event.target.value.slice(0, 24))} placeholder={clienteSelecionado?.documento || "CPF/CNPJ"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   {formaPagamento === "cheque_terceiro" && <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ terceiro *</label><input value={instrumentoCpfTerceiro} onChange={(event) => setInstrumentoCpfTerceiro(event.target.value.slice(0, 24))} placeholder="CPF/CNPJ DO TERCEIRO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>}
-                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Banco *</label><input value={instrumentoBanco} onChange={(event) => setInstrumentoBanco(event.target.value.slice(0, 80))} placeholder="BANCO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="NÚMERO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-5">O vencimento gera alerta; não marca o cheque como recebido automaticamente.</p>
                 </div>

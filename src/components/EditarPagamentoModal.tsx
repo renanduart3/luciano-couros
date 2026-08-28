@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
 import { api } from "../lib/api";
-import { PagamentoGerenciavel } from "../types";
+import { PagamentoGerenciavel, TituloRecebimento } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
-import { CamposCheque } from "./CamposCheque";
-import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
+import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 
 const dinheiro = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -13,7 +13,7 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
   const [pagamento, setPagamento] = useState<PagamentoGerenciavel | null>(null);
   const [valorRecebido, setValorRecebido] = useState("");
   const [valores, setValores] = useState<Record<string, string>>({});
-  const [dadosCheque, setDadosCheque] = useState<DadosCheque>(dadosChequeVazios());
+  const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [pin, setPin] = useState("");
   const [erro, setErro] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -24,7 +24,7 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
     setPagamento(dados);
     setValorRecebido(dinheiro(dados.formaPagamento === "bonus" ? dados.bonusUtilizado : dados.valorRecebido));
     setValores(Object.fromEntries(dados.alocacoes.map((item) => [item.vendaId, dinheiro(item.valor)])));
-    setDadosCheque({ vencimento: dados.vencimento || "", cpfTitular: dados.cpfTitular || dados.clienteDocumento || "", cpfTerceiro: dados.cpfTerceiro || "", banco: dados.banco || "", numeroCheque: dados.numeroCheque || "" });
+    setTitulos(dados.titulos || []);
   };
 
   useEffect(() => {
@@ -43,7 +43,7 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
     try {
       const atualizado = await api.updateRecebimentoCliente(recebimentoId, {
         pin,
-        status: ehCheque(pagamento.formaPagamento) ? pagamento.statusPagamento : "compensado",
+        status: ehTituloPagamento(pagamento.formaPagamento) ? pagamento.statusPagamento : "compensado",
         dataCompensacao: pagamento.statusPagamento === "compensado" ? pagamento.dataCompensacao : undefined,
         data: pagamento.data,
         valorRecebido: parseBrazilianNumber(valorRecebido),
@@ -51,7 +51,7 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
         parcelasCartao: pagamento.formaPagamento === "cartao_credito" ? pagamento.parcelasCartao || 1 : undefined,
         observacao: pagamento.observacao,
         motivoStatus: pagamento.motivoStatus,
-        dadosCheque: ehCheque(pagamento.formaPagamento) ? dadosCheque : undefined,
+        titulos: ehTituloPagamento(pagamento.formaPagamento) ? titulos : undefined,
         alocacoes,
       });
       preencher(atualizado);
@@ -73,15 +73,15 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
           <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 md:grid-cols-4">
             <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" value={pagamento.data} onChange={(event) => setPagamento({ ...pagamento, data: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"/></label>
             <label className="text-[10px] font-black uppercase text-slate-600">Valor recebido<input value={valorRecebido} onChange={(event) => setValorRecebido(event.target.value)} inputMode="decimal" className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>
-            <label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={pagamento.formaPagamento} onChange={(event) => setPagamento({ ...pagamento, formaPagamento: event.target.value, statusPagamento: ehCheque(event.target.value) ? pagamento.statusPagamento : "compensado" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
-            {ehCheque(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={pagamento.statusPagamento} onChange={(event) => { const statusPagamento = event.target.value as PagamentoGerenciavel["statusPagamento"]; setPagamento({ ...pagamento, statusPagamento, dataCompensacao: statusPagamento === "compensado" ? pagamento.dataCompensacao || new Date().toISOString().slice(0, 10) : undefined }); }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
+            <label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={pagamento.formaPagamento} onChange={(event) => setPagamento({ ...pagamento, formaPagamento: event.target.value, statusPagamento: ehTituloPagamento(event.target.value) ? pagamento.statusPagamento : "compensado" })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
+            {ehTituloPagamento(pagamento.formaPagamento) ? <label className="text-[10px] font-black uppercase text-slate-600">Situação de todos<select value={pagamento.statusPagamento} onChange={(event) => { const statusPagamento = event.target.value as PagamentoGerenciavel["statusPagamento"]; const dataCompensacao = statusPagamento === "compensado" ? pagamento.dataCompensacao || new Date().toISOString().slice(0, 10) : undefined; setPagamento({ ...pagamento, statusPagamento, dataCompensacao }); setTitulos((atuais) => atuais.map((titulo) => ({ ...titulo, status: statusPagamento, dataCompensacao }))); }} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-3 font-bold"><option value="aguardando">Aguardando compensação</option><option value="compensado">Compensado</option><option value="recusado">Recusado</option></select></label> : <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs font-black text-emerald-800">PAGAMENTO CONFIRMADO</div>}
           </div>
           <ParcelamentoCartaoSelect formaPagamento={pagamento.formaPagamento} parcelas={pagamento.parcelasCartao || 1} onChange={(parcelasCartao) => setPagamento({ ...pagamento, parcelasCartao })} valorTotal={parseBrazilianNumber(valorRecebido)} className="max-w-xs" />
-          {ehCheque(pagamento.formaPagamento) && pagamento.statusPagamento === "compensado" && <label className="block max-w-xs text-[10px] font-black uppercase text-slate-600">Data da compensação<input type="date" value={pagamento.dataCompensacao || ""} onChange={(event) => setPagamento({ ...pagamento, dataCompensacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 font-bold"/></label>}
-          {ehCheque(pagamento.formaPagamento) && <CamposCheque formaPagamento={pagamento.formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={pagamento.clienteDocumento} />}
+          {ehTituloPagamento(pagamento.formaPagamento) && pagamento.statusPagamento === "compensado" && <label className="block max-w-xs text-[10px] font-black uppercase text-slate-600">Data da compensação<input type="date" value={pagamento.dataCompensacao || ""} onChange={(event) => setPagamento({ ...pagamento, dataCompensacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 font-bold"/></label>}
+          <TitulosPagamentoEditor formaPagamento={pagamento.formaPagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome} clienteDocumento={pagamento.clienteDocumento} valorPagamento={parseBrazilianNumber(valorRecebido)} titulos={titulos} onChange={setTitulos} />
           {pagamento.statusPagamento === "recusado" && <p className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900">Ao salvar como recusado, o valor será retirado dos vales e das ordens e qualquer bônus gerado por este pagamento será removido.</p>}
           <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Valores aplicados nos vales</div><div className="divide-y divide-slate-200">{pagamento.alocacoes.map((item) => <label key={item.vendaId} className="grid grid-cols-[1fr_160px] items-center gap-3 p-3 text-xs"><span><strong className="block text-slate-950">VALE #{item.numeroSequencial}</strong><span className="font-bold text-slate-500">Saldo atual: {formatCurrency(item.saldoRestante)}</span></span><input value={valores[item.vendaId] || ""} onChange={(event) => setValores((atuais) => ({ ...atuais, [item.vendaId]: event.target.value }))} inputMode="decimal" className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>)}</div></div>
-          <div className="grid gap-3 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-slate-600">Observação<input value={pagamento.observacao || ""} onChange={(event) => setPagamento({ ...pagamento, observacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>{ehCheque(pagamento.formaPagamento) && <label className="text-[10px] font-black uppercase text-slate-600">Motivo da situação<input value={pagamento.motivoStatus || ""} onChange={(event) => setPagamento({ ...pagamento, motivoStatus: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>}</div>
+          <div className="grid gap-3 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-slate-600">Observação<input value={pagamento.observacao || ""} onChange={(event) => setPagamento({ ...pagamento, observacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>{ehTituloPagamento(pagamento.formaPagamento) && <label className="text-[10px] font-black uppercase text-slate-600">Motivo da situação<input value={pagamento.motivoStatus || ""} onChange={(event) => setPagamento({ ...pagamento, motivoStatus: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>}</div>
           {pagamento.historico.length > 0 && <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Controle de alterações</div><div className="divide-y divide-slate-200">{pagamento.historico.map((evento) => <div key={evento.id} className="grid gap-1 p-3 text-xs sm:grid-cols-[170px_1fr]"><div><p className="font-mono font-black text-slate-600">{formatDate(evento.createdAt)}</p><p className="text-[10px] font-bold text-slate-500">{evento.usuarioNome}</p></div><p className="font-bold text-slate-800">{evento.acao === "pagamento_alterado" ? `Pagamento alterado para ${String(evento.detalhes?.depois?.formaPagamento || "").replaceAll("_", " ").toUpperCase()} em ${formatCurrency(Number(evento.detalhes?.depois?.valorRecebido || 0))}.` : "Pagamento registrado."}</p></div>)}</div></div>}
         </>}
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-black text-emerald-800"><CheckCircle2 size={16}/>{feedback}</div>}

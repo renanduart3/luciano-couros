@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel, ChequeGerencial
+  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel, ChequeGerencial, TituloRecebimento, ComprovanteRecebimento
 } from "../types";
 
 const API_BASE = "/api";
@@ -168,6 +168,7 @@ export const api = {
     parcelasCartao?: number;
     observacao?: string;
     parcelaOrdemId?: string;
+    titulos?: TituloRecebimento[];
     dadosCheque?: {
       vencimento: string;
       cpfTitular: string;
@@ -187,6 +188,7 @@ export const api = {
     valorAplicado: number;
     bonusUtilizado: number;
     bonusGerado: number;
+    titulos: TituloRecebimento[];
   }>(r)),
   cancelarRecebimentoCliente: (id: string, pin: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${id}/cancelar`, {
@@ -206,6 +208,7 @@ export const api = {
     observacao?: string;
     motivoStatus?: string;
     dataCompensacao?: string;
+    titulos?: TituloRecebimento[];
     dadosCheque?: {
       vencimento: string;
       cpfTitular: string;
@@ -219,6 +222,16 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<PagamentoGerenciavel>(r)),
+
+  getUltimoTituloCliente: (clienteId: string, tipo: string) =>
+    fetch(`${API_BASE}/clientes/${clienteId}/titulos/ultimo?tipo=${encodeURIComponent(tipo)}`)
+      .then(r => handleResponse<{ nomeTitular: string; documentoTitular: string }>(r)),
+  getComprovanteRecebimento: (recebimentoId: string) =>
+    fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/comprovante`)
+      .then(r => handleResponse<ComprovanteRecebimento>(r)),
+  updateTituloRecebimentoStatus: (id: string, dados: { pin: string; status: "aguardando" | "compensado"; dataCompensacao?: string }) =>
+    fetch(`${API_BASE}/recebimento-titulos/${id}/status`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
+      .then(r => handleResponse<{ success: boolean }>(r)),
 
   getCheques: () => fetch(`${API_BASE}/cheques`).then(r => handleResponse<ChequeGerencial[]>(r)),
 

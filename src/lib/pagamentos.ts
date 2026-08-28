@@ -30,3 +30,6 @@ export const dadosChequeVazios = (): DadosCheque => ({
 
 export const ehCheque = (forma: string) => forma === "cheque_emitente" || forma === "cheque_terceiro";
 export const ehChequeTerceiro = (forma: string) => forma === "cheque_terceiro";
+export const ehDuplicata = (forma: string) => forma === "duplicata_emitente" || forma === "duplicata_terceiro";
+export const ehTituloPagamento = (forma: string) => ehCheque(forma) || ehDuplicata(forma);
+export const ehTituloTerceiro = (forma: string) => forma === "cheque_terceiro" || forma === "duplicata_terceiro";

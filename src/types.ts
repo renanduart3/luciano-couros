@@ -302,6 +302,7 @@ export interface RecebimentoCliente {
   numeroCheque?: string;
   chequeStatus?: "aguardando" | "compensado" | "recusado";
   chequeMotivo?: string;
+  titulos: TituloRecebimento[];
   createdAt: string;
   alocacoes: Array<{
     id: string;
@@ -335,6 +336,7 @@ export interface PagamentoGerenciavel {
   dataCompensacao?: string;
   motivoStatus?: string;
   observacao?: string;
+  titulos: TituloRecebimento[];
   createdAt: string;
   updatedAt: string;
   alocacoes: Array<{
@@ -354,13 +356,45 @@ export interface PagamentoGerenciavel {
   }>;
 }
 
+export interface TituloRecebimento {
+  id?: string;
+  tipo: "cheque_emitente" | "cheque_terceiro" | "duplicata_emitente" | "duplicata_terceiro";
+  nomeTitular: string;
+  documentoTitular: string;
+  valor: number;
+  vencimento: string;
+  numeroDocumento: string;
+  status?: "aguardando" | "compensado" | "recusado";
+  dataCompensacao?: string;
+  motivoStatus?: string;
+}
+
+export interface ComprovanteRecebimento {
+  id: string;
+  data: string;
+  clienteNome: string;
+  clienteDocumento?: string;
+  formaPagamento: string;
+  valorDevidoAntes: number;
+  valorRecebido: number;
+  valorAplicado: number;
+  observacao?: string;
+  titulos: TituloRecebimento[];
+  vales: Array<{
+    numeroSequencial: number;
+    valorAplicado: number;
+    saldoAntes: number;
+    saldoDepois: number;
+  }>;
+}
+
 export interface ChequeGerencial {
   id: string;
   recebimentoId: string;
   clienteId: string;
   clienteNome: string;
   clienteDocumento?: string;
-  tipo: "cheque_emitente" | "cheque_terceiro";
+  tipo: "cheque_emitente" | "cheque_terceiro" | "duplicata_emitente" | "duplicata_terceiro";
   dataRecebimento: string;
   vencimento: string;
   dataCompensacao?: string;
@@ -368,6 +402,7 @@ export interface ChequeGerencial {
   valorAplicado: number;
   banco: string;
   numeroCheque: string;
+  nomeTitular?: string;
   cpfTitular: string;
   cpfTerceiro?: string;
   status: "aguardando" | "compensado" | "recusado";
@@ -437,6 +472,7 @@ export interface OrdemCobrancaEvento {
   formaPagamento?: string;
   parcelasCartao?: number;
   recebimentoId?: string;
+  titulos?: TituloRecebimento[];
   texto: string;
 }
 

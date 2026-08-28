@@ -35,6 +35,23 @@
   transition: background-color 150ms, color 150ms, box-shadow 150ms;
 }
 
+@media print {
+  body:has(#comprovante-recebimento) * {
+    visibility: hidden !important;
+  }
+
+  #comprovante-recebimento,
+  #comprovante-recebimento * {
+    visibility: visible !important;
+  }
+
+  #comprovante-recebimento {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+  }
+}
+
 /* Densidade operacional: usa primeiro a largura disponível e reduz a soma de
    paddings repetidos sem comprometer os alvos de toque no celular. */
 @media screen {

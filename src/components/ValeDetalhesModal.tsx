@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
-import { OrdemCobranca, Venda } from "../types";
+import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
-import { CamposCheque } from "./CamposCheque";
-import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
+import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 import { EditarPagamentoModal } from "./EditarPagamentoModal";
 import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 
@@ -33,10 +34,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [parcelasCartao, setParcelasCartao] = useState(1);
-  const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: vale.clienteDocumento || "" }));
+  const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [feedbackPagamento, setFeedbackPagamento] = useState("");
   const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
+  const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
   const itens = vale.items || [];
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
@@ -60,7 +62,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     if (valorInformado <= 0) return setErro("Informe o valor do pagamento.");
     if (bonusUtilizado > saldoBonus + 0.005) return setErro("O bônus utilizado ultrapassa o saldo disponível.");
     if (formaPagamento === "bonus" && bonusUtilizado > Number(vale.saldoRestante) + 0.005) return setErro("O bônus utilizado não pode ultrapassar o saldo deste vale.");
-    if (ehCheque(formaPagamento) && (!dadosCheque.vencimento || !dadosCheque.cpfTitular.trim() || !dadosCheque.banco.trim() || !dadosCheque.numeroCheque.trim() || (formaPagamento === "cheque_terceiro" && !dadosCheque.cpfTerceiro.trim()))) return setErro("Preencha todos os dados obrigatórios do cheque.");
+    if (ehTituloPagamento(formaPagamento) && Math.abs(titulos.reduce((soma, titulo) => soma + Number(titulo.valor || 0), 0) - valorInformado) > 0.005) return setErro("A soma dos cheques ou boletos deve ser igual ao valor do pagamento.");
     const valorAplicado = Math.min(Number(vale.saldoRestante), recebido + bonusUtilizado);
     setSalvando(true);
     setErro("");
@@ -73,13 +75,14 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         observacao: `Pagamento direto do vale #${vale.numeroSequencial}`,
-        dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
+        titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes: [{ vendaId: vale.id, valor: valorAplicado }]
       });
       const atualizado = await api.getVenda(vale.id);
       const carteira = await api.getCarteiraResumo(vale.clienteId);
       setSaldoBonus(Number(carteira.saldoBonus || 0));
       setFeedbackPagamento(`${formatCurrency(resultado.valorAplicado)} abatido do vale` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
+      setComprovante(await api.getComprovanteRecebimento(resultado.id));
       onUpdated?.(atualizado);
     } catch (error: any) {
       setErro(error.message || "Não foi possível registrar o pagamento.");
@@ -139,6 +142,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     }
   };
 
+  if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
       {editandoRecebimentoId && <EditarPagamentoModal recebimentoId={editandoRecebimentoId} onClose={() => setEditandoRecebimentoId(null)} onSaved={() => { api.getVenda(vale.id).then((atualizado) => onUpdated?.(atualizado)); }} />}
@@ -209,7 +213,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                 <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
                 <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
               </div>
-              <div className="px-3 pb-3"><CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={vale.clienteDocumento} /></div>
+              <div className="px-3 pb-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} valorPagamento={parseBrazilianNumber(valorPagamento)} titulos={titulos} onChange={setTitulos} /></div>
               <div className="px-3 pb-3"><ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={parseBrazilianNumber(valorPagamento)} /></div>
               {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
               {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
@@ -217,7 +221,17 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
             <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos deste vale</h3><span className="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-slate-600">{vale.recebimentos?.length || 0}</span></div>
-              {!vale.recebimentos?.length ? <p className="p-5 text-center text-xs font-bold text-slate-500">Nenhum pagamento registrado para este vale.</p> : <div className="divide-y divide-slate-200">{vale.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-2 p-3 text-xs"><div className="grid items-center gap-3 sm:grid-cols-[0.7fr_1fr_0.8fr_auto]"><div><p className="text-[10px] font-black uppercase text-slate-500">Data</p><p className="font-bold text-slate-900">{formatDate(recebimento.data)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Forma</p><p className="font-black uppercase text-slate-900">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.statusPagamento !== "compensado" && <span className={`mt-1 inline-block rounded-lg px-2 py-1 text-[9px] font-black ${recebimento.statusPagamento === "recusado" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>{recebimento.statusPagamento.toUpperCase()}</span>}</div><div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>{gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}</div>{ehCheque(recebimento.formaPagamento) && <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">Cheque {recebimento.tipo === "cheque_terceiro" ? "de terceiro" : "do emitente"} nº {recebimento.numeroCheque || "NÃO INFORMADO"}</span><span className="block text-[10px]">BANCO: {recebimento.banco || "NÃO INFORMADO"} · VENCIMENTO: {recebimento.vencimento ? formatDate(recebimento.vencimento) : "NÃO INFORMADO"} · CPF TITULAR: {recebimento.cpfTitular || "NÃO INFORMADO"}{recebimento.cpfTerceiro ? ` · CPF TERCEIRO: ${recebimento.cpfTerceiro}` : ""}</span></div>}</article>)}</div>}
+              {!vale.recebimentos?.length ? <p className="p-5 text-center text-xs font-bold text-slate-500">Nenhum pagamento registrado para este vale.</p> : <div className="divide-y divide-slate-200">
+                {vale.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-2 p-3 text-xs">
+                  <div className="grid items-center gap-3 sm:grid-cols-[0.7fr_1fr_0.8fr_auto]">
+                    <div><p className="text-[10px] font-black uppercase text-slate-500">Data</p><p className="font-bold text-slate-900">{formatDate(recebimento.data)}</p></div>
+                    <div><p className="text-[10px] font-black uppercase text-slate-500">Forma</p><p className="font-black uppercase text-slate-900">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.statusPagamento !== "compensado" && <span className={`mt-1 inline-block rounded-lg px-2 py-1 text-[9px] font-black ${recebimento.statusPagamento === "recusado" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>{recebimento.statusPagamento.toUpperCase()}</span>}</div>
+                    <div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>
+                    {gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}
+                  </div>
+                  {recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">{titulo.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"} nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</span><span className="block text-[10px]">{titulo.nomeTitular} · CPF/CNPJ: {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</span></div>)}
+                </article>)}
+              </div>}
             </div>
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">

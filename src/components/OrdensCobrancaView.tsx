@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, History, ListChecks, RefreshCw, ShieldCheck, WalletCards, X } from "lucide-react";
 import { api } from "../lib/api";
-import { OrdemCobranca } from "../types";
+import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
-import { CamposCheque } from "./CamposCheque";
-import { dadosChequeVazios, DadosCheque, ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { EditarPagamentoModal } from "./EditarPagamentoModal";
 import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
+import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
+import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
 interface Props {
   refreshKey?: number;
@@ -36,13 +37,15 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico">("parcelas");
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [parcelasCartao, setParcelasCartao] = useState(1);
-  const [dadosCheque, setDadosCheque] = useState<DadosCheque>(() => ({ ...dadosChequeVazios(), cpfTitular: ordem.clienteDocumento || "" }));
+  const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
+  const [parcelaEmPagamento, setParcelaEmPagamento] = useState(() => ordem.parcelas.find((parcela) => parcela.status === "pendente")?.id || "");
   const [valoresPagamento, setValoresPagamento] = useState<Record<string, string>>(() => Object.fromEntries(ordem.parcelas.filter((parcela) => parcela.status === "pendente").map((parcela) => [parcela.id, dinheiroInput(parcela.saldo)])));
   const [datasPagamento, setDatasPagamento] = useState<Record<string, string>>(() => Object.fromEntries(ordem.parcelas.map((parcela) => [parcela.id, hojeIso()])));
   const [encerramento, setEncerramento] = useState(false);
   const [pinEncerramento, setPinEncerramento] = useState("");
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
   const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
+  const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
 
   useEffect(() => {
     setValoresPagamento(Object.fromEntries(ordem.parcelas.filter((parcela) => parcela.status === "pendente").map((parcela) => [parcela.id, dinheiroInput(parcela.saldo)])));
@@ -55,7 +58,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
     if (valorInformado <= 0) return setError("Informe o valor do pagamento.");
     if (formaPagamento === "bonus" && valorInformado > Number(ordem.saldoBonus) + 0.005) return setError("O valor ultrapassa o bônus disponível do cliente.");
     if (formaPagamento === "bonus" && valorInformado > Number(ordem.saldo) + 0.005) return setError("O bônus não pode ultrapassar o saldo da ordem.");
-    if (ehCheque(formaPagamento) && (!dadosCheque.vencimento || !dadosCheque.cpfTitular.trim() || !dadosCheque.banco.trim() || !dadosCheque.numeroCheque.trim() || (formaPagamento === "cheque_terceiro" && !dadosCheque.cpfTerceiro.trim()))) return setError("Preencha todos os dados obrigatórios do cheque.");
+    if (ehTituloPagamento(formaPagamento) && Math.abs(titulos.reduce((soma, titulo) => soma + Number(titulo.valor || 0), 0) - valorInformado) > 0.005) return setError("A soma dos cheques ou boletos deve ser igual ao valor do pagamento.");
     let restante = Math.min(valorInformado, Number(ordem.saldo));
     const alocacoes: Array<{ vendaId: string; valor: number }> = [];
     for (const vale of ordem.vales.filter((item) => Number(item.saldo) > 0.005)) {
@@ -74,7 +77,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
         bonusUtilizado,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
-        dadosCheque: ehCheque(formaPagamento) ? dadosCheque : undefined,
+        titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         parcelaOrdemId: parcelaId,
         observacao: `Pagamento da ordem de cobrança #${ordem.numeroSequencial}`,
         alocacoes,
@@ -82,6 +85,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
       const atualizada = (await api.getOrdensCobranca(ordem.clienteId)).find((item) => item.id === ordem.id);
       if (atualizada) onChanged(atualizada);
       setFeedback(`Pagamento registrado: ${formatCurrency(resultado.valorAplicado)} abatido` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
+      setComprovante(await api.getComprovanteRecebimento(resultado.id));
     } catch (err: any) {
       setError(err.message || "Não foi possível registrar o pagamento.");
     } finally {
@@ -119,6 +123,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   };
 
   return <>
+  {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
   {editandoRecebimentoId && <EditarPagamentoModal recebimentoId={editandoRecebimentoId} onClose={() => setEditandoRecebimentoId(null)} onSaved={() => { api.getOrdensCobranca(ordem.clienteId).then((lista) => { const atualizada = lista.find((item) => item.id === ordem.id); if (atualizada) onChanged(atualizada); }); }} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
     <form onSubmit={encerrar} role="alertdialog" aria-modal="true" aria-labelledby="encerrar-ordem-titulo" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -151,7 +156,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
             <button type="button" onClick={() => setAbaDetalhe("historico")} className={`inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-xs font-black uppercase ${abaDetalhe === "historico" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}><History size={15}/> Histórico da ordem</button>
             <label className="ml-auto text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 block min-h-9 min-w-56 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
           </div>
-          {ehCheque(formaPagamento) && <div className="mt-2 border-t border-slate-200 pt-2"><CamposCheque formaPagamento={formaPagamento} dados={dadosCheque} onChange={setDadosCheque} documentoCliente={ordem.clienteDocumento} /></div>}
+          <div className="mt-2 border-t border-slate-200 pt-2"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} valorPagamento={parseBrazilianNumber(valoresPagamento[parcelaEmPagamento] || "")} titulos={titulos} onChange={setTitulos} /></div>
           <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} className="mt-2 max-w-xs border-t border-slate-200 pt-2" />
           {formaPagamento === "bonus" && <p className="mt-2 rounded-lg border border-violet-300 bg-violet-50 p-2 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(ordem.saldoBonus)}</p>}
         </div>

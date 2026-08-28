@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.23.1 — 2026-08-28
+
+- Relatório de vendas passa a exibir o resumo compacto abaixo da listagem e da paginação, com valores financeiros primeiro, quantidades depois e os valores correspondentes a metros e unidades por último.
+- A antiga área `Clientes` passa a se chamar `Itens por cliente` e fica organizada como uma subaba de `Vendas`, mantendo seus filtros, divisões por metros e unidades e dados administrativos protegidos.
+- Resumos do período e do histórico geral do cliente ficam abaixo dos itens vendidos, em cartões menores e ordenados para facilitar a conferência.
+- Edição de pagamentos com múltiplos cheques ou duplicatas volta a aceitar recebimentos parciais, integrais ou acima da dívida, limitando o abatimento ao saldo dos vales e transformando o excedente em bônus.
+- Alterações nos valores dos títulos recalculam a distribuição automaticamente e mostram pagamento, abatimento, saldo restante e bônus previsto antes da confirmação.
+
 ## 1.23.0 — 2026-08-28
 
 - Comprovantes de recebimento de cheques e duplicatas passam a seguir o padrão visual do sistema, com cliente, títulos pagos, formas de pagamento, vencimentos, situação, bônus, observação e assinaturas.

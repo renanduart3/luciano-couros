@@ -23,6 +23,13 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
   const valorBase = parseBrazilianNumber(valorRecebido);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
   const valorEfetivo = pagamentoTitulo ? totalTitulos : valorBase;
+  const totalAplicado = useMemo(() => Math.round((Object.values(valores) as string[]).reduce<number>((total, valor) => total + parseBrazilianNumber(valor), 0) * 100) / 100, [valores]);
+  const capacidadeVinculada = useMemo(() => Math.round((pagamento?.alocacoes || []).reduce((total, item) => {
+    const valorRestaurado = pagamento?.status === "ativo" && !item.deletedAt ? Number(item.valor || 0) : 0;
+    return total + Number(item.saldoRestante || 0) + valorRestaurado;
+  }, 0) * 100) / 100, [pagamento]);
+  const bonusPrevisto = pagamento?.formaPagamento === "bonus" ? 0 : Math.max(0, Math.round((valorEfetivo - totalAplicado) * 100) / 100);
+  const saldoPrevisto = Math.max(0, Math.round((capacidadeVinculada - totalAplicado) * 100) / 100);
 
   const preencher = (dados: PagamentoGerenciavel) => {
     setPagamento(dados);
@@ -36,6 +43,26 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
     api.getRecebimentoGerenciavel(recebimentoId).then((dados) => { if (ativo) preencher(dados); }).catch((error) => { if (ativo) setErro(error.message || "Não foi possível carregar o pagamento."); }).finally(() => { if (ativo) setLoading(false); });
     return () => { ativo = false; };
   }, [recebimentoId]);
+
+  const redistribuirAutomaticamente = (montante: number) => {
+    if (!pagamento) return;
+    let restante = Math.max(0, Math.round(Number(montante || 0) * 100) / 100);
+    const novosValores: Record<string, string> = {};
+    for (const item of pagamento.alocacoes) {
+      const valorRestaurado = pagamento.status === "ativo" && !item.deletedAt ? Number(item.valor || 0) : 0;
+      const capacidade = Math.max(0, Math.round((Number(item.saldoRestante || 0) + valorRestaurado) * 100) / 100);
+      const aplicar = Math.min(restante, capacidade);
+      if (aplicar > 0.005) novosValores[item.vendaId] = dinheiro(aplicar);
+      restante = Math.max(0, Math.round((restante - aplicar) * 100) / 100);
+    }
+    setValores(novosValores);
+  };
+
+  const alterarTitulos = (novosTitulos: TituloRecebimento[]) => {
+    setTitulos(novosTitulos);
+    const novoTotal = Math.round(novosTitulos.reduce((total, titulo) => total + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100;
+    if (Math.abs(novoTotal - totalTitulos) > 0.005) redistribuirAutomaticamente(novoTotal);
+  };
 
   const salvar = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -82,9 +109,9 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
           </div>
           <ParcelamentoCartaoSelect formaPagamento={pagamento.formaPagamento} parcelas={pagamento.parcelasCartao || 1} onChange={(parcelasCartao) => setPagamento({ ...pagamento, parcelasCartao })} valorTotal={valorEfetivo} className="max-w-xs" />
           {ehTituloPagamento(pagamento.formaPagamento) && pagamento.statusPagamento === "compensado" && <label className="block max-w-xs text-[10px] font-black uppercase text-slate-600">Data da compensação<input type="date" value={pagamento.dataCompensacao || ""} onChange={(event) => setPagamento({ ...pagamento, dataCompensacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 font-bold"/></label>}
-          <TitulosPagamentoEditor formaPagamento={pagamento.formaPagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome} clienteDocumento={pagamento.clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
+          <TitulosPagamentoEditor formaPagamento={pagamento.formaPagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome} clienteDocumento={pagamento.clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={alterarTitulos} />
           {pagamento.statusPagamento === "recusado" && <p className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-bold text-red-900">Ao salvar como recusado, o valor será retirado dos vales e das ordens e qualquer bônus gerado por este pagamento será removido.</p>}
-          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Valores aplicados nos vales</div><div className="divide-y divide-slate-200">{pagamento.alocacoes.map((item) => <label key={item.vendaId} className="grid grid-cols-[1fr_160px] items-center gap-3 p-3 text-xs"><span><strong className="block text-slate-950">VALE #{item.numeroSequencial}</strong><span className="font-bold text-slate-500">Saldo atual: {formatCurrency(item.saldoRestante)}</span></span><input value={valores[item.vendaId] || ""} onChange={(event) => setValores((atuais) => ({ ...atuais, [item.vendaId]: event.target.value }))} inputMode="decimal" className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>)}</div></div>
+          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-slate-50 p-3"><div><p className="text-xs font-black uppercase text-slate-700">Valores aplicados nos vales</p><p className="mt-1 text-[10px] font-bold text-slate-500">Ao alterar cheques ou boletos, o abatimento é recalculado automaticamente.</p></div><button type="button" onClick={() => redistribuirAutomaticamente(valorEfetivo)} className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-[10px] font-black uppercase text-blue-800">Recalcular distribuição</button></div><div className="divide-y divide-slate-200">{pagamento.alocacoes.map((item) => <label key={item.vendaId} className="grid grid-cols-[1fr_160px] items-center gap-3 p-3 text-xs"><span><strong className="block text-slate-950">VALE #{item.numeroSequencial}</strong><span className="font-bold text-slate-500">Saldo atual: {formatCurrency(item.saldoRestante)}</span></span><input value={valores[item.vendaId] || ""} onChange={(event) => setValores((atuais) => ({ ...atuais, [item.vendaId]: event.target.value }))} inputMode="decimal" className="min-h-10 rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono font-black text-emerald-900"/></label>)}</div><div className="grid gap-2 border-t border-slate-300 bg-slate-50 p-3 text-xs sm:grid-cols-4"><ResumoEdicao titulo="Pagamento" valor={valorEfetivo}/><ResumoEdicao titulo="Abatido" valor={totalAplicado}/><ResumoEdicao titulo="Saldo restante" valor={saldoPrevisto}/><ResumoEdicao titulo="Bônus gerado" valor={bonusPrevisto} destaque={bonusPrevisto > 0.005}/></div></div>
           <div className="grid gap-3 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-slate-600">Observação<input value={pagamento.observacao || ""} onChange={(event) => setPagamento({ ...pagamento, observacao: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>{ehTituloPagamento(pagamento.formaPagamento) && <label className="text-[10px] font-black uppercase text-slate-600">Motivo da situação<input value={pagamento.motivoStatus || ""} onChange={(event) => setPagamento({ ...pagamento, motivoStatus: event.target.value })} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 font-bold"/></label>}</div>
           {pagamento.historico.length > 0 && <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Controle de alterações</div><div className="divide-y divide-slate-200">{pagamento.historico.map((evento) => <div key={evento.id} className="grid gap-1 p-3 text-xs sm:grid-cols-[170px_1fr]"><div><p className="font-mono font-black text-slate-600">{formatDate(evento.createdAt)}</p><p className="text-[10px] font-bold text-slate-500">{evento.usuarioNome}</p></div><p className="font-bold text-slate-800">{evento.acao === "pagamento_alterado" ? `Pagamento alterado para ${String(evento.detalhes?.depois?.formaPagamento || "").replaceAll("_", " ").toUpperCase()} em ${formatCurrency(Number(evento.detalhes?.depois?.valorRecebido || 0))}.` : "Pagamento registrado."}</p></div>)}</div></div>}
         </>}
@@ -94,4 +121,8 @@ export function EditarPagamentoModal({ recebimentoId, onClose, onSaved }: { rece
       <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3"><label className="text-[10px] font-black uppercase text-slate-600">Senha do gerente<input type="password" autoComplete="off" value={pin} onChange={(event) => setPin(event.target.value.slice(0, 64))} className="ml-2 min-h-10 rounded-lg border border-slate-300 px-3 text-center font-black tracking-widest"/></label><button type="button" onClick={onClose} className="min-h-10 rounded-lg border border-slate-300 px-4 text-xs font-black uppercase">Fechar</button><button type="submit" disabled={saving || loading || !pagamento || pin.length < 4} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40">{saving ? <Loader2 className="animate-spin" size={16}/> : <ShieldCheck size={16}/>}Salvar alterações</button></footer>
     </form>
   </div>;
+}
+
+function ResumoEdicao({ titulo, valor, destaque = false }: { titulo: string; valor: number; destaque?: boolean }) {
+  return <div className={`rounded-lg border p-2 ${destaque ? "border-violet-300 bg-violet-50 text-violet-900" : "border-slate-200 bg-white text-slate-800"}`}><span className="block text-[9px] font-black uppercase text-slate-500">{titulo}</span><strong className="font-mono text-sm">{formatCurrency(valor)}</strong></div>;
 }

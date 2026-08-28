@@ -166,6 +166,8 @@ export function RelatoriosView() {
 
   const resumoVendas = useMemo(() => linhasVendas.reduce((resumo: any, venda: any) => ({
     quantidade: resumo.quantidade + 1,
+    valorBruto: resumo.valorBruto + Number(venda.subtotal || 0),
+    desconto: resumo.desconto + Number(venda.desconto || 0),
     total: resumo.total + Number(venda.totalLiquido || 0),
     metragem: resumo.metragem + Number(venda.metragem || 0),
     unidades: resumo.unidades + Number(venda.unidades || 0),
@@ -173,7 +175,7 @@ export function RelatoriosView() {
     valorUnidades: resumo.valorUnidades + Number(venda.valorUnidades || 0),
     custo: resumo.custo + Number(venda.custo || 0),
     lucro: resumo.lucro + Number(venda.lucro || 0),
-  }), { quantidade: 0, total: 0, metragem: 0, unidades: 0, valorMetros: 0, valorUnidades: 0, custo: 0, lucro: 0 }), [linhasVendas]);
+  }), { quantidade: 0, valorBruto: 0, desconto: 0, total: 0, metragem: 0, unidades: 0, valorMetros: 0, valorUnidades: 0, custo: 0, lucro: 0 }), [linhasVendas]);
 
   const linhasFornecedores = useMemo(() => {
     const mapa = new Map<string, any>();
@@ -304,6 +306,7 @@ export function RelatoriosView() {
   };
 
   const Card = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><p className="text-xs font-black text-slate-600">{titulo}</p><p className={`mt-2 text-xl font-black ${destaque}`}>{valor}</p></div>;
+  const CardResumo = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"><p className="truncate text-[10px] font-black uppercase text-slate-500" title={titulo}>{titulo}</p><p className={`whitespace-nowrap text-sm font-black ${destaque}`}>{valor}</p></div>;
 
   return (
     <section id="relatorios-view" className="space-y-5">
@@ -329,8 +332,10 @@ export function RelatoriosView() {
       </div>
 
       <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-300 bg-white p-1.5 shadow-sm sm:flex print:hidden">
-        {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['clientes', Users, 'Clientes'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${aba === id ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
+        {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${(id === "vendas" ? aba === "vendas" || aba === "clientes" : aba === id) ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
       </div>
+
+      {(aba === "vendas" || aba === "clientes") && <div className="grid grid-cols-2 gap-1 rounded-xl border border-blue-200 bg-blue-50 p-1 print:hidden"><button type="button" data-testid="relatorio-subaba-vendas" onClick={() => { setAba("vendas"); setClienteId(""); }} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${aba === "vendas" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Vendas</button><button type="button" data-testid="relatorio-subaba-itens-cliente" onClick={() => { setAba("clientes"); setClienteId(""); }} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${aba === "clientes" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}><Users size={15} className="mr-1.5 inline" />Itens por cliente</button></div>}
 
       <div className="space-y-2 rounded-xl border border-slate-300 bg-white p-3 shadow-sm print:hidden">
         <div className="flex flex-wrap items-end gap-2">
@@ -400,12 +405,15 @@ export function RelatoriosView() {
           </div>
         )}
 
-        {aba === "vendas" && <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6"><Card titulo="VENDAS" valor={String(resumoVendas.quantidade)} /><Card titulo="VALOR TOTAL" valor={formatCurrency(resumoVendas.total)} destaque="text-blue-800" /><Card titulo="METROS / VALOR" valor={`${formatDecimal(resumoVendas.metragem)} m • ${formatCurrency(resumoVendas.valorMetros)}`} destaque="text-amber-800" /><Card titulo="UNIDADES / VALOR" valor={`${formatDecimal(resumoVendas.unidades)} • ${formatCurrency(resumoVendas.valorUnidades)}`} destaque="text-violet-800" /><Card titulo="CUSTO" valor={formatCurrency(resumoVendas.custo)} /><Card titulo="LUCRO" valor={formatCurrency(resumoVendas.lucro)} destaque={resumoVendas.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></div>
+        {aba === "vendas" && <div className="space-y-3">
           <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
             <TabelaVendas linhas={vendasPaginadas} />
             <Pagination page={paginaVendas} pageSize={VENDAS_POR_PAGINA} totalItems={linhasVendas.length} onPageChange={setPaginaVendas} alwaysVisible />
           </div>
+          <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <h3 className="text-[11px] font-black uppercase text-slate-600">Resumo do período</h3>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"><CardResumo titulo="Valor líquido" valor={formatCurrency(resumoVendas.total)} destaque="text-blue-800" /><CardResumo titulo="Valor bruto" valor={formatCurrency(resumoVendas.valorBruto)} /><CardResumo titulo="Desconto" valor={formatCurrency(resumoVendas.desconto)} /><CardResumo titulo="Custo" valor={formatCurrency(resumoVendas.custo)} /><CardResumo titulo="Lucro" valor={formatCurrency(resumoVendas.lucro)} destaque={resumoVendas.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /><CardResumo titulo="Vendas" valor={String(resumoVendas.quantidade)} /><CardResumo titulo="Metros" valor={`${formatDecimal(resumoVendas.metragem)} m`} destaque="text-amber-800" /><CardResumo titulo="Unidades" valor={`${formatDecimal(resumoVendas.unidades)} un`} destaque="text-violet-800" /><CardResumo titulo="R$ em metros" valor={formatCurrency(resumoVendas.valorMetros)} destaque="text-amber-800" /><CardResumo titulo="R$ em unidades" valor={formatCurrency(resumoVendas.valorUnidades)} destaque="text-violet-800" /></div>
+          </section>
         </div>}
 
         {aba === "clientes" && <div className="space-y-4">
@@ -413,10 +421,6 @@ export function RelatoriosView() {
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Users size={34} className="mx-auto text-slate-300" /><p className="mt-3 font-black text-slate-700">Selecione um cliente para carregar os itens vendidos no período.</p></div>
           ) : (
             <>
-              <section className="space-y-3 rounded-2xl border border-blue-200 bg-blue-50/50 p-3">
-                <div><h3 className="font-black text-blue-950">TOTAL GERAL DO CLIENTE</h3><p className="text-xs font-bold text-blue-700">Histórico completo, sem limitar pelo filtro de datas.</p></div>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><Card titulo="METROS VENDIDOS" valor={formatDecimal(resumoClienteGeral.quantidadeMetros)} destaque="text-emerald-800" /><Card titulo="UNIDADES / OUTROS" valor={formatDecimal(resumoClienteGeral.quantidadeUnidades)} /><Card titulo="VENDAS" valor={String(resumoClienteGeral.totalVendas)} /><Card titulo="ITENS DE VENDA" valor={String(resumoClienteGeral.totalItensVenda)} /><Card titulo="VALOR LÍQUIDO GERAL" valor={formatCurrency(resumoClienteGeral.valorLiquido)} destaque="text-blue-800" /></div>
-              </section>
               <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div><h3 className="font-black text-slate-950">Itens vendidos para o cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(dataInicio)} até {formatDate(dataFim)}</p></div>
@@ -425,11 +429,15 @@ export function RelatoriosView() {
                 <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-white p-2 print:hidden"><button type="button" onClick={() => setCategoriaCliente("metros")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "metros" ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>Vendidos em metros ({analiseCliente.itensMetros.length})</button><button type="button" onClick={() => setCategoriaCliente("unidades")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "unidades" ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>Unidades / outros ({analiseCliente.itensUnidades.length})</button></div>
                 <TabelaItensCliente linhas={clienteProgressivo.itensVisiveis} liberado={dadosClienteLiberados} />
                 <MarcadorListaProgressiva {...clienteProgressivo} />
-                <section className="space-y-3 border-t-2 border-slate-300 bg-slate-100 p-4">
-                  <div><h4 className="font-black text-slate-950">TOTAL DO PERÍODO FILTRADO</h4><p className="text-xs font-bold text-slate-600">Somente vendas entre {formatDate(dataInicio)} e {formatDate(dataFim)}.</p></div>
-                  <div className={`grid gap-2 text-xs font-black sm:grid-cols-2 ${dadosClienteLiberados ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}><span className="rounded-lg bg-white p-3">VENDAS: {analiseCliente.totalVendas}</span><span className="rounded-lg bg-white p-3">ITENS DE VENDA: {analiseCliente.totalItensVenda}</span><span className="rounded-lg bg-emerald-50 p-3 text-emerald-900">METROS: {formatDecimal(analiseCliente.quantidadeMetros)}</span><span className="rounded-lg bg-blue-50 p-3 text-blue-900">UNIDADES / OUTROS: {formatDecimal(analiseCliente.quantidadeUnidades)}</span><span className="rounded-lg bg-white p-3">VALOR BRUTO: {formatCurrency(analiseCliente.valorBruto)}</span><span className="rounded-lg bg-white p-3">DESCONTO: {formatCurrency(analiseCliente.desconto)}</span><span className="rounded-lg bg-white p-3">TOTAL LÍQUIDO: {formatCurrency(analiseCliente.valorLiquido)}</span>{dadosClienteLiberados && <><span className="rounded-lg bg-white p-3">CUSTO: {formatCurrency(analiseCliente.custo)}</span><span className="rounded-lg bg-emerald-50 p-3 text-emerald-900">LUCRO / MARGEM: {formatCurrency(analiseCliente.lucro)} • {analiseCliente.margem.toFixed(1)}%</span></>}</div>
-                </section>
               </div>
+              <section className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div><h4 className="text-[11px] font-black uppercase text-slate-700">Resumo do período</h4><p className="text-[10px] font-bold text-slate-500">Vendas entre {formatDate(dataInicio)} e {formatDate(dataFim)}.</p></div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"><CardResumo titulo="Valor líquido" valor={formatCurrency(analiseCliente.valorLiquido)} destaque="text-blue-800" /><CardResumo titulo="Valor bruto" valor={formatCurrency(analiseCliente.valorBruto)} /><CardResumo titulo="Desconto" valor={formatCurrency(analiseCliente.desconto)} />{dadosClienteLiberados && <><CardResumo titulo="Custo" valor={formatCurrency(analiseCliente.custo)} /><CardResumo titulo="Lucro / margem" valor={`${formatCurrency(analiseCliente.lucro)} • ${analiseCliente.margem.toFixed(1)}%`} destaque={analiseCliente.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></>}<CardResumo titulo="Vendas" valor={String(analiseCliente.totalVendas)} /><CardResumo titulo="Itens de venda" valor={String(analiseCliente.totalItensVenda)} /><CardResumo titulo="Metros" valor={`${formatDecimal(analiseCliente.quantidadeMetros)} m`} destaque="text-amber-800" /><CardResumo titulo="Unidades / outros" valor={`${formatDecimal(analiseCliente.quantidadeUnidades)} un`} destaque="text-violet-800" /></div>
+              </section>
+              <section className="space-y-2 rounded-xl border border-blue-200 bg-blue-50/50 p-3">
+                <div><h4 className="text-[11px] font-black uppercase text-blue-950">Resumo geral do cliente</h4><p className="text-[10px] font-bold text-blue-700">Histórico completo, sem limitar pelo período.</p></div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"><CardResumo titulo="Valor líquido" valor={formatCurrency(resumoClienteGeral.valorLiquido)} destaque="text-blue-800" />{dadosClienteLiberados && <><CardResumo titulo="Custo" valor={formatCurrency(resumoClienteGeral.custo)} /><CardResumo titulo="Lucro" valor={formatCurrency(resumoClienteGeral.lucro)} destaque={resumoClienteGeral.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></>}<CardResumo titulo="Vendas" valor={String(resumoClienteGeral.totalVendas)} /><CardResumo titulo="Itens de venda" valor={String(resumoClienteGeral.totalItensVenda)} /><CardResumo titulo="Metros" valor={`${formatDecimal(resumoClienteGeral.quantidadeMetros)} m`} destaque="text-amber-800" /><CardResumo titulo="Unidades / outros" valor={`${formatDecimal(resumoClienteGeral.quantidadeUnidades)} un`} destaque="text-violet-800" /></div>
+              </section>
             </>
           )}
         </div>}

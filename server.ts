@@ -4953,10 +4953,8 @@ app.put("/api/recebimentos-cliente/:recebimentoId", exigirGerente, (req, res) =>
       const valor = arredondar(item?.valor);
       if (vendaId && valor > 0) agrupadas.set(vendaId, arredondar((agrupadas.get(vendaId) || 0) + valor));
     }
-    const novasAlocacoes = [...agrupadas].map(([vendaId, valor]) => ({ vendaId, valor }));
-    const totalAplicado = arredondar(novasAlocacoes.reduce((total, item) => total + item.valor, 0));
-    if (totalAplicado <= 0 || totalAplicado > valorInformado + 0.005) throw erroHttp("Distribua um valor válido entre os vales, sem ultrapassar o pagamento.", 400);
-    if (usandoBonus && Math.abs(totalAplicado - valorInformado) > 0.005) throw erroHttp("Pagamentos em bônus devem ser totalmente aplicados nos vales.", 400);
+    const alocacoesSolicitadas = [...agrupadas].map(([vendaId, valor]) => ({ vendaId, valor }));
+    if (alocacoesSolicitadas.length === 0) throw erroHttp("Informe ao menos um vale para receber o pagamento.", 400);
 
     const tituloAtualizado = runInTransaction(() => {
       const atual = queryOne<any>(
@@ -4972,6 +4970,26 @@ app.put("/api/recebimentos-cliente/:recebimentoId", exigirGerente, (req, res) =>
         "SELECT * FROM recebimento_alocacoes WHERE recebimentoId = ? AND deletedAt IS NULL",
         [recebimentoId]
       );
+      const alocacaoAtivaPorVale = new Map<string, number>();
+      for (const alocacao of alocacoesAtivas) {
+        alocacaoAtivaPorVale.set(alocacao.vendaId, arredondar((alocacaoAtivaPorVale.get(alocacao.vendaId) || 0) + Number(alocacao.valor || 0)));
+      }
+      let restanteParaDistribuir = valorInformado;
+      const novasAlocacoes: Array<{ vendaId: string; valor: number }> = [];
+      for (const item of alocacoesSolicitadas) {
+        if (restanteParaDistribuir <= 0.005) break;
+        const venda = queryOne<any>("SELECT id, numeroSequencial, saldoRestante FROM vendas WHERE id = ? AND clienteId = ? AND deletedAt IS NULL", [item.vendaId, atual.clienteId]);
+        if (!venda) throw erroHttp("Um dos vales informados não foi encontrado para este cliente.", 409);
+        const valorQueSeraRestaurado = atual.status === "ativo" ? Number(alocacaoAtivaPorVale.get(item.vendaId) || 0) : 0;
+        const capacidadeDoVale = arredondar(Number(venda.saldoRestante || 0) + valorQueSeraRestaurado);
+        const aplicar = arredondar(Math.min(item.valor, capacidadeDoVale, restanteParaDistribuir));
+        if (aplicar <= 0.005) continue;
+        novasAlocacoes.push({ vendaId: item.vendaId, valor: aplicar });
+        restanteParaDistribuir = arredondar(restanteParaDistribuir - aplicar);
+      }
+      const totalAplicado = arredondar(novasAlocacoes.reduce((total, item) => total + item.valor, 0));
+      if (totalAplicado <= 0) throw erroHttp("Não há saldo disponível nos vales informados para aplicar este pagamento.", 400);
+      if (usandoBonus && Math.abs(totalAplicado - valorInformado) > 0.005) throw erroHttp("Pagamentos em bônus devem ser totalmente aplicados nos vales.", 400);
       const mapaAtual = new Map(alocacoesAtivas.map((item) => [item.vendaId, arredondar(item.valor)]));
       const mapaNovo = new Map(novasAlocacoes.map((item) => [item.vendaId, item.valor]));
       const distribuicaoMudou = mapaAtual.size !== mapaNovo.size || [...mapaNovo].some(([id, valor]) => Math.abs(Number(mapaAtual.get(id) || 0) - valor) > 0.005);

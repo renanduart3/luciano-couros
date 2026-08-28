@@ -82,12 +82,13 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const usandoBonus = formaPagamento === "bonus";
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
+  const valorReferencia = pagamentoTitulo ? (valorParaDistribuir || totalAplicado) : valorParaDistribuir;
   const montantePagamento = pagamentoTitulo ? totalTitulos : valorParaDistribuir;
   const recebido = usandoBonus ? 0 : montantePagamento;
   const bonusUtilizado = usandoBonus ? montantePagamento : 0;
   const bonusGerado = usandoBonus ? 0 : Math.max(0, montantePagamento - totalAplicado);
   const distribuicaoInvalida = totalAplicado > montantePagamento + 0.005 || (usandoBonus && Math.abs(totalAplicado - montantePagamento) > 0.005);
-  const valorExibido = pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : valorRecebido;
+  const valorExibido = pagamentoTitulo ? dinheiro(valorReferencia) : valorRecebido;
 
   const alternarDivida = (divida: DividaCarteira) => {
     const proxima = new Set(selecionadas);
@@ -217,11 +218,11 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
           <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
             <h3 className="font-black text-slate-950">1. INFORMAR O RECEBIMENTO</h3>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <label className="text-xs font-black text-slate-700">VALOR DO PAGAMENTO<input data-testid="carteira-valor-recebido" readOnly={pagamentoTitulo} value={valorExibido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" className={`mt-1 min-h-11 w-full rounded-xl border px-3 text-base font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-slate-400 bg-slate-100 text-emerald-800"}`} /><span className="mt-1 block text-[10px] font-bold text-slate-500">{pagamentoTitulo ? "CALCULADO PELAS LINHAS DE TÍTULOS." : "PODE SER MENOR, IGUAL OU MAIOR QUE O TOTAL ABATIDO."}</span></label>
+              <label className="text-xs font-black text-slate-700">{pagamentoTitulo ? "VALOR DE REFERÊNCIA SELECIONADO" : "VALOR DO PAGAMENTO"}<input data-testid="carteira-valor-recebido" readOnly={pagamentoTitulo} value={valorExibido} onChange={(e) => setValorRecebido(e.target.value)} placeholder="0,00" className={`mt-1 min-h-11 w-full rounded-xl border px-3 text-base font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-slate-400 bg-slate-100 text-emerald-800"}`} /><span className="mt-1 block text-[10px] font-bold text-slate-500">{pagamentoTitulo ? "REFERÊNCIA DAS DÍVIDAS SELECIONADAS; O RECEBIDO VEM DOS TÍTULOS." : "PODE SER MENOR, IGUAL OU MAIOR QUE O TOTAL ABATIDO."}</span></label>
               <label className="text-xs font-black text-slate-700">DATA<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(e) => setData(e.target.value)} className={`mt-1 min-h-11 w-full rounded-xl border px-3 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-400 bg-slate-100 text-slate-950"}`} /></label>
               <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option><option value="bonus">BÔNUS</option></select></label>
             </div>
-            <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={valorParaDistribuir || totalAplicado} titulos={titulos} onChange={setTitulos} /></div>
+            <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={valorReferencia} titulos={titulos} onChange={setTitulos} /></div>
             <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={montantePagamento} className="mt-3 max-w-xs" />
           </div>
 

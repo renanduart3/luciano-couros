@@ -626,6 +626,16 @@ textarea {
   }
 }
 
+/* Linhas de cheques e boletos usam densidade de planilha no desktop. */
+@media screen and (min-width: 1024px) {
+  body main input.titulo-pagamento-input.titulo-pagamento-input {
+    min-height: 28px !important;
+    height: 28px !important;
+    padding-block: 0.125rem !important;
+    font-size: 0.6875rem !important;
+  }
+}
+
 /* Print Specific Media Styles */
 @media print {
   @page {

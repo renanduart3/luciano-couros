@@ -3,7 +3,6 @@ import { Plus, Trash2 } from "lucide-react";
 import { TituloRecebimento } from "../types";
 import { api } from "../lib/api";
 import { ehDuplicata, ehTituloPagamento, ehTituloTerceiro } from "../lib/pagamentos";
-import { formatCurrency } from "../lib/utils";
 
 interface Props {
   formaPagamento: string;
@@ -70,27 +69,27 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
     onChange([...titulos, novoTitulo(formaPagamento, 0, anterior?.nomeTitular || (terceiro ? "" : clienteNome), anterior?.documentoTitular || (terceiro ? "" : (clienteDocumento || "")))]);
   };
 
-  return <section className="rounded-xl border border-sky-300 bg-sky-50 p-2.5">
-    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+  return <section className="rounded-lg border border-sky-300 bg-sky-50 p-2">
+    <div className="mb-1.5 flex flex-wrap items-end justify-between gap-2">
       <div><h3 className="text-xs font-black uppercase text-sky-950">{boleto ? "Duplicatas (boletos)" : "Cheques"}</h3><p className="text-[11px] font-semibold text-sky-800">Informe uma linha para cada {boleto ? "boleto" : "cheque"} recebido.</p></div>
-      <button type="button" onClick={adicionar} className="inline-flex min-h-8 items-center gap-1 rounded-lg bg-sky-800 px-2.5 text-[10px] font-black uppercase text-white"><Plus size={13}/>Adicionar linha</button>
+      <div className="flex items-end gap-2">
+        <label className="text-[9px] font-black uppercase text-sky-900">Total dos títulos<input aria-label="Total dos títulos" readOnly value={total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} className="titulo-pagamento-input mt-0.5 block h-7 w-28 cursor-not-allowed rounded-md border border-emerald-300 bg-emerald-50 px-2 text-right font-mono text-xs font-black text-emerald-900" /></label>
+        <button type="button" onClick={adicionar} className="inline-flex h-7 items-center gap-1 rounded-md bg-sky-800 px-2 text-[9px] font-black uppercase text-white"><Plus size={12}/>Adicionar linha</button>
+      </div>
     </div>
-    <div className="space-y-2">
-      {titulos.map((titulo, indice) => <div key={titulo.id || `${formaPagamento}-${indice}`} className="rounded-lg border border-sky-200 bg-white p-2">
-        <div className="grid items-end gap-1.5 lg:grid-cols-[24px_minmax(150px,1.5fr)_minmax(135px,1fr)_110px_132px_minmax(135px,1fr)_28px]">
-          <span className={`pb-2 text-center text-[10px] font-black ${titulo.status === "recusado" ? "text-red-700" : "text-sky-800"}`}>{titulo.status === "recusado" ? "R" : indice + 1}</span>
-          <label className="text-[9px] font-black uppercase text-slate-600">Nome<input required disabled={titulo.status === "recusado"} value={titulo.nomeTitular} onChange={(e) => atualizar(indice, { nomeTitular: e.target.value.slice(0, 160) })} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-300 px-2 text-xs font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
-          <label className="text-[9px] font-black uppercase text-slate-600">CPF/CNPJ<input required disabled={titulo.status === "recusado"} value={titulo.documentoTitular} onChange={(e) => atualizar(indice, { documentoTitular: e.target.value.slice(0, 24) })} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-300 px-2 text-xs font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
-          <label className="text-[9px] font-black uppercase text-slate-600">Valor<input required disabled={titulo.status === "recusado"} type="number" min="0.01" step="0.01" value={titulo.valor || ""} onChange={(e) => atualizar(indice, { valor: Number(e.target.value) })} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-300 px-2 text-right font-mono text-xs font-black disabled:bg-red-50 disabled:text-red-800" /></label>
-          <label className="text-[9px] font-black uppercase text-slate-600">Vencimento<input required disabled={titulo.status === "recusado"} type="date" value={titulo.vencimento} onChange={(e) => atualizar(indice, { vencimento: e.target.value })} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-300 px-1.5 text-xs font-bold disabled:bg-red-50 disabled:text-red-800" /></label>
-          <label className="text-[9px] font-black uppercase text-slate-600">Nº {boleto ? "boleto" : "cheque"}<input required disabled={titulo.status === "recusado"} value={titulo.numeroDocumento} onChange={(e) => atualizar(indice, { numeroDocumento: e.target.value.slice(0, 80) })} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-300 px-2 text-xs font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
-          <button type="button" disabled={titulos.length === 1 || titulo.status === "recusado"} onClick={() => onChange(titulos.filter((_, atual) => atual !== indice))} aria-label={`Excluir linha ${indice + 1}`} className="mb-0.5 inline-flex h-8 w-7 items-center justify-center rounded-md text-red-700 hover:bg-red-50 disabled:invisible"><Trash2 size={14}/></button>
+    <div className="space-y-1.5">
+      {titulos.map((titulo, indice) => <div key={titulo.id || `${formaPagamento}-${indice}`} className="rounded-md border border-sky-200 bg-white p-1.5">
+        <div className="grid grid-cols-2 items-end gap-1.5 lg:grid-cols-[20px_200px_155px_88px_124px_145px_26px]">
+          <span className={`pb-1.5 text-center text-[9px] font-black ${titulo.status === "recusado" ? "text-red-700" : "text-sky-800"}`}>{titulo.status === "recusado" ? "R" : indice + 1}</span>
+          <label className="text-[8px] font-black uppercase text-slate-600">Nome<input required disabled={titulo.status === "recusado"} value={titulo.nomeTitular} onChange={(e) => atualizar(indice, { nomeTitular: e.target.value.slice(0, 160) })} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-300 px-1.5 text-[11px] font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
+          <label className="text-[8px] font-black uppercase text-slate-600">CPF/CNPJ<input required disabled={titulo.status === "recusado"} value={titulo.documentoTitular} onChange={(e) => atualizar(indice, { documentoTitular: e.target.value.slice(0, 24) })} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-300 px-1.5 text-[11px] font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
+          <label className="text-[8px] font-black uppercase text-slate-600">Valor<input required disabled={titulo.status === "recusado"} type="number" min="0.01" step="0.01" value={titulo.valor || ""} onChange={(e) => atualizar(indice, { valor: Number(e.target.value) })} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-300 px-1.5 text-right font-mono text-[11px] font-black disabled:bg-red-50 disabled:text-red-800" /></label>
+          <label className="text-[8px] font-black uppercase text-slate-600">Vencimento<input required disabled={titulo.status === "recusado"} type="date" value={titulo.vencimento} onChange={(e) => atualizar(indice, { vencimento: e.target.value })} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-300 px-1 text-[10px] font-bold disabled:bg-red-50 disabled:text-red-800" /></label>
+          <label className="text-[8px] font-black uppercase text-slate-600">Nº {boleto ? "boleto" : "cheque"}<input required disabled={titulo.status === "recusado"} value={titulo.numeroDocumento} onChange={(e) => atualizar(indice, { numeroDocumento: e.target.value.slice(0, 80) })} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-300 px-1.5 text-[11px] font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
+          <button type="button" disabled={titulos.length === 1 || titulo.status === "recusado"} onClick={() => onChange(titulos.filter((_, atual) => atual !== indice))} aria-label={`Excluir linha ${indice + 1}`} className="mb-0.5 inline-flex h-7 w-6 items-center justify-center rounded text-red-700 hover:bg-red-50 disabled:invisible"><Trash2 size={13}/></button>
         </div>
-        <label className="mt-1.5 block text-[9px] font-black uppercase text-slate-600">Observação <span className="font-bold text-slate-400">{titulo.status === "recusado" ? "(título recusado)" : "(opcional)"}</span><input disabled={titulo.status === "recusado"} value={titulo.observacao || ""} onChange={(e) => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder={`Detalhe deste ${boleto ? "boleto" : "cheque"}`} className="mt-0.5 min-h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2 text-xs font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
+        <label className="mt-1 block max-w-[720px] text-[8px] font-black uppercase text-slate-600 lg:ml-[26px]">Observação <span className="font-bold text-slate-400">{titulo.status === "recusado" ? "(título recusado)" : "(opcional)"}</span><input disabled={titulo.status === "recusado"} value={titulo.observacao || ""} onChange={(e) => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder={`Detalhe deste ${boleto ? "boleto" : "cheque"}`} className="titulo-pagamento-input mt-0.5 h-7 w-full rounded border border-slate-200 bg-slate-50 px-1.5 text-[11px] font-bold normal-case disabled:bg-red-50 disabled:text-red-800" /></label>
       </div>)}
-    </div>
-    <div className="mt-2 flex justify-end rounded-lg bg-emerald-100 px-3 py-1.5 text-xs font-black text-emerald-900">
-      <span>Total a contabilizar: {formatCurrency(total)}</span>
     </div>
   </section>;
 }

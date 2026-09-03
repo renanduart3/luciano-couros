@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, History, ListChecks, RefreshCw, ShieldCheck, WalletCards, X } from "lucide-react";
+import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, History, ListChecks, RefreshCw, Save, ShieldCheck, WalletCards, X } from "lucide-react";
 import { api } from "../lib/api";
-import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento } from "../types";
+import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { EditarPagamentoModal } from "./EditarPagamentoModal";
@@ -30,6 +30,58 @@ const statusClass: Record<OrdemCobranca["status"], string> = {
 const hojeIso = todayLocalIso;
 const dinheiroInput = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; onCancel: () => void; onSaved: (ordem: OrdemCobranca) => void }) {
+  const [vales, setVales] = useState<Venda[]>([]);
+  const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
+  const [selecionados, setSelecionados] = useState(() => new Set(ordem.vales.map((vale) => vale.vendaId)));
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let ativo = true;
+    Promise.all([api.getVendas(), api.getOrdensCobranca(ordem.clienteId)])
+      .then(([vendas, listaOrdens]) => { if (ativo) { setVales(vendas); setOrdens(listaOrdens); } })
+      .catch((err: any) => { if (ativo) setError(err.message || "Não foi possível carregar os vales do cliente."); })
+      .finally(() => { if (ativo) setLoading(false); });
+    return () => { ativo = false; };
+  }, [ordem.clienteId]);
+
+  const atuais = new Map(ordem.vales.map((vale) => [vale.vendaId, vale]));
+  const ordemDeOutroVale = new Map<string, number>();
+  ordens.filter((item) => item.id !== ordem.id && item.status === "aberta").forEach((item) => {
+    item.vales.filter((vale) => Number(vale.saldo) > 0.005).forEach((vale) => ordemDeOutroVale.set(vale.vendaId, item.numeroSequencial));
+  });
+  const disponiveis = vales
+    .filter((vale) => vale.clienteId === ordem.clienteId && (atuais.has(vale.id) || (vale.status === "pendente" && Number(vale.saldoRestante) > 0.005)))
+    .sort((a, b) => Number(b.numeroSequencial) - Number(a.numeroSequencial));
+  const totalSelecionado = disponiveis.reduce((total, vale) => selecionados.has(vale.id)
+    ? total + Number(atuais.get(vale.id)?.valorVinculado ?? vale.saldoRestante)
+    : total, 0);
+
+  const salvar = async () => {
+    if (selecionados.size === 0) return setError("Mantenha ao menos um vale na ordem.");
+    setSaving(true);
+    setError("");
+    try { onSaved(await api.updateOrdemCobrancaVales(ordem.id, [...selecionados])); }
+    catch (err: any) { setError(err.message || "Não foi possível alterar os vales desta ordem."); }
+    finally { setSaving(false); }
+  };
+
+  return <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-3">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase text-blue-900">Editar vales da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Marque os vales que devem permanecer agrupados. As parcelas em aberto serão recalculadas.</p></div><strong className="font-mono text-lg text-blue-950">{formatCurrency(totalSelecionado)}</strong></div>
+    {loading ? <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-slate-500">Carregando vales...</p> : <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{disponiveis.map((vale) => {
+      const atual = atuais.get(vale.id);
+      const possuiPagamento = Number(atual?.valorPago || 0) > 0.005;
+      const outraOrdem = ordemDeOutroVale.get(vale.id);
+      const bloqueado = possuiPagamento || Boolean(outraOrdem);
+      return <label key={vale.id} className={`flex items-center gap-3 rounded-lg border bg-white p-3 ${bloqueado ? "cursor-not-allowed opacity-65" : "cursor-pointer border-blue-200"}`}><input type="checkbox" checked={selecionados.has(vale.id)} disabled={bloqueado} onChange={() => setSelecionados((anteriores) => { const proximos = new Set(anteriores); if (proximos.has(vale.id)) proximos.delete(vale.id); else proximos.add(vale.id); return proximos; })} className="h-5 w-5 accent-blue-700"/><span className="min-w-0 flex-1"><strong className="block">Vale #{vale.numeroSequencial}</strong><span className="text-xs font-bold text-slate-500">{formatDate(vale.data)}{possuiPagamento ? " · possui pagamento nesta ordem" : outraOrdem ? ` · vinculado à ordem #${outraOrdem}` : " · disponível"}</span></span><strong className="font-mono text-sm">{formatCurrency(atual?.valorVinculado ?? vale.saldoRestante)}</strong></label>;
+    })}</div>}
+    {error && <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800"><AlertCircle size={15}/>{error}</div>}
+    <div className="mt-3 flex justify-end gap-2"><button type="button" disabled={saving} onClick={onCancel} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase">Voltar</button><button type="button" disabled={saving || loading || selecionados.size === 0} onClick={() => void salvar()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40"><Save size={15}/>{saving ? "Salvando..." : "Salvar vales"}</button></div>
+  </div>;
+}
+
 export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -46,6 +98,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
   const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
+  const [editandoVales, setEditandoVales] = useState(false);
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
 
@@ -157,7 +210,8 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         <div className="grid grid-cols-3 gap-3"><div className="rounded-xl border border-slate-300 bg-white p-3"><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="mt-1 font-mono text-lg font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3"><p className="text-[10px] font-black uppercase text-emerald-700">Pago</p><p className="mt-1 font-mono text-lg font-black text-emerald-800">{formatCurrency(ordem.valorPago)}</p></div><div className="rounded-xl border border-amber-300 bg-amber-50 p-3"><p className="text-[10px] font-black uppercase text-amber-700">Em aberto</p><p className="mt-1 font-mono text-lg font-black text-amber-900">{formatCurrency(ordem.saldo)}</p></div></div>
 
-        <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Vales vinculados</div><div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead className="bg-slate-900 text-[10px] font-black uppercase text-white"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Valor do vale</th></tr></thead><tbody className="divide-y divide-slate-200">{ordem.vales.map((vale) => <tr key={vale.id}><td className="p-2 font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</td></tr>)}</tbody><tfoot><tr className="border-t-2 border-slate-900 bg-slate-100"><td colSpan={2} className="p-2 text-right text-xs font-black uppercase">Total dos vales selecionados</td><td className="p-2 text-right font-mono text-base font-black">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</td></tr></tfoot></table></div></div>
+        {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales da ordem atualizados e parcelas em aberto recalculadas."); onChanged(atualizada); }}/>
+        : <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="flex items-center justify-between gap-2 border-b border-slate-300 bg-slate-50 p-3"><span className="text-xs font-black uppercase text-slate-700">Vales vinculados</span>{ordem.status === "aberta" && <button type="button" onClick={() => { setError(""); setFeedback(""); setEditandoVales(true); }} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-blue-300 bg-white px-3 text-[10px] font-black uppercase text-blue-800"><Edit3 size={13}/> Adicionar ou remover</button>}</div><div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm"><thead className="bg-slate-900 text-[10px] font-black uppercase text-white"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Valor do vale</th></tr></thead><tbody className="divide-y divide-slate-200">{ordem.vales.map((vale) => <tr key={vale.id}><td className="p-2 font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</td></tr>)}</tbody><tfoot><tr className="border-t-2 border-slate-900 bg-slate-100"><td colSpan={2} className="p-2 text-right text-xs font-black uppercase">Total dos vales selecionados</td><td className="p-2 text-right font-mono text-base font-black">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</td></tr></tfoot></table></div></div>}
 
         <div className="rounded-xl border border-slate-300 bg-white p-2">
           <div className="flex flex-wrap items-end gap-2">
@@ -196,6 +250,7 @@ export function OrdensCobrancaView({ refreshKey }: Props) {
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [detalhada, setDetalhada] = useState<OrdemCobranca | null>(null);
+  const [ordenacao, setOrdenacao] = useState<"numero_desc" | "numero_asc" | "valor_desc" | "valor_asc">("numero_desc");
 
   const carregar = async () => {
     setLoading(true);
@@ -220,13 +275,19 @@ export function OrdensCobrancaView({ refreshKey }: Props) {
     const numero = numeroVale.replace(/\D/g, "").replace(/^0+/, "");
     return !numero || ordem.vales.some((vale) => String(vale.numeroSequencial) === numero);
   }), [ordens, status, numeroVale, clienteId, dataInicio, dataFim]);
+  const filtradasOrdenadas = useMemo(() => [...filtradas].sort((a, b) => {
+    if (ordenacao === "numero_asc") return Number(a.numeroSequencial) - Number(b.numeroSequencial);
+    if (ordenacao === "valor_desc") return Number(b.totalOriginal) - Number(a.totalOriginal) || Number(b.numeroSequencial) - Number(a.numeroSequencial);
+    if (ordenacao === "valor_asc") return Number(a.totalOriginal) - Number(b.totalOriginal) || Number(b.numeroSequencial) - Number(a.numeroSequencial);
+    return Number(b.numeroSequencial) - Number(a.numeroSequencial);
+  }), [filtradas, ordenacao]);
 
   const atualizar = (ordem: OrdemCobranca) => { setOrdens((atuais) => atuais.map((item) => item.id === ordem.id ? ordem : item)); setDetalhada(ordem); };
 
   return <div className="space-y-4">
     {detalhada && <OrdemCobrancaDetalhesModal ordem={detalhada} onClose={() => setDetalhada(null)} onChanged={atualizar}/>}
-    <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label><label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
-    {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center font-bold text-slate-500">Carregando ordens...</div> : error ? <div className="flex items-center gap-2 rounded-2xl border border-red-300 bg-red-50 p-4 font-bold text-red-800"><AlertCircle size={18}/>{error}</div> : filtradas.length === 0 ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-10 text-center"><FileClock className="mx-auto text-blue-600" size={34}/><p className="mt-3 font-black text-blue-950">Nenhuma ordem neste filtro</p></div> : <div className="grid gap-3">{filtradas.map((ordem) => {
+    <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label><label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="numero_desc">Nº da ordem (maior)</option><option value="numero_asc">Nº da ordem (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
+    {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center font-bold text-slate-500">Carregando ordens...</div> : error ? <div className="flex items-center gap-2 rounded-2xl border border-red-300 bg-red-50 p-4 font-bold text-red-800"><AlertCircle size={18}/>{error}</div> : filtradasOrdenadas.length === 0 ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-10 text-center"><FileClock className="mx-auto text-blue-600" size={34}/><p className="mt-3 font-black text-blue-950">Nenhuma ordem neste filtro</p></div> : <div className="grid gap-3">{filtradasOrdenadas.map((ordem) => {
       const proxima = ordem.parcelas.find((parcela) => parcela.status === "pendente");
       return <article key={ordem.id} className="grid gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[0.55fr_1.5fr_0.8fr_0.8fr_0.9fr_auto] lg:items-center"><div><p className="text-[10px] font-black uppercase text-slate-500">Ordem</p><p className="font-mono text-lg font-black">#{ordem.numeroSequencial}</p><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div><div><p className="text-[10px] font-black uppercase text-slate-500">Cliente</p><p className="font-black uppercase text-slate-950">{ordem.clienteNome}</p><p className="text-xs font-bold text-slate-500">{ordem.vales.length} vale(s) · {ordem.parcelas.length} parcela(s)</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="font-mono font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Pago</p><p className="font-mono font-black text-emerald-800">{formatCurrency(ordem.valorPago)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Próximo pagamento</p>{proxima ? <><p className="inline-flex items-center gap-1 font-black text-amber-900"><CalendarClock size={14}/>{formatDate(proxima.vencimento)}</p><p className="font-mono text-xs font-black">{formatCurrency(proxima.saldo)}</p></> : <p className="inline-flex items-center gap-1 font-black text-emerald-800"><CheckCircle2 size={15}/>Concluída</p>}</div><button type="button" onClick={() => setDetalhada(ordem)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-black uppercase text-white"><Eye size={15}/> Detalhes</button></article>;
     })}</div>}

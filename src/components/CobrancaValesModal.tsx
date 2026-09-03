@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Camera, CheckCircle2, Loader2, MinusCircle, Printer, Save, WalletCards, X } from "lucide-react";
 import { OrdemCobranca, Venda } from "../types";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, isValidIsoDate, todayLocalIso } from "../lib/utils";
 import { api } from "../lib/api";
 
 interface Props {
@@ -23,11 +23,15 @@ interface DevolucaoSelecionavel {
   totalCredito: number;
 }
 
-const hojeIso = () => new Date().toISOString().slice(0, 10);
+const hojeIso = todayLocalIso;
 const adicionarMeses = (data: string, meses: number) => {
+  if (!isValidIsoDate(data)) return "";
   const [ano, mes, dia] = data.split("-").map(Number);
-  const ultimoDia = new Date(ano, mes + meses, 0).getDate();
-  return new Date(ano, mes - 1 + meses, Math.min(dia, ultimoDia), 12).toISOString().slice(0, 10);
+  const indiceMes = (mes - 1) + meses;
+  const anoDestino = ano + Math.floor(indiceMes / 12);
+  const mesDestino = ((indiceMes % 12) + 12) % 12;
+  const ultimoDia = new Date(Date.UTC(anoDestino, mesDestino + 1, 0)).getUTCDate();
+  return `${String(anoDestino).padStart(4, "0")}-${String(mesDestino + 1).padStart(2, "0")}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}`;
 };
 const creditoDevolvido = (vale: Venda) => (vale.devolucoes || []).reduce((total, devolucao) => total + Number(devolucao.abatimentoVale), 0);
 
@@ -78,6 +82,14 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, valesDoClien
 
   const registrarOrdem = async () => {
     setError("");
+    if (!isValidIsoDate(primeiroVencimento) || parcelasPlanejadas.some((parcela) => !isValidIsoDate(parcela.vencimento))) {
+      setError("Informe uma data de vencimento válida em todas as parcelas.");
+      return;
+    }
+    if (parcelasPlanejadas.some((parcela) => !Number.isFinite(Number(parcela.valor)) || Number(parcela.valor) <= 0)) {
+      setError("Todas as parcelas precisam ter um valor maior que zero.");
+      return;
+    }
     const soma = Math.round(parcelasPlanejadas.reduce((total, parcela) => total + Number(parcela.valor), 0) * 100) / 100;
     if (Math.abs(soma - totalGeral) > 0.01) {
       setError(`A soma das parcelas deve ser ${formatCurrency(totalGeral)}.`);

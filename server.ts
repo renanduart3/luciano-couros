@@ -605,6 +605,17 @@ function dataHojeLocal() {
   return `${valor("year")}-${valor("month")}-${valor("day")}`;
 }
 
+function ehDataIsoValida(valor: unknown) {
+  const texto = String(valor || "");
+  const correspondencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
+  if (!correspondencia) return false;
+  const ano = Number(correspondencia[1]);
+  const mes = Number(correspondencia[2]);
+  const dia = Number(correspondencia[3]);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+  return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
+}
+
 function compensarTitulosVencidosAutomaticamente() {
   const hoje = dataHojeLocal();
   const vencidos = queryAll<any>(
@@ -669,7 +680,7 @@ function recalcularOrdemCobranca(ordemId: string) {
   const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND deletedAt IS NULL", [ordemId]);
   if (!ordem) return;
 
-  const vinculos = queryAll<any>("SELECT * FROM ordem_cobranca_vales WHERE ordemId = ?", [ordemId]);
+  const vinculos = queryAll<any>("SELECT * FROM ordem_cobranca_vales WHERE ordemId = ? AND removidoAt IS NULL", [ordemId]);
   for (const vinculo of vinculos) {
     const recebido = queryOne<{ total: number }>(
       `SELECT COALESCE(SUM(valor), 0) AS total
@@ -719,7 +730,7 @@ function recalcularOrdemCobranca(ordemId: string) {
     [totalPago, saldo, status, ordemId]
   );
   execute(
-    "UPDATE ordem_cobranca_vales SET ativo = CASE WHEN ? = 'aberta' AND saldo > 0.005 THEN 1 ELSE 0 END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ?",
+    "UPDATE ordem_cobranca_vales SET ativo = CASE WHEN ? = 'aberta' AND saldo > 0.005 THEN 1 ELSE 0 END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND removidoAt IS NULL",
     [status, ordemId]
   );
 }
@@ -4226,7 +4237,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
               v.numeroSequencial, v.data, v.vencimento, v.saldoRestante AS saldoAtualVale
        FROM ordem_cobranca_vales ocv
        JOIN vendas v ON v.id = ocv.vendaId
-       WHERE ocv.ordemId = ?
+       WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL
        ORDER BY v.numeroSequencial ASC`,
       [ordem.id]
       ),
@@ -4251,7 +4262,7 @@ app.post("/api/ordens-cobranca", (req, res) => {
     const dataEmissao = String(req.body?.dataEmissao || "");
     const observacao = String(req.body?.observacao || "").trim();
     const vendaIds = [...new Set((Array.isArray(req.body?.vendaIds) ? req.body.vendaIds : []).map((id: unknown) => String(id)).filter(Boolean))];
-    if (!clienteId || !/^\d{4}-\d{2}-\d{2}$/.test(dataEmissao) || vendaIds.length === 0) {
+    if (!clienteId || !ehDataIsoValida(dataEmissao) || vendaIds.length === 0) {
       throw erroHttp("Informe o cliente, a data e ao menos um vale para a ordem de cobrança.", 400);
     }
 
@@ -4270,7 +4281,7 @@ app.post("/api/ordens-cobranca", (req, res) => {
       vencimento: String(item?.vencimento || ""),
       valor: Math.round(Number(item?.valor || 0) * 100) / 100,
     })).sort((a: any, b: any) => a.vencimento.localeCompare(b.vencimento));
-    if (parcelas.length < 1 || parcelas.length > 36 || parcelas.some((item: any) => !/^\d{4}-\d{2}-\d{2}$/.test(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
+    if (parcelas.length < 1 || parcelas.length > 36 || parcelas.some((item: any) => !ehDataIsoValida(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
       throw erroHttp("Informe entre 1 e 36 parcelas, todas com data e valor maior que zero.", 400);
     }
     const totalParcelas = Math.round(parcelas.reduce((total: number, item: any) => total + item.valor, 0) * 100) / 100;
@@ -4319,6 +4330,119 @@ app.post("/api/ordens-cobranca", (req, res) => {
       registrarAuditoria(null, "ordem_cobranca_criada", "ordem_cobranca", ordemId, { clienteId, vendaIds, totalOriginal, parcelas });
     });
     res.status(201).json(listarOrdensCobranca("AND oc.id = ?", [ordemId])[0]);
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
+  try {
+    const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status = 'aberta' AND deletedAt IS NULL", [req.params.id]);
+    if (!ordem) throw erroHttp("A ordem não está aberta ou não foi encontrada.", 404);
+
+    const vendaIds: string[] = [...new Set<string>((Array.isArray(req.body?.vendaIds) ? req.body.vendaIds : [])
+      .map((id: unknown) => String(id)).filter(Boolean))];
+    if (vendaIds.length === 0) throw erroHttp("A ordem precisa manter ao menos um vale vinculado.", 400);
+
+    const atuais = queryAll<any>(
+      `SELECT ocv.*, v.numeroSequencial
+       FROM ordem_cobranca_vales ocv
+       JOIN vendas v ON v.id = ocv.vendaId
+       WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL`,
+      [ordem.id]
+    );
+    const idsAtuais = new Set(atuais.map((item) => String(item.vendaId)));
+    const idsFinais = new Set(vendaIds);
+    const removidos = atuais.filter((item) => !idsFinais.has(String(item.vendaId)));
+    const adicionadosIds = vendaIds.filter((id) => !idsAtuais.has(id));
+
+    for (const vinculo of removidos) {
+      const recebido = Number(queryOne<{ total: number }>(
+        "SELECT COALESCE(SUM(valor), 0) AS total FROM ordem_cobranca_recebimentos WHERE ordemId = ? AND vendaId = ? AND deletedAt IS NULL",
+        [ordem.id, vinculo.vendaId]
+      )?.total || 0);
+      if (recebido > 0.005) {
+        throw erroHttp(`O vale #${vinculo.numeroSequencial} já recebeu pagamento nesta ordem. Edite ou cancele esse pagamento antes de removê-lo.`, 409);
+      }
+    }
+
+    const adicionados = adicionadosIds.map((vendaId) => {
+      const venda = queryOne<any>(
+        `SELECT id, numeroSequencial, clienteId, saldoRestante
+         FROM vendas
+         WHERE id = ? AND clienteId = ? AND status = 'pendente' AND saldoRestante > 0.005 AND deletedAt IS NULL`,
+        [vendaId, ordem.clienteId]
+      );
+      if (!venda) throw erroHttp("Um dos vales selecionados não está mais em aberto para este cliente.", 409);
+      const conflito = queryOne<any>(
+        `SELECT oc.numeroSequencial
+         FROM ordem_cobranca_vales ocv
+         JOIN ordens_cobranca oc ON oc.id = ocv.ordemId
+         WHERE ocv.vendaId = ? AND ocv.ativo = 1 AND oc.status = 'aberta'
+           AND oc.deletedAt IS NULL AND oc.id <> ?`,
+        [vendaId, ordem.id]
+      );
+      if (conflito) throw erroHttp(`O vale #${venda.numeroSequencial} já está comprometido na ordem #${conflito.numeroSequencial}.`, 409);
+      return venda;
+    });
+
+    runInTransaction(() => {
+      const agora = new Date().toISOString();
+      for (const vinculo of removidos) {
+        execute("UPDATE ordem_cobranca_vales SET ativo = 0, removidoAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [agora, vinculo.id]);
+      }
+      for (const venda of adicionados) {
+        const saldo = Math.round(Number(venda.saldoRestante) * 100) / 100;
+        const anterior = queryOne<any>("SELECT id FROM ordem_cobranca_vales WHERE ordemId = ? AND vendaId = ?", [ordem.id, venda.id]);
+        if (anterior) {
+          execute(
+            "UPDATE ordem_cobranca_vales SET valorVinculado = ?, valorPago = 0, saldo = ?, ativo = 1, removidoAt = NULL, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+            [saldo, saldo, anterior.id]
+          );
+        } else {
+          execute(
+            `INSERT INTO ordem_cobranca_vales (id, ordemId, vendaId, valorVinculado, valorPago, saldo, ativo)
+             VALUES (?, ?, ?, ?, 0, ?, 1)`,
+            ["ocv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), ordem.id, venda.id, saldo, saldo]
+          );
+        }
+      }
+
+      const totalOriginal = Math.round(Number(queryOne<{ total: number }>(
+        "SELECT COALESCE(SUM(valorVinculado), 0) AS total FROM ordem_cobranca_vales WHERE ordemId = ? AND removidoAt IS NULL",
+        [ordem.id]
+      )?.total || 0) * 100) / 100;
+      const parcelas = queryAll<any>(
+        `SELECT ocp.*,
+                COALESCE((SELECT SUM(valor) FROM ordem_cobranca_parcela_recebimentos ocpr
+                          WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL), 0) AS recebido
+         FROM ordem_cobranca_parcelas ocp WHERE ocp.ordemId = ?
+         ORDER BY ocp.numero ASC`,
+        [ordem.id]
+      );
+      const pendentes = parcelas.filter((parcela) => String(parcela.status) === "pendente");
+      const totalPago = Math.round(parcelas.reduce((total, parcela) => total + Number(parcela.recebido || 0), 0) * 100) / 100;
+      if (totalOriginal < totalPago - 0.005 || pendentes.length === 0) {
+        throw erroHttp("Não foi possível ajustar esta ordem porque os pagamentos registrados já cobrem o novo total.", 409);
+      }
+
+      const saldoCentavos = Math.round((totalOriginal - totalPago) * 100);
+      const base = Math.floor(saldoCentavos / pendentes.length);
+      const resto = saldoCentavos - base * pendentes.length;
+      pendentes.forEach((parcela, index) => {
+        const novoValor = Math.round((Number(parcela.recebido || 0) * 100) + base + (index < resto ? 1 : 0)) / 100;
+        execute("UPDATE ordem_cobranca_parcelas SET valor = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [novoValor, parcela.id]);
+      });
+      execute("UPDATE ordens_cobranca SET totalOriginal = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [totalOriginal, ordem.id]);
+      recalcularOrdemCobranca(ordem.id);
+      registrarAuditoria(null, "ordem_cobranca_vales_alterados", "ordem_cobranca", ordem.id, {
+        adicionados: adicionados.map((item) => item.id),
+        removidos: removidos.map((item) => item.vendaId),
+        totalOriginal,
+      });
+    });
+
+    res.json(listarOrdensCobranca("AND oc.id = ?", [ordem.id])[0]);
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }

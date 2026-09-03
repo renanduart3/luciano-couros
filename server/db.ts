@@ -848,6 +848,9 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_titulos ADD COLUMN observacao TEXT`).run(); } catch (e) {}
+  // Permite retirar e posteriormente recolocar um vale em uma ordem sem apagar
+  // o vínculo histórico nem conflitar com o índice único (ordemId, vendaId).
+  try { db.prepare(`ALTER TABLE ordem_cobranca_vales ADD COLUMN removidoAt TEXT`).run(); } catch (e) {}
   // Copia os instrumentos da estrutura antiga uma única vez. O campo banco
   // deixa de fazer parte da operação, mas permanece na tabela legada.
   db.prepare(`

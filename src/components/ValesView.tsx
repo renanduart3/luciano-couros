@@ -16,8 +16,8 @@ interface ValesViewProps {
 
 type FiltroStatus = "abertos" | "vencidos" | "a_vencer" | "quitados" | "cancelados" | "todos";
 
-const PAGE_SIZE = 10;
 const hojeIso = () => new Date().toISOString().slice(0, 10);
+type OrdenacaoVales = "numero_desc" | "numero_asc" | "valor_desc" | "valor_asc";
 
 const diasEmAtraso = (vencimento?: string) => {
   if (!vencimento || vencimento >= hojeIso()) return 0;
@@ -47,6 +47,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [pagamentoAberto, setPagamentoAberto] = useState(false);
   const [ordensRefreshKey, setOrdensRefreshKey] = useState(0);
   const [ordemDetalhada, setOrdemDetalhada] = useState<OrdemCobranca | null>(null);
+  const [pageSize, setPageSize] = useState(20);
+  const [ordenacao, setOrdenacao] = useState<OrdenacaoVales>("numero_desc");
 
   useEffect(() => {
     let active = true;
@@ -104,7 +106,13 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     return true;
   }), [vales, numeroVale, clienteId, status, vencimentoInicio, vencimentoFim]);
 
-  const valesPagina = paginate<Venda>(valesFiltrados, page, PAGE_SIZE);
+  const valesOrdenados = useMemo(() => [...valesFiltrados].sort((a, b) => {
+    if (ordenacao === "numero_asc") return Number(a.numeroSequencial) - Number(b.numeroSequencial);
+    if (ordenacao === "valor_desc") return Number(b.saldoRestante) - Number(a.saldoRestante) || Number(b.numeroSequencial) - Number(a.numeroSequencial);
+    if (ordenacao === "valor_asc") return Number(a.saldoRestante) - Number(b.saldoRestante) || Number(b.numeroSequencial) - Number(a.numeroSequencial);
+    return Number(b.numeroSequencial) - Number(a.numeroSequencial);
+  }), [valesFiltrados, ordenacao]);
+  const valesPagina = paginate<Venda>(valesOrdenados, page, pageSize);
   const valesSelecionados = useMemo(() => vales.filter((vale) => selecionados.has(vale.id)), [vales, selecionados]);
   const clienteSelecionado = clientesFiltro.find((cliente) => cliente.id === clienteId);
   const valesDoCliente = useMemo(() => clienteId ? vales.filter((vale) => vale.clienteId === clienteId) : [], [vales, clienteId]);
@@ -114,9 +122,9 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     return mapa;
   }, [ordens]);
   useEffect(() => {
-    const ultimaPagina = Math.max(1, Math.ceil(valesFiltrados.length / PAGE_SIZE));
+    const ultimaPagina = Math.max(1, Math.ceil(valesFiltrados.length / pageSize));
     setPage((paginaAtual) => Math.min(paginaAtual, ultimaPagina));
-  }, [valesFiltrados.length]);
+  }, [valesFiltrados.length, pageSize]);
 
   const totais = useMemo(() => {
     const abertos = valesFiltrados.filter(estaEmAberto);
@@ -212,12 +220,14 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <>
           <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
             <div className="mb-3 flex items-center justify-between gap-3"><h2 className="flex items-center gap-2 text-xs font-black uppercase text-slate-700"><Filter size={16} /> Filtrar cobranças</h2><button type="button" onClick={limparFiltros} className="inline-flex items-center gap-1 text-xs font-black uppercase text-slate-500 hover:text-slate-900"><X size={14} /> Limpar</button></div>
-            <div className="grid grid-flow-row-dense grid-cols-2 gap-2 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-flow-row-dense grid-cols-2 gap-2 md:grid-cols-2 xl:grid-cols-7">
               <label className="text-[10px] font-black uppercase text-slate-600">Número do vale<input data-testid="vale-filtro-numero" type="text" inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950" /></label>
               <label className="col-span-2 text-[11px] font-black uppercase text-slate-600 md:col-span-1">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm font-bold uppercase text-slate-950"><option value="">Todos os clientes</option>{clientesFiltro.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value as FiltroStatus)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950"><option value="abertos">Em aberto</option><option value="vencidos">Vencidos</option><option value="a_vencer">A vencer</option><option value="quitados">Quitados</option><option value="cancelados">Cancelados</option><option value="todos">Todos</option></select></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Vencimento de<input type="date" value={vencimentoInicio} onChange={(event) => setVencimentoInicio(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950" /></label>
               <label className="text-[10px] font-black uppercase text-slate-600">Vencimento até<input type="date" value={vencimentoFim} onChange={(event) => setVencimentoFim(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950" /></label>
+              <label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => { setOrdenacao(event.target.value as OrdenacaoVales); setPage(1); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950"><option value="numero_desc">Nº do vale (maior)</option><option value="numero_asc">Nº do vale (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label>
+              <label className="text-[10px] font-black uppercase text-slate-600">Itens por página<select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }} className="mt-1 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-950"><option value={10}>10 itens</option><option value={20}>20 itens</option><option value={50}>50 itens</option></select></label>
             </div>
           </div>
 
@@ -261,7 +271,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
                     return <article key={vale.id} className={`space-y-2 p-3 ${selecionados.has(vale.id) ? "bg-emerald-50" : ""}`}><div className="flex items-start gap-3">{clienteId && <input aria-label={`Selecionar vale ${vale.numeroSequencial}`} type="checkbox" checked={selecionados.has(vale.id)} disabled={!estaEmAberto(vale)} onChange={() => alternarVale(vale)} className="mt-1 h-6 w-6 shrink-0 accent-emerald-700"/>}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="text-xs font-extrabold text-slate-400">VALE #{vale.numeroSequencial}</p>{ordemAtiva && <button type="button" onClick={() => setOrdemDetalhada(ordemAtiva)} className="mt-1 rounded-md bg-blue-100 px-2 py-1 text-[10px] font-black text-blue-800">ORDEM #{ordemAtiva.numeroSequencial}</button>}<h2 className="mt-1 text-base font-black uppercase text-slate-950">{vale.clienteNome || "Cliente não informado"}</h2></div><div className="text-right"><p className="text-[9px] font-black uppercase text-slate-400">Total</p><p className="font-mono text-lg font-black text-slate-950">{formatCurrency(vale.totalLiquido)}</p></div></div><div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-slate-500"><span className="inline-flex items-center gap-1"><CalendarClock size={14} /> Emissão {formatDate(vale.data)}</span><span>Último pagamento: {vale.ultimoPagamentoData ? formatDate(vale.ultimoPagamentoData) : "—"}</span>{vale.status === "cancelada" ? <span className="rounded-lg bg-slate-200 px-2 py-1 text-slate-700">Cancelado</span> : vale.status === "paga" ? <span className="rounded-lg bg-emerald-100 px-2 py-1 text-emerald-700">Quitado</span> : atraso > 0 ? <span className="rounded-lg bg-red-100 px-2 py-1 text-red-700">{atraso} dias em atraso</span> : <span className="rounded-lg bg-amber-100 px-2 py-1 text-amber-700">A vencer</span>}</div></div></div><button type="button" onClick={() => void abrirDetalhesVale(vale)} className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Eye size={15} /> Ver itens e comprovante</button></article>;
                   })}
                 </div>
-                <Pagination page={page} pageSize={PAGE_SIZE} totalItems={valesFiltrados.length} onPageChange={setPage} alwaysVisible />
+                <Pagination page={page} pageSize={pageSize} totalItems={valesFiltrados.length} onPageChange={setPage} alwaysVisible />
               </div>
             </>
           )}

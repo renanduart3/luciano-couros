@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.24.0 — 2026-09-03
+
+- Ordens de cobrança abertas passam a permitir adicionar e remover vales do mesmo cliente sem exigir o cancelamento da negociação.
+- Alterações nos vales vinculados recalculam automaticamente o total da ordem e distribuem o saldo entre as parcelas ainda pendentes, preservando pagamentos e histórico.
+- Vales que já receberam pagamentos na ordem ficam protegidos contra remoção acidental; o sistema orienta editar ou cancelar o recebimento antes da alteração.
+- Projeção de vencimentos passa a tratar datas vazias ou inválidas sem interromper a interface, com validação complementar no servidor.
+- Falhas inesperadas da interface exibem uma página amigável com opções para recarregar ou voltar ao início, substituindo a tela branca.
+- Listagem de vales ganha opções de 10, 20 ou 50 itens por página, usando 20 como padrão, e ordenação por número ou valor.
+- Listagem de ordens ganha ordenação por número da ordem ou valor negociado.
+
 ## 1.23.1 — 2026-08-28
 
 - Relatório de vendas passa a exibir o resumo compacto abaixo da listagem e da paginação, com valores financeiros primeiro, quantidades depois e os valores correspondentes a metros e unidades por último.

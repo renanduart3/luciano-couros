@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, MessageCircle, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
-import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
+import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
@@ -44,6 +44,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const valorBasePagamento = parseBrazilianNumber(valorPagamento);
+  const linkWhatsApp = whatsappUrl(vale.clienteTelefone);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
   const valorEfetivoPagamento = pagamentoTitulo ? totalTitulos : valorBasePagamento;
 
@@ -165,6 +166,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black uppercase text-white sm:flex-none"><MessageCircle size={16}/> WhatsApp</a>}
             <button type="button" onClick={() => setAba("itens")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "itens" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><List size={16} /> Detalhes</button>
             <button type="button" onClick={() => setAba("comprovante")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "comprovante" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><FileText size={16} /> Comprovante</button>
             {onUpdated && vale.status !== "cancelada" && itens.some((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 text-xs font-black uppercase text-violet-800 sm:flex-none"><RotateCcw size={15} /> Devolver</button>}

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Eye, FileSpreadsheet, HandCoins, KeyRound, Lock, Printer, RefreshCw, ShoppingCart, TrendingUp, Truck, Unlock, Users, X } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { api } from "../lib/api";
+import { api, RelatorioConsumoMateriais } from "../lib/api";
 import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
@@ -11,6 +11,7 @@ type AbaRelatorio = "geral" | "vendas" | "clientes" | "materiais_cliente" | "for
 type CategoriaItemCliente = "metros" | "unidades";
 type OpcaoOrdenacao = { value: string; label: string; administrativo?: boolean };
 const VENDAS_POR_PAGINA = 20;
+const MATERIAIS_POR_PAGINA = 30;
 
 const ORDENACOES_RELATORIO: Record<AbaRelatorio, OpcaoOrdenacao[]> = {
   geral: [
@@ -35,10 +36,11 @@ const ORDENACOES_RELATORIO: Record<AbaRelatorio, OpcaoOrdenacao[]> = {
   ],
   materiais_cliente: [
     { value: "quantidade_desc", label: "Quantidade (maior)" }, { value: "quantidade_asc", label: "Quantidade (menor)" },
-    { value: "nome_asc", label: "Material (A–Z)" }, { value: "nome_desc", label: "Material (Z–A)" },
-    { value: "codigo_asc", label: "Código (crescente)" }, { value: "fornecedor_asc", label: "Fornecedor (A–Z)" },
-    { value: "vendas_desc", label: "Nº de vendas (maior)" }, { value: "data_desc", label: "Última compra (recente)" },
-    { value: "valor_desc", label: "Valor comprado (maior)" },
+    { value: "material_asc", label: "Material (A–Z)" }, { value: "material_desc", label: "Material (Z–A)" },
+    { value: "cliente_asc", label: "Cliente (A–Z)" }, { value: "cliente_desc", label: "Cliente (Z–A)" },
+    { value: "codigo_asc", label: "Código (crescente)" }, { value: "vendas_desc", label: "Nº de vendas (maior)" },
+    { value: "data_desc", label: "Última compra (recente)" }, { value: "data_asc", label: "Última compra (antiga)" },
+    { value: "valor_desc", label: "Valor vendido (maior)" }, { value: "valor_asc", label: "Valor vendido (menor)" },
   ],
   fornecedores: [
     { value: "valor_desc", label: "Total comprado (maior)" }, { value: "valor_asc", label: "Total comprado (menor)" },
@@ -111,9 +113,13 @@ export function RelatoriosView() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [produtosRelatorio, setProdutosRelatorio] = useState<Produto[]>([]);
   const [dados, setDados] = useState<any | null>(null);
+  const [dadosMateriais, setDadosMateriais] = useState<RelatorioConsumoMateriais | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMateriais, setLoadingMateriais] = useState(false);
   const [error, setError] = useState("");
+  const [erroMateriais, setErroMateriais] = useState("");
   const [seguranca, setSeguranca] = useState<SegurancaStatus | null>(null);
   const [dadosClienteLiberados, setDadosClienteLiberados] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
@@ -122,6 +128,8 @@ export function RelatoriosView() {
   const [categoriaCliente, setCategoriaCliente] = useState<CategoriaItemCliente>("metros");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
   const [paginaVendas, setPaginaVendas] = useState(1);
+  const [paginaMateriais, setPaginaMateriais] = useState(1);
+  const [unidadeMateriais, setUnidadeMateriais] = useState("");
   const [ordenacoes, setOrdenacoes] = useState<Record<AbaRelatorio, string>>({ ...ORDENACAO_PADRAO });
   const ordenacaoAtual = ordenacoes[aba];
 
@@ -132,6 +140,7 @@ export function RelatoriosView() {
         setClientes(listaClientes);
         setFornecedores(listaFornecedores.filter((item) => item.ativo === 1));
         setProdutos(listaProdutos.filter((item) => item.ativo === 1));
+        setProdutosRelatorio(listaProdutos);
         setSeguranca(segurancaStatus);
       })
       .catch((err) => setError(err.message || "Não foi possível carregar os filtros."));
@@ -145,7 +154,10 @@ export function RelatoriosView() {
 
   useEffect(() => { setPaginaVendas(1); }, [ordenacoes.vendas]);
 
+  useEffect(() => { setPaginaMateriais(1); }, [dataInicio, dataFim, clienteId, produtoId, unidadeMateriais, ordenacoes.materiais_cliente]);
+
   const carregar = async () => {
+    if (aba === "materiais_cliente") return;
     if (dataInicio && dataFim && dataInicio > dataFim) {
       setError("A data inicial não pode ser posterior à data final.");
       return;
@@ -156,7 +168,7 @@ export function RelatoriosView() {
       setDados(await api.getRelatorios({
         startDate: dataInicio,
         endDate: dataFim,
-        clienteId: aba === "vendas" || aba === "clientes" || aba === "materiais_cliente" || aba === "vales" ? clienteId : undefined,
+        clienteId: aba === "vendas" || aba === "clientes" || aba === "vales" ? clienteId : undefined,
         fornecedorId: aba === "fornecedores" ? fornecedorId : undefined,
         produtoId: aba === "fornecedores" ? produtoId : undefined,
         formaPagamento: aba === "geral" ? formaPagamento : undefined,
@@ -172,6 +184,36 @@ export function RelatoriosView() {
   };
 
   useEffect(() => { carregar(); }, [aba, dataInicio, dataFim, clienteId, fornecedorId, produtoId, formaPagamento, valeStatus, vencimentoInicio, vencimentoFim]);
+
+  const carregarMateriais = async () => {
+    if (aba !== "materiais_cliente") return;
+    if (dataInicio && dataFim && dataInicio > dataFim) {
+      setErroMateriais("A data inicial não pode ser posterior à data final.");
+      return;
+    }
+    setLoadingMateriais(true);
+    setErroMateriais("");
+    try {
+      const resposta = await api.getRelatorioConsumoMateriais({
+        startDate: dataInicio,
+        endDate: dataFim,
+        clienteId: clienteId || undefined,
+        produtoId: produtoId || undefined,
+        unidade: unidadeMateriais || undefined,
+        ordenacao: ordenacoes.materiais_cliente,
+        page: paginaMateriais,
+        pageSize: MATERIAIS_POR_PAGINA,
+      });
+      setDadosMateriais(resposta);
+      if (resposta.page !== paginaMateriais) setPaginaMateriais(resposta.page);
+    } catch (err: any) {
+      setErroMateriais(err.message || "Erro ao analisar o consumo de materiais.");
+    } finally {
+      setLoadingMateriais(false);
+    }
+  };
+
+  useEffect(() => { carregarMateriais(); }, [aba, dataInicio, dataFim, clienteId, produtoId, unidadeMateriais, ordenacoes.materiais_cliente, paginaMateriais]);
 
   const geral = useMemo(() => {
     if (!dados) return null;
@@ -323,26 +365,6 @@ export function RelatoriosView() {
   }), [analiseCliente.itens, ordenacoes.clientes]);
   const itensCategoriaCliente = itensClienteOrdenados.filter((item: any) => categoriaCliente === "metros" ? ehItemEmMetros(item) : !ehItemEmMetros(item));
 
-  const materiaisClienteOrdenados = useMemo(() => [...(clienteId ? dados?.materiaisPorCliente || [] : [])].sort((a: any, b: any) => {
-    const ordenacao = ordenacoes.materiais_cliente;
-    if (ordenacao === "quantidade_asc") return compararNumero(a.totalQuantidade, b.totalQuantidade) || compararTexto(a.produtoNome, b.produtoNome);
-    if (ordenacao === "nome_asc") return compararTexto(a.produtoNome, b.produtoNome) || compararTexto(a.unidade, b.unidade);
-    if (ordenacao === "nome_desc") return compararTexto(b.produtoNome, a.produtoNome) || compararTexto(a.unidade, b.unidade);
-    if (ordenacao === "codigo_asc") return compararTexto(a.produtoCodigo, b.produtoCodigo) || compararTexto(a.produtoNome, b.produtoNome);
-    if (ordenacao === "fornecedor_asc") return compararTexto(a.fornecedorNome || "Fornecedor não identificado", b.fornecedorNome || "Fornecedor não identificado") || compararTexto(a.produtoNome, b.produtoNome);
-    if (ordenacao === "vendas_desc") return compararNumero(b.totalVendas, a.totalVendas) || compararTexto(a.produtoNome, b.produtoNome);
-    if (ordenacao === "data_desc") return compararTexto(b.ultimaCompra, a.ultimaCompra) || compararTexto(a.produtoNome, b.produtoNome);
-    if (ordenacao === "valor_desc") return compararNumero(b.totalValor, a.totalValor) || compararTexto(a.produtoNome, b.produtoNome);
-    return compararNumero(b.totalQuantidade, a.totalQuantidade) || compararTexto(a.produtoNome, b.produtoNome);
-  }), [clienteId, dados, ordenacoes.materiais_cliente]);
-  const resumoMateriaisCliente = useMemo(() => ({
-    materiais: new Set(materiaisClienteOrdenados.map((item: any) => item.produtoId)).size,
-    grupos: materiaisClienteOrdenados.length,
-    metros: materiaisClienteOrdenados.filter(ehItemEmMetros).reduce((total: number, item: any) => total + Number(item.totalQuantidade || 0), 0),
-    unidades: materiaisClienteOrdenados.filter((item: any) => !ehItemEmMetros(item)).reduce((total: number, item: any) => total + Number(item.totalQuantidade || 0), 0),
-    valor: materiaisClienteOrdenados.reduce((total: number, item: any) => total + Number(item.totalValor || 0), 0),
-  }), [materiaisClienteOrdenados]);
-
   const valesOrdenados = useMemo(() => [...(dados?.vales || [])].sort((a: any, b: any) => {
     const ordenacao = ordenacoes.vales;
     if (ordenacao === "vencimento_desc") return compararTexto(b.vencimento, a.vencimento) || compararTexto(b.data, a.data);
@@ -361,7 +383,6 @@ export function RelatoriosView() {
   const produtosProgressivos = useListaProgressiva<any>(produtosGeraisOrdenados, `${chaveProgressiva}:produtos`, 20);
   const vendasPaginadas = paginate<any>(linhasVendas, paginaVendas, VENDAS_POR_PAGINA);
   const clienteProgressivo = useListaProgressiva<any>(itensCategoriaCliente, `${chaveProgressiva}:cliente:${categoriaCliente}`, 40);
-  const materiaisProgressivos = useListaProgressiva<any>(materiaisClienteOrdenados, `${chaveProgressiva}:materiais-cliente`, 30);
   const fornecedoresProgressivos = useListaProgressiva<any>(linhasFornecedores, `${chaveProgressiva}:fornecedores`, 30);
   const valesProgressivos = useListaProgressiva<Venda>(valesOrdenados, `${chaveProgressiva}:vales`, 30);
 
@@ -396,8 +417,8 @@ export function RelatoriosView() {
     setDataFim(iso(fim));
   };
 
-  const exportarCsv = () => {
-    if (!dados) return;
+  const exportarCsv = async () => {
+    if (!dados && aba !== "materiais_cliente") return;
     let csv = "\uFEFF";
     if (aba === "vendas") {
       csv += "CÓD. VENDA;CLIENTE;VALOR TOTAL;M;R$ METRO;UN;R$ UN;CUSTO;LUCRO;DATA\n";
@@ -415,10 +436,24 @@ export function RelatoriosView() {
       });
       csv += `\nTOTAL DE VENDAS;${analiseCliente.totalVendas}\nITENS DE VENDA;${analiseCliente.totalItensVenda}\nMETROS VENDIDOS;${analiseCliente.quantidadeMetros}\nUNIDADES / OUTROS;${analiseCliente.quantidadeUnidades}\nVALOR BRUTO;${analiseCliente.valorBruto}\nDESCONTO;${analiseCliente.desconto}\nVALOR LÍQUIDO;${analiseCliente.valorLiquido}\n`;
     } else if (aba === "materiais_cliente") {
-      csv += "CLIENTE;CÓD. PRODUTO;PRODUTO;FORNECEDOR;QUANTIDADE;UNIDADE;VENDAS;ÚLTIMA COMPRA;VALOR COMPRADO\n";
-      materiaisClienteOrdenados.forEach((item: any) => {
-        csv += `${csvCelula(item.clienteNome)};${csvCelula(item.produtoCodigo)};${csvCelula(item.produtoNome)};${csvCelula(item.fornecedorNome || "Fornecedor não identificado")};${item.totalQuantidade};${csvCelula(item.unidade)};${item.totalVendas};${item.ultimaCompra};${item.totalValor}\n`;
-      });
+      try {
+        const exportacao = await api.getRelatorioConsumoMateriais({
+          startDate: dataInicio,
+          endDate: dataFim,
+          clienteId: clienteId || undefined,
+          produtoId: produtoId || undefined,
+          unidade: unidadeMateriais || undefined,
+          ordenacao: ordenacoes.materiais_cliente,
+          exportar: true,
+        });
+        csv += "CÓD. CLIENTE;CLIENTE;CÓD. PRODUTO;PRODUTO;FORNECEDOR(ES);QUANTIDADE;UNIDADE;VENDAS;MÉDIA POR VENDA;PRIMEIRA COMPRA;ÚLTIMA COMPRA;VALOR VENDIDO\n";
+        exportacao.items.forEach((item) => {
+          csv += `${csvCelula(item.clienteCodigo)};${csvCelula(item.clienteNome)};${csvCelula(item.produtoCodigo)};${csvCelula(item.produtoNome)};${csvCelula(item.fornecedorNome || "Não identificado")};${item.totalQuantidade};${csvCelula(item.unidade)};${item.totalVendas};${item.mediaPorVenda};${item.primeiraCompra};${item.ultimaCompra};${item.totalValor}\n`;
+        });
+      } catch (err: any) {
+        setErroMateriais(err.message || "Não foi possível exportar o consumo de materiais.");
+        return;
+      }
     } else if (aba === "fornecedores") {
       csv += "FORNECEDOR;TELEFONE;COMPRAS;TOTAL COMPRADO;PRODUTOS;ÚLTIMA COMPRA\n";
       linhasFornecedores.forEach((item: any) => { csv += `${csvCelula(item.fornecedorNome)};${csvCelula(item.telefone)};${item.quantidadeCompras};${item.totalComprado};${item.quantidadeProdutos};${item.ultimaCompra}\n`; });
@@ -441,13 +476,18 @@ export function RelatoriosView() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `relatorio_${aba}_${dataInicio}_${dataFim}.csv`;
+    link.download = `relatorio_${aba === "materiais_cliente" ? "consumo_materiais" : aba}_${dataInicio}_${dataFim}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const Card = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="rounded-2xl border border-slate-300 bg-white p-4 shadow-sm"><p className="text-xs font-black text-slate-600">{titulo}</p><p className={`mt-2 text-xl font-black ${destaque}`}>{valor}</p></div>;
   const CardResumo = ({ titulo, valor, destaque = "text-slate-950" }: { titulo: string; valor: string; destaque?: string }) => <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm"><p className="truncate text-[10px] font-black uppercase text-slate-500" title={titulo}>{titulo}</p><p className={`whitespace-nowrap text-sm font-black ${destaque}`}>{valor}</p></div>;
+  const resumoConsumo = dadosMateriais?.resumo;
+  const variacaoConsumo = resumoConsumo?.variacaoValorPercentual;
+  const tituloInsightConsumo = produtoId
+    ? (clienteId ? "Relação entre cliente e material" : "Clientes que mais levam este material")
+    : (clienteId ? "Materiais preferidos deste cliente" : "Materiais líderes por unidade");
 
   return (
     <section id="relatorios-view" className="space-y-5">
@@ -476,7 +516,7 @@ export function RelatoriosView() {
         {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${(id === "vendas" ? aba === "vendas" || aba === "clientes" || aba === "materiais_cliente" : aba === id) ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
       </div>
 
-      {(aba === "vendas" || aba === "clientes" || aba === "materiais_cliente") && <div className="grid grid-cols-3 gap-1 rounded-xl border border-blue-200 bg-blue-50 p-1 print:hidden"><button type="button" data-testid="relatorio-subaba-vendas" onClick={() => setAba("vendas")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "vendas" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Vendas</button><button type="button" data-testid="relatorio-subaba-itens-cliente" onClick={() => setAba("clientes")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "clientes" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}><Users size={15} className="mr-1.5 hidden sm:inline" />Itens por cliente</button><button type="button" data-testid="relatorio-subaba-materiais-cliente" onClick={() => setAba("materiais_cliente")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "materiais_cliente" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Materiais por cliente</button></div>}
+      {(aba === "vendas" || aba === "clientes" || aba === "materiais_cliente") && <div className="grid grid-cols-3 gap-1 rounded-xl border border-blue-200 bg-blue-50 p-1 print:hidden"><button type="button" data-testid="relatorio-subaba-vendas" onClick={() => setAba("vendas")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "vendas" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Vendas por período</button><button type="button" data-testid="relatorio-subaba-itens-cliente" onClick={() => setAba("clientes")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "clientes" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}><Users size={15} className="mr-1.5 hidden sm:inline" />Histórico do cliente</button><button type="button" data-testid="relatorio-subaba-materiais-cliente" onClick={() => setAba("materiais_cliente")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "materiais_cliente" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Consumo de materiais</button></div>}
 
       <div className="space-y-2 rounded-xl border border-slate-300 bg-white p-3 shadow-sm print:hidden">
         <div className="flex flex-wrap items-end gap-2">
@@ -485,17 +525,18 @@ export function RelatoriosView() {
           {aba === "geral" && <label className="w-full text-xs font-black text-slate-700 md:w-56">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label>}
           <label className="w-full text-xs font-black text-slate-700 md:w-60">ORDENAR POR<select data-testid="relatorio-ordenacao" value={ordenacaoAtual} onChange={(e) => setOrdenacoes((atuais) => ({ ...atuais, [aba]: e.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold">{ORDENACOES_RELATORIO[aba].filter((opcao) => aba !== "clientes" || dadosClienteLiberados || !opcao.administrativo).map((opcao) => <option key={opcao.value} value={opcao.value}>{opcao.label.toUpperCase()}</option>)}</select></label>
           <div className="flex flex-wrap gap-2"><button onClick={() => periodoRapido(7)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">7 DIAS</button><button onClick={() => periodoRapido(30)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">30 DIAS</button><button onClick={() => periodoRapido(90)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">90 DIAS</button></div>
-          <button onClick={carregar} aria-label="Atualizar relatório" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[10px] font-bold uppercase text-slate-400 hover:border-slate-300 hover:text-slate-600"><RefreshCw size={15} />Atualizar</button>
+          <button onClick={aba === "materiais_cliente" ? carregarMateriais : carregar} aria-label="Atualizar relatório" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[10px] font-bold uppercase text-slate-400 hover:border-slate-300 hover:text-slate-600"><RefreshCw size={15} />Atualizar</button>
         </div>
 
         {aba === "vendas" && <div className="grid gap-2 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vendas-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
-        {(aba === "clientes" || aba === "materiais_cliente") && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid={aba === "clientes" ? "relatorio-filtro-cliente" : "relatorio-filtro-materiais-cliente"} value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
+        {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
+        {aba === "materiais_cliente" && <div className="grid gap-3 md:grid-cols-3"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-materiais-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">MATERIAL / PRODUTO<select data-testid="relatorio-filtro-material" value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS MATERIAIS</option>{produtosRelatorio.map((item) => <option key={item.id} value={item.id}>{item.codigo ? `${item.codigo} — ` : ""}{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">UNIDADE<select data-testid="relatorio-filtro-unidade" value={unidadeMateriais} onChange={(e) => setUnidadeMateriais(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS AS UNIDADES</option>{[...new Set<string>(produtosRelatorio.map((item) => item.unidade).filter(Boolean))].sort(compararTexto).map((item) => <option key={item} value={item}>{item.toUpperCase()}</option>)}</select></label></div>}
         {aba === "fornecedores" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORNECEDOR<select data-testid="relatorio-filtro-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS FORNECEDORES</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">PRODUTO / MATERIAL<select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS PRODUTOS</option>{produtos.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "vales" && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vale-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select data-testid="relatorio-vale-status" value={valeStatus} onChange={(e) => setValeStatus(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="abertos">EM ABERTO</option><option value="vencidos">VENCIDOS</option><option value="a_vencer">A VENCER</option><option value="quitados">QUITADOS</option></select></label><label className="text-xs font-black text-slate-700">VENCIMENTO DE<input type="date" value={vencimentoInicio} onChange={(e) => setVencimentoInicio(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label><label className="text-xs font-black text-slate-700">VENCIMENTO ATÉ<input type="date" value={vencimentoFim} onChange={(e) => setVencimentoFim(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label></div>}
       </div>
 
-      {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-4 font-black text-red-900"><AlertTriangle size={18} />{error}</div>}
-      {loading ? <div className="rounded-2xl border border-slate-300 bg-white p-12 text-center font-black text-slate-600">PROCESSANDO RELATÓRIO...</div> : dados && <>
+      {(aba === "materiais_cliente" ? erroMateriais || error : error) && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-4 font-black text-red-900"><AlertTriangle size={18} />{aba === "materiais_cliente" ? erroMateriais || error : error}</div>}
+      {(aba === "materiais_cliente" ? loadingMateriais : loading) ? <div className="rounded-2xl border border-slate-300 bg-white p-12 text-center font-black text-slate-600">PROCESSANDO RELATÓRIO...</div> : (dados || aba === "materiais_cliente") && <>
         {aba === "geral" && geral && (
           <div className="space-y-5">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -565,7 +606,7 @@ export function RelatoriosView() {
             <>
               <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div><h3 className="font-black text-slate-950">Itens vendidos para o cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(dataInicio)} até {formatDate(dataFim)}</p></div>
+                  <div><h3 className="font-black text-slate-950">Histórico detalhado de itens do cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(dataInicio)} até {formatDate(dataFim)}</p></div>
                   {dadosClienteLiberados ? <button type="button" onClick={() => { setDadosClienteLiberados(false); if (ordenacoes.clientes === "lucro_desc") setOrdenacoes((atuais) => ({ ...atuais, clientes: ORDENACAO_PADRAO.clientes })); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black uppercase text-emerald-800"><Unlock size={15} /> Custo visível</button> : <button type="button" onClick={() => { setPin(""); setPinErro(""); setPinOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Lock size={15} /> Custo</button>}
                 </div>
                 <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-white p-2 print:hidden"><button type="button" onClick={() => setCategoriaCliente("metros")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "metros" ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>Vendidos em metros ({analiseCliente.itensMetros.length})</button><button type="button" onClick={() => setCategoriaCliente("unidades")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "unidades" ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>Unidades / outros ({analiseCliente.itensUnidades.length})</button></div>
@@ -585,25 +626,38 @@ export function RelatoriosView() {
         </div>}
 
         {aba === "materiais_cliente" && <div className="space-y-4">
-          {!clienteId ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Users size={34} className="mx-auto text-slate-300" /><p className="mt-3 font-black text-slate-700">Selecione um cliente para ver os materiais que ele mais leva.</p></div>
-          ) : (
-            <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                <Card titulo="MATERIAIS DISTINTOS" valor={String(resumoMateriaisCliente.materiais)} />
-                <Card titulo="VENDAS NO PERÍODO" valor={String(analiseCliente.totalVendas)} />
-                <Card titulo="METROS" valor={`${formatDecimal(resumoMateriaisCliente.metros)} m`} destaque="text-amber-800" />
-                <Card titulo="UNIDADES / OUTROS" valor={formatDecimal(resumoMateriaisCliente.unidades)} destaque="text-violet-800" />
-                <Card titulo="VALOR COMPRADO" valor={formatCurrency(resumoMateriaisCliente.valor)} destaque="text-blue-800" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Card titulo="MATERIAIS DISTINTOS" valor={String(resumoConsumo?.materiaisDistintos || 0)} />
+            <Card titulo="CLIENTES COMPRADORES" valor={String(resumoConsumo?.clientesCompradores || 0)} />
+            <Card titulo="VENDAS NO PERÍODO" valor={String(resumoConsumo?.totalVendas || 0)} />
+            <Card titulo="VALOR VENDIDO" valor={formatCurrency(resumoConsumo?.totalValor || 0)} destaque="text-blue-800" />
+            <Card titulo="VALOR VS. PERÍODO ANTERIOR" valor={variacaoConsumo === null || variacaoConsumo === undefined ? "Sem base anterior" : `${variacaoConsumo >= 0 ? "+" : ""}${variacaoConsumo.toFixed(1)}%`} destaque={variacaoConsumo === null || variacaoConsumo === undefined ? "text-slate-500" : variacaoConsumo >= 0 ? "text-emerald-800" : "text-red-800"} />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[1.1fr_1fr]">
+            <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="text-xs font-black uppercase text-slate-700">Quantidade por unidade</h3>
+              <div className="mt-3 flex flex-wrap gap-2">{resumoConsumo?.totaisPorUnidade.length ? resumoConsumo.totaisPorUnidade.map((item) => <div key={item.unidade} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2"><p className="text-[10px] font-black uppercase text-amber-800">{item.unidade}</p><p className="mt-1 font-mono text-lg font-black text-amber-950">{formatDecimal(item.totalQuantidade)}</p><p className="text-[10px] font-bold text-amber-700">{item.materiaisDistintos} material(is) • {item.clientesCompradores} cliente(s)</p></div>) : <p className="text-xs font-bold text-slate-500">Sem quantidades no período.</p>}</div>
+            </section>
+            <section className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 shadow-sm">
+              <h3 className="text-xs font-black uppercase text-blue-950">{tituloInsightConsumo}</h3>
+              <div className="mt-3 space-y-2">
+                {clienteId && produtoId ? (
+                  dadosMateriais?.items.length ? dadosMateriais.items.map((item) => <div key={`${item.clienteId}-${item.produtoId}-${item.unidade}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs"><span className="font-black text-slate-900">{formatDecimal(item.totalQuantidade)} {item.unidade}</span><span className="font-bold text-slate-600">média {formatDecimal(item.mediaPorVenda)} por venda • última em {formatDate(item.ultimaCompra)}</span></div>) : <p className="text-xs font-bold text-blue-700">Sem relação de consumo no período.</p>
+                ) : produtoId ? (
+                  resumoConsumo?.lideresClientes.length ? resumoConsumo.lideresClientes.map((item) => <div key={`${item.clienteId}-${item.unidade}`} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs"><span className="font-black text-slate-900">{item.clienteNome}</span><span className="whitespace-nowrap font-mono font-black text-blue-800">{formatDecimal(item.totalQuantidade)} {item.unidade}</span></div>) : <p className="text-xs font-bold text-blue-700">Nenhum cliente comprou este material no período.</p>
+                ) : (
+                  resumoConsumo?.lideresMateriais.length ? resumoConsumo.lideresMateriais.map((item) => <div key={`${item.produtoId}-${item.unidade}`} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs"><span className="font-black text-slate-900">{item.produtoCodigo ? `${item.produtoCodigo} — ` : ""}{item.produtoNome}</span><span className="whitespace-nowrap font-mono font-black text-blue-800">{formatDecimal(item.totalQuantidade)} {item.unidade}</span></div>) : <p className="text-xs font-bold text-blue-700">Nenhum material vendido no período.</p>
+                )}
               </div>
-              <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
-                <div className="border-b border-slate-200 bg-slate-50 p-4"><h3 className="font-black text-slate-950">Materiais mais levados pelo cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">Quantidades líquidas, já descontando devoluções, de {formatDate(dataInicio)} até {formatDate(dataFim)}. Materiais com unidades diferentes permanecem em linhas separadas.</p></div>
-                <TabelaMateriaisCliente linhas={materiaisProgressivos.itensVisiveis} />
-                <MarcadorListaProgressiva {...materiaisProgressivos} />
-              </div>
-              {resumoMateriaisCliente.grupos > resumoMateriaisCliente.materiais && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold text-blue-800">Um mesmo material pode aparecer em mais de uma linha quando há unidades ou fornecedores históricos diferentes. Isso evita somar medidas incompatíveis ou atribuir uma venda ao fornecedor errado.</p>}
-            </>
-          )}
+            </section>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
+            <div className="border-b border-slate-200 bg-slate-50 p-4"><h3 className="font-black text-slate-950">Análise de materiais × clientes</h3><p className="mt-1 text-xs font-bold text-slate-500">Uma linha por cliente, material e unidade no período. Quantidades e valores já descontam devoluções.</p></div>
+            <TabelaMateriaisCliente linhas={dadosMateriais?.items || []} pagina={dadosMateriais?.page || paginaMateriais} tamanhoPagina={dadosMateriais?.pageSize || MATERIAIS_POR_PAGINA} />
+            <Pagination page={dadosMateriais?.page || paginaMateriais} pageSize={dadosMateriais?.pageSize || MATERIAIS_POR_PAGINA} totalItems={dadosMateriais?.totalItems || 0} onPageChange={setPaginaMateriais} alwaysVisible />
+          </div>
         </div>}
 
         {aba === "fornecedores" && <div className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><Card titulo="FORNECEDORES COM COMPRA" valor={String(linhasFornecedores.length)} /><Card titulo="COMPRAS REGISTRADAS" valor={String(linhasFornecedores.reduce((t: number, i: any) => t + i.quantidadeCompras, 0))} /><Card titulo="TOTAL COMPRADO" valor={formatCurrency(linhasFornecedores.reduce((t: number, i: any) => t + i.totalComprado, 0))} destaque="text-blue-800" /></div><div className="overflow-hidden rounded-2xl border border-slate-300 bg-white"><TabelaFornecedores linhas={fornecedoresProgressivos.itensVisiveis} /><MarcadorListaProgressiva {...fornecedoresProgressivos} /></div></div>}
@@ -638,10 +692,10 @@ function TabelaFornecedores({ linhas }: { linhas: any[] }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">FORNECEDOR</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">COMPRAS</th><th className="p-3 text-right">PRODUTOS</th><th className="p-3 text-right">TOTAL COMPRADO</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-black">{item.fornecedorNome}</td><td className="p-3 font-bold text-slate-600">{item.telefone || "—"}</td><td className="p-3 text-right">{item.quantidadeCompras}</td><td className="p-3 text-right">{item.quantidadeProdutos}</td><td className="p-3 text-right font-black text-blue-800">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right">{formatDate(item.ultimaCompra)}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA COMPRA DE FORNECEDOR NESTE FILTRO.</td></tr>}</tbody></table></div>;
 }
 
-function TabelaMateriaisCliente({ linhas }: { linhas: any[] }) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm">
-    <thead className="bg-white text-xs font-black uppercase text-slate-500"><tr><th className="w-14 p-3 text-center">#</th><th className="p-3 text-left">Código</th><th className="p-3 text-left">Produto / material</th><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-left">Unidade</th><th className="p-3 text-right">Vendas</th><th className="p-3 text-right">Última compra</th><th className="p-3 text-right">Valor comprado</th></tr></thead>
-    <tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item, index) => <tr key={`${item.clienteId}-${item.produtoId}-${item.fornecedorNome || "sem-fornecedor"}-${item.unidade}`} className={index < 3 ? "bg-amber-50/60" : "hover:bg-slate-50"}><td className="p-3 text-center"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-slate-950">{index + 1}</span></td><td className="whitespace-nowrap p-3 font-mono font-black">{item.produtoCodigo || "—"}</td><td className="p-3 font-black text-slate-950">{item.produtoNome}</td><td className="p-3 font-bold text-slate-600">{item.fornecedorNome || "Fornecedor não identificado"}</td><td className="whitespace-nowrap p-3 text-right font-mono font-black text-amber-900">{formatDecimal(Number(item.totalQuantidade))}</td><td className="p-3 font-bold uppercase text-slate-600">{item.unidade || "—"}</td><td className="p-3 text-right font-black">{item.totalVendas}</td><td className="whitespace-nowrap p-3 text-right">{formatDate(item.ultimaCompra)}</td><td className="whitespace-nowrap p-3 text-right font-black text-blue-800">{formatCurrency(item.totalValor)}</td></tr>) : <tr><td colSpan={9} className="p-12 text-center font-bold text-slate-500">Nenhum material vendido para este cliente no período.</td></tr>}</tbody>
+function TabelaMateriaisCliente({ linhas, pagina, tamanhoPagina }: { linhas: any[]; pagina: number; tamanhoPagina: number }) {
+  return <div className="overflow-x-auto"><table className="w-full min-w-[1380px] text-xs">
+    <thead className="bg-white font-black uppercase text-slate-500"><tr><th className="w-12 p-3 text-center">#</th><th className="p-3 text-left">Cód. cliente</th><th className="p-3 text-left">Cliente</th><th className="p-3 text-left">Cód. material</th><th className="p-3 text-left">Material / produto</th><th className="p-3 text-left">Fornecedor(es)</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-left">Unidade</th><th className="p-3 text-right">Vendas</th><th className="p-3 text-right">Média / venda</th><th className="p-3 text-right">Primeira compra</th><th className="p-3 text-right">Última compra</th><th className="p-3 text-right">Valor vendido</th></tr></thead>
+    <tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item, index) => <tr key={`${item.clienteId}-${item.produtoId}-${item.unidade}`} className="hover:bg-blue-50/50"><td className="p-3 text-center font-mono font-black text-slate-500">{(pagina - 1) * tamanhoPagina + index + 1}</td><td className="whitespace-nowrap p-3 font-mono font-black">{item.clienteCodigo || "—"}</td><td className="p-3 font-black text-slate-950">{item.clienteNome}</td><td className="whitespace-nowrap p-3 font-mono font-black">{item.produtoCodigo || "—"}</td><td className="p-3 font-black text-slate-950">{item.produtoNome}</td><td className="p-3 font-bold text-slate-600">{item.fornecedorNome || "Não identificado"}</td><td className="whitespace-nowrap bg-amber-50/60 p-3 text-right font-mono font-black text-amber-900">{formatDecimal(Number(item.totalQuantidade))}</td><td className="p-3 font-bold uppercase text-slate-600">{item.unidade || "—"}</td><td className="p-3 text-right font-black">{item.totalVendas}</td><td className="p-3 text-right font-mono font-bold">{formatDecimal(item.mediaPorVenda)}</td><td className="whitespace-nowrap p-3 text-right">{formatDate(item.primeiraCompra)}</td><td className="whitespace-nowrap p-3 text-right">{formatDate(item.ultimaCompra)}</td><td className="whitespace-nowrap bg-blue-50/60 p-3 text-right font-black text-blue-800">{formatCurrency(item.totalValor)}</td></tr>) : <tr><td colSpan={13} className="p-12 text-center font-bold text-slate-500">Nenhum consumo encontrado para os filtros selecionados.</td></tr>}</tbody>
   </table></div>;
 }
 

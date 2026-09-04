@@ -4169,7 +4169,7 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
 // 8. ORDENS DE COBRANÇA
 function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
   return queryAll<any>(
-    `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento,
+    `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone,
             COALESCE((
               SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END)
               FROM cliente_bonus_movimentos bm
@@ -5525,6 +5525,236 @@ app.post("/api/pagamentos/:id/cancelar", (req, res) => {
 
 
 // 9. RELATÓRIOS GERENCIAIS
+const ORDENACOES_CONSUMO_MATERIAIS: Record<string, string> = {
+  quantidade_desc: "totalQuantidade DESC, produtoNome COLLATE NOCASE ASC, clienteNome COLLATE NOCASE ASC",
+  quantidade_asc: "totalQuantidade ASC, produtoNome COLLATE NOCASE ASC, clienteNome COLLATE NOCASE ASC",
+  material_asc: "produtoNome COLLATE NOCASE ASC, clienteNome COLLATE NOCASE ASC",
+  material_desc: "produtoNome COLLATE NOCASE DESC, clienteNome COLLATE NOCASE ASC",
+  cliente_asc: "clienteNome COLLATE NOCASE ASC, produtoNome COLLATE NOCASE ASC",
+  cliente_desc: "clienteNome COLLATE NOCASE DESC, produtoNome COLLATE NOCASE ASC",
+  codigo_asc: "produtoCodigo COLLATE NOCASE ASC, produtoNome COLLATE NOCASE ASC",
+  vendas_desc: "totalVendas DESC, totalQuantidade DESC, produtoNome COLLATE NOCASE ASC",
+  data_desc: "ultimaCompra DESC, produtoNome COLLATE NOCASE ASC",
+  data_asc: "ultimaCompra ASC, produtoNome COLLATE NOCASE ASC",
+  valor_desc: "totalValor DESC, produtoNome COLLATE NOCASE ASC",
+  valor_asc: "totalValor ASC, produtoNome COLLATE NOCASE ASC",
+};
+
+function periodoAnterior(dataInicio: string, dataFim: string) {
+  if (!ehDataIsoValida(dataInicio) || !ehDataIsoValida(dataFim) || dataInicio > dataFim) return null;
+  const inicio = new Date(`${dataInicio}T00:00:00Z`);
+  const fim = new Date(`${dataFim}T00:00:00Z`);
+  const duracaoDias = Math.round((fim.getTime() - inicio.getTime()) / 86400000) + 1;
+  const fimAnterior = new Date(inicio.getTime() - 86400000);
+  const inicioAnterior = new Date(fimAnterior.getTime() - (duracaoDias - 1) * 86400000);
+  return { inicio: inicioAnterior.toISOString().slice(0, 10), fim: fimAnterior.toISOString().slice(0, 10) };
+}
+
+app.get("/api/relatorios/materiais-clientes", (req, res) => {
+  try {
+    const dataInicio = String(req.query.startDate || "");
+    const dataFim = String(req.query.endDate || "");
+    const clienteId = String(req.query.clienteId || "").trim();
+    const produtoId = String(req.query.produtoId || "").trim();
+    const unidade = String(req.query.unidade || "").trim();
+    const ordenacao = String(req.query.ordenacao || "quantidade_desc");
+    const orderBy = ORDENACOES_CONSUMO_MATERIAIS[ordenacao] || ORDENACOES_CONSUMO_MATERIAIS.quantidade_desc;
+    const exportar = String(req.query.exportar || "") === "1";
+
+    if ((dataInicio && !ehDataIsoValida(dataInicio)) || (dataFim && !ehDataIsoValida(dataFim)) || (dataInicio && dataFim && dataInicio > dataFim)) {
+      throw erroHttp("Informe um período válido para analisar o consumo de materiais.", 400);
+    }
+
+    const filtrosFixos = [
+      "v.deletedAt IS NULL",
+      "v.status <> 'cancelada'",
+    ];
+    const parametrosFixos: any[] = [];
+    if (clienteId) { filtrosFixos.push("v.clienteId = ?"); parametrosFixos.push(clienteId); }
+    if (produtoId) { filtrosFixos.push("iv.produtoId = ?"); parametrosFixos.push(produtoId); }
+    if (unidade) { filtrosFixos.push("LOWER(iv.unidade) = LOWER(?)"); parametrosFixos.push(unidade); }
+
+    const filtrosPeriodo = [...filtrosFixos];
+    const parametrosPeriodo = [...parametrosFixos];
+    if (dataInicio) { filtrosPeriodo.push("v.data >= ?"); parametrosPeriodo.push(dataInicio); }
+    if (dataFim) { filtrosPeriodo.push("v.data <= ?"); parametrosPeriodo.push(dataFim); }
+
+    const montarCte = (filtros: string[]) => `
+      WITH devolucoes AS (
+        SELECT itemVendaId, SUM(quantidade) AS quantidade
+        FROM itens_devolucao
+        GROUP BY itemVendaId
+      ), itens_liquidos AS (
+        SELECT
+          v.id AS vendaId,
+          v.data,
+          c.id AS clienteId,
+          printf('%04d', c.rowid) AS clienteCodigo,
+          c.nome AS clienteNome,
+          p.id AS produtoId,
+          COALESCE(p.codigo, '') AS produtoCodigo,
+          COALESCE(NULLIF(p.nome, ''), iv.descricao) AS produtoNome,
+          iv.unidade,
+          (iv.quantidade - COALESCE(dev.quantidade, 0)) AS quantidadeLiquida,
+          (
+            iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+          ) * ((iv.quantidade - COALESCE(dev.quantidade, 0)) / NULLIF(iv.quantidade, 0)) AS valorLiquido,
+          COALESCE(
+            fv.nome,
+            (SELECT fr.nome
+             FROM fornecedores fr
+             WHERE fr.referencia = iv.fornecedorReferencia
+             ORDER BY CASE WHEN fr.deletedAt IS NULL THEN 0 ELSE 1 END, fr.createdAt DESC
+             LIMIT 1),
+            (SELECT CASE WHEN COUNT(*) = 1 THEN MAX(fu.nome) END
+             FROM fornecedor_produtos fpu
+             JOIN fornecedores fu ON fu.id = fpu.fornecedorId
+             WHERE fpu.produtoId = iv.produtoId
+               AND fpu.ativo = 1 AND fu.ativo = 1 AND fu.deletedAt IS NULL)
+          ) AS fornecedorNome
+        FROM itens_venda iv
+        JOIN vendas v ON v.id = iv.vendaId
+        JOIN clientes c ON c.id = v.clienteId
+        JOIN produtos p ON p.id = iv.produtoId
+        LEFT JOIN fornecedores fv ON fv.id = iv.fornecedorId
+        LEFT JOIN devolucoes dev ON dev.itemVendaId = iv.id
+        WHERE ${filtros.join(" AND ")}
+          AND (iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005
+      )`;
+
+    const ctePeriodo = montarCte(filtrosPeriodo);
+    const agrupamento = `
+      SELECT
+        clienteId, clienteCodigo, clienteNome,
+        produtoId, produtoCodigo, produtoNome, unidade,
+        ROUND(SUM(quantidadeLiquida), 3) AS totalQuantidade,
+        COUNT(DISTINCT vendaId) AS totalVendas,
+        ROUND(SUM(valorLiquido), 2) AS totalValor,
+        MIN(data) AS primeiraCompra,
+        MAX(data) AS ultimaCompra,
+        CASE COUNT(DISTINCT fornecedorNome)
+          WHEN 0 THEN NULL
+          WHEN 1 THEN MAX(fornecedorNome)
+          ELSE 'Múltiplos'
+        END AS fornecedorNome,
+        COUNT(DISTINCT fornecedorNome) AS quantidadeFornecedores
+      FROM itens_liquidos
+      GROUP BY clienteId, clienteCodigo, clienteNome, produtoId, produtoCodigo, produtoNome, unidade`;
+
+    const totalItems = Number(queryOne<{ total: number }>(
+      `${ctePeriodo} SELECT COUNT(*) AS total FROM (${agrupamento}) grupos`,
+      parametrosPeriodo
+    )?.total || 0);
+    const tamanhoSolicitado = Math.floor(Number(req.query.pageSize));
+    const pageSize = Number.isFinite(tamanhoSolicitado) ? Math.max(10, Math.min(100, tamanhoSolicitado)) : 30;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const paginaSolicitada = Math.floor(Number(req.query.page));
+    const page = Number.isFinite(paginaSolicitada) ? Math.min(totalPages, Math.max(1, paginaSolicitada)) : 1;
+    const limiteSql = exportar ? "" : "LIMIT ? OFFSET ?";
+    const parametrosItens = exportar ? parametrosPeriodo : [...parametrosPeriodo, pageSize, (page - 1) * pageSize];
+    const items = queryAll<any>(
+      `${ctePeriodo} ${agrupamento} ORDER BY ${orderBy} ${limiteSql}`,
+      parametrosItens
+    ).map((item) => ({
+      ...item,
+      totalQuantidade: Number(item.totalQuantidade || 0),
+      totalVendas: Number(item.totalVendas || 0),
+      totalValor: Number(item.totalValor || 0),
+      quantidadeFornecedores: Number(item.quantidadeFornecedores || 0),
+      mediaPorVenda: Number(item.totalVendas) > 0 ? Number(item.totalQuantidade) / Number(item.totalVendas) : 0,
+    }));
+
+    const resumoBase = queryOne<any>(
+      `${ctePeriodo}
+       SELECT COUNT(DISTINCT produtoId) AS materiaisDistintos,
+              COUNT(DISTINCT clienteId) AS clientesCompradores,
+              COUNT(DISTINCT vendaId) AS totalVendas,
+              ROUND(COALESCE(SUM(valorLiquido), 0), 2) AS totalValor,
+              MIN(data) AS primeiraCompra,
+              MAX(data) AS ultimaCompra
+       FROM itens_liquidos`,
+      parametrosPeriodo
+    ) || {};
+    const totaisPorUnidade = queryAll<any>(
+      `${ctePeriodo}
+       SELECT unidade, ROUND(SUM(quantidadeLiquida), 3) AS totalQuantidade,
+              COUNT(DISTINCT produtoId) AS materiaisDistintos,
+              COUNT(DISTINCT clienteId) AS clientesCompradores
+       FROM itens_liquidos
+       GROUP BY unidade
+       ORDER BY LOWER(unidade) ASC`,
+      parametrosPeriodo
+    ).map((item) => ({ ...item, totalQuantidade: Number(item.totalQuantidade || 0), materiaisDistintos: Number(item.materiaisDistintos || 0), clientesCompradores: Number(item.clientesCompradores || 0) }));
+    const lideresMateriais = queryAll<any>(
+      `${ctePeriodo}
+       SELECT unidade, produtoId, produtoCodigo, produtoNome, totalQuantidade
+       FROM (
+         SELECT unidade, produtoId, produtoCodigo, produtoNome,
+                ROUND(SUM(quantidadeLiquida), 3) AS totalQuantidade,
+                ROW_NUMBER() OVER (PARTITION BY LOWER(unidade) ORDER BY SUM(quantidadeLiquida) DESC, produtoNome COLLATE NOCASE ASC) AS posicao
+         FROM itens_liquidos
+         GROUP BY unidade, produtoId, produtoCodigo, produtoNome
+       ) ranking
+       WHERE posicao = 1
+       ORDER BY LOWER(unidade) ASC`,
+      parametrosPeriodo
+    ).map((item) => ({ ...item, totalQuantidade: Number(item.totalQuantidade || 0) }));
+    const lideresClientes = queryAll<any>(
+      `${ctePeriodo}
+       SELECT unidade, clienteId, clienteCodigo, clienteNome, totalQuantidade
+       FROM (
+         SELECT unidade, clienteId, clienteCodigo, clienteNome,
+                ROUND(SUM(quantidadeLiquida), 3) AS totalQuantidade,
+                ROW_NUMBER() OVER (PARTITION BY LOWER(unidade) ORDER BY SUM(quantidadeLiquida) DESC, clienteNome COLLATE NOCASE ASC) AS posicao
+         FROM itens_liquidos
+         GROUP BY unidade, clienteId, clienteCodigo, clienteNome
+       ) ranking
+       WHERE posicao = 1
+       ORDER BY LOWER(unidade) ASC`,
+      parametrosPeriodo
+    ).map((item) => ({ ...item, totalQuantidade: Number(item.totalQuantidade || 0) }));
+
+    let valorPeriodoAnterior = 0;
+    const anterior = periodoAnterior(dataInicio, dataFim);
+    if (anterior) {
+      const filtrosAnteriores = [...filtrosFixos, "v.data >= ?", "v.data <= ?"];
+      const parametrosAnteriores = [...parametrosFixos, anterior.inicio, anterior.fim];
+      valorPeriodoAnterior = Number(queryOne<{ total: number }>(
+        `${montarCte(filtrosAnteriores)} SELECT ROUND(COALESCE(SUM(valorLiquido), 0), 2) AS total FROM itens_liquidos`,
+        parametrosAnteriores
+      )?.total || 0);
+    }
+    const totalValor = Number(resumoBase.totalValor || 0);
+    const variacaoValorPercentual = valorPeriodoAnterior > 0
+      ? ((totalValor - valorPeriodoAnterior) / valorPeriodoAnterior) * 100
+      : null;
+
+    res.json({
+      items,
+      page,
+      pageSize,
+      totalItems,
+      totalPages,
+      resumo: {
+        materiaisDistintos: Number(resumoBase.materiaisDistintos || 0),
+        clientesCompradores: Number(resumoBase.clientesCompradores || 0),
+        totalVendas: Number(resumoBase.totalVendas || 0),
+        totalValor,
+        primeiraCompra: resumoBase.primeiraCompra || null,
+        ultimaCompra: resumoBase.ultimaCompra || null,
+        valorPeriodoAnterior,
+        variacaoValorPercentual,
+        periodoAnterior: anterior,
+        totaisPorUnidade,
+        lideresMateriais,
+        lideresClientes,
+      },
+    });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.get("/api/relatorios", (req, res) => {
   try {
     const {
@@ -5635,39 +5865,6 @@ app.get("/api/relatorios", (req, res) => {
         lucroBruto: valorVendaLiquido - custoTotal
       };
     });
-
-    // Consolidação segura para "Materiais por cliente". A unidade e o
-    // fornecedor fazem parte da chave para não somar grandezas ou origens
-    // diferentes. Fornecedores históricos ambíguos permanecem não identificados.
-    const materiaisPorClienteMapa = new Map<string, any>();
-    for (const item of itensVendidos) {
-      const fornecedorNome = String(item.fornecedorNome || "").trim();
-      const chave = [item.clienteId, item.produtoId, fornecedorNome.toLocaleLowerCase("pt-BR"), item.unidade].join("::");
-      const atual = materiaisPorClienteMapa.get(chave) || {
-        clienteId: item.clienteId,
-        clienteNome: item.clienteNome,
-        produtoId: item.produtoId,
-        produtoCodigo: item.produtoCodigo || "",
-        produtoNome: item.produtoNome || item.descricao,
-        fornecedorNome: fornecedorNome || null,
-        unidade: item.unidade,
-        totalQuantidade: 0,
-        totalValor: 0,
-        vendas: new Set<string>(),
-        ultimaCompra: "",
-      };
-      atual.totalQuantidade = Math.round((atual.totalQuantidade + Number(item.quantidade || 0)) * 1000) / 1000;
-      atual.totalValor = Math.round((atual.totalValor + Number(item.valorVendaLiquido || 0)) * 100) / 100;
-      atual.vendas.add(String(item.vendaId));
-      if (!atual.ultimaCompra || String(item.data) > atual.ultimaCompra) atual.ultimaCompra = String(item.data);
-      materiaisPorClienteMapa.set(chave, atual);
-    }
-    const materiaisPorCliente = [...materiaisPorClienteMapa.values()].map((item) => ({
-      ...item,
-      totalVendas: item.vendas.size,
-      vendas: undefined,
-    })).sort((a, b) => Number(b.totalQuantidade) - Number(a.totalQuantidade)
-      || String(a.produtoNome).localeCompare(String(b.produtoNome), "pt-BR"));
 
     // O topo do relatório individual usa o histórico completo do cliente.
     // A consulta é agregada no SQLite e devolve somente uma linha, evitando
@@ -5890,7 +6087,6 @@ app.get("/api/relatorios", (req, res) => {
     res.json({
       vendas,
       itensVendidos,
-      materiaisPorCliente,
       clienteResumoGeral,
       pagamentos,
       carteiraVencida,

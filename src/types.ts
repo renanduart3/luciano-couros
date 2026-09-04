@@ -516,6 +516,7 @@ export interface OrdemCobranca {
   clienteId: string;
   clienteNome: string;
   clienteDocumento?: string;
+  clienteTelefone?: string;
   dataEmissao: string;
   totalOriginal: number;
   valorPago: number;

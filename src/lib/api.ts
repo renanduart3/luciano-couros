@@ -18,6 +18,46 @@ interface ProdutoPayload {
   }>;
 }
 
+export interface RelatorioConsumoMaterialLinha {
+  clienteId: string;
+  clienteCodigo: string;
+  clienteNome: string;
+  produtoId: string;
+  produtoCodigo: string;
+  produtoNome: string;
+  unidade: string;
+  totalQuantidade: number;
+  totalVendas: number;
+  mediaPorVenda: number;
+  totalValor: number;
+  primeiraCompra: string;
+  ultimaCompra: string;
+  fornecedorNome?: string | null;
+  quantidadeFornecedores: number;
+}
+
+export interface RelatorioConsumoMateriais {
+  items: RelatorioConsumoMaterialLinha[];
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+  resumo: {
+    materiaisDistintos: number;
+    clientesCompradores: number;
+    totalVendas: number;
+    totalValor: number;
+    primeiraCompra?: string | null;
+    ultimaCompra?: string | null;
+    valorPeriodoAnterior: number;
+    variacaoValorPercentual?: number | null;
+    periodoAnterior?: { inicio: string; fim: string } | null;
+    totaisPorUnidade: Array<{ unidade: string; totalQuantidade: number; materiaisDistintos: number; clientesCompradores: number }>;
+    lideresMateriais: Array<{ unidade: string; produtoId: string; produtoCodigo: string; produtoNome: string; totalQuantidade: number }>;
+    lideresClientes: Array<{ unidade: string; clienteId: string; clienteCodigo: string; clienteNome: string; totalQuantidade: number }>;
+  };
+}
+
 async function handleResponse<T>(response: Response): Promise<T> {
   const contentType = response.headers.get("content-type") || "";
   if (!contentType.toLowerCase().includes("application/json")) {
@@ -557,6 +597,25 @@ export const api = {
       if (v) params.append(k, v);
     });
     return fetch(`${API_BASE}/relatorios?${params.toString()}`).then(r => handleResponse<any>(r));
+  },
+  getRelatorioConsumoMateriais: (filters: {
+    startDate?: string;
+    endDate?: string;
+    clienteId?: string;
+    produtoId?: string;
+    unidade?: string;
+    ordenacao?: string;
+    page?: number;
+    pageSize?: number;
+    exportar?: boolean;
+  }) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([chave, valor]) => {
+      if (valor !== undefined && valor !== null && valor !== "" && valor !== false) {
+        params.append(chave, valor === true ? "1" : String(valor));
+      }
+    });
+    return fetch(`${API_BASE}/relatorios/materiais-clientes?${params.toString()}`).then(r => handleResponse<RelatorioConsumoMateriais>(r));
   },
 
   // BACKUPS

@@ -3,6 +3,7 @@ import { CalendarDays, Camera, CheckCircle2, Loader2, MinusCircle, Printer, Save
 import { OrdemCobranca, Venda } from "../types";
 import { formatCurrency, formatDate, isValidIsoDate, todayLocalIso } from "../lib/utils";
 import { api } from "../lib/api";
+import { OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
 
 interface Props {
   clienteId: string;
@@ -113,6 +114,10 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, valesDoClien
       setSaving(false);
     }
   };
+
+  if (!configurando && ordem) {
+    return <OrdemCobrancaDemonstrativoModal ordem={ordem} onClose={onClose} />;
+  }
 
   return <div id="print-cobranca-vales" className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-[10vw] py-[5vh] backdrop-blur-sm print:p-0">
     <div role="dialog" aria-modal="true" aria-labelledby="titulo-cobranca-vales" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl">

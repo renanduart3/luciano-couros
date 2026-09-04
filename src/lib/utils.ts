@@ -86,3 +86,12 @@ export function handleNumberInput(value: string): number {
 export function cn(...classes: (string | undefined | boolean | null)[]) {
   return classes.filter(Boolean).join(" ");
 }
+
+/** Builds a safe WhatsApp Web link from a Brazilian phone number. */
+export function whatsappUrl(telefone: string | undefined | null): string | null {
+  let digitos = String(telefone || "").replace(/\D/g, "");
+  if (digitos.startsWith("0")) digitos = digitos.slice(1);
+  if (digitos.length === 10 || digitos.length === 11) digitos = `55${digitos}`;
+  if (digitos.length < 12 || digitos.length > 15) return null;
+  return `https://wa.me/${digitos}`;
+}

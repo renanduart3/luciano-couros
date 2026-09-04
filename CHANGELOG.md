@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.26.0 — 2026-09-04
+
+- Ordens de cobrança passam a manter um demonstrativo reabrível com CPF/CNPJ, telefone, vales vinculados e situação atual de cada parcela.
+- O demonstrativo fica dimensionado dentro da tela de Ordens e concentra no cabeçalho as ações de WhatsApp, fechamento e impressão ou salvamento em PDF.
+- Os detalhes das ordens e dos vales ganham acesso direto ao WhatsApp Web do cliente quando houver telefone válido cadastrado, mantendo a listagem de ordens limpa.
+- O resumo de parcelas da ordem fica mais compacto, destacando valor, total pago e saldo restante por vencimento.
+- Relatórios de vendas ganham análises consolidadas de materiais e clientes, com filtros e ordenações adequados, preservando o cálculo existente de custos em Itens por cliente.
+
 ## 1.25.0 — 2026-09-04
 
 - Pagamentos registrados em ordens de cobrança passam a identificar claramente a parcela correspondente, inclusive nos cheques e boletos vinculados.

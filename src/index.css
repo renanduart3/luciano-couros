@@ -753,6 +753,10 @@ textarea {
     display: none !important;
   }
 
+  body:has(> #print-cobranca-vales) > *:not(#print-cobranca-vales) {
+    display: none !important;
+  }
+
   #quick-sale-view:has(#print-receipt) > *:not(#print-receipt),
   #sales-list-view:has(#print-sale-detail-overlay) > *:not(#print-sale-detail-overlay),
   #orcamento-view:has(#print-orcamento) > *:not(#print-orcamento),

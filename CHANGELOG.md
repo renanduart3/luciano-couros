@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.25.0 — 2026-09-04
+
+- Pagamentos registrados em ordens de cobrança passam a identificar claramente a parcela correspondente, inclusive nos cheques e boletos vinculados.
+- Cada recebimento de ordem fica restrito à parcela selecionada e aceita no máximo cinco cheques ou duplicatas, preservando compatibilidade na edição de registros antigos.
+- Detalhes da ordem ganham um cabeçalho compacto para compartilhamento, com cliente, CPF/CNPJ, vales vinculados e resumo de parcelas e pagamentos organizado para captura de tela.
+- Relatório de vendas ganha a dimensão `Materiais por cliente`, com código, produto, fornecedor, quantidade líquida por unidade, número de vendas, última compra e valor adquirido.
+- Todos os relatórios passam a oferecer ordenações adequadas por nomes, datas, quantidades e valores, mantendo a mesma ordem na tela, paginação e exportação CSV.
+- Indicadores comerciais deixam de contabilizar vendas canceladas, descontam devoluções e evitam atribuir fornecedores históricos ambíguos aos materiais.
+
 ## 1.24.0 — 2026-09-03
 
 - Ordens de cobrança abertas passam a permitir adicionar e remover vales do mesmo cliente sem exigir o cancelamento da negociação.

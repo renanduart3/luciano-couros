@@ -7,9 +7,60 @@ import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
 
-type AbaRelatorio = "geral" | "vendas" | "clientes" | "fornecedores" | "vales";
+type AbaRelatorio = "geral" | "vendas" | "clientes" | "materiais_cliente" | "fornecedores" | "vales";
 type CategoriaItemCliente = "metros" | "unidades";
+type OpcaoOrdenacao = { value: string; label: string; administrativo?: boolean };
 const VENDAS_POR_PAGINA = 20;
+
+const ORDENACOES_RELATORIO: Record<AbaRelatorio, OpcaoOrdenacao[]> = {
+  geral: [
+    { value: "quantidade_desc", label: "Quantidade (maior)" }, { value: "quantidade_asc", label: "Quantidade (menor)" },
+    { value: "nome_asc", label: "Material (A–Z)" }, { value: "nome_desc", label: "Material (Z–A)" },
+    { value: "vendas_desc", label: "Nº de vendas (maior)" }, { value: "valor_desc", label: "Receita (maior)" },
+    { value: "custo_desc", label: "Custo (maior)", administrativo: true }, { value: "lucro_desc", label: "Lucro (maior)", administrativo: true },
+  ],
+  vendas: [
+    { value: "data_desc", label: "Data (mais recente)" }, { value: "data_asc", label: "Data (mais antiga)" },
+    { value: "cliente_asc", label: "Cliente (A–Z)" }, { value: "cliente_desc", label: "Cliente (Z–A)" },
+    { value: "valor_desc", label: "Valor (maior)" }, { value: "valor_asc", label: "Valor (menor)" },
+    { value: "quantidade_desc", label: "Quantidade (maior)" }, { value: "custo_desc", label: "Custo (maior)", administrativo: true },
+    { value: "lucro_desc", label: "Lucro (maior)", administrativo: true },
+  ],
+  clientes: [
+    { value: "data_desc", label: "Data (mais recente)" }, { value: "data_asc", label: "Data (mais antiga)" },
+    { value: "nome_asc", label: "Material (A–Z)" }, { value: "nome_desc", label: "Material (Z–A)" },
+    { value: "quantidade_desc", label: "Quantidade (maior)" }, { value: "quantidade_asc", label: "Quantidade (menor)" },
+    { value: "valor_desc", label: "Valor unitário (maior)" }, { value: "valor_asc", label: "Valor unitário (menor)" },
+    { value: "lucro_desc", label: "Lucro (maior)", administrativo: true },
+  ],
+  materiais_cliente: [
+    { value: "quantidade_desc", label: "Quantidade (maior)" }, { value: "quantidade_asc", label: "Quantidade (menor)" },
+    { value: "nome_asc", label: "Material (A–Z)" }, { value: "nome_desc", label: "Material (Z–A)" },
+    { value: "codigo_asc", label: "Código (crescente)" }, { value: "fornecedor_asc", label: "Fornecedor (A–Z)" },
+    { value: "vendas_desc", label: "Nº de vendas (maior)" }, { value: "data_desc", label: "Última compra (recente)" },
+    { value: "valor_desc", label: "Valor comprado (maior)" },
+  ],
+  fornecedores: [
+    { value: "valor_desc", label: "Total comprado (maior)" }, { value: "valor_asc", label: "Total comprado (menor)" },
+    { value: "nome_asc", label: "Fornecedor (A–Z)" }, { value: "nome_desc", label: "Fornecedor (Z–A)" },
+    { value: "quantidade_desc", label: "Nº de compras (maior)" }, { value: "produtos_desc", label: "Nº de produtos (maior)" },
+    { value: "data_desc", label: "Última compra (recente)" }, { value: "data_asc", label: "Última compra (antiga)" },
+  ],
+  vales: [
+    { value: "vencimento_asc", label: "Vencimento (mais próximo)" }, { value: "vencimento_desc", label: "Vencimento (mais distante)" },
+    { value: "emissao_desc", label: "Emissão (mais recente)" }, { value: "emissao_asc", label: "Emissão (mais antiga)" },
+    { value: "cliente_asc", label: "Cliente (A–Z)" }, { value: "cliente_desc", label: "Cliente (Z–A)" },
+    { value: "valor_desc", label: "Valor total (maior)" }, { value: "saldo_desc", label: "Saldo (maior)" },
+    { value: "pago_desc", label: "Valor pago (maior)" }, { value: "atraso_desc", label: "Dias em atraso (maior)" },
+  ],
+};
+
+const ORDENACAO_PADRAO: Record<AbaRelatorio, string> = {
+  geral: "quantidade_desc", vendas: "data_desc", clientes: "data_desc", materiais_cliente: "quantidade_desc",
+  fornecedores: "valor_desc", vales: "vencimento_asc",
+};
+const compararTexto = (a: unknown, b: unknown) => String(a || "").localeCompare(String(b || ""), "pt-BR", { numeric: true, sensitivity: "base" });
+const compararNumero = (a: unknown, b: unknown) => Number(a || 0) - Number(b || 0);
 
 const iso = (data: Date) => data.toISOString().slice(0, 10);
 const inicioPadrao = () => { const data = new Date(); data.setDate(data.getDate() - 30); return iso(data); };
@@ -71,6 +122,8 @@ export function RelatoriosView() {
   const [categoriaCliente, setCategoriaCliente] = useState<CategoriaItemCliente>("metros");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
   const [paginaVendas, setPaginaVendas] = useState(1);
+  const [ordenacoes, setOrdenacoes] = useState<Record<AbaRelatorio, string>>({ ...ORDENACAO_PADRAO });
+  const ordenacaoAtual = ordenacoes[aba];
 
   useEffect(() => {
     Promise.all([api.getClientes(), api.getFornecedores(), api.getProdutos(), api.getSegurancaStatus()])
@@ -90,6 +143,8 @@ export function RelatoriosView() {
     setPaginaVendas(1);
   }, [clienteId, dataInicio, dataFim]);
 
+  useEffect(() => { setPaginaVendas(1); }, [ordenacoes.vendas]);
+
   const carregar = async () => {
     if (dataInicio && dataFim && dataInicio > dataFim) {
       setError("A data inicial não pode ser posterior à data final.");
@@ -101,7 +156,7 @@ export function RelatoriosView() {
       setDados(await api.getRelatorios({
         startDate: dataInicio,
         endDate: dataFim,
-        clienteId: aba === "vendas" || aba === "clientes" || aba === "vales" ? clienteId : undefined,
+        clienteId: aba === "vendas" || aba === "clientes" || aba === "materiais_cliente" || aba === "vales" ? clienteId : undefined,
         fornecedorId: aba === "fornecedores" ? fornecedorId : undefined,
         produtoId: aba === "fornecedores" ? produtoId : undefined,
         formaPagamento: aba === "geral" ? formaPagamento : undefined,
@@ -135,16 +190,25 @@ export function RelatoriosView() {
       vendas: dados.vendas.length,
       historico: [...porDia].map(([data, total]) => ({ data: formatDate(data), total })),
       meios: [...meios].map(([nome, total]) => ({ nome, total })),
-      produtos: [...(dados.rankings?.produtos || [])].sort((a: any, b: any) =>
-        Number(b.totalVendas) - Number(a.totalVendas) || Number(b.totalValor) - Number(a.totalValor)
-      ),
+      produtos: [...(dados.rankings?.produtos || [])],
     };
   }, [dados]);
+
+  const produtosGeraisOrdenados = useMemo(() => [...(geral?.produtos || [])].sort((a: any, b: any) => {
+    if (ordenacaoAtual === "quantidade_asc") return compararNumero(a.totalQuantidade, b.totalQuantidade) || compararTexto(a.descricao, b.descricao);
+    if (ordenacaoAtual === "nome_asc") return compararTexto(a.descricao, b.descricao);
+    if (ordenacaoAtual === "nome_desc") return compararTexto(b.descricao, a.descricao);
+    if (ordenacaoAtual === "vendas_desc") return compararNumero(b.totalVendas, a.totalVendas) || compararTexto(a.descricao, b.descricao);
+    if (ordenacaoAtual === "valor_desc") return compararNumero(b.totalValor, a.totalValor) || compararTexto(a.descricao, b.descricao);
+    if (ordenacaoAtual === "custo_desc") return compararNumero(b.totalCusto, a.totalCusto) || compararTexto(a.descricao, b.descricao);
+    if (ordenacaoAtual === "lucro_desc") return compararNumero(b.totalLucro, a.totalLucro) || compararTexto(a.descricao, b.descricao);
+    return compararNumero(b.totalQuantidade, a.totalQuantidade) || compararTexto(a.descricao, b.descricao);
+  }), [geral, ordenacaoAtual]);
 
   const linhasVendas = useMemo(() => {
     const itensPorVenda = new Map<string, any[]>();
     for (const item of dados?.itensVendidos || []) itensPorVenda.set(item.vendaId, [...(itensPorVenda.get(item.vendaId) || []), item]);
-    return (dados?.vendas || []).map((venda: any) => {
+    const linhas = (dados?.vendas || []).map((venda: any) => {
       const itens = itensPorVenda.get(venda.id) || [];
       const itensMetros = itens.filter(ehItemEmMetros);
       const itensUnidades = itens.filter((item: any) => !ehItemEmMetros(item));
@@ -162,7 +226,18 @@ export function RelatoriosView() {
       const valorUnidades = baseValorUnidades * fatorConciliacao;
       return { ...venda, metragem, unidades, valorMetros, valorUnidades, custo, lucro: totalVenda - custo };
     });
-  }, [dados]);
+    return linhas.sort((a: any, b: any) => {
+      if (ordenacaoAtual === "data_asc") return compararTexto(a.data, b.data) || compararNumero(a.numeroSequencial, b.numeroSequencial);
+      if (ordenacaoAtual === "cliente_asc") return compararTexto(a.clienteNome, b.clienteNome) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "cliente_desc") return compararTexto(b.clienteNome, a.clienteNome) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "valor_desc") return compararNumero(b.totalLiquido, a.totalLiquido) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "valor_asc") return compararNumero(a.totalLiquido, b.totalLiquido) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "quantidade_desc") return compararNumero(Number(b.metragem) + Number(b.unidades), Number(a.metragem) + Number(a.unidades)) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "custo_desc") return compararNumero(b.custo, a.custo) || compararTexto(b.data, a.data);
+      if (ordenacaoAtual === "lucro_desc") return compararNumero(b.lucro, a.lucro) || compararTexto(b.data, a.data);
+      return compararTexto(b.data, a.data) || compararNumero(b.numeroSequencial, a.numeroSequencial);
+    });
+  }, [dados, ordenacaoAtual]);
 
   const resumoVendas = useMemo(() => linhasVendas.reduce((resumo: any, venda: any) => ({
     quantidade: resumo.quantidade + 1,
@@ -187,8 +262,17 @@ export function RelatoriosView() {
       if (!atual.ultimaCompra || item.data > atual.ultimaCompra) atual.ultimaCompra = item.data;
       mapa.set(item.fornecedorId, atual);
     }
-    return [...mapa.values()].map((item) => ({ ...item, quantidadeCompras: item.compras.size, totalComprado: [...item.compras.values()].reduce((a: number, b: number) => a + b, 0), quantidadeProdutos: item.produtos.size })).sort((a, b) => b.totalComprado - a.totalComprado);
-  }, [dados]);
+    return [...mapa.values()].map((item) => ({ ...item, quantidadeCompras: item.compras.size, totalComprado: [...item.compras.values()].reduce((a: number, b: number) => a + b, 0), quantidadeProdutos: item.produtos.size })).sort((a, b) => {
+      if (ordenacaoAtual === "valor_asc") return compararNumero(a.totalComprado, b.totalComprado) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+      if (ordenacaoAtual === "nome_asc") return compararTexto(a.fornecedorNome, b.fornecedorNome);
+      if (ordenacaoAtual === "nome_desc") return compararTexto(b.fornecedorNome, a.fornecedorNome);
+      if (ordenacaoAtual === "quantidade_desc") return compararNumero(b.quantidadeCompras, a.quantidadeCompras) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+      if (ordenacaoAtual === "produtos_desc") return compararNumero(b.quantidadeProdutos, a.quantidadeProdutos) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+      if (ordenacaoAtual === "data_desc") return compararTexto(b.ultimaCompra, a.ultimaCompra) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+      if (ordenacaoAtual === "data_asc") return compararTexto(a.ultimaCompra, b.ultimaCompra) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+      return compararNumero(b.totalComprado, a.totalComprado) || compararTexto(a.fornecedorNome, b.fornecedorNome);
+    });
+  }, [dados, ordenacaoAtual]);
 
   const analiseCliente = useMemo(() => {
     const itens = clienteId ? (dados?.itensVendidos || []) : [];
@@ -223,13 +307,63 @@ export function RelatoriosView() {
       lucro: valorLiquido - custo,
     };
   }, [dados]);
-  const itensCategoriaCliente = categoriaCliente === "metros" ? analiseCliente.itensMetros : analiseCliente.itensUnidades;
-  const chaveProgressiva = `${aba}:${dataInicio}:${dataFim}:${clienteId}:${fornecedorId}:${produtoId}:${formaPagamento}:${valeStatus}:${vencimentoInicio}:${vencimentoFim}`;
-  const produtosProgressivos = useListaProgressiva<any>(geral?.produtos || [], `${chaveProgressiva}:produtos`, 20);
+  const itensClienteOrdenados = useMemo(() => [...analiseCliente.itens].sort((a: any, b: any) => {
+    const ordenacao = ordenacoes.clientes;
+    const lucroA = Number(a.valorVendaLiquido || 0) - Number(a.custoTotal || 0);
+    const lucroB = Number(b.valorVendaLiquido || 0) - Number(b.custoTotal || 0);
+    if (ordenacao === "data_asc") return compararTexto(a.data, b.data) || compararNumero(a.numeroSequencial, b.numeroSequencial);
+    if (ordenacao === "nome_asc") return compararTexto(a.descricao, b.descricao) || compararTexto(b.data, a.data);
+    if (ordenacao === "nome_desc") return compararTexto(b.descricao, a.descricao) || compararTexto(b.data, a.data);
+    if (ordenacao === "quantidade_desc") return compararNumero(b.quantidade, a.quantidade) || compararTexto(b.data, a.data);
+    if (ordenacao === "quantidade_asc") return compararNumero(a.quantidade, b.quantidade) || compararTexto(b.data, a.data);
+    if (ordenacao === "valor_desc") return compararNumero(b.precoUnitario, a.precoUnitario) || compararTexto(b.data, a.data);
+    if (ordenacao === "valor_asc") return compararNumero(a.precoUnitario, b.precoUnitario) || compararTexto(b.data, a.data);
+    if (ordenacao === "lucro_desc") return compararNumero(lucroB, lucroA) || compararTexto(b.data, a.data);
+    return compararTexto(b.data, a.data) || compararNumero(b.numeroSequencial, a.numeroSequencial);
+  }), [analiseCliente.itens, ordenacoes.clientes]);
+  const itensCategoriaCliente = itensClienteOrdenados.filter((item: any) => categoriaCliente === "metros" ? ehItemEmMetros(item) : !ehItemEmMetros(item));
+
+  const materiaisClienteOrdenados = useMemo(() => [...(clienteId ? dados?.materiaisPorCliente || [] : [])].sort((a: any, b: any) => {
+    const ordenacao = ordenacoes.materiais_cliente;
+    if (ordenacao === "quantidade_asc") return compararNumero(a.totalQuantidade, b.totalQuantidade) || compararTexto(a.produtoNome, b.produtoNome);
+    if (ordenacao === "nome_asc") return compararTexto(a.produtoNome, b.produtoNome) || compararTexto(a.unidade, b.unidade);
+    if (ordenacao === "nome_desc") return compararTexto(b.produtoNome, a.produtoNome) || compararTexto(a.unidade, b.unidade);
+    if (ordenacao === "codigo_asc") return compararTexto(a.produtoCodigo, b.produtoCodigo) || compararTexto(a.produtoNome, b.produtoNome);
+    if (ordenacao === "fornecedor_asc") return compararTexto(a.fornecedorNome || "Fornecedor não identificado", b.fornecedorNome || "Fornecedor não identificado") || compararTexto(a.produtoNome, b.produtoNome);
+    if (ordenacao === "vendas_desc") return compararNumero(b.totalVendas, a.totalVendas) || compararTexto(a.produtoNome, b.produtoNome);
+    if (ordenacao === "data_desc") return compararTexto(b.ultimaCompra, a.ultimaCompra) || compararTexto(a.produtoNome, b.produtoNome);
+    if (ordenacao === "valor_desc") return compararNumero(b.totalValor, a.totalValor) || compararTexto(a.produtoNome, b.produtoNome);
+    return compararNumero(b.totalQuantidade, a.totalQuantidade) || compararTexto(a.produtoNome, b.produtoNome);
+  }), [clienteId, dados, ordenacoes.materiais_cliente]);
+  const resumoMateriaisCliente = useMemo(() => ({
+    materiais: new Set(materiaisClienteOrdenados.map((item: any) => item.produtoId)).size,
+    grupos: materiaisClienteOrdenados.length,
+    metros: materiaisClienteOrdenados.filter(ehItemEmMetros).reduce((total: number, item: any) => total + Number(item.totalQuantidade || 0), 0),
+    unidades: materiaisClienteOrdenados.filter((item: any) => !ehItemEmMetros(item)).reduce((total: number, item: any) => total + Number(item.totalQuantidade || 0), 0),
+    valor: materiaisClienteOrdenados.reduce((total: number, item: any) => total + Number(item.totalValor || 0), 0),
+  }), [materiaisClienteOrdenados]);
+
+  const valesOrdenados = useMemo(() => [...(dados?.vales || [])].sort((a: any, b: any) => {
+    const ordenacao = ordenacoes.vales;
+    if (ordenacao === "vencimento_desc") return compararTexto(b.vencimento, a.vencimento) || compararTexto(b.data, a.data);
+    if (ordenacao === "emissao_desc") return compararTexto(b.data, a.data) || compararNumero(b.numeroSequencial, a.numeroSequencial);
+    if (ordenacao === "emissao_asc") return compararTexto(a.data, b.data) || compararNumero(a.numeroSequencial, b.numeroSequencial);
+    if (ordenacao === "cliente_asc") return compararTexto(a.clienteNome, b.clienteNome) || compararTexto(a.vencimento, b.vencimento);
+    if (ordenacao === "cliente_desc") return compararTexto(b.clienteNome, a.clienteNome) || compararTexto(a.vencimento, b.vencimento);
+    if (ordenacao === "valor_desc") return compararNumero(b.totalLiquido, a.totalLiquido) || compararTexto(a.vencimento, b.vencimento);
+    if (ordenacao === "saldo_desc") return compararNumero(b.saldoRestante, a.saldoRestante) || compararTexto(a.vencimento, b.vencimento);
+    if (ordenacao === "pago_desc") return compararNumero(b.valorPago, a.valorPago) || compararTexto(a.vencimento, b.vencimento);
+    if (ordenacao === "atraso_desc") return compararNumero(b.diasAtraso, a.diasAtraso) || compararTexto(a.vencimento, b.vencimento);
+    return compararTexto(a.vencimento, b.vencimento) || compararTexto(b.data, a.data);
+  }), [dados, ordenacoes.vales]);
+
+  const chaveProgressiva = `${aba}:${dataInicio}:${dataFim}:${clienteId}:${fornecedorId}:${produtoId}:${formaPagamento}:${valeStatus}:${vencimentoInicio}:${vencimentoFim}:${ordenacaoAtual}`;
+  const produtosProgressivos = useListaProgressiva<any>(produtosGeraisOrdenados, `${chaveProgressiva}:produtos`, 20);
   const vendasPaginadas = paginate<any>(linhasVendas, paginaVendas, VENDAS_POR_PAGINA);
   const clienteProgressivo = useListaProgressiva<any>(itensCategoriaCliente, `${chaveProgressiva}:cliente:${categoriaCliente}`, 40);
+  const materiaisProgressivos = useListaProgressiva<any>(materiaisClienteOrdenados, `${chaveProgressiva}:materiais-cliente`, 30);
   const fornecedoresProgressivos = useListaProgressiva<any>(linhasFornecedores, `${chaveProgressiva}:fornecedores`, 30);
-  const valesProgressivos = useListaProgressiva<Venda>(dados?.vales || [], `${chaveProgressiva}:vales`, 30);
+  const valesProgressivos = useListaProgressiva<Venda>(valesOrdenados, `${chaveProgressiva}:vales`, 30);
 
   const desbloquearAnaliseCliente = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -272,7 +406,7 @@ export function RelatoriosView() {
       csv += dadosClienteLiberados
         ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE;FORNECEDOR\n"
         : "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO\n";
-      analiseCliente.itens.forEach((item: any) => {
+      itensClienteOrdenados.forEach((item: any) => {
         const lucro = Number(item.valorVendaLiquido) - Number(item.custoTotal);
         const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
         csv += dadosClienteLiberados
@@ -280,14 +414,19 @@ export function RelatoriosView() {
           : `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario}\n`;
       });
       csv += `\nTOTAL DE VENDAS;${analiseCliente.totalVendas}\nITENS DE VENDA;${analiseCliente.totalItensVenda}\nMETROS VENDIDOS;${analiseCliente.quantidadeMetros}\nUNIDADES / OUTROS;${analiseCliente.quantidadeUnidades}\nVALOR BRUTO;${analiseCliente.valorBruto}\nDESCONTO;${analiseCliente.desconto}\nVALOR LÍQUIDO;${analiseCliente.valorLiquido}\n`;
+    } else if (aba === "materiais_cliente") {
+      csv += "CLIENTE;CÓD. PRODUTO;PRODUTO;FORNECEDOR;QUANTIDADE;UNIDADE;VENDAS;ÚLTIMA COMPRA;VALOR COMPRADO\n";
+      materiaisClienteOrdenados.forEach((item: any) => {
+        csv += `${csvCelula(item.clienteNome)};${csvCelula(item.produtoCodigo)};${csvCelula(item.produtoNome)};${csvCelula(item.fornecedorNome || "Fornecedor não identificado")};${item.totalQuantidade};${csvCelula(item.unidade)};${item.totalVendas};${item.ultimaCompra};${item.totalValor}\n`;
+      });
     } else if (aba === "fornecedores") {
       csv += "FORNECEDOR;TELEFONE;COMPRAS;TOTAL COMPRADO;PRODUTOS;ÚLTIMA COMPRA\n";
       linhasFornecedores.forEach((item: any) => { csv += `${csvCelula(item.fornecedorNome)};${csvCelula(item.telefone)};${item.quantidadeCompras};${item.totalComprado};${item.quantidadeProdutos};${item.ultimaCompra}\n`; });
     } else if (aba === "vales") {
       csv += "DOCUMENTO;CLIENTE;EMISSÃO;VENCIMENTO;TOTAL;PAGO;SALDO;SITUAÇÃO;DIAS EM ATRASO\n";
-      (dados.vales || []).forEach((item: any) => { csv += `${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.data};${item.vencimento};${item.totalLiquido};${item.valorPago};${item.saldoRestante};${item.status};${item.diasAtraso}\n`; });
+      valesOrdenados.forEach((item: any) => { csv += `${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.data};${item.vencimento};${item.totalLiquido};${item.valorPago};${item.saldoRestante};${item.status};${item.diasAtraso}\n`; });
       csv += "\nITENS DOS VALES\nDOCUMENTO;CLIENTE;REFERÊNCIA;MATERIAL;QUANTIDADE;UNIDADE;PREÇO UNITÁRIO;TOTAL DO ITEM\n";
-      (dados.vales || []).forEach((vale: any) => {
+      valesOrdenados.forEach((vale: any) => {
         (vale.items || []).forEach((item: any) => {
           csv += `${vale.numeroSequencial};${csvCelula(vale.clienteNome)};${csvCelula(item.referencia)};${csvCelula(item.descricao)};${item.quantidade};${csvCelula(item.unidade)};${item.precoUnitario};${item.total}\n`;
         });
@@ -295,6 +434,8 @@ export function RelatoriosView() {
     } else {
       csv += "MÉTRICA;VALOR\n";
       csv += `FATURAMENTO;${geral?.faturamento || 0}\nRECEBIDO;${geral?.recebido || 0}\nCUSTO;${geral?.custo || 0}\nLUCRO;${geral?.lucro || 0}\nMARGEM;${geral?.margem || 0}\n`;
+      csv += "\nMATERIAIS\nMATERIAL;QUANTIDADE;UNIDADE;VENDAS;RECEITA;CUSTO;LUCRO\n";
+      produtosGeraisOrdenados.forEach((item: any) => { csv += `${csvCelula(item.descricao)};${item.totalQuantidade};${csvCelula(item.unidade)};${item.totalVendas};${item.totalValor};${item.totalCusto};${item.totalLucro}\n`; });
     }
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -332,22 +473,23 @@ export function RelatoriosView() {
       </div>
 
       <div className="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-300 bg-white p-1.5 shadow-sm sm:flex print:hidden">
-        {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${(id === "vendas" ? aba === "vendas" || aba === "clientes" : aba === id) ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
+        {([['geral', TrendingUp, 'Visão geral'], ['vendas', ShoppingCart, 'Vendas'], ['fornecedores', Truck, 'Fornecedores'], ['vales', HandCoins, 'Vales']] as const).map(([id, Icone, nome]) => <button key={id} data-testid={`relatorio-aba-${id}`} onClick={() => { setAba(id); setClienteId(""); setFornecedorId(""); setProdutoId(""); }} className={`module-tab justify-center whitespace-nowrap uppercase ${(id === "vendas" ? aba === "vendas" || aba === "clientes" || aba === "materiais_cliente" : aba === id) ? "module-tab-active" : ""}`}><Icone size={17} />{nome}</button>)}
       </div>
 
-      {(aba === "vendas" || aba === "clientes") && <div className="grid grid-cols-2 gap-1 rounded-xl border border-blue-200 bg-blue-50 p-1 print:hidden"><button type="button" data-testid="relatorio-subaba-vendas" onClick={() => { setAba("vendas"); setClienteId(""); }} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${aba === "vendas" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Vendas</button><button type="button" data-testid="relatorio-subaba-itens-cliente" onClick={() => { setAba("clientes"); setClienteId(""); }} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${aba === "clientes" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}><Users size={15} className="mr-1.5 inline" />Itens por cliente</button></div>}
+      {(aba === "vendas" || aba === "clientes" || aba === "materiais_cliente") && <div className="grid grid-cols-3 gap-1 rounded-xl border border-blue-200 bg-blue-50 p-1 print:hidden"><button type="button" data-testid="relatorio-subaba-vendas" onClick={() => setAba("vendas")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "vendas" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Vendas</button><button type="button" data-testid="relatorio-subaba-itens-cliente" onClick={() => setAba("clientes")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "clientes" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}><Users size={15} className="mr-1.5 hidden sm:inline" />Itens por cliente</button><button type="button" data-testid="relatorio-subaba-materiais-cliente" onClick={() => setAba("materiais_cliente")} className={`rounded-lg px-2 py-2 text-[10px] font-black uppercase sm:px-3 sm:text-xs ${aba === "materiais_cliente" ? "bg-blue-700 text-white shadow-sm" : "bg-white text-slate-700"}`}>Materiais por cliente</button></div>}
 
       <div className="space-y-2 rounded-xl border border-slate-300 bg-white p-3 shadow-sm print:hidden">
         <div className="flex flex-wrap items-end gap-2">
           <label className="w-[calc(50%-0.25rem)] min-w-0 text-xs font-black text-slate-700 md:w-auto">EMISSÃO DE<input data-testid="relatorio-data-inicio" type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
           <label className="w-[calc(50%-0.25rem)] min-w-0 text-xs font-black text-slate-700 md:w-auto">ATÉ<input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} className="mt-1 block min-h-11 w-full min-w-0 rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950" /></label>
           {aba === "geral" && <label className="w-full text-xs font-black text-slate-700 md:w-56">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODAS</option><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option></select></label>}
+          <label className="w-full text-xs font-black text-slate-700 md:w-60">ORDENAR POR<select data-testid="relatorio-ordenacao" value={ordenacaoAtual} onChange={(e) => setOrdenacoes((atuais) => ({ ...atuais, [aba]: e.target.value }))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold">{ORDENACOES_RELATORIO[aba].filter((opcao) => aba !== "clientes" || dadosClienteLiberados || !opcao.administrativo).map((opcao) => <option key={opcao.value} value={opcao.value}>{opcao.label.toUpperCase()}</option>)}</select></label>
           <div className="flex flex-wrap gap-2"><button onClick={() => periodoRapido(7)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">7 DIAS</button><button onClick={() => periodoRapido(30)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">30 DIAS</button><button onClick={() => periodoRapido(90)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-black">90 DIAS</button></div>
           <button onClick={carregar} aria-label="Atualizar relatório" className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[10px] font-bold uppercase text-slate-400 hover:border-slate-300 hover:text-slate-600"><RefreshCw size={15} />Atualizar</button>
         </div>
 
         {aba === "vendas" && <div className="grid gap-2 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vendas-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
-        {aba === "clientes" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-filtro-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
+        {(aba === "clientes" || aba === "materiais_cliente") && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid={aba === "clientes" ? "relatorio-filtro-cliente" : "relatorio-filtro-materiais-cliente"} value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">SELECIONE UM CLIENTE</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "fornecedores" && <div className="grid gap-3 md:grid-cols-2"><label className="text-xs font-black text-slate-700">FORNECEDOR<select data-testid="relatorio-filtro-fornecedor" value={fornecedorId} onChange={(e) => setFornecedorId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS FORNECEDORES</option>{fornecedores.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">PRODUTO / MATERIAL<select value={produtoId} onChange={(e) => setProdutoId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS PRODUTOS</option>{produtos.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label></div>}
         {aba === "vales" && <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><label className="text-xs font-black text-slate-700">CLIENTE<select data-testid="relatorio-vale-cliente" value={clienteId} onChange={(e) => setClienteId(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="">TODOS OS CLIENTES</option>{clientes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></label><label className="text-xs font-black text-slate-700">SITUAÇÃO<select data-testid="relatorio-vale-status" value={valeStatus} onChange={(e) => setValeStatus(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold"><option value="todos">TODOS</option><option value="abertos">EM ABERTO</option><option value="vencidos">VENCIDOS</option><option value="a_vencer">A VENCER</option><option value="quitados">QUITADOS</option></select></label><label className="text-xs font-black text-slate-700">VENCIMENTO DE<input type="date" value={vencimentoInicio} onChange={(e) => setVencimentoInicio(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label><label className="text-xs font-black text-slate-700">VENCIMENTO ATÉ<input type="date" value={vencimentoFim} onChange={(e) => setVencimentoFim(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold" /></label></div>}
       </div>
@@ -424,7 +566,7 @@ export function RelatoriosView() {
               <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
                 <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div><h3 className="font-black text-slate-950">Itens vendidos para o cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">{formatDate(dataInicio)} até {formatDate(dataFim)}</p></div>
-                  {dadosClienteLiberados ? <button type="button" onClick={() => setDadosClienteLiberados(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black uppercase text-emerald-800"><Unlock size={15} /> Custo visível</button> : <button type="button" onClick={() => { setPin(""); setPinErro(""); setPinOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Lock size={15} /> Custo</button>}
+                  {dadosClienteLiberados ? <button type="button" onClick={() => { setDadosClienteLiberados(false); if (ordenacoes.clientes === "lucro_desc") setOrdenacoes((atuais) => ({ ...atuais, clientes: ORDENACAO_PADRAO.clientes })); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-black uppercase text-emerald-800"><Unlock size={15} /> Custo visível</button> : <button type="button" onClick={() => { setPin(""); setPinErro(""); setPinOpen(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-black uppercase text-white"><Lock size={15} /> Custo</button>}
                 </div>
                 <div className="grid grid-cols-2 gap-1 border-b border-slate-200 bg-white p-2 print:hidden"><button type="button" onClick={() => setCategoriaCliente("metros")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "metros" ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700"}`}>Vendidos em metros ({analiseCliente.itensMetros.length})</button><button type="button" onClick={() => setCategoriaCliente("unidades")} className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${categoriaCliente === "unidades" ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-700"}`}>Unidades / outros ({analiseCliente.itensUnidades.length})</button></div>
                 <TabelaItensCliente linhas={clienteProgressivo.itensVisiveis} liberado={dadosClienteLiberados} />
@@ -438,6 +580,28 @@ export function RelatoriosView() {
                 <div><h4 className="text-[11px] font-black uppercase text-blue-950">Resumo geral do cliente</h4><p className="text-[10px] font-bold text-blue-700">Histórico completo, sem limitar pelo período.</p></div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"><CardResumo titulo="Valor líquido" valor={formatCurrency(resumoClienteGeral.valorLiquido)} destaque="text-blue-800" />{dadosClienteLiberados && <><CardResumo titulo="Custo" valor={formatCurrency(resumoClienteGeral.custo)} /><CardResumo titulo="Lucro" valor={formatCurrency(resumoClienteGeral.lucro)} destaque={resumoClienteGeral.lucro >= 0 ? "text-emerald-800" : "text-red-800"} /></>}<CardResumo titulo="Vendas" valor={String(resumoClienteGeral.totalVendas)} /><CardResumo titulo="Itens de venda" valor={String(resumoClienteGeral.totalItensVenda)} /><CardResumo titulo="Metros" valor={`${formatDecimal(resumoClienteGeral.quantidadeMetros)} m`} destaque="text-amber-800" /><CardResumo titulo="Unidades / outros" valor={`${formatDecimal(resumoClienteGeral.quantidadeUnidades)} un`} destaque="text-violet-800" /></div>
               </section>
+            </>
+          )}
+        </div>}
+
+        {aba === "materiais_cliente" && <div className="space-y-4">
+          {!clienteId ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center"><Users size={34} className="mx-auto text-slate-300" /><p className="mt-3 font-black text-slate-700">Selecione um cliente para ver os materiais que ele mais leva.</p></div>
+          ) : (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <Card titulo="MATERIAIS DISTINTOS" valor={String(resumoMateriaisCliente.materiais)} />
+                <Card titulo="VENDAS NO PERÍODO" valor={String(analiseCliente.totalVendas)} />
+                <Card titulo="METROS" valor={`${formatDecimal(resumoMateriaisCliente.metros)} m`} destaque="text-amber-800" />
+                <Card titulo="UNIDADES / OUTROS" valor={formatDecimal(resumoMateriaisCliente.unidades)} destaque="text-violet-800" />
+                <Card titulo="VALOR COMPRADO" valor={formatCurrency(resumoMateriaisCliente.valor)} destaque="text-blue-800" />
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
+                <div className="border-b border-slate-200 bg-slate-50 p-4"><h3 className="font-black text-slate-950">Materiais mais levados pelo cliente</h3><p className="mt-1 text-xs font-bold text-slate-500">Quantidades líquidas, já descontando devoluções, de {formatDate(dataInicio)} até {formatDate(dataFim)}. Materiais com unidades diferentes permanecem em linhas separadas.</p></div>
+                <TabelaMateriaisCliente linhas={materiaisProgressivos.itensVisiveis} />
+                <MarcadorListaProgressiva {...materiaisProgressivos} />
+              </div>
+              {resumoMateriaisCliente.grupos > resumoMateriaisCliente.materiais && <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold text-blue-800">Um mesmo material pode aparecer em mais de uma linha quando há unidades ou fornecedores históricos diferentes. Isso evita somar medidas incompatíveis ou atribuir uma venda ao fornecedor errado.</p>}
             </>
           )}
         </div>}
@@ -472,6 +636,13 @@ function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boo
 
 function TabelaFornecedores({ linhas }: { linhas: any[] }) {
   return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm"><thead className="bg-slate-100 text-xs font-black"><tr><th className="p-3 text-left">FORNECEDOR</th><th className="p-3 text-left">TELEFONE</th><th className="p-3 text-right">COMPRAS</th><th className="p-3 text-right">PRODUTOS</th><th className="p-3 text-right">TOTAL COMPRADO</th><th className="p-3 text-right">ÚLTIMA COMPRA</th></tr></thead><tbody className="divide-y">{linhas.length ? linhas.map((item) => <tr key={item.fornecedorId}><td className="p-3 font-black">{item.fornecedorNome}</td><td className="p-3 font-bold text-slate-600">{item.telefone || "—"}</td><td className="p-3 text-right">{item.quantidadeCompras}</td><td className="p-3 text-right">{item.quantidadeProdutos}</td><td className="p-3 text-right font-black text-blue-800">{formatCurrency(item.totalComprado)}</td><td className="p-3 text-right">{formatDate(item.ultimaCompra)}</td></tr>) : <tr><td colSpan={6} className="p-10 text-center font-bold text-slate-500">NENHUMA COMPRA DE FORNECEDOR NESTE FILTRO.</td></tr>}</tbody></table></div>;
+}
+
+function TabelaMateriaisCliente({ linhas }: { linhas: any[] }) {
+  return <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-sm">
+    <thead className="bg-white text-xs font-black uppercase text-slate-500"><tr><th className="w-14 p-3 text-center">#</th><th className="p-3 text-left">Código</th><th className="p-3 text-left">Produto / material</th><th className="p-3 text-left">Fornecedor</th><th className="p-3 text-right">Quantidade</th><th className="p-3 text-left">Unidade</th><th className="p-3 text-right">Vendas</th><th className="p-3 text-right">Última compra</th><th className="p-3 text-right">Valor comprado</th></tr></thead>
+    <tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item, index) => <tr key={`${item.clienteId}-${item.produtoId}-${item.fornecedorNome || "sem-fornecedor"}-${item.unidade}`} className={index < 3 ? "bg-amber-50/60" : "hover:bg-slate-50"}><td className="p-3 text-center"><span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-amber-500 text-xs font-black text-slate-950">{index + 1}</span></td><td className="whitespace-nowrap p-3 font-mono font-black">{item.produtoCodigo || "—"}</td><td className="p-3 font-black text-slate-950">{item.produtoNome}</td><td className="p-3 font-bold text-slate-600">{item.fornecedorNome || "Fornecedor não identificado"}</td><td className="whitespace-nowrap p-3 text-right font-mono font-black text-amber-900">{formatDecimal(Number(item.totalQuantidade))}</td><td className="p-3 font-bold uppercase text-slate-600">{item.unidade || "—"}</td><td className="p-3 text-right font-black">{item.totalVendas}</td><td className="whitespace-nowrap p-3 text-right">{formatDate(item.ultimaCompra)}</td><td className="whitespace-nowrap p-3 text-right font-black text-blue-800">{formatCurrency(item.totalValor)}</td></tr>) : <tr><td colSpan={9} className="p-12 text-center font-bold text-slate-500">Nenhum material vendido para este cliente no período.</td></tr>}</tbody>
+  </table></div>;
 }
 
 function TabelaVales({ linhas, onDetalhes }: { linhas: Venda[]; onDetalhes: (vale: Venda) => void }) {

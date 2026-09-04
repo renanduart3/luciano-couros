@@ -337,6 +337,14 @@ export interface PagamentoGerenciavel {
   motivoStatus?: string;
   observacao?: string;
   titulos: TituloRecebimento[];
+  parcelasOrdem?: Array<{
+    id: string;
+    ordemId: string;
+    numeroSequencial: number;
+    numero: number;
+    totalParcelas: number;
+    valor: number;
+  }>;
   createdAt: string;
   updatedAt: string;
   alocacoes: Array<{

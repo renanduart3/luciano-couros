@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.27.0 — 2026-09-04
+
+- Ordens de cobrança abertas passam a permitir alterar vencimentos e valores, adicionar parcelas e remover parcelas ainda sem recebimento.
+- O editor oferece redistribuição automática dos valores e exige que a soma permaneça igual ao total negociado.
+- Parcelas que já receberam pagamentos ficam bloqueadas contra remoção ou alteração, preservando referências, comprovantes e histórico financeiro.
+- Alterações concorrentes são detectadas antes de salvar e cada mudança do parcelamento fica registrada na auditoria.
+
 ## 1.26.0 — 2026-09-04
 
 - Ordens de cobrança passam a manter um demonstrativo reabrível com CPF/CNPJ, telefone, vales vinculados e situação atual de cada parcela.

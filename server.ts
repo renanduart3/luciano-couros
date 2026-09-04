@@ -699,7 +699,7 @@ function recalcularOrdemCobranca(ordemId: string) {
     );
   }
 
-  const parcelas = queryAll<any>("SELECT * FROM ordem_cobranca_parcelas WHERE ordemId = ?", [ordemId]);
+  const parcelas = queryAll<any>("SELECT * FROM ordem_cobranca_parcelas WHERE ordemId = ? AND deletedAt IS NULL", [ordemId]);
   for (const parcela of parcelas) {
     const recebido = queryOne<{ total: number }>(
       `SELECT COALESCE(SUM(valor), 0) AS total
@@ -761,7 +761,7 @@ function aplicarRecebimentoEmOrdens(recebimentoId: string, alocacoes: Array<{ ve
     let restante = total;
     const parcelas = queryAll<any>(
       `SELECT * FROM ordem_cobranca_parcelas
-       WHERE ordemId = ? AND saldo > 0.005
+       WHERE ordemId = ? AND deletedAt IS NULL AND saldo > 0.005
        ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END, vencimento ASC, numero ASC`,
       [ordemId, parcelaPreferidaId || ""]
     );
@@ -791,7 +791,7 @@ function validarPagamentoExclusivoParcela(
     `SELECT ocp.id, ocp.numero, ocp.saldo, ocp.ordemId, oc.numeroSequencial, oc.status
      FROM ordem_cobranca_parcelas ocp
      JOIN ordens_cobranca oc ON oc.id = ocp.ordemId
-     WHERE ocp.id = ? AND oc.clienteId = ? AND oc.deletedAt IS NULL`,
+     WHERE ocp.id = ? AND ocp.deletedAt IS NULL AND oc.clienteId = ? AND oc.deletedAt IS NULL`,
     [parcelaId, clienteId]
   );
   if (!parcela || (parcela.status !== "aberta" && !(permitirOrdemQuitada && parcela.status === "quitada"))) {
@@ -4212,7 +4212,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
                 LIMIT 1
               ) AS ultimoPagamentoValor
        FROM ordem_cobranca_parcelas ocp
-       WHERE ocp.ordemId = ?
+       WHERE ocp.ordemId = ? AND ocp.deletedAt IS NULL
        ORDER BY ocp.vencimento ASC, ocp.numero ASC`,
       [ordem.id]
     );
@@ -4222,7 +4222,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
        FROM ordem_cobranca_parcela_recebimentos ocpr
        JOIN ordem_cobranca_parcelas ocp ON ocp.id = ocpr.parcelaId
        JOIN recebimentos_cliente rc ON rc.id = ocpr.recebimentoId
-       WHERE ocpr.ordemId = ?
+       WHERE ocpr.ordemId = ? AND ocp.deletedAt IS NULL
        ORDER BY rc.data ASC, rc.createdAt ASC, ocp.numero ASC`,
       [ordem.id]
     ).flatMap((evento) => {
@@ -4463,7 +4463,7 @@ app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
         `SELECT ocp.*,
                 COALESCE((SELECT SUM(valor) FROM ordem_cobranca_parcela_recebimentos ocpr
                           WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL), 0) AS recebido
-         FROM ordem_cobranca_parcelas ocp WHERE ocp.ordemId = ?
+         FROM ordem_cobranca_parcelas ocp WHERE ocp.ordemId = ? AND ocp.deletedAt IS NULL
          ORDER BY ocp.numero ASC`,
         [ordem.id]
       );
@@ -4495,6 +4495,96 @@ app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
   }
 });
 
+app.put("/api/ordens-cobranca/:id/parcelas", (req, res) => {
+  try {
+    const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status = 'aberta' AND deletedAt IS NULL", [req.params.id]);
+    if (!ordem) throw erroHttp("A ordem não está aberta ou não foi encontrada.", 404);
+    if (!req.body?.updatedAt || String(req.body.updatedAt) !== String(ordem.updatedAt)) {
+      throw erroHttp("Esta ordem foi alterada em outra tela. Feche os detalhes, abra novamente e repita a alteração.", 409);
+    }
+
+    const atuais = queryAll<any>(
+      `SELECT ocp.*,
+              COALESCE((SELECT SUM(valor) FROM ordem_cobranca_parcela_recebimentos ocpr
+                        WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL), 0) AS recebido
+       FROM ordem_cobranca_parcelas ocp
+       WHERE ocp.ordemId = ? AND ocp.deletedAt IS NULL
+       ORDER BY ocp.numero ASC`,
+      [ordem.id]
+    );
+    const porId = new Map(atuais.map((parcela) => [String(parcela.id), parcela]));
+    const parcelas = (Array.isArray(req.body?.parcelas) ? req.body.parcelas : []).map((item: any) => ({
+      id: item?.id ? String(item.id) : undefined,
+      vencimento: String(item?.vencimento || ""),
+      valor: Math.round(Number(item?.valor || 0) * 100) / 100,
+    }));
+    if (parcelas.length < 1 || parcelas.length > 36 || parcelas.some((item: any) => !ehDataIsoValida(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
+      throw erroHttp("Informe entre 1 e 36 parcelas, todas com data e valor maior que zero.", 400);
+    }
+    if (parcelas.some((item: any, index: number) => index > 0 && item.vencimento < parcelas[index - 1].vencimento)) {
+      throw erroHttp("Os vencimentos precisam estar em ordem crescente.", 400);
+    }
+    const idsInformados = parcelas.flatMap((item: any) => item.id ? [item.id] : []);
+    if (new Set(idsInformados).size !== idsInformados.length || idsInformados.some((id: string) => !porId.has(id))) {
+      throw erroHttp("Uma das parcelas informadas não pertence mais a esta ordem.", 409);
+    }
+    const totalParcelas = Math.round(parcelas.reduce((total: number, item: any) => total + item.valor, 0) * 100) / 100;
+    if (Math.abs(totalParcelas - Number(ordem.totalOriginal)) > 0.01) {
+      throw erroHttp(`A soma das parcelas deve ser R$ ${Number(ordem.totalOriginal).toFixed(2).replace(".", ",")}.`, 400);
+    }
+
+    for (const [index, atual] of atuais.entries()) {
+      if (Number(atual.recebido || 0) <= 0.005) continue;
+      const informada = parcelas[index];
+      if (!informada || informada.id !== atual.id || informada.vencimento !== atual.vencimento || Math.abs(informada.valor - Number(atual.valor)) > 0.005) {
+        throw erroHttp(`A parcela ${atual.numero} já possui pagamento e deve permanecer na mesma posição, data e valor.`, 409);
+      }
+    }
+
+    const antes = atuais.map((parcela) => ({ id: parcela.id, numero: Number(parcela.numero), vencimento: parcela.vencimento, valor: Number(parcela.valor) }));
+    runInTransaction(() => {
+      atuais.forEach((parcela, index) => execute(
+        "UPDATE ordem_cobranca_parcelas SET numero = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [-(index + 1), parcela.id]
+      ));
+      const mantidos = new Set(idsInformados);
+      const agora = new Date().toISOString();
+      for (const atual of atuais) {
+        if (!mantidos.has(String(atual.id))) {
+          execute(
+            "UPDATE ordem_cobranca_parcelas SET deletedAt = ?, status = 'renegociada', updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+            [agora, atual.id]
+          );
+        }
+      }
+      parcelas.forEach((parcela: any, index: number) => {
+        if (parcela.id) {
+          execute(
+            "UPDATE ordem_cobranca_parcelas SET numero = ?, vencimento = ?, valor = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND deletedAt IS NULL",
+            [index + 1, parcela.vencimento, parcela.valor, parcela.id]
+          );
+        } else {
+          execute(
+            `INSERT INTO ordem_cobranca_parcelas
+             (id, ordemId, numero, vencimento, valor, valorPago, saldo, status)
+             VALUES (?, ?, ?, ?, ?, 0, ?, 'pendente')`,
+            ["ocp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), ordem.id, index + 1, parcela.vencimento, parcela.valor, parcela.valor]
+          );
+        }
+      });
+      recalcularOrdemCobranca(ordem.id);
+      registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "ordem_cobranca_parcelas_alteradas", "ordem_cobranca", ordem.id, {
+        antes,
+        depois: parcelas.map((parcela: any, index: number) => ({ numero: index + 1, vencimento: parcela.vencimento, valor: parcela.valor })),
+      });
+    });
+
+    res.json(listarOrdensCobranca("AND oc.id = ?", [ordem.id])[0]);
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
 app.post("/api/ordens-cobranca/:id/encerrar", (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
@@ -4509,7 +4599,7 @@ app.post("/api/ordens-cobranca/:id/encerrar", (req, res) => {
         [status, motivo || null, ordem.id]
       );
       execute("UPDATE ordem_cobranca_vales SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ?", [ordem.id]);
-      execute("UPDATE ordem_cobranca_parcelas SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND status = 'pendente'", [status, ordem.id]);
+      execute("UPDATE ordem_cobranca_parcelas SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND deletedAt IS NULL AND status = 'pendente'", [status, ordem.id]);
       registrarAuditoria(administrador.id, "ordem_cobranca_encerrada", "ordem_cobranca", ordem.id, { status, motivo });
     });
     res.json(listarOrdensCobranca("AND oc.id = ?", [ordem.id])[0]);
@@ -4786,12 +4876,12 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
   for (const alocacao of alocacoes) if (!porVale.has(alocacao.vendaId)) porVale.set(alocacao.vendaId, alocacao);
   const parcelasOrdem = queryAll<any>(
     `SELECT ocp.id, ocp.numero, ocp.ordemId, oc.numeroSequencial,
-            (SELECT COUNT(*) FROM ordem_cobranca_parcelas total WHERE total.ordemId = ocp.ordemId) AS totalParcelas,
+            (SELECT COUNT(*) FROM ordem_cobranca_parcelas total WHERE total.ordemId = ocp.ordemId AND total.deletedAt IS NULL) AS totalParcelas,
             SUM(ocpr.valor) AS valor
      FROM ordem_cobranca_parcela_recebimentos ocpr
      JOIN ordem_cobranca_parcelas ocp ON ocp.id = ocpr.parcelaId
      JOIN ordens_cobranca oc ON oc.id = ocp.ordemId
-     WHERE ocpr.recebimentoId = ? AND ocpr.deletedAt IS NULL
+     WHERE ocpr.recebimentoId = ? AND ocpr.deletedAt IS NULL AND ocp.deletedAt IS NULL
      GROUP BY ocp.id, ocp.numero, ocp.ordemId, oc.numeroSequencial
      ORDER BY ocpr.createdAt ASC, ocp.numero ASC`,
     [recebimentoId]
@@ -5173,7 +5263,7 @@ app.put("/api/recebimentos-cliente/:recebimentoId", exigirGerente, (req, res) =>
         `SELECT ocpr.parcelaId, ocp.numero, SUM(ocpr.valor) AS valor
          FROM ordem_cobranca_parcela_recebimentos ocpr
          JOIN ordem_cobranca_parcelas ocp ON ocp.id = ocpr.parcelaId
-         WHERE ocpr.recebimentoId = ? AND ocpr.deletedAt IS NULL
+         WHERE ocpr.recebimentoId = ? AND ocpr.deletedAt IS NULL AND ocp.deletedAt IS NULL
          GROUP BY ocpr.parcelaId, ocp.numero
          ORDER BY ocpr.createdAt ASC, ocp.numero ASC`,
         [recebimentoId]

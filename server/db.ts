@@ -717,6 +717,7 @@ export function initDatabase() {
         valorPago REAL NOT NULL DEFAULT 0,
         saldo REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'pendente',
+        deletedAt TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (ordemId) REFERENCES ordens_cobranca (id)
@@ -851,6 +852,9 @@ export function initDatabase() {
   // Permite retirar e posteriormente recolocar um vale em uma ordem sem apagar
   // o vínculo histórico nem conflitar com o índice único (ordemId, vendaId).
   try { db.prepare(`ALTER TABLE ordem_cobranca_vales ADD COLUMN removidoAt TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE ordem_cobranca_parcelas ADD COLUMN deletedAt TEXT`).run(); } catch (e) {}
+  db.prepare(`DROP INDEX IF EXISTS idx_ordem_cobranca_parcela_numero`).run();
+  db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_ordem_cobranca_parcela_numero ON ordem_cobranca_parcelas (ordemId, numero) WHERE deletedAt IS NULL`).run();
   // Copia os instrumentos da estrutura antiga uma única vez. O campo banco
   // deixa de fazer parte da operação, mas permanece na tabela legada.
   db.prepare(`

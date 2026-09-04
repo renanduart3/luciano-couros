@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, FileText, History, ListChecks, MessageCircle, RefreshCw, Save, ShieldCheck, WalletCards, X } from "lucide-react";
+import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, FileText, History, ListChecks, MessageCircle, Plus, RefreshCw, Save, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
 import { api } from "../lib/api";
 import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
@@ -30,6 +30,15 @@ const statusClass: Record<OrdemCobranca["status"], string> = {
 
 const hojeIso = todayLocalIso;
 const dinheiroInput = (valor: number) => Number(valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const adicionarMeses = (data: string, meses: number) => {
+  const [ano, mes, dia] = data.split("-").map(Number);
+  if (!ano || !mes || !dia) return hojeIso();
+  const indiceMes = mes - 1 + meses;
+  const anoDestino = ano + Math.floor(indiceMes / 12);
+  const mesDestino = ((indiceMes % 12) + 12) % 12;
+  const ultimoDia = new Date(Date.UTC(anoDestino, mesDestino + 1, 0)).getUTCDate();
+  return `${String(anoDestino).padStart(4, "0")}-${String(mesDestino + 1).padStart(2, "0")}-${String(Math.min(dia, ultimoDia)).padStart(2, "0")}`;
+};
 
 function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; onCancel: () => void; onSaved: (ordem: OrdemCobranca) => void }) {
   const [vales, setVales] = useState<Venda[]>([]);
@@ -83,7 +92,67 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   </div>;
 }
 
-function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobranca; onEditarVales: () => void }) {
+function EditarParcelasOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; onCancel: () => void; onSaved: (ordem: OrdemCobranca) => void }) {
+  type ParcelaEditavel = { id?: string; vencimento: string; valor: number; bloqueada: boolean };
+  const [parcelas, setParcelas] = useState<ParcelaEditavel[]>(() => ordem.parcelas.map((parcela) => ({
+    id: parcela.id,
+    vencimento: parcela.vencimento,
+    valor: Number(parcela.valor),
+    bloqueada: Number(parcela.valorPago) > 0.005,
+  })));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const total = Math.round(parcelas.reduce((soma, parcela) => soma + Number(parcela.valor || 0), 0) * 100) / 100;
+  const totalCorreto = Math.abs(total - Number(ordem.totalOriginal)) <= 0.01;
+
+  const redistribuir = (lista: ParcelaEditavel[]) => {
+    const editaveis = lista.filter((parcela) => !parcela.bloqueada);
+    if (editaveis.length === 0) return lista;
+    const fixoCentavos = Math.round(lista.filter((parcela) => parcela.bloqueada).reduce((soma, parcela) => soma + parcela.valor, 0) * 100);
+    const disponivel = Math.max(0, Math.round(Number(ordem.totalOriginal) * 100) - fixoCentavos);
+    const base = Math.floor(disponivel / editaveis.length);
+    let resto = disponivel - base * editaveis.length;
+    return lista.map((parcela) => parcela.bloqueada ? parcela : {
+      ...parcela,
+      valor: (base + (resto-- > 0 ? 1 : 0)) / 100,
+    });
+  };
+
+  const adicionar = () => {
+    if (parcelas.length >= 36) return;
+    const ultimaData = parcelas.at(-1)?.vencimento || hojeIso();
+    setParcelas((atuais) => redistribuir([...atuais, { vencimento: adicionarMeses(ultimaData, 1), valor: 0, bloqueada: false }]));
+    setError("");
+  };
+  const remover = (index: number) => {
+    if (parcelas.length <= 1 || parcelas[index].bloqueada) return;
+    setParcelas((atuais) => redistribuir(atuais.filter((_, posicao) => posicao !== index)));
+    setError("");
+  };
+  const salvar = async () => {
+    setError("");
+    if (parcelas.some((parcela) => !/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0)) return setError("Informe data e valor maior que zero em todas as parcelas.");
+    if (parcelas.some((parcela, index) => index > 0 && parcela.vencimento < parcelas[index - 1].vencimento)) return setError("Mantenha os vencimentos em ordem crescente.");
+    if (!totalCorreto) return setError(`A soma das parcelas deve ser ${formatCurrency(ordem.totalOriginal)}.`);
+    setSaving(true);
+    try {
+      onSaved(await api.updateOrdemCobrancaParcelas(ordem.id, ordem.updatedAt, parcelas.map(({ id, vencimento, valor }) => ({ id, vencimento, valor }))));
+    } catch (err: any) {
+      setError(err.message || "Não foi possível alterar as parcelas desta ordem.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-3">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-900">Editar parcelas da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Altere vencimentos e valores ou adicione e remova parcelas sem pagamento. Parcelas que já receberam valores ficam preservadas.</p></div><div className="text-right"><span className="block text-[9px] font-black uppercase text-blue-700">Soma das parcelas</span><strong className={`font-mono text-lg ${totalCorreto ? "text-emerald-800" : "text-red-700"}`}>{formatCurrency(total)} / {formatCurrency(ordem.totalOriginal)}</strong></div></div>
+    <div className="mt-3 overflow-x-auto rounded-lg border border-blue-200 bg-white"><table className="w-full min-w-[620px] text-xs"><thead className="bg-slate-900 text-[10px] font-black uppercase text-white"><tr><th className="p-2 text-left">Parcela</th><th className="p-2 text-left">Vencimento</th><th className="p-2 text-right">Valor</th><th className="w-28 p-2 text-center">Ação</th></tr></thead><tbody className="divide-y divide-slate-200">{parcelas.map((parcela, index) => <tr key={parcela.id || `nova-${index}`} className={parcela.bloqueada ? "bg-slate-100" : "bg-white"}><td className="p-2 font-black">{index + 1}/{parcelas.length}{parcela.bloqueada && <span className="ml-2 rounded bg-slate-300 px-2 py-1 text-[9px] text-slate-700">COM PAGAMENTO</span>}</td><td className="p-2"><input type="date" disabled={parcela.bloqueada} value={parcela.vencimento} onChange={(event) => setParcelas((atuais) => atuais.map((item, posicao) => posicao === index ? { ...item, vencimento: event.target.value } : item))} className="min-h-9 rounded-lg border border-slate-300 px-2 font-bold disabled:bg-slate-200"/></td><td className="p-2 text-right"><input type="number" min="0.01" step="0.01" disabled={parcela.bloqueada} value={parcela.valor} onChange={(event) => setParcelas((atuais) => atuais.map((item, posicao) => posicao === index ? { ...item, valor: Number(event.target.value) } : item))} className="min-h-9 w-36 rounded-lg border border-slate-300 px-2 text-right font-mono font-black disabled:bg-slate-200"/></td><td className="p-2 text-center"><button type="button" disabled={parcela.bloqueada || parcelas.length <= 1} onClick={() => remover(index)} aria-label={`Remover parcela ${index + 1}`} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-3 text-[10px] font-black uppercase text-red-800 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={13}/> Remover</button></td></tr>)}</tbody></table></div>
+    {error && <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800"><AlertCircle size={15}/>{error}</div>}
+    <div className="mt-3 flex flex-wrap justify-between gap-2"><div className="flex gap-2"><button type="button" disabled={parcelas.length >= 36} onClick={adicionar} className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black uppercase text-blue-800 disabled:opacity-40"><Plus size={15}/> Adicionar parcela</button><button type="button" onClick={() => setParcelas((atuais) => redistribuir(atuais))} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black uppercase text-blue-800">Distribuir valores</button></div><div className="flex gap-2"><button type="button" disabled={saving} onClick={onCancel} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase">Voltar</button><button type="button" disabled={saving || !totalCorreto} onClick={() => void salvar()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40"><Save size={15}/>{saving ? "Salvando..." : "Salvar parcelas"}</button></div></div>
+  </div>;
+}
+
+function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onEditarParcelas }: { ordem: OrdemCobranca; onEditarVales: () => void; onEditarParcelas: () => void }) {
   return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
     <div className="grid gap-3 border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white lg:grid-cols-[1fr_auto] lg:items-center">
       <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
@@ -100,7 +169,7 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobra
         <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total dos vales</strong><strong className="font-mono">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</strong></div>
       </div>
       <div>
-        <div className="flex min-h-11 items-center justify-between border-b border-slate-200 bg-slate-50 px-3"><p className="text-[11px] font-black uppercase text-slate-800">Parcelas</p><span className={`rounded-md px-2 py-1 text-[9px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div>
+        <div className="flex min-h-11 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3"><p className="text-[11px] font-black uppercase text-slate-800">Parcelas</p><div className="flex items-center gap-2"><span className={`rounded-md px-2 py-1 text-[9px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span>{ordem.status === "aberta" && <button type="button" onClick={onEditarParcelas} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-blue-300 bg-white px-2 text-[9px] font-black uppercase text-blue-800"><Edit3 size={12}/> Alterar</button>}</div></div>
         <div className="divide-y divide-slate-100">{ordem.parcelas.map((parcela) => {
           const quitada = parcela.status === "paga" || Number(parcela.saldo) <= 0.005;
           const parcial = !quitada && Number(parcela.valorPago) > 0.005;
@@ -129,6 +198,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
   const [editandoVales, setEditandoVales] = useState(false);
+  const [editandoParcelas, setEditandoParcelas] = useState(false);
   const [demonstrativoAberto, setDemonstrativoAberto] = useState(false);
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
@@ -262,8 +332,9 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
       <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><p className="text-xs font-black text-slate-400">ORDEM DE COBRANÇA</p><h2 className="text-xl font-black">#{ordem.numeroSequencial} · {ordem.clienteNome}</h2><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><div className="mt-2 flex flex-wrap gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black">EMITIDA EM {formatDate(ordem.dataEmissao)}</span>{Number(ordem.saldoBonus) > 0.005 && <span className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-black text-white"><WalletCards size={13}/> BÔNUS {formatCurrency(ordem.saldoBonus)}</span>}</div></div><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-black uppercase text-slate-950"><FileText size={15}/> Demonstrativo</button>{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-[10px] font-black uppercase text-white"><MessageCircle size={15}/> WhatsApp</a>}<button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></div></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales da ordem atualizados e parcelas em aberto recalculadas."); onChanged(atualizada); }}/>
+        : editandoParcelas ? <EditarParcelasOrdem ordem={ordem} onCancel={() => setEditandoParcelas(false)} onSaved={(atualizada) => { setEditandoParcelas(false); setFeedback("Parcelas da ordem atualizadas."); onChanged(atualizada); }}/>
         : (
-          <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
+          <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoParcelas(false); setEditandoVales(true); }} onEditarParcelas={() => { setError(""); setFeedback(""); setEditandoVales(false); setEditandoParcelas(true); }}/>
         )}
 
         <div className="rounded-xl border border-slate-300 bg-white p-2">

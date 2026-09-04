@@ -299,6 +299,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vendaIds })
     }).then(r => handleResponse<OrdemCobranca>(r)),
+  updateOrdemCobrancaParcelas: (id: string, updatedAt: string, parcelas: Array<{ id?: string; vencimento: string; valor: number }>) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/parcelas`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updatedAt, parcelas })
+    }).then(r => handleResponse<OrdemCobranca>(r)),
   encerrarOrdemCobranca: (id: string, dados: { pin: string; status: "renegociada" | "cancelada"; motivo?: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/encerrar`, {
       method: "POST",

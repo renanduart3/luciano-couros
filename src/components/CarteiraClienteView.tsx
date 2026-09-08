@@ -10,6 +10,9 @@ import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./Parcelamen
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
+import { ParcelasCreditoEditor, LinhaCredito } from "./ParcelasCreditoEditor";
+import { sugerirValores } from "../lib/distribuicaoPagamento";
+
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
   clienteInicialId?: string;
@@ -35,6 +38,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const [valorRecebido, setValorRecebido] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("avista_dinheiro");
   const [parcelasCartao, setParcelasCartao] = useState(1);
+  const [credito, setCredito] = useState<LinhaCredito[]>([]);
   const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [observacao, setObservacao] = useState("");
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
@@ -54,6 +58,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
       const dados = await api.getCarteiraCliente(id);
       setCarteira(dados);
       setTitulos([]);
+      setCredito([]);
       setSelecionadas(new Set());
       setValores({});
     } catch (err: any) {
@@ -83,7 +88,8 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const usandoBonus = formaPagamento === "bonus";
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
   const valorReferencia = pagamentoTitulo ? (valorParaDistribuir || totalAplicado) : valorParaDistribuir;
-  const montantePagamento = pagamentoTitulo ? totalTitulos : valorParaDistribuir;
+  const montantePagamento = pagamentoTitulo ? totalTitulos : formaPagamento === "cartao_credito" ? Math.round(credito.reduce((s, l) => s + l.valor, 0) * 100) / 100 : valorParaDistribuir;
+  useEffect(() => { setCredito(ls => sugerirValores(ls.length ? ls : [{ valor: 0 }], valorParaDistribuir)); }, [valorParaDistribuir]);
   const recebido = usandoBonus ? 0 : montantePagamento;
   const bonusUtilizado = usandoBonus ? montantePagamento : 0;
   const bonusGerado = usandoBonus ? 0 : Math.max(0, montantePagamento - totalAplicado);
@@ -151,7 +157,8 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
         valorRecebido: recebido,
         bonusUtilizado,
         formaPagamento,
-        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
+        parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
+        valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito.map(l => l.valor) : undefined,
         observacao: observacao || undefined,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes
@@ -229,7 +236,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
               <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option><option value="bonus">BÔNUS</option></select></label>
             </div>
             <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={valorReferencia} titulos={titulos} onChange={setTitulos} /></div>
-            <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={montantePagamento} className="mt-3 max-w-xs" />
+            {formaPagamento === "cartao_credito" && <ParcelasCreditoEditor linhas={credito} total={valorParaDistribuir} onChange={setCredito}/>}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
@@ -245,7 +252,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-100 p-4"><History size={18} /><h3 className="font-black text-slate-950">HISTÓRICO DA CARTEIRA</h3></div>
-            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-3 p-4"><div className="grid gap-3 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold uppercase text-slate-600">{recebimento.formaPagamento.replaceAll("_", " ")}</p><button type="button" onClick={() => void abrirComprovanteSalvo(recebimento.id)} className="mt-2 inline-flex min-h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 text-[10px] font-black uppercase text-blue-800"><FileText size={13}/>Comprovante</button><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</div>{recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950"><p className="font-black">{titulo.tipo.startsWith("duplicata") ? "BOLETO" : "CHEQUE"} Nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</p><p className="mt-1 text-[10px]">{titulo.nomeTitular} · {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</p>{titulo.observacao && <p className="mt-1 text-[10px] text-slate-700">OBS.: {titulo.observacao}</p>}</div>)}</article>)}</div>}
+            {carteira.recebimentos.length === 0 ? <p className="p-8 text-center font-bold text-slate-500">NENHUM RECEBIMENTO REGISTRADO PELA CARTEIRA.</p> : <div className="divide-y divide-slate-200">{carteira.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-3 p-4"><div className="grid gap-3 lg:grid-cols-[0.7fr_1fr_1.4fr_auto]"><div><p className="text-xs font-black text-slate-500">DATA</p><p className="font-bold text-slate-950">{formatDate(recebimento.data)}</p></div><div><p className="text-xs font-black text-slate-500">RECEBIDO / FORMA</p><p className={`font-black ${recebimento.status === "recusado" ? "text-red-800 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.valorRecebido)}</p><p className="text-xs font-bold uppercase text-slate-600">{recebimento.formaPagamento.replaceAll("_", " ")}</p><button type="button" onClick={() => void abrirComprovanteSalvo(recebimento.id)} className="mt-2 inline-flex min-h-8 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 text-[10px] font-black uppercase text-blue-800"><FileText size={13}/>Comprovante</button><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valoresParcelasCartao={recebimento.valoresParcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.status === "recusado" && <span className="mt-1 inline-block rounded-lg bg-red-100 px-2 py-1 text-[10px] font-black text-red-800">RECUSADO</span>}</div><div><p className="text-xs font-black text-slate-500">VALORES ABATIDOS</p><p className="font-black text-slate-950">{formatCurrency(recebimento.status === "recusado" ? 0 : recebimento.valorAplicado)}</p><p className="text-xs font-bold text-slate-600">{recebimento.alocacoes.map((a) => `#${a.numeroSequencial}: ${formatCurrency(a.valor)}`).join(" • ") || (recebimento.status === "recusado" ? "SALDOS RESTAURADOS" : "SEM DÍVIDAS")}</p></div>{gerente && recebimento.status === "ativo" && <button type="button" onClick={() => estornar(recebimento.id)} className="inline-flex self-center items-center justify-center gap-1 rounded-lg border border-red-300 px-3 py-2 text-xs font-black text-red-800 hover:bg-red-50"><ShieldCheck size={14} />ESTORNAR</button>}</div>{recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-950"><p className="font-black">{titulo.tipo.startsWith("duplicata") ? "BOLETO" : "CHEQUE"} Nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</p><p className="mt-1 text-[10px]">{titulo.nomeTitular} · {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</p>{titulo.observacao && <p className="mt-1 text-[10px] text-slate-700">OBS.: {titulo.observacao}</p>}</div>)}</article>)}</div>}
           </div>
         </form>
       )}

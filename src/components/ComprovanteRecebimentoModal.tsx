@@ -57,7 +57,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
   const forma = comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
   const referencia = comprovante.id.replace(/^rec_/, "").slice(-8).toUpperCase();
   const parcelamento = comprovante.formaPagamento === "cartao_credito"
-    ? descreverParcelamentoCartao(comprovante.valorRecebido, normalizarQuantidadeParcelas(comprovante.parcelasCartao))
+    ? descreverParcelamentoCartao(comprovante.valorRecebido, normalizarQuantidadeParcelas(comprovante.parcelasCartao), comprovante.valoresParcelasCartao)
     : "";
 
   return <div className="fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 sm:p-8">

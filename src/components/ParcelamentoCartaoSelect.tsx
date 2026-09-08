@@ -6,7 +6,8 @@ export function normalizarQuantidadeParcelas(parcelas: number | undefined) {
   return Number.isInteger(quantidade) && quantidade >= 1 && quantidade <= 12 ? quantidade : 1;
 }
 
-export function descreverParcelamentoCartao(valorTotal: number, parcelas: number | undefined) {
+export function descreverParcelamentoCartao(valorTotal: number, parcelas: number | undefined, valores?: number[]) {
+  if (valores?.length) return valores.map((v, i) => `${i + 1}ª ${formatCurrency(v)}`).join(' · ');
   const quantidade = normalizarQuantidadeParcelas(parcelas);
   const totalCentavos = Math.max(0, Math.round(Number(valorTotal || 0) * 100));
   const valorBaseCentavos = Math.floor(totalCentavos / quantidade);
@@ -20,9 +21,10 @@ export function descreverParcelamentoCartao(valorTotal: number, parcelas: number
   return partes.join(" + ");
 }
 
-export function ResumoParcelamentoCartao({ formaPagamento, parcelasCartao, valorTotal, className = "" }: {
+export function ResumoParcelamentoCartao({ formaPagamento, parcelasCartao, valorTotal, valoresParcelasCartao, className = "" }: {
   formaPagamento: string;
   parcelasCartao?: number;
+  valoresParcelasCartao?: number[];
   valorTotal: number;
   className?: string;
 }) {
@@ -30,7 +32,7 @@ export function ResumoParcelamentoCartao({ formaPagamento, parcelasCartao, valor
   const quantidade = normalizarQuantidadeParcelas(parcelasCartao);
   return <div data-testid="resumo-parcelamento-cartao" className={`rounded-lg border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-bold text-blue-950 ${className}`}>
     <span className="block font-black uppercase">Cartão de crédito · {quantidade}x</span>
-    <span className="block">{descreverParcelamentoCartao(valorTotal, quantidade)} · Total {formatCurrency(valorTotal)}</span>
+    <span className="block">{descreverParcelamentoCartao(valorTotal, quantidade, valoresParcelasCartao)} · Total {formatCurrency(valorTotal)}</span>
   </div>;
 }
 

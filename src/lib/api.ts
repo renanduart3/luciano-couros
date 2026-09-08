@@ -215,6 +215,7 @@ export const api = {
   getCarteiraResumo: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira/resumo`).then(r => handleResponse<CarteiraResumo>(r)),
   createRecebimentoCliente: (clienteId: string, dados: {
+    valoresParcelasCartao?: number[];
     data: string;
     valorRecebido: number;
     bonusUtilizado?: number;
@@ -253,6 +254,7 @@ export const api = {
   getRecebimentoGerenciavel: (recebimentoId: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/gerenciar`).then(r => handleResponse<PagamentoGerenciavel>(r)),
   updateRecebimentoCliente: (recebimentoId: string, dados: {
+    valoresParcelasCartao?: number[];
     pin: string;
     status: PagamentoGerenciavel["statusPagamento"];
     data: string;
@@ -271,11 +273,23 @@ export const api = {
       numeroCheque: string;
     };
     alocacoes: Array<{ vendaId: string; valor: number }>;
+    distribuicaoAutomatica?: boolean;
   }) => fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<PagamentoGerenciavel>(r)),
+
+  getReaberturaPagamento: (tipo: "vale" | "parcela" | "recebimento", id: string) =>
+    fetch(`${API_BASE}/reabertura-pagamentos/${tipo}/${id}`).then(r => handleResponse<{
+      revisao: string; titulo: string; totalFinanceiro: number; totalEstornado: number;
+      variacaoBonus: number; quantidadePagamentos: number; compartilhado: boolean;
+      vales: Array<{ numero: number; valor: number }>;
+      parcelas: Array<{ numero: number; ordemNumero: number }>;
+    }>(r)),
+  reabrirPagamento: (tipo: "vale" | "parcela" | "recebimento", id: string, dados: { pin: string; revisao: string; motivo: string }) =>
+    fetch(`${API_BASE}/reabertura-pagamentos/${tipo}/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
+      .then(r => handleResponse<{ success: boolean; message: string }>(r)),
 
   getUltimoTituloCliente: (clienteId: string, tipo: string) =>
     fetch(`${API_BASE}/clientes/${clienteId}/titulos/ultimo?tipo=${encodeURIComponent(tipo)}`)
@@ -313,6 +327,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vendaIds })
     }).then(r => handleResponse<OrdemCobranca>(r)),
+  renegociarSaldoOrdem: (id: string, dados: { pin: string; updatedAt: string; parcelaId: string; saldoEsperado: number; parcelas: Array<{ vencimento: string; valor: number }> }) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/renegociar-saldo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }).then(r => handleResponse<OrdemCobranca>(r)),
   updateOrdemCobrancaParcelas: (id: string, updatedAt: string, parcelas: Array<{ id?: string; vencimento: string; valor: number }>) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/parcelas`, {
       method: "PUT",
@@ -384,8 +400,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(produto)
     }).then(r => handleResponse<Produto>(r)),
-  deleteProduto: (id: string) => 
-    fetch(`${API_BASE}/produtos/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
+  deleteProduto: (id: string, pin: string) =>
+    fetch(`${API_BASE}/produtos/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin }) }).then(r => handleResponse<{ success: boolean }>(r)),
   getProdutoFornecedores: (id: string) =>
     fetch(`${API_BASE}/produtos/${id}/fornecedores`).then(r => handleResponse<FornecedorProduto[]>(r)),
 

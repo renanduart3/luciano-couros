@@ -4,7 +4,7 @@ import { Fornecedor, Produto } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, parseBrazilianNumber } from "../lib/utils";
 import { paginate, Pagination } from "./Pagination";
-import { useConfirmacao } from "./ConfirmacaoDialog";
+import { AutorizacaoGerenteModal } from "./AutorizacaoGerenteModal";
 import { useEhGerente } from "../auth/AuthContext";
 
 const PAGE_SIZE = 10;
@@ -23,7 +23,7 @@ interface FornecedorConfiguracaoRascunho {
 }
 
 export function ProdutosView() {
-  const confirmacao = useConfirmacao();
+  const [produtoArquivando, setProdutoArquivando] = useState<Produto | null>(null);
   const gerente = useEhGerente();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
@@ -132,13 +132,7 @@ export function ProdutosView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!await confirmacao.confirmar({
-      titulo: "Arquivar material",
-      mensagem: "Deseja realmente arquivar este material?",
-      textoConfirmar: "Arquivar"
-    })) return;
-    try { await api.deleteProduto(id); await fetchProdutos(); }
-    catch (err: any) { alert(err.message || "Erro ao arquivar o material."); }
+    setProdutoArquivando(produtos.find((produto) => produto.id === id) || null);
   };
 
   const filtrados = useMemo(() => produtos.filter((produto) =>
@@ -174,7 +168,11 @@ export function ProdutosView() {
 
   return (
     <div className="space-y-5">
-      {confirmacao.dialogo}
+      {produtoArquivando && <AutorizacaoGerenteModal titulo="Arquivar material" textoConfirmar="Arquivar" onClose={() => setProdutoArquivando(null)} onConfirm={async (pin) => {
+        await api.deleteProduto(produtoArquivando.id, pin);
+        setProdutoArquivando(null);
+        await fetchProdutos();
+      }}><p>Arquivar <strong>{produtoArquivando.nome}</strong>? O material deixará de estar disponível para novas vendas e orçamentos.</p></AutorizacaoGerenteModal>}
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-950">Materiais e Produtos</h2>

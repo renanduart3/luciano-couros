@@ -142,7 +142,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Content Viewport */}
-        <div key={statsKey} className="flex-1 overflow-y-auto px-3 pb-4 pt-16 sm:px-4 md:px-5 md:py-4 print:bg-white print:p-0">
+        <div key={currentView === "vales" ? "vales" : statsKey} className="flex-1 overflow-y-auto px-3 pb-4 pt-16 sm:px-4 md:px-5 md:py-4 print:bg-white print:p-0">
           <div className="mx-auto w-full max-w-[1800px]">
             {renderActiveView()}
           </div>

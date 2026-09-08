@@ -1,15 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Coins, Edit3, Eye, FileClock, FileText, List, MessageCircle, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
-import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
-import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
+import React, { useState } from "react";
+import { CalendarClock, Eye, FileClock, FileText, List, MessageCircle, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
+import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
-import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
-import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
-import { EditarPagamentoModal } from "./EditarPagamentoModal";
-import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
+import { LinhaPagamento } from "./LinhaPagamento";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -21,6 +18,7 @@ interface ValeDetalhesModalProps {
 
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
   const gerente = useEhGerente();
+  const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); };
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [pin, setPin] = useState("");
@@ -30,69 +28,23 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [resultadoDevolucao, setResultadoDevolucao] = useState("");
   const [erro, setErro] = useState("");
   const [salvando, setSalvando] = useState(false);
-  const [dataPagamento, setDataPagamento] = useState(todayLocalIso());
-  const [valorPagamento, setValorPagamento] = useState(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  const [formaPagamento, setFormaPagamento] = useState("pix");
-  const [parcelasCartao, setParcelasCartao] = useState(1);
-  const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
-  const [saldoBonus, setSaldoBonus] = useState(0);
-  const [feedbackPagamento, setFeedbackPagamento] = useState("");
-  const [editandoRecebimentoId, setEditandoRecebimentoId] = useState<string | null>(null);
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
   const itens = vale.items || [];
+  const legado: PagamentoGerenciavel | undefined = !vale.recebimentos?.length && Number(vale.valorPago) > 0.005 ? {
+    id: vale.id, recebimentoId: vale.id, clienteId: vale.clienteId, clienteNome: vale.clienteNome || "Cliente",
+    data: vale.ultimoPagamentoData || vale.data, valorRecebido: Number(vale.valorPago), valorAplicado: Number(vale.valorPago),
+    bonusUtilizado: 0, bonusGerado: 0, formaPagamento: vale.formaPagamento || "Pagamento antigo", status: "ativo", statusPagamento: "compensado",
+    titulos: [], alocacoes: [], historico: [], createdAt: vale.data, updatedAt: vale.data,
+  } : undefined;
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
-  const pagamentoTitulo = ehTituloPagamento(formaPagamento);
-  const valorBasePagamento = parseBrazilianNumber(valorPagamento);
   const linkWhatsApp = whatsappUrl(vale.clienteTelefone);
-  const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
-  const valorEfetivoPagamento = pagamentoTitulo ? totalTitulos : valorBasePagamento;
-
-  useEffect(() => {
-    setValorPagamento(Number(vale.saldoRestante || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-    api.getCarteiraResumo(vale.clienteId).then((carteira) => setSaldoBonus(Number(carteira.saldoBonus || 0))).catch(() => setSaldoBonus(0));
-  }, [vale]);
 
   const imprimir = () => {
     setAba("comprovante");
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => window.print());
     });
-  };
-
-  const registrarPagamentoVale = async () => {
-    const valorInformado = valorEfetivoPagamento;
-    const recebido = formaPagamento === "bonus" ? 0 : valorInformado;
-    const bonusUtilizado = formaPagamento === "bonus" ? valorInformado : 0;
-    if (valorInformado <= 0) return setErro("Informe o valor do pagamento.");
-    if (bonusUtilizado > saldoBonus + 0.005) return setErro("O bônus utilizado ultrapassa o saldo disponível.");
-    if (formaPagamento === "bonus" && bonusUtilizado > Number(vale.saldoRestante) + 0.005) return setErro("O bônus utilizado não pode ultrapassar o saldo deste vale.");
-    const valorAplicado = Math.min(Number(vale.saldoRestante), recebido + bonusUtilizado);
-    setSalvando(true);
-    setErro("");
-    setFeedbackPagamento("");
-    try {
-      const resultado = await api.createRecebimentoCliente(vale.clienteId, {
-        data: dataPagamento,
-        valorRecebido: recebido,
-        bonusUtilizado,
-        formaPagamento,
-        parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
-        observacao: `Pagamento direto do vale #${vale.numeroSequencial}`,
-        titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
-        alocacoes: [{ vendaId: vale.id, valor: valorAplicado }]
-      });
-      const atualizado = await api.getVenda(vale.id);
-      const carteira = await api.getCarteiraResumo(vale.clienteId);
-      setSaldoBonus(Number(carteira.saldoBonus || 0));
-      setFeedbackPagamento(`${formatCurrency(resultado.valorAplicado)} abatido do vale` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
-      setComprovante(await api.getComprovanteRecebimento(resultado.id));
-      onUpdated?.(atualizado);
-    } catch (error: any) {
-      setErro(error.message || "Não foi possível registrar o pagamento.");
-    } finally {
-      setSalvando(false);
-    }
   };
 
   const cancelarVale = async () => {
@@ -155,7 +107,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
-      {editandoRecebimentoId && <EditarPagamentoModal recebimentoId={editandoRecebimentoId} onClose={() => setEditandoRecebimentoId(null)} onSaved={() => { api.getVenda(vale.id).then((atualizado) => onUpdated?.(atualizado)); }} />}
       <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
         <header className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <div className="flex items-center gap-3">
@@ -216,33 +167,21 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
             {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
-            {vale.status === "pendente" && Number(vale.saldoRestante) > 0.005 && <div className="overflow-hidden rounded-xl border border-emerald-300 bg-white">
-              <div className="border-b border-emerald-200 bg-emerald-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-emerald-950">Registrar pagamento deste vale</h3><p className="text-[10px] font-bold text-emerald-800">Bônus disponível: {formatCurrency(saldoBonus)}. O uso do bônus só ocorre quando informado abaixo.</p></div>
-              <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1.4fr_auto]">
-                <label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={dataPagamento} onChange={(event) => setDataPagamento(event.target.value)} className={`mt-1 min-h-10 w-full rounded-lg border px-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`}/></label>
-                <label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor de referência" : "Pagamento"}<input type="text" readOnly={pagamentoTitulo} inputMode="decimal" value={valorPagamento} onChange={(event) => setValorPagamento(event.target.value)} className={`mt-1 min-h-10 w-full rounded-lg border px-3 text-right font-mono font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}/></label>
-                <label className="text-[10px] font-black uppercase text-slate-600">Forma<select value={formaPagamento} onChange={(event) => setFormaPagamento(event.target.value)} className="mt-1 min-h-10 w-full rounded-lg border border-slate-300 px-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>
-                <button type="button" disabled={salvando} onClick={() => void registrarPagamentoVale()} className="inline-flex min-h-10 items-center justify-center gap-2 self-end rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-40"><Coins size={16}/> Registrar</button>
-              </div>
-              <div className="px-3 pb-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} valorPagamento={valorBasePagamento} titulos={titulos} onChange={setTitulos} /></div>
-              <div className="px-3 pb-3"><ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorEfetivoPagamento} /></div>
-              {feedbackPagamento && <p className="mx-3 mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-2 text-xs font-black text-emerald-800">{feedbackPagamento}</p>}
-              {erro && <p className="mx-3 mb-3 rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
-            </div>}
-
-            <div className="overflow-hidden rounded-xl border border-slate-300 bg-white">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-300 bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos deste vale</h3><span className="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-slate-600">{vale.recebimentos?.length || 0}</span></div>
-              {!vale.recebimentos?.length ? <p className="p-5 text-center text-xs font-bold text-slate-500">Nenhum pagamento registrado para este vale.</p> : <div className="divide-y divide-slate-200">
-                {vale.recebimentos.map((recebimento) => <article key={recebimento.id} className="space-y-2 p-3 text-xs">
-                  <div className="grid items-center gap-3 sm:grid-cols-[0.7fr_1fr_0.8fr_auto]">
-                    <div><p className="text-[10px] font-black uppercase text-slate-500">Data</p><p className="font-bold text-slate-900">{formatDate(recebimento.data)}</p></div>
-                    <div><p className="text-[10px] font-black uppercase text-slate-500">Forma</p><p className="font-black uppercase text-slate-900">{recebimento.formaPagamento.replaceAll("_", " ")}</p><ResumoParcelamentoCartao formaPagamento={recebimento.formaPagamento} parcelasCartao={recebimento.parcelasCartao} valorTotal={recebimento.valorRecebido} className="mt-1" />{recebimento.statusPagamento !== "compensado" && <span className={`mt-1 inline-block rounded-lg px-2 py-1 text-[9px] font-black ${recebimento.statusPagamento === "recusado" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-900"}`}>{recebimento.statusPagamento.toUpperCase()}</span>}</div>
-                    <div><p className="text-[10px] font-black uppercase text-slate-500">Aplicado neste vale</p><p className={`font-mono font-black ${recebimento.statusPagamento === "recusado" ? "text-red-700 line-through" : "text-emerald-800"}`}>{formatCurrency(recebimento.alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0)}</p></div>
-                    <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => void abrirComprovanteRecebimento(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-[10px] font-black uppercase text-blue-800"><FileText size={14}/>Comprovante</button>{gerente && <button type="button" onClick={() => setEditandoRecebimentoId(recebimento.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Edit3 size={14}/>Editar</button>}</div>
-                  </div>
-                  {recebimento.titulos?.map((titulo, indice) => <div key={titulo.id || indice} className="rounded-lg border border-amber-300 bg-amber-50 p-2 font-bold text-amber-950"><span className="font-black uppercase">{titulo.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"} nº {titulo.numeroDocumento} · {formatCurrency(titulo.valor)}</span><span className="block text-[10px]">{titulo.nomeTitular} · CPF/CNPJ: {titulo.documentoTitular} · VENCIMENTO: {formatDate(titulo.vencimento)} · SITUAÇÃO: {(titulo.status || "aguardando").toUpperCase()}</span>{titulo.observacao && <span className="mt-1 block text-[10px] text-slate-700">Obs.: {titulo.observacao}</span>}</div>)}
-                </article>)}
-              </div>}
+            <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
+              <h3 className="border-b bg-slate-50 px-3 py-2 text-xs font-black uppercase text-slate-700">Pagamentos</h3>
+              <table className="w-full min-w-[720px] text-xs">
+                <thead className="bg-slate-50 text-left"><tr>{["Data", "Pagamento", "Forma de pagamento", "Status", "Ações"].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
+                <tbody>{(vale.recebimentos?.length ? vale.recebimentos : [legado]).map((pagamento, index) =>
+                  <LinhaPagamento key={pagamento?.id || vale.id} pagamento={pagamento} clienteId={vale.clienteId}
+                    clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
+                    saldo={index === 0 ? Number(vale.saldoRestante) : 0}
+                    alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
+                    referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos}
+                    somenteReabertura={Boolean(legado)} alvoReabertura={legado ? { tipo: "vale", id: vale.id } : undefined}
+                    onComprovante={legado ? undefined : id => void abrirComprovanteRecebimento(id)}
+                    editavel={Boolean(onUpdated) && vale.status !== "cancelada" && (pagamento ? gerente : Number(vale.saldoRestante) > 0.005)}/>
+                )}</tbody>
+              </table>
             </div>
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">

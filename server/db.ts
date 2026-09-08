@@ -974,6 +974,14 @@ export function initDatabase() {
     `).run();
   }
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN recebimentoId TEXT`).run(); } catch (e) {}
+  for (const tabela of ['recebimentos_cliente', 'pagamentos']) {
+    if (!(db.prepare(`PRAGMA table_info(${tabela})`).all() as any[]).some(c => c.name === 'valoresParcelasCartao')) db.prepare(`ALTER TABLE ${tabela} ADD COLUMN valoresParcelasCartao TEXT`).run();
+  }
+  if (!(db.prepare('PRAGMA table_info(recebimento_titulos)').all() as any[]).some(c => c.name === 'valorOriginal')) {
+    db.prepare('ALTER TABLE recebimento_titulos ADD COLUMN valorOriginal REAL').run();
+    db.prepare('UPDATE recebimento_titulos SET valorOriginal = valor').run();
+  }
+  if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'valorRenegociado')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN valorRenegociado REAL NOT NULL DEFAULT 0').run();
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN fornecedorId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN fornecedorReferencia TEXT`).run(); } catch (e) {}

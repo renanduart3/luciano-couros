@@ -1,0 +1,17 @@
+const assert = require('node:assert/strict');
+const { distribuirCentavos, sugerirValores } = require('../src/lib/distribuicaoPagamento.ts');
+assert.deepEqual(distribuirCentavos(1000, 3), [333.34, 333.33, 333.33]);
+let linhas = sugerirValores([{ valor: 1000 }, { valor: 0 }], 1000);
+assert.deepEqual(linhas.map(l => l.valor), [500, 500]);
+linhas = linhas.map(l => ({ ...l, valor: 200, valorManual: true }));
+linhas = sugerirValores([...linhas, { valor: 0 }], 1000);
+assert.deepEqual(linhas.map(l => l.valor), [200, 200, 600]);
+assert.deepEqual(sugerirValores(linhas.filter((_, i) => i !== 1), 1000).map(l => l.valor), [200, 800]);
+assert.deepEqual(sugerirValores([{ id: 'existente', valor: 200 }, { valor: 0 }], 1000).map(l => l.valor), [200, 800]);
+assert.deepEqual(sugerirValores([{ valor: 1200, valorManual: true }, { valor: 0 }], 1000).map(l => l.valor), [1200, 0]);
+assert.equal(distribuirCentavos(1000, 12).reduce((s, v) => s + Math.round(v * 100), 0), 100000);
+console.log('OK: sugestões, valores manuais, exclusão, excedentes e centavos em 12 linhas');
+const { somarMesesVencimento } = require('../src/lib/datasPagamento.ts');
+for (const [data, esperado] of [['2026-01-31', '2026-02-28'], ['2028-01-31', '2028-02-29'], ['2028-02-29', '2028-03-29'], ['2026-12-31', '2027-01-31'], ['2100-01-31', '2100-02-28'], ['2000-01-31', '2000-02-29'], ['2026-03-31', '2026-04-30'], ['', ''], ['2026-02-30', ''], ['2027-02-29', ''], ['9999-12-31', '']]) assert.equal(somarMesesVencimento(data), esperado, data);
+assert.equal(somarMesesVencimento('2028-01-31', 2), '2028-03-31');
+console.log('OK: vencimentos mensais, fim de mês, virada de ano, anos bissextos e datas inválidas');

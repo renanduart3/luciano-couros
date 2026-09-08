@@ -283,6 +283,7 @@ export interface DividaCarteira {
 }
 
 export interface RecebimentoCliente {
+  valoresParcelasCartao?: number[];
   id: string;
   clienteId: string;
   data: string;
@@ -313,6 +314,7 @@ export interface RecebimentoCliente {
 }
 
 export interface PagamentoGerenciavel {
+  valoresParcelasCartao?: number[];
   id: string;
   recebimentoId: string;
   clienteId: string;
@@ -365,6 +367,8 @@ export interface PagamentoGerenciavel {
 }
 
 export interface TituloRecebimento {
+  valorOriginal?: number;
+  valorManual?: boolean;
   id?: string;
   tipo: "cheque_emitente" | "cheque_terceiro" | "duplicata_emitente" | "duplicata_terceiro";
   nomeTitular: string;
@@ -379,6 +383,7 @@ export interface TituloRecebimento {
 }
 
 export interface ComprovanteRecebimento {
+  valoresParcelasCartao?: number[];
   id: string;
   data: string;
   createdAt?: string;
@@ -472,6 +477,7 @@ export interface CarteiraResumo {
 }
 
 export interface OrdemCobrancaParcela {
+  valorRenegociado?: number;
   id: string;
   ordemId: string;
   numero: number;
@@ -483,6 +489,7 @@ export interface OrdemCobrancaParcela {
   dataPagamento?: string;
   ultimoRecebimentoId?: string;
   ultimoPagamentoValor?: number;
+  pagamentos?: PagamentoGerenciavel[];
 }
 
 export interface OrdemCobrancaEvento {

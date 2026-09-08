@@ -4,6 +4,22 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.28.0 — 2026-09-08
+
+- Novas linhas de boleto/cheque sugerem o mês seguinte à última data preenchida, ajustando o dia ao calendário (inclusive anos bissextos), sem alterar datas já informadas.
+- Saldo de parcela pode ser renegociado na mesma ordem, com novas datas/valores, pagamentos preservados e registro da transferência no histórico, sem criar outro vale.
+- Pagamento acima do saldo da parcela gera bônus; pagamento parcial mantém saldo para receber ou renegociar. Títulos preservam o valor original.
+- Cheques, boletos e crédito aceitam até 12 linhas, com sugestões em centavos que preservam valores manuais. Total dos títulos é exibido em texto, sem instrução repetitiva.
+- Cheques e boletos usam edição junto à linha, sem modal de gerenciamento ou botão separado de reabertura; status do recebimento e dos títulos são alterados por dropdown.
+- Pagamentos nas ordens e nos vales são editados na própria linha, com data, valor, forma e status por dropdown; ao salvar, os campos voltam a texto.
+- Histórico da ordem compacto e somente leitura, incluindo alterações de pagamentos e do parcelamento a partir dos registros de auditoria.
+- Vales e parcelas de ordens permitem voltar para em aberto com conferência do impacto, senha do gerente e estorno dos recebimentos, lançamentos financeiros e movimentos de bônus em uma única transação.
+- Recebimentos compartilhados identificam todos os vales e parcelas afetados antes da confirmação. Alterações concorrentes, bônus já consumido e negociações conflitantes bloqueiam estornos inconsistentes.
+- A edição gerencial passa a trabalhar com o montante do pagamento, distribuindo automaticamente os valores entre os vales sem exibir campos de alocação.
+- Recusa integral e reconfirmação de cheques ou boletos recalculam os saldos e preservam a parcela de origem.
+- Arquivar materiais exige senha do gerente validada no servidor e mantém registro na auditoria.
+- A atualização dos saldos preserva os detalhes abertos na tela de vales.
+
 ## 1.27.1 — 2026-09-08
 
 - Produtos inativos deixam de aparecer nas seleções operacionais de orçamento e venda, permanecendo disponíveis apenas na gestão cadastral.

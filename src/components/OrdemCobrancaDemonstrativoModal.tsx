@@ -10,7 +10,7 @@ interface Props {
 }
 
 const situacaoParcela = (parcela: OrdemCobrancaParcela) => {
-  if (parcela.status === "paga" || Number(parcela.saldo) <= 0.005) {
+  if (parcela.status === "paga" || (Number(parcela.saldo) <= 0.005 && parcela.status !== "renegociada" && parcela.status !== "cancelada")) {
     return { texto: "QUITADA", classe: "bg-emerald-100 text-emerald-900", linha: "bg-emerald-50/60" };
   }
   if (parcela.status === "cancelada") {

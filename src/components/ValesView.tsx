@@ -172,14 +172,14 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
 
   return (
     <section id="vales-view" className="space-y-5">
-      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); api.getOrdensCobranca().then(setOrdens); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendas, listaOrdens]) => { setVales(vendas.filter((venda) => Boolean(venda.vencimento))); setOrdens(listaOrdens); setOrdensRefreshKey((atual) => atual + 1); }).catch((erro) => setError(erro.message)); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
       {ordemDetalhada && (
         <OrdemCobrancaDetalhesModal
           ordem={ordemDetalhada}
           onClose={() => setOrdemDetalhada(null)}
           onChanged={(atualizada) => {
             setOrdemDetalhada(atualizada);
-            setOrdens((atuais) => atuais.map((ordem) => ordem.id === atualizada.id ? atualizada : ordem));
+            api.getOrdensCobranca().then(setOrdens).catch((erro) => setError(erro.message));
             api.getVendas().then((vendas) => setVales(vendas.filter((venda) => Boolean(venda.vencimento))));
           }}
         />

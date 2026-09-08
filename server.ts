@@ -209,6 +209,10 @@ function erroHttp(message: string, statusCode: number) {
   return Object.assign(new Error(message), { statusCode });
 }
 
+function erroHttpDetalhado(message: string, statusCode: number, code: string, details: Record<string, unknown>) {
+  return Object.assign(new Error(message), { statusCode, code, details });
+}
+
 function salvarPrecoAutorizadoCliente(
   clienteId: string,
   produtoId: string,
@@ -2110,6 +2114,7 @@ app.delete("/api/fornecedores/:id/produtos/:produtoId", (req, res) => {
 // 5. PRODUTOS
 app.get("/api/produtos", (req, res) => {
   try {
+    const somenteAtivos = String(req.query.ativos || "") === "1";
     const rows = queryAll<any>(`
       SELECT
         p.*,
@@ -2132,7 +2137,7 @@ app.get("/api/produtos", (req, res) => {
         ) AS ultimoFornecedorNome
         ,(SELECT COUNT(*) FROM fornecedor_produtos fp WHERE fp.produtoId = p.id AND fp.ativo = 1) AS quantidadeFornecedores
       FROM produtos p
-      WHERE p.deletedAt IS NULL
+      WHERE p.deletedAt IS NULL${somenteAtivos ? " AND p.ativo = 1" : ""}
       ORDER BY p.nome ASC
     `);
     const fornecedores = queryAll<any>(`
@@ -2559,9 +2564,20 @@ app.post("/api/orcamentos", (req, res) => {
       let administradorAutorizador: UsuarioAdministrador | null = null;
 
       let subtotal = 0;
-      const itensResolvidos = items.map((item: any) => {
-        const produto = queryOne<any>("SELECT * FROM produtos WHERE id = ? AND deletedAt IS NULL", [item.produtoId]);
-        if (!produto) throw erroHttp(`Produto não encontrado: ${item.produtoId}`, 404);
+      const itensResolvidos = items.map((item: any, itemIndex: number) => {
+        const produto = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [item.produtoId]);
+        if (!produto || produto.deletedAt || Number(produto.ativo) !== 1) throw erroHttpDetalhado(
+          `O produto ${String(item.descricao || item.produtoId)} não está disponível para orçamento. Remova o item e tente novamente.`,
+          409,
+          "ORCAMENTO_PRODUTO_INDISPONIVEL",
+          {
+            itemIndex,
+            produtoId: String(item.produtoId || ""),
+            produtoCodigo: produto?.codigo || null,
+            produtoNome: produto?.nome || String(item.descricao || ""),
+            motivo: !produto ? "nao_encontrado" : produto.deletedAt ? "excluido" : "inativo",
+          }
+        );
         const quantidade = Number(item.quantidade);
         const precoUnitario = Number(item.precoUnitario);
         const descontoItem = Number(item.desconto || 0);
@@ -3001,6 +3017,7 @@ app.get("/api/vendas/:id", (req, res) => {
 });
 
 app.post("/api/vendas", (req, res) => {
+  const requestId = "venda_" + crypto.randomUUID().replace(/-/g, "").substring(0, 12);
   try {
     const {
       clienteId,
@@ -3019,18 +3036,32 @@ app.post("/api/vendas", (req, res) => {
     } = req.body;
 
     if (!clienteId || !data || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: "Dados da venda incompletos ou vazios." });
+      throw erroHttpDetalhado("Dados da venda incompletos ou vazios.", 400, "VENDA_DADOS_INCOMPLETOS", {
+        clienteInformado: Boolean(clienteId),
+        dataInformada: Boolean(data),
+        quantidadeItens: Array.isArray(items) ? items.length : null,
+      });
     }
     const observacoesVenda = String(observacoes || "").trim();
     if (observacoesVenda.length > 100) {
-      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+      throw erroHttpDetalhado(
+        "A observação da venda deve possuir no máximo 100 caracteres.",
+        400,
+        "VENDA_OBSERVACAO_INVALIDA",
+        { quantidadeCaracteres: observacoesVenda.length, limite: 100 }
+      );
     }
     const variantesDaVenda = items.map((item: any) => ({
       produtoId: String(item?.produtoId || ""),
       chave: `${String(item?.produtoId || "")}::${String(item?.fornecedorId || "")}`
     }));
     if (variantesDaVenda.some((item: any) => !item.produtoId) || new Set(variantesDaVenda.map((item: any) => item.chave)).size !== variantesDaVenda.length) {
-      return res.status(400).json({ error: "A mesma combinação de produto e fornecedor não pode aparecer duas vezes na venda." });
+      throw erroHttpDetalhado(
+        "A mesma combinação de produto e fornecedor não pode aparecer duas vezes na venda.",
+        400,
+        "VENDA_ITEM_DUPLICADO",
+        { variantes: variantesDaVenda.map((item: any) => item.chave) }
+      );
     }
 
     const nextSeqRow = queryOne<{ maxSeq: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) as maxSeq FROM vendas");
@@ -3055,10 +3086,23 @@ app.post("/api/vendas", (req, res) => {
       let lucroBrutoAcumulado = 0;
 
       // Prepare item insertions
-      const resolvedItems = items.map((it: any) => {
+      const resolvedItems = items.map((it: any, itemIndex: number) => {
         const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
-        if (!prod) {
-          throw erroHttp(`Produto não encontrado para o ID: ${it.produtoId}`, 404);
+        if (!prod || prod.deletedAt || Number(prod.ativo) !== 1) {
+          const motivo = !prod ? "nao_encontrado" : prod.deletedAt ? "excluido" : "inativo";
+          throw erroHttpDetalhado(
+            `O produto "${String(prod?.nome || it.descricao || it.produtoId)}" está ${motivo === "inativo" ? "inativo" : "indisponível"}. Remova o item da venda e tente novamente.`,
+            409,
+            "VENDA_PRODUTO_INDISPONIVEL",
+            {
+              itemIndex,
+              produtoId: String(it.produtoId || ""),
+              produtoCodigo: prod?.codigo || null,
+              produtoNome: prod?.nome || String(it.descricao || ""),
+              fornecedorId: it.fornecedorId ? String(it.fornecedorId) : null,
+              motivo,
+            }
+          );
         }
 
         const qty = Number(it.quantidade);
@@ -3299,7 +3343,16 @@ app.post("/api/vendas", (req, res) => {
     const fullVenda = queryOne("SELECT * FROM vendas WHERE id = ?", [resultVenda.id]);
     res.status(201).json(carregarDetalhesVenda(fullVenda));
   } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message });
+    const status = error.statusCode || 500;
+    const payload = {
+      error: error.message || "Não foi possível registrar a venda.",
+      code: error.code || "VENDA_NAO_REGISTRADA",
+      requestId,
+      details: error.details || null,
+    };
+    console.error("[Venda] Falha ao registrar", { requestId, status, code: payload.code, details: payload.details, message: payload.error });
+    res.setHeader("X-Request-Id", requestId);
+    res.status(status).json(payload);
   }
 });
 

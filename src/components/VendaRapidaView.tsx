@@ -193,7 +193,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     try {
       const [cList, pList, seq, segurancaStatus] = await Promise.all([
         api.getClientes(),
-        api.getProdutos(),
+        api.getProdutos(true),
         api.getProximoNumeroVenda(),
         api.getSegurancaStatus()
       ]);
@@ -376,9 +376,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
     setClienteSelecionado(cliente);
-    const itensRecebidos = orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0).map((item) => {
+    const itensSolicitados = orcamentoInicial.items.filter((item) => Number(item.quantidade) > 0);
+    const itensRecebidos = itensSolicitados.flatMap((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
-      return {
+      const fornecedorDisponivel = !item.fornecedorId
+        || produto?.fornecedores?.some((fornecedor) => fornecedor.fornecedorId === item.fornecedorId);
+      if (!produto || !fornecedorDisponivel) return [];
+      return [{
         produtoId: item.produtoId,
         fornecedorId: item.fornecedorId,
         fornecedorReferencia: item.fornecedorReferencia,
@@ -393,8 +397,20 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           ?? produto?.precoVendaPadrao
           ?? item.precoUnitario
         )
-      };
+      }];
     });
+    const quantidadeIgnorada = itensSolicitados.length - itensRecebidos.length;
+    if (quantidadeIgnorada > 0) {
+      setFeedbackMsg({
+        type: "error",
+        text: `${quantidadeIgnorada} ${quantidadeIgnorada === 1 ? "item não foi carregado" : "itens não foram carregados"} porque o produto ou fornecedor está inativo ou indisponível.`
+      });
+    }
+    if (itensRecebidos.length === 0) {
+      setOrcamentoOrigemId(null);
+      onOrcamentoCarregado?.();
+      return;
+    }
     setItensVenda((atuais) => {
       let resultado = [...atuais];
       for (const recebido of itensRecebidos) {

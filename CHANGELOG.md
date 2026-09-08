@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.27.1 — 2026-09-08
+
+- Produtos inativos deixam de aparecer nas seleções operacionais de orçamento e venda, permanecendo disponíveis apenas na gestão cadastral.
+- Orçamentos antigos passam a remover da edição e da conversão em venda os produtos ou fornecedores que ficaram inativos ou indisponíveis, informando o usuário antes do fechamento.
+- O fechamento da venda valida a disponibilidade dos produtos antecipadamente e retorna diagnóstico estruturado com código, produto, motivo e identificador da requisição.
+- Erros de venda passam a registrar o mesmo identificador no navegador e no servidor, facilitando a investigação pela aba Rede e pelos logs da aplicação.
+
 ## 1.27.0 — 2026-09-04
 
 - Ordens de cobrança abertas passam a permitir alterar vencimentos e valores, adicionar parcelas e remover parcelas ainda sem recebimento.

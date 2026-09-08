@@ -116,7 +116,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     try {
       const [clientesAtivos, produtosAtivos, registros, proximo, segurancaStatus] = await Promise.all([
         api.getClientes(),
-        api.getProdutos(),
+        api.getProdutos(true),
         api.getOrcamentos(),
         api.getProximoNumeroOrcamento(),
         api.getSegurancaStatus()
@@ -195,7 +195,15 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       : 0;
     setDescontoPercentual(percentualSalvo > 0 ? percentualSalvo.toFixed(2).replace(".", ",") : "");
     setObservacoes(registro.observacoes || "");
-    setItems(registro.items.map((item) => ({
+    const itensDisponiveis = registro.items.filter((item) => {
+      const produto = produtos.find((registroProduto) => registroProduto.id === item.produtoId);
+      return Boolean(produto) && (
+        !item.fornecedorId
+        || produto?.fornecedores?.some((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)
+      );
+    });
+    const quantidadeIgnorada = registro.items.length - itensDisponiveis.length;
+    setItems(itensDisponiveis.map((item) => ({
       produtoId: item.produtoId,
       fornecedorId: item.fornecedorId,
       fornecedorReferencia: item.fornecedorReferencia,
@@ -212,7 +220,10 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     setVendaHistoricoId("");
     setItensHistoricoSelecionados([]);
     setItensSelecionadosVenda([]);
-    setMensagem(null);
+    setMensagem(quantidadeIgnorada > 0 ? {
+      tipo: "erro",
+      texto: `${quantidadeIgnorada} ${quantidadeIgnorada === 1 ? "item foi removido" : "itens foram removidos"} deste orçamento porque o produto ou fornecedor está inativo ou indisponível.`
+    } : null);
     setAba("formulario");
   };
 

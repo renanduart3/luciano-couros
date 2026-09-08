@@ -71,7 +71,21 @@ async function handleResponse<T>(response: Response): Promise<T> {
   const data = await response.json();
   if (!response.ok) {
     if (response.status === 401) window.dispatchEvent(new CustomEvent("auth-expired"));
-    throw new Error(data?.error || "Erro de rede ou servidor");
+    const erro = Object.assign(new Error(data?.error || "Erro de rede ou servidor"), {
+      status: response.status,
+      code: data?.code,
+      details: data?.details,
+      requestId: data?.requestId || response.headers.get("x-request-id"),
+    });
+    console.error("[API] Requisição rejeitada", {
+      url: response.url,
+      status: response.status,
+      code: data?.code || null,
+      requestId: data?.requestId || response.headers.get("x-request-id"),
+      details: data?.details || null,
+      message: erro.message,
+    });
+    throw erro;
   }
   return data as T;
 }
@@ -357,7 +371,7 @@ export const api = {
       .then(r => handleResponse<{ success: boolean }>(r)),
 
   // PRODUTOS
-  getProdutos: () => fetch(`${API_BASE}/produtos`).then(r => handleResponse<Produto[]>(r)),
+  getProdutos: (somenteAtivos = false) => fetch(`${API_BASE}/produtos${somenteAtivos ? "?ativos=1" : ""}`).then(r => handleResponse<Produto[]>(r)),
   createProduto: (produto: ProdutoPayload) =>
     fetch(`${API_BASE}/produtos`, {
       method: "POST",

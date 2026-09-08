@@ -615,6 +615,44 @@ textarea {
   }
 }
 
+/* Densidade local: não altera cadastros nem a tipografia de impressão. */
+body main .payment-compact input:not([type="checkbox"]):not([type="radio"]),
+body main .payment-compact select {
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 2px 6px !important;
+  font-size: 12px !important;
+  border-radius: 6px;
+}
+body main .payment-compact button {
+  min-height: 28px;
+  padding-block: 4px;
+  font-size: 11px;
+}
+body main .payment-compact td,
+body main .payment-compact th { padding: 6px; }
+.payment-details-dialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(1180px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  margin: 0 !important;
+  margin-block: 0 !important;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+}
+.payment-details-dialog::backdrop { background: rgb(15 23 42 / 60%); }
+@media (max-width: 767px) {
+  body main .payment-compact input:not([type="checkbox"]):not([type="radio"]),
+  body main .payment-compact select {
+    font-size: 16px !important;
+    min-height: 36px !important;
+    height: 36px !important;
+  }
+}
+
 .payment-receipt-paper {
   box-sizing: border-box;
   width: min(100%, 210mm);

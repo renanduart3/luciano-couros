@@ -10,10 +10,10 @@ import { distribuirCentavos, sugerirValores } from '../lib/distribuicaoPagamento
 
 type Situacao = "em_aberto" | "compensado" | "aguardando" | "recusado";
 const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "Pago", aguardando: "Aguardando compensação", recusado: "Recusado" };
-const campo = "min-h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
+const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
 export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
-  alocar, parcelaOrdemId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento,
+  alocar, parcelaOrdemId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
   key?: string; children?: React.ReactNode; colunasAntes?: number; pagamento?: PagamentoGerenciavel; somenteReabertura?: boolean;
   clienteId: string; clienteNome: string; clienteDocumento?: string; saldo: number;
@@ -21,7 +21,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   parcelaOrdemId?: string; referencia: string; onSaved: () => Promise<void>;
   onComprovante?: (id: string) => void; editavel?: boolean;
   alvoReabertura?: { tipo: "vale" | "parcela" | "recebimento"; id: string };
-  iniciarEditando?: boolean; onCancel?: () => void; statusSemPagamento?: string;
+  iniciarEditando?: boolean; onCancel?: () => void; statusSemPagamento?: string; formaPagamentoPrevista?: string | null;
+  onEditingChange?: (editing: boolean) => void; onSavingChange?: (saving: boolean) => void;
 }) {
   const [editando, setEditando] = useState(false);
   const [novo, setNovo] = useState(!pagamento);
@@ -36,6 +37,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [pin, setPin] = useState("");
   const [erro, setErro] = useState("");
   const [saving, setSaving] = useState(false);
+  useEffect(() => { onEditingChange?.(editando); }, [editando, onEditingChange]);
+  useEffect(() => { onSavingChange?.(saving); }, [saving, onSavingChange]);
   const [plano, setPlano] = useState<Awaited<ReturnType<typeof api.getReaberturaPagamento>> | null>(null);
   const [revisando, setRevisando] = useState(false);
   const [confirmado, setConfirmado] = useState(false);
@@ -48,7 +51,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     setNovo(!existente); setConcluido(false); setPlano(null); setConfirmado(false); setErro(""); setPin("");
     setData(existente?.data || todayLocalIso());
     setValor(Number(existente ? existente.valorRecebido + existente.bonusUtilizado : saldo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-    setForma(existente?.formaPagamento || "pix"); setSituacao(existente?.statusPagamento || "compensado");
+    const formaInicial = existente?.formaPagamento || formaPagamentoPrevista || pagamento?.formaPagamento || "pix";
+    setForma(formaInicial); setSituacao(existente?.statusPagamento || (ehTituloPagamento(formaInicial) ? "aguardando" : "compensado"));
     setTitulos(existente?.titulos || []); setCartao(existente?.parcelasCartao || 1); setEditando(true);
     setCredito((existente?.valoresParcelasCartao || distribuirCentavos(existente?.valorRecebido || saldo, existente?.parcelasCartao || 1)).map(v => ({ valor: v, valorManual: Boolean(existente) })));
   };
@@ -95,21 +99,21 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     finally { setSaving(false); }
   };
   return <>
-    <tr className={editando ? "bg-blue-50" : "bg-white"}>{children}
+    <tr className={editando ? "payment-compact bg-blue-50" : "payment-compact bg-white"}>{children}
       <td className="p-2">{editando ? <input aria-label={`Data ${referencia}`} type="date" value={data} disabled={saving || situacao === "em_aberto" || concluido} onChange={e => setData(e.target.value)} className={campo}/> : pagamento ? formatDate(pagamento.data) : "—"}</td>
       <td className="p-2 text-right font-mono">{editando ? <input aria-label={`Valor ${referencia}`} inputMode="decimal" value={titulo || forma === "cartao_credito" ? total.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} readOnly={titulo || forma === "cartao_credito"} disabled={saving || situacao === "em_aberto" || concluido} onChange={e => setValor(e.target.value)} className={`${campo} min-w-24 text-right`}/> : pagamento ? formatCurrency(pagamento.valorRecebido + pagamento.bonusUtilizado) : "—"}</td>
-      <td className="p-2">{editando ? <select aria-label={`Forma ${referencia}`} value={forma} disabled={saving || situacao === "em_aberto" || concluido} onChange={e => { setForma(e.target.value); setTitulos([]); setSituacao(ehTituloPagamento(e.target.value) ? "aguardando" : "compensado"); }} className={`${campo} min-w-32`}>{FORMAS_PAGAMENTO.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select> : pagamento ? FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label || pagamento.formaPagamento : "—"}</td>
+      <td className="p-2">{editando ? <select aria-label={`Forma ${referencia}`} value={forma} disabled={saving || situacao === "em_aberto" || concluido} onChange={e => { setForma(e.target.value); setTitulos([]); setSituacao(ehTituloPagamento(e.target.value) ? "aguardando" : "compensado"); }} className={`${campo} min-w-32`}>{FORMAS_PAGAMENTO.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select> : pagamento ? FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label || pagamento.formaPagamento : FORMAS_PAGAMENTO.find(f => f.value === formaPagamentoPrevista)?.label || "—"}</td>
       <td className="p-2">{editando ? <select aria-label={`Status ${referencia}`} value={situacao} disabled={saving || revisando || concluido} onChange={e => void trocarStatus(e.target.value as Situacao)} className={`${campo} min-w-32`}>
         {!novo && pagamento?.status === "ativo" && <option value="em_aberto">Em aberto</option>}
         <option value="compensado">Pago</option>{titulo && <option value="aguardando">Aguardando compensação</option>}{titulo && !novo && <option value="recusado">Recusado</option>}
       </select> : <span className={pagamento?.statusPagamento === "compensado" ? "text-emerald-800" : "text-amber-800"}>{pagamento ? nomes[pagamento.statusPagamento] : statusSemPagamento || nomes.em_aberto}</span>}</td>
-      <td className="p-2"><div className="flex flex-wrap justify-end gap-1">{editando ? <><button type="button" disabled={saving || revisando || concluido || (situacao === "em_aberto" && (!plano || !confirmado))} onClick={() => void salvar()} className="rounded-lg bg-emerald-700 px-3 py-2 text-[10px] font-black text-white disabled:opacity-40">{saving ? "Salvando…" : novo ? "Registrar" : "Salvar"}</button><button type="button" disabled={saving} onClick={() => { setEditando(false); setErro(""); setPin(""); onCancel?.(); }} className="rounded-lg border px-2 py-2 text-[10px] font-bold">Cancelar</button></> : <>
-        {editavel && <button type="button" onClick={() => iniciar()} className="rounded-lg border border-slate-300 px-3 py-2 text-[10px] font-black">Editar</button>}
-        {editavel && pagamento && saldo > 0.005 && <button type="button" onClick={() => iniciar(true)} className="rounded-lg border border-emerald-300 px-2 py-2 text-[10px] font-bold text-emerald-800">Receber saldo</button>}
-        {pagamento && onComprovante && <button type="button" onClick={() => onComprovante(pagamento.id)} className="rounded-lg px-2 py-2 text-[10px] font-bold text-blue-800">Comprovante</button>}
+      <td className="p-2"><div className="flex flex-wrap justify-end gap-1">{editando ? <><button type="button" disabled={saving || revisando || concluido || (situacao === "em_aberto" && (!plano || !confirmado))} onClick={() => void salvar()} className="rounded-lg bg-emerald-700 px-2 py-1 text-[10px] font-black text-white disabled:opacity-40">{saving ? "Salvando…" : novo ? "Registrar" : "Salvar"}</button><button type="button" disabled={saving} onClick={() => { setEditando(false); setErro(""); setPin(""); onCancel?.(); }} className="rounded-lg border px-2 py-1 text-[10px] font-bold">Cancelar</button></> : <>
+        {editavel && <button type="button" onClick={() => iniciar()} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black">Editar</button>}
+        {editavel && pagamento && saldo > 0.005 && <button type="button" onClick={() => iniciar(true)} className="rounded-lg border border-emerald-300 px-2 py-1 text-[10px] font-bold text-emerald-800">Receber saldo</button>}
+        {pagamento && onComprovante && <button type="button" onClick={() => onComprovante(pagamento.id)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800">Comprovante</button>}
       </>}</div></td>
     </tr>
-    {editando && <tr className="bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">
+    {editando && <tr className="payment-compact bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">
       {situacao !== "em_aberto" && <><TitulosPagamentoEditor formaPagamento={forma} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={parseBrazilianNumber(valor)} titulos={titulos} onChange={itens => { const atualizados = itens.map(t => ({ ...t, status: t.status || situacao as TituloRecebimento["status"], dataCompensacao: (t.status || situacao) === "compensado" ? t.dataCompensacao || data : undefined })); setTitulos(atualizados); if (atualizados.length) setSituacao(atualizados.every(t => t.status === "recusado") ? "recusado" : atualizados.some(t => t.status === "aguardando") ? "aguardando" : "compensado"); }} editarStatus={!novo} referenciaPagamento={referencia} limiteLinhas={Math.max(12, pagamento?.titulos.length || 0)}/>{forma === "cartao_credito" && <ParcelasCreditoEditor linhas={credito} total={parseBrazilianNumber(valor)} onChange={setCredito}/>}</>}
       {revisando && <p className="text-xs">Conferindo estorno…</p>}
       {plano && situacao === "em_aberto" && <label className="my-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"><input type="checkbox" checked={confirmado} disabled={saving || concluido} onChange={e => setConfirmado(e.target.checked)}/><span>Estornar {formatCurrency(plano.totalFinanceiro)} e reabrir o saldo.{Math.abs(plano.variacaoBonus) > 0.005 && ` Ajuste na carteira: ${formatCurrency(plano.variacaoBonus)}.`}</span></label>}

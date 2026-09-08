@@ -208,10 +208,13 @@ async function main() {
     for (const i of [0, 1, 2, 4]) await pagar([{ vendaId: renegVale.id, valor: 8672.66 }], { parcelaOrdemId: renegOrdem.parcelas[i].id });
     const parcial = await pagar([{ vendaId: renegVale.id, valor: 4000 }], { parcelaOrdemId: renegOrdem.parcelas[3].id });
     const antesReneg = await getOrdem(renegOrdem.id);
-    const pedidoReneg = { pin, updatedAt: antesReneg.updatedAt, parcelaId: renegOrdem.parcelas[3].id, saldoEsperado: 4672.66, parcelas: [{ vencimento: '2100-01-08', valor: 2336.33 }, { vencimento: '2100-02-08', valor: 2336.33 }] };
+    const pedidoReneg = { formaPagamento: 'duplicata_emitente', pin, updatedAt: antesReneg.updatedAt, parcelaId: renegOrdem.parcelas[3].id, saldoEsperado: 4672.66, parcelas: [{ vencimento: '2100-01-08', valor: 2336.33 }, { vencimento: '2100-02-08', valor: 2336.33 }] };
     await request('POST', `/ordens-cobranca/${renegOrdem.id}/renegociar-saldo`, { ...pedidoReneg, pin: 'errado' }, 403);
+    await request('POST', `/ordens-cobranca/${renegOrdem.id}/renegociar-saldo`, { ...pedidoReneg, formaPagamento: 'invalida' }, 400);
     const reneg = await request('POST', `/ordens-cobranca/${renegOrdem.id}/renegociar-saldo`, pedidoReneg);
     assert.equal(reneg.totalOriginal, 43363.30); assert.equal(reneg.saldo, 4672.66); assert.equal(reneg.valorPago, 38690.64);
+    assert.equal(reneg.parcelas.find(p => p.numero === 6).formaPagamentoPrevista, 'duplicata_emitente');
+    assert.equal(reneg.parcelas.find(p => p.numero === 7).formaPagamentoPrevista, 'duplicata_emitente');
     const origemReneg = reneg.parcelas.find(p => p.id === pedidoReneg.parcelaId);
     assert.equal(origemReneg.valorPago, 4000); assert.equal(origemReneg.valorRenegociado, 4672.66); assert.equal(origemReneg.saldo, 0);
     assert.equal(Math.round(reneg.parcelas.reduce((s, p) => s + p.saldo, 0) * 100), 467266);
@@ -224,6 +227,9 @@ async function main() {
     const novaReneg = aposEstornoReneg.parcelas.find(p => p.numero === 6);
     const sobraReneg = await pagar([{ vendaId: renegVale.id, valor: novaReneg.saldo }], { parcelaOrdemId: novaReneg.id, valorRecebido: 2500 });
     assert.equal(sobraReneg.bonusGerado, 163.67);
+    const recebidoReneg = (await getOrdem(renegOrdem.id)).parcelas.find(p => p.numero === 6);
+    assert.equal(recebidoReneg.formaPagamentoPrevista, 'duplicata_emitente');
+    assert.equal(recebidoReneg.pagamentos[0].formaPagamento, 'pix');
     assert.equal((await getOrdem(renegOrdem.id)).parcelas.find(p => p.numero === 7).valorPago, 0);
     await reabrir('recebimento', sobraReneg.id);
 

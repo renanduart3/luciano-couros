@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw, Search } from "lucide-react";
-import { useEhGerente } from "../auth/AuthContext";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, todayLocalIso } from "../lib/utils";
 import { ChequeGerencial, ComprovanteRecebimento } from "../types";
-import { EditarRecebimentoInline } from "./EditarRecebimentoInline";
+import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
@@ -34,7 +33,6 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
   onOpenOrdem: (ordemId: string) => void;
   onChanged?: () => void;
 }) {
-  const gerente = useEhGerente();
   const [cheques, setCheques] = useState<ChequeGerencial[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
@@ -96,6 +94,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
   const pagina = paginate<ChequeGerencial>(filtrados, page, PAGE_SIZE);
 
   return <div className="space-y-4">
+    {editandoId && <RecebimentoDetalhesModal recebimentoId={editandoId} onSaved={atualizarEditado} onClose={() => setEditandoId(null)} onComprovante={id => { setEditandoId(null); void abrirComprovante(id); }}/>}
     {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <button type="button" onClick={() => setFiltro("aguardando")} className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left shadow-sm"><p className="text-[10px] font-black uppercase text-amber-700">Em carteira</p><p className="mt-1 text-2xl font-black text-amber-950">{totais.aguardando}</p><p className="text-xs font-bold text-amber-800">{formatCurrency(totais.valorAguardando)}</p></button>
@@ -124,9 +123,8 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
             <td className="p-3"><strong>{cheque.clienteNome}</strong><p className="text-[10px] text-slate-500">{cheque.nomeTitular} · {cheque.cpfTitular}</p></td>
             <td className="p-3 text-right font-mono font-bold">{formatCurrency(cheque.valorRecebido)}</td>
             <td className="p-3"><div className="flex flex-wrap gap-1">{cheque.vales.map(v => <button key={v.vendaId} type="button" onClick={() => onOpenVale(v.vendaId)} className="rounded bg-slate-100 px-2 py-1">Vale #{v.numeroSequencial}</button>)}{cheque.ordens.map(o => <button key={o.ordemId} type="button" onClick={() => onOpenOrdem(o.ordemId)} className="rounded bg-blue-50 px-2 py-1 text-blue-800">Ordem #{o.numeroSequencial}</button>)}</div></td>
-            <td className="p-3"><div className="flex justify-end gap-2">{gerente && <button type="button" onClick={() => setEditandoId(editandoId === cheque.id ? null : cheque.id)} className="rounded-lg border px-3 py-2 font-bold">{editandoId === cheque.id ? "Fechar edição" : "Editar"}</button>}<button type="button" disabled={carregandoComprovanteId === cheque.recebimentoId} onClick={() => void abrirComprovante(cheque.recebimentoId)} className="rounded-lg px-2 py-2 font-bold text-blue-800">Comprovante</button></div></td>
+            <td className="p-3 text-right"><button type="button" onClick={() => setEditandoId(cheque.recebimentoId)} className="rounded-md border border-slate-300 px-2 py-1 text-xs font-bold">Detalhes</button></td>
           </tr>
-          {editandoId === cheque.id && <tr><td colSpan={6}><EditarRecebimentoInline recebimentoId={cheque.recebimentoId} onSaved={atualizarEditado} onClose={() => setEditandoId(null)}/></td></tr>}
         </React.Fragment>)}</tbody>
       </table></div>
       <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filtrados.length} onPageChange={setPage} alwaysVisible />

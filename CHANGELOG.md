@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.28.1 — 2026-09-08
+
+- Boletos e cheques abrem Detalhes em janela própria; edição e comprovante ficam dentro dela, sem expandir o grid.
+- Campos e botões de pagamento compactos em ordens, vales e títulos, com senha de largura limitada e fontes legíveis.
+
+- Renegociação com campos alinhados, tabela compacta de vencimentos/valores e ações organizadas em layout responsivo.
+- Forma de pagamento escolhida na renegociação fica salva nas novas parcelas e pré-selecionada ao receber, permitindo alteração sem modificar pagamentos anteriores.
+- Datas mensais da renegociação usam cálculo seguro de calendário, incluindo fim de mês e anos bissextos.
+
 ## 1.28.0 — 2026-09-08
 
 - Novas linhas de boleto/cheque sugerem o mês seguinte à última data preenchida, ajustando o dia ao calendário (inclusive anos bissextos), sem alterar datas já informadas.

@@ -4255,7 +4255,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
   ).map((ordem) => {
     const parcelas = queryAll<any>(
       `SELECT ocp.id, ocp.ordemId, ocp.numero, ocp.vencimento, ocp.valor,
-              ocp.valorPago, ocp.saldo, ocp.status, ocp.valorRenegociado,
+              ocp.valorPago, ocp.saldo, ocp.status, ocp.valorRenegociado, ocp.formaPagamentoPrevista,
               (
                 SELECT rc.data
                 FROM ordem_cobranca_parcela_recebimentos ocpr
@@ -4587,6 +4587,8 @@ app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
 
 app.post('/api/ordens-cobranca/:id/renegociar-saldo', exigirGerente, (req, res) => {
   try {
+    const formaPagamento = String(req.body?.formaPagamento || '').trim();
+    if (formaPagamento && !FORMAS_PAGAMENTO_CLIENTE.has(formaPagamento)) throw erroHttp('Informe uma forma de pagamento válida.', 400);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) throw erroHttp('Senha do gerente inválida.', 403);
     runInTransaction(() => {
@@ -4599,10 +4601,10 @@ app.post('/api/ordens-cobranca/:id/renegociar-saldo', exigirGerente, (req, res) 
       if (Math.round(novas.reduce((s: number, p: any) => s + p.valor, 0) * 100) !== Math.round(origem.saldo * 100)) throw erroHttp('A soma deve corresponder somente ao saldo a renegociar.', 400);
       const ultimo = Number(queryOne<any>('SELECT MAX(numero) AS numero FROM ordem_cobranca_parcelas WHERE ordemId = ?', [ordem.id])?.numero || 0);
       execute('UPDATE ordem_cobranca_parcelas SET valorRenegociado = valorRenegociado + ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?', [origem.saldo, origem.id]);
-      novas.forEach((p: any, i: number) => execute('INSERT INTO ordem_cobranca_parcelas (id, ordemId, numero, vencimento, valor, saldo) VALUES (?, ?, ?, ?, ?, ?)', ['ocp_' + crypto.randomUUID().replaceAll('-', '').slice(0, 16), ordem.id, ultimo + i + 1, p.vencimento, p.valor, p.valor]));
+      novas.forEach((p: any, i: number) => execute('INSERT INTO ordem_cobranca_parcelas (id, ordemId, numero, vencimento, valor, saldo, formaPagamentoPrevista) VALUES (?, ?, ?, ?, ?, ?, ?)', ['ocp_' + crypto.randomUUID().replaceAll('-', '').slice(0, 16), ordem.id, ultimo + i + 1, p.vencimento, p.valor, p.valor, formaPagamento || null]));
       recalcularOrdemCobranca(ordem.id);
       execute('UPDATE ordens_cobranca SET updatedAt = ? WHERE id = ?', [new Date().toISOString(), ordem.id]);
-      registrarAuditoria(administrador.id, 'saldo_ordem_renegociado', 'ordem_cobranca', ordem.id, { parcelaOrigem: origem.numero, valor: origem.saldo, novas: novas.map((p: any, i: number) => ({ ...p, numero: ultimo + i + 1 })) });
+      registrarAuditoria(administrador.id, 'saldo_ordem_renegociado', 'ordem_cobranca', ordem.id, { parcelaOrigem: origem.numero, valor: origem.saldo, formaPagamento, novas: novas.map((p: any, i: number) => ({ ...p, numero: ultimo + i + 1 })) });
     });
     res.json(listarOrdensCobranca('AND oc.id = ?', [req.params.id])[0]);
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }

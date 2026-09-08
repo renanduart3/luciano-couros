@@ -478,6 +478,7 @@ export interface CarteiraResumo {
 
 export interface OrdemCobrancaParcela {
   valorRenegociado?: number;
+  formaPagamentoPrevista?: string | null;
   id: string;
   ordemId: string;
   numero: number;

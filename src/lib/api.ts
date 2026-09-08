@@ -327,7 +327,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ vendaIds })
     }).then(r => handleResponse<OrdemCobranca>(r)),
-  renegociarSaldoOrdem: (id: string, dados: { pin: string; updatedAt: string; parcelaId: string; saldoEsperado: number; parcelas: Array<{ vencimento: string; valor: number }> }) =>
+  renegociarSaldoOrdem: (id: string, dados: { pin: string; updatedAt: string; parcelaId: string; saldoEsperado: number; formaPagamento?: string; parcelas: Array<{ vencimento: string; valor: number }> }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/renegociar-saldo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }).then(r => handleResponse<OrdemCobranca>(r)),
   updateOrdemCobrancaParcelas: (id: string, updatedAt: string, parcelas: Array<{ id?: string; vencimento: string; valor: number }>) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/parcelas`, {

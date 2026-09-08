@@ -281,7 +281,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
           <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoParcelas(false); setEditandoVales(true); }} onEditarParcelas={() => { setError(""); setFeedback(""); setEditandoVales(false); setEditandoParcelas(true); }}/>
         )}
 
-        {renegociandoId && ordem.parcelas.find(p => p.id === renegociandoId) && <RenegociarSaldoOrdem ordem={ordem} origem={ordem.parcelas.find(p => p.id === renegociandoId)!} onClose={() => setRenegociandoId(null)} onSaved={o => { setRenegociandoId(null); onChanged(o); }}/>}
+        {renegociandoId && ordem.parcelas.find(p => p.id === renegociandoId) && <RenegociarSaldoOrdem key={renegociandoId} ordem={ordem} origem={ordem.parcelas.find(p => p.id === renegociandoId)!} onClose={() => setRenegociandoId(null)} onSaved={o => { setRenegociandoId(null); onChanged(o); }}/>}
         <div className="flex gap-2">
           <button type="button" onClick={() => setAbaDetalhe("parcelas")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "parcelas" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Parcelas e pagamentos</button>
           <button type="button" onClick={() => setAbaDetalhe("historico")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "historico" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Histórico da ordem</button>
@@ -295,7 +295,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
                 pagamento={pagamento} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento}
                 saldo={index === 0 ? Number(parcela.saldo) : 0} alocar={valor => alocarPagamento(Math.min(valor, Number(parcela.saldo)))} parcelaOrdemId={parcela.id}
                 referencia={`parcela ${parcela.numero}/${ordem.parcelas.length}${index ? " · recebimento anterior " + index : ""}`}
-                statusSemPagamento={parcela.status === "renegociada" ? "Saldo renegociado" : undefined} editavel={(pagamento ? gerente : Number(parcela.saldo) > 0.005) && ["aberta", "quitada"].includes(ordem.status)} colunasAntes={4}
+                formaPagamentoPrevista={parcela.formaPagamentoPrevista} statusSemPagamento={parcela.status === "renegociada" ? "Saldo renegociado" : undefined} editavel={(pagamento ? gerente : Number(parcela.saldo) > 0.005) && ["aberta", "quitada"].includes(ordem.status)} colunasAntes={4}
                 alvoReabertura={{ tipo: "recebimento", id: pagamento?.id || "" }} onSaved={atualizarPagamentos} onComprovante={(id) => void abrirComprovanteSalvo(id)}>
                 <td className="p-2 font-bold">{parcela.numero}/{ordem.parcelas.length}{index === 0 && gerente && parcela.saldo > 0.005 && <button type="button" onClick={() => setRenegociandoId(parcela.id)} className="mt-1 block text-[10px] text-blue-800 underline">Renegociar saldo</button>}{index > 0 && <span className="block text-[9px] text-slate-500">Recebimento anterior</span>}</td>
                 <td className="p-2">{index === 0 ? formatDate(parcela.vencimento) : "—"}</td>

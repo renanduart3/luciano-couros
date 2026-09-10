@@ -4357,7 +4357,12 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
       pagamentos: queryAll<{ id: string }>(`SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
         WHERE rc.deletedAt IS NULL AND rc.status IN ('ativo', 'recusado') AND
         (rc.ordemCobrancaId = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos r WHERE r.recebimentoId = rc.id AND r.ordemId = ?))
-        ORDER BY rc.data, rc.createdAt, rc.id`, [ordem.id, ordem.id]).map(r => carregarRecebimentoGerenciavel(r.id)).filter(Boolean),
+        ORDER BY rc.data, rc.createdAt, rc.id`, [ordem.id, ordem.id]).map(r => {
+          const pagamento = carregarRecebimentoGerenciavel(r.id);
+          return pagamento ? { ...pagamento, valorAplicadoOrdem: Number(queryOne<any>(
+            'SELECT COALESCE(SUM(valor), 0) AS total FROM ordem_cobranca_recebimentos WHERE ordemId = ? AND recebimentoId = ? AND deletedAt IS NULL',
+            [ordem.id, r.id])?.total || 0) } : null;
+        }).filter(Boolean),
       parcelas: parcelas.map((parcela) => ({ ...parcela, pagamentos: queryAll<{ id: string }>(
         `SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
          JOIN ordem_cobranca_parcela_recebimentos pr ON pr.recebimentoId = rc.id

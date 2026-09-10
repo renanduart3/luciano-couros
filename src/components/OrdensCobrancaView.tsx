@@ -111,10 +111,10 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobra
       </div>
       <div className="divide-y divide-slate-200">
         <p className="bg-slate-50 px-3 py-2 text-xs font-bold">Pagamentos</p>
-        {(ordem.pagamentos || []).map(p => <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+        {(ordem.pagamentos || []).map(p => <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_7rem_9rem]">
           <span>{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</span>
-          <strong>{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
-          <span className={p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}>{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}</span>
+          <strong className="whitespace-nowrap text-right font-mono tabular-nums">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
+          <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}</span>
         </div>)}
         {!ordem.pagamentos?.length && <p className="px-3 py-2 text-xs text-slate-500">Nenhum pagamento registrado.</p>}
       </div>

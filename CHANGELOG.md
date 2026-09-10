@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.29.1 — 2026-09-10
+
+- Resumo de pagamentos das ordens com colunas alinhadas para descrição, valor e situação.
+- Demonstrativo da ordem lista cada cheque/boleto individualmente, sem repetir o montante do recebimento agrupador.
+- Rodapé concentra negociado, pago compensado e restante a pagar; títulos aguardando não são apresentados como pagos.
+- Comprovantes de venda e de saldo devedor do cliente permanecem inalterados.
+
 ## 1.29.0 — 2026-09-10
 
 - Ordens de cobrança por montante, com pagamentos independentes e formas distintas; parcelamento no crédito e cronogramas anteriores preservados para consulta.

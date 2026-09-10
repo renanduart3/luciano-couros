@@ -1,5 +1,5 @@
 import React from "react";
-import { FORMAS_PAGAMENTO } from "../lib/pagamentos";
+import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
 import { createPortal } from "react-dom";
 import { CalendarDays, MessageCircle, Printer, WalletCards, X } from "lucide-react";
 import { OrdemCobranca, OrdemCobrancaParcela } from "../types";
@@ -27,6 +27,7 @@ const situacaoParcela = (parcela: OrdemCobrancaParcela) => {
 };
 
 export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
+  const resumo = demonstrativoOrdem(ordem);
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
 
   return createPortal(
@@ -65,23 +66,22 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
 
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full min-w-[620px] text-xs print:min-w-0">
-                <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Negociado</th><th className="p-2 text-right">Pago</th><th className="p-2 text-right">Saldo</th></tr></thead>
-                <tbody className="divide-y divide-slate-200">{ordem.vales.map((vale) => <tr key={vale.id}><td className="p-2 font-mono font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(vale.valorVinculado)}</td><td className="p-2 text-right font-mono font-black text-emerald-800">{formatCurrency(vale.valorPago)}</td><td className="p-2 text-right font-mono font-black text-amber-900">{formatCurrency(vale.saldo)}</td></tr>)}</tbody>
-                <tfoot><tr className="border-t-2 border-slate-900 bg-slate-100 font-black"><td colSpan={2} className="p-2 text-right uppercase">Total dos vales vinculados</td><td className="p-2 text-right font-mono">{formatCurrency(ordem.totalOriginal)}</td><td className="p-2 text-right font-mono text-emerald-800">{formatCurrency(ordem.valorPago)}</td><td className="p-2 text-right font-mono text-amber-900">{formatCurrency(ordem.saldo)}</td></tr></tfoot>
+                <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Negociado</th></tr></thead>
+                <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2">{formatDate(v.data)}</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td></tr>)}</tbody>
               </table>
             </div>
 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
-              <table className="w-full text-xs"><thead><tr><th className="p-2 text-left">Data / forma</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Situação / títulos</th></tr></thead>
-                <tbody>{(ordem.pagamentos || []).map(p => <tr key={p.id} className="border-t border-slate-200">
-                  <td className="p-2">{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</td>
-                  <td className="p-2 text-right font-mono">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</td>
-                  <td className="p-2">{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}
-                    {p.titulos.map(t => <p key={t.id}>{t.numeroDocumento} · {formatDate(t.vencimento)} · {formatCurrency(t.valor)} · {t.status === 'compensado' ? 'Pago' : t.status === 'recusado' ? 'Recusado' : 'Aguardando'}</p>)}
-                  </td>
+              <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
+                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / venc.</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
+                <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
+                  <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
+                  <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}</td>
+                  <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
+                  <td className={`p-2 ${l.status === 'compensado' ? 'text-emerald-800' : 'text-amber-900'}`}>{l.status === 'compensado' ? 'Pago' : l.status === 'recusado' ? 'Recusado' : 'Aguardando'}</td>
                 </tr>)}</tbody>
-              </table>
+              </table></div>
               {!ordem.pagamentos?.length && <p className="text-xs text-slate-500">Nenhum pagamento registrado.</p>}
             </div>
 
@@ -89,8 +89,8 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
 
             <footer className="grid grid-cols-3 border-t-2 border-slate-900 bg-emerald-100 text-right">
               <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Negociado</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(ordem.totalOriginal)}</strong></div>
-              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Total pago</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(ordem.valorPago)}</strong></div>
-              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Saldo atual</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(ordem.saldo)}</strong></div>
+              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Total pago</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(resumo.pago)}</strong></div>
+              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante a pagar</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
             </footer>
           </section>
         </div>

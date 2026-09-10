@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { registrarMovimentacaoFinanceira } from "./programacaoPagamentos.js";
 import { execute, queryAll, queryOne, runInTransaction } from "./db.js";
 
 type Alvo = "vale" | "parcela" | "recebimento";
@@ -106,6 +107,7 @@ export function criarGerenciadorReabertura(deps: {
         }
         execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = ? WHERE (id = ? OR recebimentoId = ?) AND deletedAt IS NULL", [agora, agora, recebimento.pagamentoId || "", recebimento.id]);
         execute("UPDATE recebimentos_cliente SET status = 'cancelado', deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, recebimento.id]);
+        registrarMovimentacaoFinanceira(recebimento.id, "estorno", -Number(recebimento.valorRecebido), { motivo, alvo: { tipo, id }, valores: plano.resumo }, usuarioId);
         deps.auditar(usuarioId, "estornar_recebimento", "recebimento_cliente", recebimento.id, { clienteId: recebimento.clienteId, motivo, alvo: { tipo, id }, valorRecebido: recebimento.valorRecebido });
       }
       for (const pagamento of plano.legados) {

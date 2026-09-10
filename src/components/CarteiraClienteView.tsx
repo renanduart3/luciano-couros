@@ -10,8 +10,7 @@ import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./Parcelamen
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
-import { ParcelasCreditoEditor, LinhaCredito } from "./ParcelasCreditoEditor";
-import { sugerirValores } from "../lib/distribuicaoPagamento";
+import { distribuirCentavos } from "../lib/distribuicaoPagamento";
 
 interface CarteiraClienteViewProps {
   onRefreshStats?: () => void;
@@ -38,7 +37,6 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const [valorRecebido, setValorRecebido] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("avista_dinheiro");
   const [parcelasCartao, setParcelasCartao] = useState(1);
-  const [credito, setCredito] = useState<LinhaCredito[]>([]);
   const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [observacao, setObservacao] = useState("");
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
@@ -58,7 +56,6 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
       const dados = await api.getCarteiraCliente(id);
       setCarteira(dados);
       setTitulos([]);
-      setCredito([]);
       setSelecionadas(new Set());
       setValores({});
     } catch (err: any) {
@@ -88,8 +85,8 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const usandoBonus = formaPagamento === "bonus";
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
   const valorReferencia = pagamentoTitulo ? (valorParaDistribuir || totalAplicado) : valorParaDistribuir;
-  const montantePagamento = pagamentoTitulo ? totalTitulos : formaPagamento === "cartao_credito" ? Math.round(credito.reduce((s, l) => s + l.valor, 0) * 100) / 100 : valorParaDistribuir;
-  useEffect(() => { setCredito(ls => sugerirValores(ls.length ? ls : [{ valor: 0 }], valorParaDistribuir)); }, [valorParaDistribuir]);
+  const montantePagamento = pagamentoTitulo ? totalTitulos : valorParaDistribuir;
+  const credito = distribuirCentavos(valorParaDistribuir, parcelasCartao);
   const recebido = usandoBonus ? 0 : montantePagamento;
   const bonusUtilizado = usandoBonus ? montantePagamento : 0;
   const bonusGerado = usandoBonus ? 0 : Math.max(0, montantePagamento - totalAplicado);
@@ -158,7 +155,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
         bonusUtilizado,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
-        valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito.map(l => l.valor) : undefined,
+        valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
         observacao: observacao || undefined,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes
@@ -236,7 +233,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
               <label className="text-xs font-black text-slate-700">FORMA DE PAGAMENTO<select value={formaPagamento} onChange={(e) => setFormaPagamento(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-400 bg-slate-100 px-3 font-bold text-slate-950"><option value="avista_dinheiro">À VISTA DINHEIRO</option><option value="avista_debito">À VISTA DÉBITO</option><option value="pix">PIX</option><option value="cartao_credito">CARTÃO CRÉDITO</option><option value="cheque_emitente">CHEQUE EMITENTE</option><option value="cheque_terceiro">CHEQUE TERCEIRO</option><option value="duplicata_emitente">DUPLICATA EMITENTE</option><option value="duplicata_terceiro">DUPLICATA TERCEIRO</option><option value="bonus">BÔNUS</option></select></label>
             </div>
             <div className="mt-3"><TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={carteira.cliente.id} clienteNome={carteira.cliente.nome} clienteDocumento={carteira.cliente.documento} valorPagamento={valorReferencia} titulos={titulos} onChange={setTitulos} /></div>
-            {formaPagamento === "cartao_credito" && <ParcelasCreditoEditor linhas={credito} total={valorParaDistribuir} onChange={setCredito}/>}
+            {formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorParaDistribuir}/>}
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">

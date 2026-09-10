@@ -8,8 +8,7 @@ import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
-import { ParcelasCreditoEditor, LinhaCredito } from "./ParcelasCreditoEditor";
-import { sugerirValores } from "../lib/distribuicaoPagamento";
+import { distribuirCentavos } from "../lib/distribuicaoPagamento";
 
 interface Props {
   clienteId: string;
@@ -28,7 +27,6 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const [valor, setValor] = useState(totalDivida.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [parcelasCartao, setParcelasCartao] = useState(1);
-  const [credito, setCredito] = useState<LinhaCredito[]>([]);
   const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [observacao, setObservacao] = useState("");
@@ -44,8 +42,8 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const valorBase = parseBrazilianNumber(valor);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
-  const valorInformado = pagamentoTitulo ? totalTitulos : formaPagamento === "cartao_credito" ? Math.round(credito.reduce((s, l) => s + l.valor, 0) * 100) / 100 : valorBase;
-  useEffect(() => { setCredito(ls => sugerirValores(ls.length ? ls : [{ valor: 0 }], valorBase)); }, [valorBase]);
+  const valorInformado = pagamentoTitulo ? totalTitulos : valorBase;
+  const credito = distribuirCentavos(valorBase, parcelasCartao);
   const alocacoes = useMemo(() => {
     let restante = Math.max(0, valorInformado);
     return [...vales]
@@ -75,7 +73,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         bonusUtilizado: formaPagamento === "bonus" ? valorInformado : 0,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
-        valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito.map(l => l.valor) : undefined,
+        valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
         observacao: observacao || `Pagamento múltiplo de ${vales.length} vale(s)`,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes: alocacoes.map(({ vendaId, valor: valorAlocado }) => ({ vendaId, valor: valorAlocado })),
@@ -100,7 +98,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Pagamento de vales selecionados</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · {vales.length} vale(s) · dívida {formatCurrency(totalDivida)}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor de referência selecionado" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Referência dos vales selecionados. O total recebido é informado nos títulos.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
-        {formaPagamento === "cartao_credito" && <ParcelasCreditoEditor linhas={credito} total={valorBase} onChange={setCredito}/>}
+        {formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase}/>}
         {formaPagamento === "bonus" && <div className="rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(saldoBonus)}</div>}
         <TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
         <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Distribuição automática — vales mais antigos primeiro</div><table className="w-full text-sm"><thead className="bg-slate-200 text-[10px] font-black uppercase"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Saldo antes</th><th className="p-2 text-right">Abatimento</th><th className="p-2 text-right">Saldo depois</th></tr></thead><tbody className="divide-y divide-slate-200">{[...vales].sort((a, b) => a.data.localeCompare(b.data)).map((vale) => { const aplicado = alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0; return <tr key={vale.id}><td className="p-2 font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(vale.saldoRestante)}</td><td className="p-2 text-right font-mono font-black text-emerald-800">{formatCurrency(aplicado)}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(Math.max(0, Number(vale.saldoRestante) - aplicado))}</td></tr>; })}</tbody></table></div>

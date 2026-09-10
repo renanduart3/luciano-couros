@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.30.0 — 2026-09-10
+
+- Estorno e exclusão individual ou em lote dos pagamentos da ordem, com senha gerencial, auditoria e reversão integral em caso de falha.
+- Estornos restauram previsões editáveis sem movimentação financeira, com proteção contra registro duplicado e edição desatualizada.
+- Atualização dos saldos entre detalhes, listagem e vales; ordens canceladas deixam de indicar saldo em aberto na agenda.
+- Compensação automática de cheques e boletos programados, com suspensão após intervenção manual e histórico financeiro.
+- Vales vinculados a ordens abertas aparecem apenas no filtro Todos; novos pagamentos são inseridos no topo.
+- Cartão de crédito simplificado para valor total e seleção de 1x a 12x, com distribuição automática dos centavos.
+- Finalização com geração de novo vale residual não está incluída nesta versão.
+
 ## 1.29.1 — 2026-09-10
 
 - Resumo de pagamentos das ordens com colunas alinhadas para descrição, valor e situação.

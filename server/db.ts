@@ -983,6 +983,39 @@ export function initDatabase() {
   }
   if (!(db.prepare('PRAGMA table_info(recebimentos_cliente)').all() as any[]).some(c => c.name === 'ordemCobrancaId')) db.prepare('ALTER TABLE recebimentos_cliente ADD COLUMN ordemCobrancaId TEXT').run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_recebimentos_ordem ON recebimentos_cliente(ordemCobrancaId)').run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS ordem_pagamentos_projetados (
+    id TEXT PRIMARY KEY, ordemId TEXT NOT NULL, recebimentoOrigemId TEXT NOT NULL,
+    dados TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'pendente',
+    recebimentoNovoId TEXT, createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_projecoes_ordem ON ordem_pagamentos_projetados(ordemId, estado)').run();
+  if (!(db.prepare('PRAGMA table_info(recebimento_titulos)').all() as any[]).some(c => c.name === 'compensacaoAutomatica')) {
+    db.prepare('ALTER TABLE recebimento_titulos ADD COLUMN compensacaoAutomatica INTEGER NOT NULL DEFAULT 0').run();
+    // Migração universal: apenas títulos que já tinham uma previsão futura ao serem
+    // registrados. Reagendamentos futuros entram; atrasados sem programação não.
+    db.prepare(`UPDATE recebimento_titulos SET compensacaoAutomatica = 1
+      WHERE deletedAt IS NULL AND status = 'aguardando' AND vencimento > substr(createdAt, 1, 10)
+        AND (motivoStatus IS NULL OR trim(motivoStatus) = '')
+        AND NOT EXISTS (SELECT 1 FROM auditoria a
+          WHERE a.entidadeId = recebimento_titulos.recebimentoId
+            AND a.acao IN ('pagamento_alterado', 'titulo_compensado')
+            AND a.createdAt >= recebimento_titulos.createdAt)`).run();
+    db.prepare(`UPDATE ordens_cobranca SET status = 'aberta'
+      WHERE status = 'quitada' AND deletedAt IS NULL AND EXISTS (
+        SELECT 1 FROM ordem_cobranca_recebimentos o JOIN recebimento_titulos t ON t.recebimentoId = o.recebimentoId
+        JOIN recebimentos_cliente r ON r.id = o.recebimentoId
+        WHERE o.ordemId = ordens_cobranca.id AND o.deletedAt IS NULL
+          AND t.deletedAt IS NULL AND t.status = 'aguardando' AND r.deletedAt IS NULL AND r.status = 'ativo')`).run();
+  }
+  db.prepare(`CREATE INDEX IF NOT EXISTS idx_titulos_programados
+    ON recebimento_titulos(compensacaoAutomatica, status, vencimento) WHERE deletedAt IS NULL`).run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS movimentacoes_financeiras (
+    id TEXT PRIMARY KEY, recebimentoId TEXT NOT NULL, tituloId TEXT,
+    tipo TEXT NOT NULL, valor REAL NOT NULL, usuarioId TEXT, detalhes TEXT NOT NULL,
+    createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_movimentos_recebimento ON movimentacoes_financeiras(recebimentoId, createdAt)').run();
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'formaPagamentoPrevista')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN formaPagamentoPrevista TEXT').run();
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'valorRenegociado')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN valorRenegociado REAL NOT NULL DEFAULT 0').run();
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}

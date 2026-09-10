@@ -314,6 +314,8 @@ export interface RecebimentoCliente {
 }
 
 export interface PagamentoGerenciavel {
+  revisao?: string;
+  ordemAtualizada?: OrdemCobranca;
   valorAplicadoOrdem?: number;
   ordemCobrancaId?: string | null;
   valoresParcelasCartao?: number[];
@@ -369,6 +371,7 @@ export interface PagamentoGerenciavel {
 }
 
 export interface TituloRecebimento {
+  compensacaoAutomatica?: number;
   valorOriginal?: number;
   valorManual?: boolean;
   id?: string;
@@ -520,7 +523,10 @@ export interface OrdemCobrancaVale {
   saldoAtualVale: number;
 }
 
+export interface ProjecaoPagamentoOrdem { id: string; revisao: string; dados: PagamentoGerenciavel; }
+export type ItemAcaoPagamentoOrdem = { tipo: "recebimento" | "projecao"; id: string };
 export interface OrdemCobranca {
+  projecoes?: ProjecaoPagamentoOrdem[];
   pagamentos: PagamentoGerenciavel[];
   id: string;
   numeroSequencial: number;

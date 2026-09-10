@@ -215,6 +215,7 @@ export const api = {
   getCarteiraResumo: (id: string) =>
     fetch(`${API_BASE}/clientes/${id}/carteira/resumo`).then(r => handleResponse<CarteiraResumo>(r)),
   createRecebimentoCliente: (clienteId: string, dados: {
+    projecaoId?: string; projecaoRevisao?: string; pin?: string;
     valoresParcelasCartao?: number[];
     data: string;
     valorRecebido: number;
@@ -239,6 +240,7 @@ export const api = {
     body: JSON.stringify(dados)
   }).then(r => handleResponse<{
     success: boolean;
+    ordemAtualizada?: OrdemCobranca;
     id: string;
     valorRecebido: number;
     valorAplicado: number;
@@ -255,6 +257,7 @@ export const api = {
   getRecebimentoGerenciavel: (recebimentoId: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/gerenciar`).then(r => handleResponse<PagamentoGerenciavel>(r)),
   updateRecebimentoCliente: (recebimentoId: string, dados: {
+    revisao?: string;
     ordemCobrancaId?: string;
     valoresParcelasCartao?: number[];
     pin: string;
@@ -305,6 +308,15 @@ export const api = {
 
   getCheques: () => fetch(`${API_BASE}/cheques`).then(r => handleResponse<ChequeGerencial[]>(r)),
 
+  previaAcaoPagamentosOrdem: (id: string, acao: "estornar" | "excluir", itens: import("../types").ItemAcaoPagamentoOrdem[]) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/pagamentos/previa`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao, itens }) })
+      .then(r => handleResponse<{ revisao: string; totalFinanceiro: number; quantidade: number }>(r)),
+  acaoPagamentosOrdem: (id: string, dados: { acao: "estornar" | "excluir"; itens: import("../types").ItemAcaoPagamentoOrdem[]; revisao: string; pin: string }) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/pagamentos/acoes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
+      .then(r => handleResponse<OrdemCobranca>(r)),
+  updateProjecaoOrdem: (id: string, projecaoId: string, dados: { pin: string; revisao: string; data: string; formaPagamento: string; valorRecebido: number; parcelasCartao?: number; valoresParcelasCartao?: number[]; titulos?: TituloRecebimento[] }) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/projecoes/${projecaoId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
+      .then(r => handleResponse<OrdemCobranca>(r)),
   // ORDENS DE COBRANÇA
   getOrdensCobranca: (clienteId?: string) => {
     const params = new URLSearchParams();

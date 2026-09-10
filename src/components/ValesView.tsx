@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { ordensAbertasPorVale, visivelPorVinculoOrdem } from "../lib/filtroVales";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckSquare2, Coins, Eye, FileClock, Filter, HandCoins, Landmark, MessageCircle, WalletCards, X } from "lucide-react";
 import { Cliente, OrdemCobranca, Venda } from "../types";
 import { api } from "../lib/api";
@@ -49,13 +50,33 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
   const [ordemDetalhada, setOrdemDetalhada] = useState<OrdemCobranca | null>(null);
   const [pageSize, setPageSize] = useState(20);
   const [ordenacao, setOrdenacao] = useState<OrdenacaoVales>("numero_desc");
+  const versaoCarga = useRef(0);
+  const atualizarFinanceiro = async (ordem?: OrdemCobranca) => {
+    const versao = ++versaoCarga.current;
+    if (ordem) {
+      setOrdens(atuais => atuais.map(item => item.id === ordem.id ? ordem : item));
+      setOrdemDetalhada(atual => atual?.id === ordem.id ? ordem : atual);
+    }
+    onRefreshStats?.();
+    try {
+      const [vendas, listaOrdens] = await Promise.all([api.getVendas(), api.getOrdensCobranca()]);
+      if (versao !== versaoCarga.current) return;
+      setVales(vendas.filter(venda => Boolean(venda.vencimento)));
+      setOrdens(listaOrdens);
+      setValeDetalhado(atual => atual ? vendas.find(venda => venda.id === atual.id) || null : null);
+      setOrdemDetalhada(atual => atual ? listaOrdens.find(item => item.id === atual.id) || null : null);
+    } catch (err: any) {
+      if (versao === versaoCarga.current) setError(err.message || "Não foi possível atualizar os saldos.");
+    }
+  };
 
   useEffect(() => {
     let active = true;
+    const versao = ++versaoCarga.current;
     setLoading(true);
     Promise.all([api.getVendas(), api.getClientes(), api.getOrdensCobranca()])
       .then(([vendas, listaClientes, listaOrdens]) => {
-        if (!active) return;
+        if (!active || versao !== versaoCarga.current) return;
         setVales(
           vendas
             .filter((venda) => Boolean(venda.vencimento))
@@ -90,7 +111,9 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
   }, [clientes, vales]);
 
+  const ordemAtivaPorVale = useMemo(() => ordensAbertasPorVale(ordens), [ordens]);
   const valesFiltrados = useMemo(() => vales.filter((vale) => {
+    if (!visivelPorVinculoOrdem(vale.id, status, ordemAtivaPorVale)) return false;
     const numeroBuscado = numeroVale.replace(/\D/g, "").replace(/^0+/, "");
     if (numeroBuscado && String(vale.numeroSequencial) !== numeroBuscado) return false;
     if (clienteId && vale.clienteId !== clienteId) return false;
@@ -104,7 +127,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     if (status === "quitados" && vale.status !== "paga") return false;
     if (status === "cancelados" && vale.status !== "cancelada") return false;
     return true;
-  }), [vales, numeroVale, clienteId, status, vencimentoInicio, vencimentoFim]);
+  }), [vales, numeroVale, clienteId, status, vencimentoInicio, vencimentoFim, ordemAtivaPorVale]);
 
   const valesOrdenados = useMemo(() => [...valesFiltrados].sort((a, b) => {
     if (ordenacao === "numero_asc") return Number(a.numeroSequencial) - Number(b.numeroSequencial);
@@ -113,14 +136,10 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
     return Number(b.numeroSequencial) - Number(a.numeroSequencial);
   }), [valesFiltrados, ordenacao]);
   const valesPagina = paginate<Venda>(valesOrdenados, page, pageSize);
-  const valesSelecionados = useMemo(() => vales.filter((vale) => selecionados.has(vale.id)), [vales, selecionados]);
+  const valesSelecionados = useMemo(() => valesFiltrados.filter((vale) => selecionados.has(vale.id)), [valesFiltrados, selecionados]);
   const clienteSelecionado = clientesFiltro.find((cliente) => cliente.id === clienteId);
   const valesDoCliente = useMemo(() => clienteId ? vales.filter((vale) => vale.clienteId === clienteId) : [], [vales, clienteId]);
-  const ordemAtivaPorVale = useMemo(() => {
-    const mapa = new Map<string, OrdemCobranca>();
-    ordens.filter((ordem) => ordem.status === "aberta").forEach((ordem) => ordem.vales.filter((vale) => Number(vale.saldo) > 0.005).forEach((vale) => mapa.set(vale.vendaId, ordem)));
-    return mapa;
-  }, [ordens]);
+
   useEffect(() => {
     const ultimaPagina = Math.max(1, Math.ceil(valesFiltrados.length / pageSize));
     setPage((paginaAtual) => Math.min(paginaAtual, ultimaPagina));
@@ -177,11 +196,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
         <OrdemCobrancaDetalhesModal
           ordem={ordemDetalhada}
           onClose={() => setOrdemDetalhada(null)}
-          onChanged={(atualizada) => {
-            setOrdemDetalhada(atualizada);
-            api.getOrdensCobranca().then(setOrdens).catch((erro) => setError(erro.message));
-            api.getVendas().then((vendas) => setVales(vendas.filter((venda) => Boolean(venda.vencimento))));
-          }}
+          onChanged={atualizarFinanceiro}
         />
       )}
       {cobrancaAberta && clienteSelecionado && <CobrancaValesModal clienteId={clienteSelecionado.id} clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => { setCobrancaAberta(false); setSelecionados(new Set()); }} onSaved={(ordem) => { setOrdens((atuais) => [ordem, ...atuais]); setOrdensRefreshKey((atual) => atual + 1); }} />}
@@ -198,7 +213,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
       </div>
 
       {tab === "ordens" ? (
-        <OrdensCobrancaView refreshKey={ordensRefreshKey} />
+        <OrdensCobrancaView refreshKey={ordensRefreshKey} onChanged={atualizarFinanceiro} />
       ) : tab === "cheques" ? (
         <ChequesView
           onOpenVale={(vendaId) => {
@@ -209,12 +224,7 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
             const ordem = ordens.find((item) => item.id === ordemId);
             if (ordem) setOrdemDetalhada(ordem);
           }}
-          onChanged={() => {
-            Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendasAtualizadas, ordensAtualizadas]) => {
-              setVales(vendasAtualizadas.filter((venda) => Boolean(venda.vencimento)));
-              setOrdens(ordensAtualizadas);
-            });
-          }}
+          onChanged={() => { void atualizarFinanceiro(); }}
         />
       ) : (
         <>
@@ -232,8 +242,8 @@ export function ValesView({ onRefreshStats }: ValesViewProps) {
           </div>
 
           {clienteId && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-2.5">
-            <div><p className="text-xs font-black uppercase text-emerald-950">Selecione os vales em aberto para cobrar</p><p className="text-xs font-bold text-emerald-700">{selecionados.size} selecionado(s) • {formatCurrency(valesSelecionados.reduce((total, vale) => total + Number(vale.saldoRestante), 0))}</p></div>
-            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setSelecionados(new Set(valesFiltrados.filter(estaEmAberto).map((vale) => vale.id)))} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 bg-white px-3 py-2 text-xs font-black uppercase text-emerald-900"><CheckSquare2 size={16}/> Selecionar abertos</button><button type="button" disabled={selecionados.size === 0} onClick={() => setPagamentoAberto(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><Coins size={16}/> Registrar pagamento</button><button type="button" disabled={selecionados.size === 0} onClick={() => setCobrancaAberta(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><MessageCircle size={16}/> Gerar ordem</button></div>
+            <div><p className="text-xs font-black uppercase text-emerald-950">Selecione os vales em aberto para cobrar</p><p className="text-xs font-bold text-emerald-700">{valesSelecionados.length} selecionado(s) • {formatCurrency(valesSelecionados.reduce((total, vale) => total + Number(vale.saldoRestante), 0))}</p></div>
+            <div className="flex flex-wrap gap-2"><button type="button" onClick={() => setSelecionados(new Set(valesFiltrados.filter(estaEmAberto).map((vale) => vale.id)))} className="inline-flex items-center gap-2 rounded-lg border border-emerald-400 bg-white px-3 py-2 text-xs font-black uppercase text-emerald-900"><CheckSquare2 size={16}/> Selecionar abertos</button><button type="button" disabled={valesSelecionados.length === 0} onClick={() => setPagamentoAberto(true)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><Coins size={16}/> Registrar pagamento</button><button type="button" disabled={valesSelecionados.length === 0} onClick={() => setCobrancaAberta(true)} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:cursor-not-allowed disabled:opacity-40"><MessageCircle size={16}/> Gerar ordem</button></div>
           </div>}
 
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">

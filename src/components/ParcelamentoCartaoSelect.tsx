@@ -36,7 +36,8 @@ export function ResumoParcelamentoCartao({ formaPagamento, parcelasCartao, valor
   </div>;
 }
 
-export function ParcelamentoCartaoSelect({ formaPagamento, parcelas, onChange, valorTotal, className = "" }: {
+export function ParcelamentoCartaoSelect({ formaPagamento, parcelas, onChange, valorTotal, className = "", disabled = false }: {
+  disabled?: boolean;
   formaPagamento: string;
   parcelas: number;
   onChange: (parcelas: number) => void;
@@ -45,11 +46,11 @@ export function ParcelamentoCartaoSelect({ formaPagamento, parcelas, onChange, v
 }) {
   if (formaPagamento !== "cartao_credito") return null;
   const quantidade = normalizarQuantidadeParcelas(parcelas);
-  return <div className={className}>
+  return <div className={`max-w-xs ${className}`}>
     <label className="block text-[10px] font-black uppercase text-blue-800">
-      Parcelas no cartão
-      <select value={quantidade} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 min-h-10 w-full rounded-lg border border-blue-300 bg-blue-50 px-3 text-sm font-black text-blue-950">
-        {Array.from({ length: 12 }, (_, index) => index + 1).map((numero) => <option key={numero} value={numero}>{numero}x</option>)}
+      Parcelamento
+      <select disabled={disabled} value={quantidade} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-950 disabled:opacity-50">
+        {Array.from({ length: 12 }, (_, index) => index + 1).map((numero) => <option key={numero} value={numero}>{numero === 1 ? '1x (sem parcelamento)' : `${numero}x`}</option>)}
       </select>
     </label>
     {Number(valorTotal || 0) > 0 && <p className="mt-1 rounded-lg bg-blue-50 px-2 py-1 text-[10px] font-bold normal-case text-blue-900">{descreverParcelamentoCartao(Number(valorTotal), quantidade)} · Total {formatCurrency(Number(valorTotal))}</p>}

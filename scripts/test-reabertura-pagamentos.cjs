@@ -270,7 +270,7 @@ async function main() {
       ordemCobrancaId: flex.id, formaPagamento: 'cartao_credito', valorRecebido: 600, parcelasCartao: 3, valoresParcelasCartao: [200, 200, 200] });
     assert.equal(flexCredito.bonusGerado, 100);
     const flexQuitada = await getOrdem(flex.id);
-    assert.equal(flexQuitada.status, 'quitada'); assert.equal(flexQuitada.pagamentos.length, 3);
+    assert.equal(flexQuitada.status, 'aberta'); assert.equal(flexQuitada.pagamentos.length, 3); // Cheque ainda aguardando.
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ordem_cobranca_parcela_recebimentos WHERE ordemId = ?').get(flex.id).n, 0);
     await request('PUT', `/recebimentos-cliente/${flexPix.id}`, { pin, status: 'compensado', data: '2026-09-08',
       formaPagamento: 'pix', valorRecebido: 100, distribuicaoAutomatica: true, alocacoes: [] });
@@ -322,6 +322,90 @@ async function main() {
     await reabrir('recebimento', individualPix.id);
     await conferirVale(individual.id, 0, 1000);
     console.log('OK: vale individual com PIX, cheque e boleto, bônus, edição com senha e estornos independentes');
+
+    const valeProgramado = await criarVale(100);
+    const programado = await pagar([{ vendaId: valeProgramado.id, valor: 100 }], {
+      formaPagamento: 'cheque_emitente',
+      titulos: [{ ...titulo, valor: 100, status: 'aguardando', dataCompensacao: undefined, vencimento: '2099-12-10' }]
+    });
+    let ag = await request('GET', `/recebimentos-cliente/${programado.id}/gerenciar`);
+    assert.equal(ag.titulos[0].compensacaoAutomatica, 1);
+    await request('PUT', `/recebimento-titulos/${ag.titulos[0].id}/status`, { pin, status: 'compensado', dataCompensacao: '2026-09-10' });
+    await request('PUT', `/recebimento-titulos/${ag.titulos[0].id}/status`, { pin, status: 'aguardando' });
+    ag = await request('GET', `/recebimentos-cliente/${programado.id}/gerenciar`);
+    assert.equal(ag.titulos[0].compensacaoAutomatica, 0);
+    const reprogramar = async titulos => request('PUT', `/recebimentos-cliente/${programado.id}`, {
+      pin, status: 'aguardando', data: '2026-09-10', formaPagamento: 'cheque_emitente', valorRecebido: 100,
+      titulos, alocacoes: [], distribuicaoAutomatica: true
+    });
+    ag = await reprogramar(ag.titulos);
+    assert.equal(ag.titulos[0].compensacaoAutomatica, 0);
+    ag = await reprogramar(ag.titulos.map(t => ({ ...t, vencimento: '2099-12-11' })));
+    assert.equal(ag.titulos[0].compensacaoAutomatica, 1);
+    await reabrir('recebimento', programado.id);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM movimentacoes_financeiras WHERE recebimentoId = ? AND tipo = 'estorno'").get(programado.id).n, 1);
+    console.log('OK: programação futura, suspensão manual, edição preservando suspensão, reagendamento e estorno auditável');
+
+    const loteVale = await criarVale(1000);
+    const loteOrdem = await criarOrdem([loteVale], []);
+    const lotePix = await pagar([{ vendaId: loteVale.id, valor: 200 }], { ordemCobrancaId: loteOrdem.id });
+    const loteCheque = await pagar([{ vendaId: loteVale.id, valor: 300 }], { ordemCobrancaId: loteOrdem.id,
+      formaPagamento: 'cheque_emitente', titulos: [{ ...titulo, valor: 300, vencimento: '2099-12-10' }] });
+    const loteItens = [lotePix, loteCheque].map(p => ({ tipo: 'recebimento', id: p.id }));
+    const prepararLote = (acao, itens) => request('POST', `/ordens-cobranca/${loteOrdem.id}/pagamentos/previa`, { acao, itens });
+    const executarLote = (acao, itens, revisao, senha = pin, expected) => request('POST', `/ordens-cobranca/${loteOrdem.id}/pagamentos/acoes`, { acao, itens, revisao, pin: senha }, expected);
+    const lp = await prepararLote('estornar', loteItens);
+    await executarLote('estornar', loteItens, lp.revisao, 'errada', 403);
+    await conferirVale(loteVale.id, 500, 500);
+    await request('POST', `/ordens-cobranca/${loteOrdem.id}/pagamentos/previa`, { acao: 'estornar', itens: [loteItens[0], loteItens[0]] }, 400);
+    let lo = await executarLote('estornar', loteItens, lp.revisao);
+    assert.equal(lo.status, 'aberta'); assert.equal(lo.valorPago, 0); assert.equal(lo.saldo, 1000);
+    assert.equal(lo.pagamentos.length, 0); assert.equal(lo.projecoes.length, 2);
+    await conferirVale(loteVale.id, 0, 1000);
+    await executarLote('estornar', loteItens, lp.revisao, pin, 409);
+    const pp = lo.projecoes.find(p => p.dados.formaPagamento === 'pix');
+    const edicaoProjecao = { pin, revisao: pp.revisao, data: '2026-09-10', formaPagamento: 'pix', valorRecebido: 250 };
+    lo = await request('PUT', `/ordens-cobranca/${lo.id}/projecoes/${pp.id}`, edicaoProjecao);
+    assert.equal(lo.saldo, 1000); assert.equal(lo.projecoes.find(p => p.id === pp.id).dados.valorRecebido, 250);
+    await request('PUT', `/ordens-cobranca/${lo.id}/projecoes/${pp.id}`, edicaoProjecao, 409);
+    const ppAtual = lo.projecoes.find(p => p.id === pp.id);
+    const registrarProjecao = { ordemCobrancaId: lo.id, projecaoId: pp.id, projecaoRevisao: ppAtual.revisao, pin };
+    const pRegistrado = await pagar([{ vendaId: loteVale.id, valor: 250 }], registrarProjecao);
+    assert.equal(pRegistrado.ordemAtualizada.saldo, 750);
+    assert.equal(pRegistrado.ordemAtualizada.projecoes.length, 1);
+    await request('POST', `/clientes/${cliente.id}/carteira/recebimentos`, { ...registrarProjecao,
+      data: '2026-09-10', formaPagamento: 'pix', valorRecebido: 250, alocacoes: [{ vendaId: loteVale.id, valor: 250 }] }, 409);
+    await conferirVale(loteVale.id, 250, 750);
+    const pEditavel = await request('GET', `/recebimentos-cliente/${pRegistrado.id}/gerenciar`);
+    const editarAtual = { pin, revisao: pEditavel.revisao, data: '2026-09-10', status: 'compensado', formaPagamento: 'pix', valorRecebido: 100, alocacoes: [], distribuicaoAutomatica: true };
+    const depoisEdicao = await request('PUT', `/recebimentos-cliente/${pRegistrado.id}`, editarAtual);
+    assert.equal(depoisEdicao.ordemAtualizada.saldo, 900);
+    await request('PUT', `/recebimentos-cliente/${pRegistrado.id}`, editarAtual, 409);
+    const excluirItens = [{ tipo: 'recebimento', id: pRegistrado.id }, { tipo: 'projecao', id: lo.projecoes.find(p => p.id !== pp.id).id }];
+    const px = await prepararLote('excluir', excluirItens);
+    lo = await executarLote('excluir', excluirItens, px.revisao);
+    assert.equal(lo.projecoes.length, 0); assert.equal(lo.pagamentos.length, 0); assert.equal(lo.saldo, 1000);
+    await conferirVale(loteVale.id, 0, 1000);
+    assert.ok(db.prepare("SELECT COUNT(*) AS n FROM auditoria WHERE entidadeId = ? AND acao = 'pagamentos_ordem_estornar'").get(lo.id).n);
+    console.log('OK: lote atômico, senha, revisões, previsões sem movimentação, registro único, edição e exclusão com saldos atualizados');
+
+    const rollbackVale = await criarVale(50), rollbackVale2 = await criarVale(50);
+    const rollbackOrdem = await criarOrdem([rollbackVale, rollbackVale2], []);
+    const rb1 = await pagar([{ vendaId: rollbackVale.id, valor: 50 }], { valorRecebido: 70 });
+    const rb2 = await pagar([{ vendaId: rollbackVale2.id, valor: 50 }], { valorRecebido: 70 });
+    const gastoVale = await criarVale(20);
+    const gasto = await pagar([{ vendaId: gastoVale.id, valor: 20 }], { formaPagamento: 'bonus', valorRecebido: 0, bonusUtilizado: 20 });
+    const rbItens = [rb1, rb2].map(p => ({ tipo: 'recebimento', id: p.id }));
+    const rbPrevia = await request('POST', `/ordens-cobranca/${rollbackOrdem.id}/pagamentos/previa`, { acao: 'estornar', itens: rbItens });
+    // Cada crédito cabe sozinho na carteira, mas o segundo falha após o primeiro: tudo deve voltar.
+    await request('POST', `/ordens-cobranca/${rollbackOrdem.id}/pagamentos/acoes`, { acao: 'estornar', itens: rbItens, revisao: rbPrevia.revisao, pin }, 409);
+    await conferirVale(rollbackVale.id, 50, 0);
+    await conferirVale(rollbackVale2.id, 50, 0);
+    const aposFalha = await getOrdem(rollbackOrdem.id);
+    assert.equal(aposFalha.pagamentos.length, 2); assert.equal(aposFalha.projecoes.length, 0);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM movimentacoes_financeiras WHERE recebimentoId IN (?, ?) AND tipo = 'estorno'").get(rb1.id, rb2.id).n, 0);
+    await reabrir('recebimento', gasto.id);
+    console.log('OK: falha no segundo item reverte estorno, carteira, histórico e projeção do primeiro');
 
     await request('DELETE', `/produtos/${produto.id}`, {}, 403);
     await request('DELETE', `/produtos/${produto.id}`, { pin: 'errada' }, 403);

@@ -4,7 +4,6 @@ import { api } from "../lib/api";
 import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
-import { RenegociarSaldoOrdem } from "./RenegociarSaldoOrdem";
 import { LinhaPagamento } from "./LinhaPagamento";
 import { useEhGerente } from "../auth/AuthContext";
 import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
@@ -81,7 +80,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   };
 
   return <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-3">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase text-blue-900">Editar vales da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Marque os vales que devem permanecer agrupados. As parcelas em aberto serão recalculadas.</p></div><strong className="font-mono text-lg text-blue-950">{formatCurrency(totalSelecionado)}</strong></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase text-blue-900">Editar vales da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Marque os vales que devem permanecer agrupados. O montante e o saldo serão atualizados.</p></div><strong className="font-mono text-lg text-blue-950">{formatCurrency(totalSelecionado)}</strong></div>
     {loading ? <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-slate-500">Carregando vales...</p> : <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{disponiveis.map((vale) => {
       const atual = atuais.get(vale.id);
       const possuiPagamento = Number(atual?.valorPago || 0) > 0.005;
@@ -94,68 +93,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   </div>;
 }
 
-function EditarParcelasOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; onCancel: () => void; onSaved: (ordem: OrdemCobranca) => void }) {
-  type ParcelaEditavel = { id?: string; vencimento: string; valor: number; valorTexto?: string; bloqueada: boolean };
-  const [parcelas, setParcelas] = useState<ParcelaEditavel[]>(() => ordem.parcelas.map((parcela) => ({
-    id: parcela.id,
-    vencimento: parcela.vencimento,
-    valor: Number(parcela.valor),
-    bloqueada: Number(parcela.valorPago) > 0.005,
-  })));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const total = Math.round(parcelas.reduce((soma, parcela) => soma + Number(parcela.valor || 0), 0) * 100) / 100;
-  const totalCorreto = Math.abs(total - Number(ordem.totalOriginal)) <= 0.01;
-
-  const redistribuir = (lista: ParcelaEditavel[]) => {
-    const editaveis = lista.filter((parcela) => !parcela.bloqueada);
-    if (editaveis.length === 0) return lista;
-    const fixoCentavos = Math.round(lista.filter((parcela) => parcela.bloqueada).reduce((soma, parcela) => soma + parcela.valor, 0) * 100);
-    const disponivel = Math.max(0, Math.round(Number(ordem.totalOriginal) * 100) - fixoCentavos);
-    const base = Math.floor(disponivel / editaveis.length);
-    let resto = disponivel - base * editaveis.length;
-    return lista.map((parcela) => parcela.bloqueada ? parcela : {
-      ...parcela,
-      valor: (base + (resto-- > 0 ? 1 : 0)) / 100,
-      valorTexto: undefined,
-    });
-  };
-
-  const adicionar = () => {
-    if (parcelas.length >= 36) return;
-    const ultimaData = parcelas.at(-1)?.vencimento || hojeIso();
-    setParcelas((atuais) => redistribuir([...atuais, { vencimento: adicionarMeses(ultimaData, 1), valor: 0, bloqueada: false }]));
-    setError("");
-  };
-  const remover = (index: number) => {
-    if (parcelas.length <= 1 || parcelas[index].bloqueada) return;
-    setParcelas((atuais) => redistribuir(atuais.filter((_, posicao) => posicao !== index)));
-    setError("");
-  };
-  const salvar = async () => {
-    setError("");
-    if (parcelas.some((parcela) => !/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0)) return setError("Informe data e valor maior que zero em todas as parcelas.");
-    if (parcelas.some((parcela, index) => index > 0 && parcela.vencimento < parcelas[index - 1].vencimento)) return setError("Mantenha os vencimentos em ordem crescente.");
-    if (!totalCorreto) return setError(`A soma das parcelas deve ser ${formatCurrency(ordem.totalOriginal)}.`);
-    setSaving(true);
-    try {
-      onSaved(await api.updateOrdemCobrancaParcelas(ordem.id, ordem.updatedAt, parcelas.map(({ id, vencimento, valor }) => ({ id, vencimento, valor }))));
-    } catch (err: any) {
-      setError(err.message || "Não foi possível alterar as parcelas desta ordem.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-3">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-900">Editar parcelas da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Altere vencimentos e valores ou adicione e remova parcelas sem pagamento. Parcelas que já receberam valores ficam preservadas.</p></div><div className="text-right"><span className="block text-[9px] font-black uppercase text-blue-700">Soma das parcelas</span><strong className={`font-mono text-lg ${totalCorreto ? "text-emerald-800" : "text-red-700"}`}>{formatCurrency(total)} / {formatCurrency(ordem.totalOriginal)}</strong></div></div>
-    <div className="mt-3 overflow-x-auto rounded-lg border border-blue-200 bg-white"><table className="w-full min-w-[620px] text-xs"><thead className="bg-slate-900 text-[10px] font-black uppercase text-white"><tr><th className="p-2 text-left">Parcela</th><th className="p-2 text-left">Vencimento</th><th className="p-2 text-right">Valor</th><th className="w-28 p-2 text-center">Ação</th></tr></thead><tbody className="divide-y divide-slate-200">{parcelas.map((parcela, index) => <tr key={parcela.id || `nova-${index}`} className={parcela.bloqueada ? "bg-slate-100" : "bg-white"}><td className="p-2 font-black">{index + 1}/{parcelas.length}{parcela.bloqueada && <span className="ml-2 rounded bg-slate-300 px-2 py-1 text-[9px] text-slate-700">COM PAGAMENTO</span>}</td><td className="p-2"><input type="date" disabled={parcela.bloqueada} value={parcela.vencimento} onChange={(event) => setParcelas((atuais) => atuais.map((item, posicao) => posicao === index ? { ...item, vencimento: event.target.value } : item))} className="min-h-9 rounded-lg border border-slate-300 px-2 font-bold disabled:bg-slate-200"/></td><td className="p-2 text-right"><input type="text" inputMode="decimal" disabled={parcela.bloqueada} value={parcela.valorTexto ?? String(parcela.valor).replace(".", ",")} onChange={(event) => setParcelas((atuais) => atuais.map((item, posicao) => posicao === index ? { ...item, valor: parseBrazilianNumber(event.target.value), valorTexto: event.target.value } : item))} className="min-h-9 w-36 rounded-lg border border-slate-300 px-2 text-right font-mono font-black disabled:bg-slate-200"/></td><td className="p-2 text-center"><button type="button" disabled={parcela.bloqueada || parcelas.length <= 1} onClick={() => remover(index)} aria-label={`Remover parcela ${index + 1}`} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-3 text-[10px] font-black uppercase text-red-800 disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={13}/> Remover</button></td></tr>)}</tbody></table></div>
-    {error && <div className="mt-3 flex items-center gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800"><AlertCircle size={15}/>{error}</div>}
-    <div className="mt-3 flex flex-wrap justify-between gap-2"><div className="flex gap-2"><button type="button" disabled={parcelas.length >= 36} onClick={adicionar} className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black uppercase text-blue-800 disabled:opacity-40"><Plus size={15}/> Adicionar parcela</button><button type="button" onClick={() => setParcelas((atuais) => redistribuir(atuais))} className="rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black uppercase text-blue-800">Distribuir valores</button></div><div className="flex gap-2"><button type="button" disabled={saving} onClick={onCancel} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black uppercase">Voltar</button><button type="button" disabled={saving || !totalCorreto} onClick={() => void salvar()} className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40"><Save size={15}/>{saving ? "Salvando..." : "Salvar parcelas"}</button></div></div>
-  </div>;
-}
-
-function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onEditarParcelas }: { ordem: OrdemCobranca; onEditarVales: () => void; onEditarParcelas: () => void }) {
+function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobranca; onEditarVales: () => void }) {
   return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
     <div className="grid gap-3 border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white lg:grid-cols-[1fr_auto] lg:items-center">
       <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
@@ -171,14 +109,14 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onEditarParcelas }: {
         <div className="divide-y divide-slate-100">{ordem.vales.map((vale) => <div key={vale.id} className="grid grid-cols-[0.65fr_0.9fr_1fr] items-center gap-2 px-3 py-2 text-[11px]"><strong className="font-mono">Vale #{vale.numeroSequencial}</strong><span className="font-bold text-slate-600">{formatDate(vale.data)}</span><span className="text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</span></div>)}</div>
         <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total dos vales</strong><strong className="font-mono">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</strong></div>
       </div>
-      <div>
-        <div className="flex min-h-11 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3"><p className="text-[11px] font-black uppercase text-slate-800">Parcelas</p><div className="flex items-center gap-2"><span className={`rounded-md px-2 py-1 text-[9px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span>{ordem.status === "aberta" && !ordem.parcelas.some(p => Number(p.valorRenegociado || 0) > 0) && <button type="button" onClick={onEditarParcelas} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-blue-300 bg-white px-2 text-[9px] font-black uppercase text-blue-800"><Edit3 size={12}/> Alterar</button>}</div></div>
-        <div className="divide-y divide-slate-100">{ordem.parcelas.map((parcela) => {
-          const quitada = parcela.status === "paga" || Number(parcela.saldo) <= 0.005;
-          const parcial = !quitada && Number(parcela.valorPago) > 0.005;
-          const cor = quitada ? "border-l-4 border-emerald-500 bg-emerald-50/60" : parcial ? "border-l-4 border-blue-500 bg-blue-50/60" : "border-l-4 border-amber-500 bg-amber-50/40";
-          return <div key={parcela.id} className={`flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-[10px] ${cor}`}><strong className="text-xs">Parcela {parcela.numero}/{ordem.parcelas.length}</strong><span className="font-bold text-slate-600">{formatDate(parcela.vencimento)}</span><span className="font-mono">Valor: <strong>{formatCurrency(parcela.valor)}</strong></span><span aria-hidden="true" className="font-black text-slate-400">→</span><span className="font-mono text-emerald-800">Pago <strong>{formatCurrency(parcela.valorPago)}</strong></span>{Number(parcela.valorRenegociado || 0) > 0 && <span className="text-blue-800">Saldo renegociado: {formatCurrency(parcela.valorRenegociado!)}</span>}{!quitada && <span className="font-mono text-amber-900">Falta <strong>{formatCurrency(parcela.saldo)}</strong></span>}</div>;
-        })}</div>
+      <div className="divide-y divide-slate-200">
+        <p className="bg-slate-50 px-3 py-2 text-xs font-bold">Pagamentos</p>
+        {(ordem.pagamentos || []).map(p => <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+          <span>{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</span>
+          <strong>{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
+          <span className={p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}>{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}</span>
+        </div>)}
+        {!ordem.pagamentos?.length && <p className="px-3 py-2 text-xs text-slate-500">Nenhum pagamento registrado.</p>}
       </div>
     </div>
   </section>;
@@ -195,13 +133,13 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
   const [editandoVales, setEditandoVales] = useState(false);
-  const [editandoParcelas, setEditandoParcelas] = useState(false);
-  const [renegociandoId, setRenegociandoId] = useState<string | null>(null);
+  const [novoPagamento, setNovoPagamento] = useState(false);
   const [demonstrativoAberto, setDemonstrativoAberto] = useState(false);
   const atualizarPagamentos = async () => {
     const atualizada = (await api.getOrdensCobranca(ordem.clienteId)).find((item) => item.id === ordem.id);
     if (!atualizada) throw new Error("Ordem não encontrada ao atualizar.");
     onChanged(atualizada);
+    setNovoPagamento(false);
   };
   const alocarPagamento = (valor: number) => {
     let restante = valor;
@@ -275,36 +213,31 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
     <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><p className="text-xs font-black text-slate-400">ORDEM DE COBRANÇA</p><h2 className="text-xl font-black">#{ordem.numeroSequencial} · {ordem.clienteNome}</h2><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><div className="mt-2 flex flex-wrap gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black">EMITIDA EM {formatDate(ordem.dataEmissao)}</span>{Number(ordem.saldoBonus) > 0.005 && <span className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-black text-white"><WalletCards size={13}/> BÔNUS {formatCurrency(ordem.saldoBonus)}</span>}</div></div><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-black uppercase text-slate-950"><FileText size={15}/> Demonstrativo</button>{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-[10px] font-black uppercase text-white"><MessageCircle size={15}/> WhatsApp</a>}<button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></div></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
-        {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales da ordem atualizados e parcelas em aberto recalculadas."); onChanged(atualizada); }}/>
-        : editandoParcelas ? <EditarParcelasOrdem ordem={ordem} onCancel={() => setEditandoParcelas(false)} onSaved={(atualizada) => { setEditandoParcelas(false); setFeedback("Parcelas da ordem atualizadas."); onChanged(atualizada); }}/>
+        {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
-          <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoParcelas(false); setEditandoVales(true); }} onEditarParcelas={() => { setError(""); setFeedback(""); setEditandoVales(false); setEditandoParcelas(true); }}/>
+          <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
-        {renegociandoId && ordem.parcelas.find(p => p.id === renegociandoId) && <RenegociarSaldoOrdem key={renegociandoId} ordem={ordem} origem={ordem.parcelas.find(p => p.id === renegociandoId)!} onClose={() => setRenegociandoId(null)} onSaved={o => { setRenegociandoId(null); onChanged(o); }}/>}
         <div className="flex gap-2">
-          <button type="button" onClick={() => setAbaDetalhe("parcelas")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "parcelas" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Parcelas e pagamentos</button>
+          <button type="button" onClick={() => setAbaDetalhe("parcelas")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "parcelas" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Pagamentos</button>
           <button type="button" onClick={() => setAbaDetalhe("historico")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "historico" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Histórico da ordem</button>
         </div>
-        {abaDetalhe === "parcelas" ? <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
-          <table className="w-full min-w-[1000px] text-xs">
-            <thead className="bg-slate-900 text-left text-[10px] text-white"><tr><th className="p-2">Parcela</th><th className="p-2">Vencimento</th><th className="p-2">Previsto</th><th className="p-2">Pago</th><th className="p-2">Data</th><th className="p-2">Pagamento</th><th className="p-2">Forma de pagamento</th><th className="p-2">Status</th><th className="p-2 text-right">Ações</th></tr></thead>
-            <tbody className="divide-y divide-slate-200">{ordem.parcelas.flatMap((parcela) => {
-              const pagamentos = parcela.pagamentos?.length ? parcela.pagamentos : [undefined];
-              return pagamentos.map((pagamento, index) => <LinhaPagamento key={`${parcela.id}-${pagamento?.id || "novo"}`}
-                pagamento={pagamento} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento}
-                saldo={index === 0 ? Number(parcela.saldo) : 0} alocar={valor => alocarPagamento(Math.min(valor, Number(parcela.saldo)))} parcelaOrdemId={parcela.id}
-                referencia={`parcela ${parcela.numero}/${ordem.parcelas.length}${index ? " · recebimento anterior " + index : ""}`}
-                formaPagamentoPrevista={parcela.formaPagamentoPrevista} statusSemPagamento={parcela.status === "renegociada" ? "Saldo renegociado" : undefined} editavel={(pagamento ? gerente : Number(parcela.saldo) > 0.005) && ["aberta", "quitada"].includes(ordem.status)} colunasAntes={4}
-                alvoReabertura={{ tipo: "recebimento", id: pagamento?.id || "" }} onSaved={atualizarPagamentos} onComprovante={(id) => void abrirComprovanteSalvo(id)}>
-                <td className="p-2 font-bold">{parcela.numero}/{ordem.parcelas.length}{index === 0 && gerente && parcela.saldo > 0.005 && <button type="button" onClick={() => setRenegociandoId(parcela.id)} className="mt-1 block text-[10px] text-blue-800 underline">Renegociar saldo</button>}{index > 0 && <span className="block text-[9px] text-slate-500">Recebimento anterior</span>}</td>
-                <td className="p-2">{index === 0 ? formatDate(parcela.vencimento) : "—"}</td>
-                <td className="p-2 font-mono">{index === 0 ? formatCurrency(parcela.valor) : "—"}</td>
-                <td className="p-2 font-mono text-emerald-800">{index === 0 ? formatCurrency(parcela.valorPago) : "—"}</td>
-              </LinhaPagamento>);
-            })}</tbody>
-          </table>
+        {abaDetalhe === "parcelas" ? <div className="space-y-2">
+          <div className="flex justify-end"><button type="button" disabled={novoPagamento || ordem.saldo <= 0.005 || ordem.status !== 'aberta'} onClick={() => setNovoPagamento(true)} className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button></div>
+          <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="w-full min-w-[700px] text-left text-xs">
+            <thead><tr>{['Data', 'Valor', 'Forma de pagamento', 'Status', 'Ações'].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
+            <tbody>{(ordem.pagamentos || []).map(p => <LinhaPagamento key={p.id} pagamento={p} clienteId={ordem.clienteId}
+              clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} saldo={0} alocar={alocarPagamento}
+              ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={gerente && ['aberta', 'quitada'].includes(ordem.status)}
+              onSaved={atualizarPagamentos} onComprovante={id => void abrirComprovanteSalvo(id)}/>)}
+              {novoPagamento && <LinhaPagamento key="novo" iniciarEditando clienteId={ordem.clienteId} clienteNome={ordem.clienteNome}
+                clienteDocumento={ordem.clienteDocumento} saldo={ordem.saldo} alocar={alocarPagamento} ordemCobrancaId={ordem.id}
+                referencia={`ordem #${ordem.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => setNovoPagamento(false)}/>}
+            </tbody>
+          </table></div>
+          <p className="text-right text-xs font-bold text-amber-900">Saldo a receber: {formatCurrency(ordem.saldo)}</p>
         </div> : <div className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
+          {ordem.parcelas.length > 0 && <details className="px-3 py-2 text-xs"><summary className="cursor-pointer font-bold">Parcelamento anterior (somente consulta)</summary>{ordem.parcelas.map(p => <p key={p.id} className="mt-1">Parcela {p.numero} · {formatDate(p.vencimento)} · {formatCurrency(p.valor)}</p>)}</details>}
           {(ordem.eventos || []).map((evento) => <div key={evento.id} className="flex gap-3 px-3 py-2 text-[11px] leading-5"><span className="shrink-0 font-mono text-slate-500">{formatDate(evento.data)}</span><p className={evento.tipo === "estorno" ? "text-red-700" : "text-slate-700"}>{evento.texto}</p></div>)}
         </div>}
         {ordem.observacao && <div className="rounded-xl border border-slate-300 bg-white p-3 text-sm font-bold text-slate-700"><span className="block text-[10px] font-black uppercase text-slate-500">Observação</span>{ordem.observacao}</div>}
@@ -364,8 +297,8 @@ export function OrdensCobrancaView({ refreshKey }: Props) {
     {detalhada && <OrdemCobrancaDetalhesModal ordem={detalhada} onClose={() => setDetalhada(null)} onChanged={atualizar}/>}
     <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label><label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="numero_desc">Nº da ordem (maior)</option><option value="numero_asc">Nº da ordem (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
     {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center font-bold text-slate-500">Carregando ordens...</div> : error ? <div className="flex items-center gap-2 rounded-2xl border border-red-300 bg-red-50 p-4 font-bold text-red-800"><AlertCircle size={18}/>{error}</div> : filtradasOrdenadas.length === 0 ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-10 text-center"><FileClock className="mx-auto text-blue-600" size={34}/><p className="mt-3 font-black text-blue-950">Nenhuma ordem neste filtro</p></div> : <div className="grid gap-3">{filtradasOrdenadas.map((ordem) => {
-      const proxima = ordem.parcelas.find((parcela) => parcela.status === "pendente");
-      return <article key={ordem.id} className="grid gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[0.55fr_1.5fr_0.8fr_0.8fr_0.9fr_auto] lg:items-center"><div><p className="text-[10px] font-black uppercase text-slate-500">Ordem</p><p className="font-mono text-lg font-black">#{ordem.numeroSequencial}</p><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div><div><p className="text-[10px] font-black uppercase text-slate-500">Cliente</p><p className="font-black uppercase text-slate-950">{ordem.clienteNome}</p><p className="text-[10px] font-bold text-slate-500">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><p className="text-xs font-bold text-slate-500">{ordem.vales.length} vale(s) · {ordem.parcelas.length} parcela(s)</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="font-mono font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Pago</p><p className="font-mono font-black text-emerald-800">{formatCurrency(ordem.valorPago)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Próximo pagamento</p>{proxima ? <><p className="inline-flex items-center gap-1 font-black text-amber-900"><CalendarClock size={14}/>{formatDate(proxima.vencimento)}</p><p className="font-mono text-xs font-black">{formatCurrency(proxima.saldo)}</p></> : <p className="inline-flex items-center gap-1 font-black text-emerald-800"><CheckCircle2 size={15}/>Concluída</p>}</div><div className="flex justify-end"><button type="button" onClick={() => setDetalhada(ordem)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Eye size={14}/> Detalhes</button></div></article>;
+      const proxima = (ordem.pagamentos || []).flatMap(p => p.titulos).filter(t => t.status === "aguardando").sort((a, b) => a.vencimento.localeCompare(b.vencimento)).map(t => ({ vencimento: t.vencimento, saldo: t.valor }))[0];
+      return <article key={ordem.id} className="grid gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[0.55fr_1.5fr_0.8fr_0.8fr_0.9fr_auto] lg:items-center"><div><p className="text-[10px] font-black uppercase text-slate-500">Ordem</p><p className="font-mono text-lg font-black">#{ordem.numeroSequencial}</p><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div><div><p className="text-[10px] font-black uppercase text-slate-500">Cliente</p><p className="font-black uppercase text-slate-950">{ordem.clienteNome}</p><p className="text-[10px] font-bold text-slate-500">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><p className="text-xs font-bold text-slate-500">{ordem.vales.length} vale(s) · {ordem.pagamentos?.length || 0} pagamento(s)</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="font-mono font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Pago</p><p className="font-mono font-black text-emerald-800">{formatCurrency(ordem.valorPago)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Próximo título</p>{proxima ? <><p className="inline-flex items-center gap-1 font-black text-amber-900"><CalendarClock size={14}/>{formatDate(proxima.vencimento)}</p><p className="font-mono text-xs font-black">{formatCurrency(proxima.saldo)}</p></> : <p className="inline-flex items-center gap-1 font-black text-emerald-800"><CheckCircle2 size={15}/>{ordem.saldo > 0.005 ? "Saldo em aberto" : "Concluída"}</p>}</div><div className="flex justify-end"><button type="button" onClick={() => setDetalhada(ordem)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Eye size={14}/> Detalhes</button></div></article>;
     })}</div>}
   </div>;
 }

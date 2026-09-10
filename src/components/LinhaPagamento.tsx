@@ -13,12 +13,12 @@ const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "P
 const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
 export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
-  alocar, parcelaOrdemId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
+  alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
   key?: string; children?: React.ReactNode; colunasAntes?: number; pagamento?: PagamentoGerenciavel; somenteReabertura?: boolean;
   clienteId: string; clienteNome: string; clienteDocumento?: string; saldo: number;
   alocar: (valor: number) => Array<{ vendaId: string; valor: number }>;
-  parcelaOrdemId?: string; referencia: string; onSaved: () => Promise<void>;
+  parcelaOrdemId?: string; ordemCobrancaId?: string; referencia: string; onSaved: (resultado?: { estornado: boolean }) => Promise<void>;
   onComprovante?: (id: string) => void; editavel?: boolean;
   alvoReabertura?: { tipo: "vale" | "parcela" | "recebimento"; id: string };
   iniciarEditando?: boolean; onCancel?: () => void; statusSemPagamento?: string; formaPagamentoPrevista?: string | null;
@@ -81,7 +81,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
       if (situacao === "em_aberto" && pagamento && plano) {
         await api.reabrirPagamento(alvoReabertura?.tipo || "recebimento", alvoReabertura?.id || pagamento.id, { pin, revisao: plano.revisao, motivo: `Reabertura de ${referencia}` });
       } else if (!novo && pagamento) {
-        await api.updateRecebimentoCliente(pagamento.id, { pin, status: situacao as PagamentoGerenciavel["statusPagamento"], data,
+        await api.updateRecebimentoCliente(pagamento.id, { pin, ordemCobrancaId, status: situacao as PagamentoGerenciavel["statusPagamento"], data,
           valorRecebido: total, formaPagamento: forma, parcelasCartao: forma === 'cartao_credito' ? credito.length : cartao, valoresParcelasCartao: forma === 'cartao_credito' ? credito.map(l => l.valor) : undefined,
           dataCompensacao: situacao === "compensado" ? data : undefined,
           observacao: pagamento.observacao, titulos: titulo ? titulos : undefined, alocacoes: [], distribuicaoAutomatica: true });
@@ -89,11 +89,11 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
         if (forma === "bonus" && total > saldo + 0.005) throw new Error("O uso de bônus não pode ultrapassar o saldo.");
         await api.createRecebimentoCliente(clienteId, { data, valorRecebido: forma === "bonus" ? 0 : total, bonusUtilizado: forma === "bonus" ? total : 0,
           formaPagamento: forma, parcelasCartao: forma === 'cartao_credito' ? credito.length : cartao, valoresParcelasCartao: forma === 'cartao_credito' ? credito.map(l => l.valor) : undefined, titulos: titulo ? titulos : undefined,
-          parcelaOrdemId, observacao: `Pagamento de ${referencia}`, alocacoes: alocar(total) });
+          parcelaOrdemId, ordemCobrancaId, observacao: `Pagamento de ${referencia}`, alocacoes: alocar(total) });
       }
       // A gravação terminou; falha no recarregamento não pode repetir um recebimento.
       setConcluido(true); setPin("");
-      await onSaved();
+      await onSaved({ estornado: situacao === 'em_aberto' });
       setEditando(false); setPlano(null);
     } catch (error: any) { setErro(error.message || "Não foi possível salvar o pagamento."); }
     finally { setSaving(false); }

@@ -251,6 +251,78 @@ async function main() {
     await conferirVale(vale12.id, 1140, 60);
     console.log('OK: 12 títulos aceitos, 13 bloqueados e valor original preservado no pagamento parcial');
 
+    const flexA = await criarVale(600), flexB = await criarVale(400);
+    const flex = await request('POST', '/ordens-cobranca', { clienteId: cliente.id, dataEmissao: '2026-09-08', vendaIds: [flexA.id, flexB.id] });
+    assert.equal(flex.parcelas.length, 0);
+    assert.equal(flex.saldo, 1000);
+    const flexPix = await pagar([{ vendaId: flexA.id, valor: 200 }], { ordemCobrancaId: flex.id });
+    const flexCheque = await pagar([{ vendaId: flexA.id, valor: 300 }], { ordemCobrancaId: flex.id, formaPagamento: 'cheque_emitente',
+      titulos: [{ ...titulo, tipo: 'cheque_emitente', valor: 300, vencimento: '2000-01-31', status: 'compensado', dataCompensacao: '2026-09-08' }] });
+    const chequeAntes = await request('GET', `/recebimentos-cliente/${flexCheque.id}/gerenciar`);
+    const chequeAberto = await request('PUT', `/recebimentos-cliente/${flexCheque.id}`, { pin, status: 'aguardando', data: '2026-09-08',
+      formaPagamento: 'cheque_emitente', valorRecebido: 300, distribuicaoAutomatica: true, alocacoes: [],
+      titulos: chequeAntes.titulos.map(t => ({ ...t, status: 'aguardando', dataCompensacao: null })) });
+    assert.equal(chequeAberto.statusPagamento, 'aguardando');
+    await request('GET', '/cheques');
+    assert.equal((await request('GET', `/recebimentos-cliente/${flexCheque.id}/gerenciar`)).statusPagamento, 'aguardando');
+    assert.equal((await getOrdem(flex.id)).pagamentos.find(p => p.id === flexCheque.id).statusPagamento, 'aguardando');
+    const flexCredito = await pagar([{ vendaId: flexA.id, valor: 100 }, { vendaId: flexB.id, valor: 400 }], {
+      ordemCobrancaId: flex.id, formaPagamento: 'cartao_credito', valorRecebido: 600, parcelasCartao: 3, valoresParcelasCartao: [200, 200, 200] });
+    assert.equal(flexCredito.bonusGerado, 100);
+    const flexQuitada = await getOrdem(flex.id);
+    assert.equal(flexQuitada.status, 'quitada'); assert.equal(flexQuitada.pagamentos.length, 3);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ordem_cobranca_parcela_recebimentos WHERE ordemId = ?').get(flex.id).n, 0);
+    await request('PUT', `/recebimentos-cliente/${flexPix.id}`, { pin, status: 'compensado', data: '2026-09-08',
+      formaPagamento: 'pix', valorRecebido: 100, distribuicaoAutomatica: true, alocacoes: [] });
+    assert.equal((await getOrdem(flex.id)).saldo, 100);
+    await reabrir('recebimento', flexCheque.id);
+    conferirEstorno(flexCheque.id);
+    assert.equal((await getOrdem(flex.id)).saldo, 400);
+    assert.ok(!(await getOrdem(flex.id)).pagamentos.some(p => p.id === flexCheque.id));
+    await reabrir('recebimento', flexCredito.id); await reabrir('recebimento', flexPix.id);
+    assert.equal((await getOrdem(flex.id)).saldo, 1000);
+    const flexC = await criarVale(50);
+    const comNovoVale = await request('PUT', `/ordens-cobranca/${flex.id}/vales`, { vendaIds: [flexA.id, flexB.id, flexC.id] });
+    assert.equal(comNovoVale.totalOriginal, 1050);
+    const semVale = await request('PUT', `/ordens-cobranca/${flex.id}/vales`, { vendaIds: [flexA.id, flexB.id] });
+    assert.equal(semVale.totalOriginal, 1000);
+    await pagar([{ vendaId: flexC.id, valor: 50 }], { ordemCobrancaId: flex.id }).then(() => assert.fail('Vale fora da ordem'), e => assert.ok(e.message.includes('não pertence')));
+    console.log('OK: ordem sem parcelas, formas mistas, crédito, bônus, edição, estorno, vales e título vencido respeitando status manual');
+
+    const individual = await criarVale(1000);
+    const individualPix = await pagar([{ vendaId: individual.id, valor: 200 }]);
+    const individualCheque = await pagar([{ vendaId: individual.id, valor: 300 }], {
+      formaPagamento: 'cheque_emitente', titulos: [{ ...titulo, tipo: 'cheque_emitente', valor: 300, numeroDocumento: 'IND-CHEQUE' }]
+    });
+    const individualBoleto = await pagar([{ vendaId: individual.id, valor: 500 }], {
+      formaPagamento: 'duplicata_emitente', valorRecebido: 600,
+      titulos: [{ ...titulo, tipo: 'duplicata_emitente', valor: 600, numeroDocumento: 'IND-BOLETO' }]
+    });
+    assert.equal(individualBoleto.bonusGerado, 100);
+    await conferirVale(individual.id, 1000, 0);
+    assert.equal((await request('GET', `/vendas/${individual.id}`)).recebimentos.length, 3);
+    const boletoGerencial = await request('GET', `/recebimentos-cliente/${individualBoleto.id}/gerenciar`);
+    const editarBoleto = { pin, status: 'compensado', data: '2026-09-08', formaPagamento: 'duplicata_emitente',
+      valorRecebido: 400, distribuicaoAutomatica: true, alocacoes: [],
+      titulos: boletoGerencial.titulos.map(t => ({ ...t, valor: 400, status: 'compensado', dataCompensacao: '2026-09-08' })) };
+    await request('PUT', `/recebimentos-cliente/${individualBoleto.id}`, { ...editarBoleto, pin: 'errada' }, 403);
+    await conferirVale(individual.id, 1000, 0);
+    await request('PUT', `/recebimentos-cliente/${individualBoleto.id}`, editarBoleto);
+    await conferirVale(individual.id, 900, 100);
+    const boletoAtualizado = await request('GET', `/recebimentos-cliente/${individualBoleto.id}/gerenciar`);
+    assert.equal(boletoAtualizado.bonusGerado, 0);
+    assert.equal(boletoAtualizado.statusPagamento, 'compensado');
+    await request('GET', '/cheques');
+    await reabrir('recebimento', individualCheque.id);
+    conferirEstorno(individualCheque.id);
+    await conferirVale(individual.id, 600, 400);
+    await reabrir('recebimento', individualBoleto.id);
+    conferirEstorno(individualBoleto.id);
+    await conferirVale(individual.id, 200, 800);
+    await reabrir('recebimento', individualPix.id);
+    await conferirVale(individual.id, 0, 1000);
+    console.log('OK: vale individual com PIX, cheque e boleto, bônus, edição com senha e estornos independentes');
+
     await request('DELETE', `/produtos/${produto.id}`, {}, 403);
     await request('DELETE', `/produtos/${produto.id}`, { pin: 'errada' }, 403);
     assert.equal(db.prepare('SELECT ativo FROM produtos WHERE id = ?').get(produto.id).ativo, 1);

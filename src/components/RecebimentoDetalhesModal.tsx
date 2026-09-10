@@ -22,7 +22,8 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
       .catch(e => { if (ativo) setErro(e.message); });
     return () => { ativo = false; dialog.current?.close(); };
   }, [recebimentoId]);
-  const atualizar = async () => {
+  const atualizar = async (resultado?: { estornado: boolean }) => {
+    if (resultado?.estornado) { await onSaved(); onClose(); return; }
     setPagamento(await api.getRecebimentoGerenciavel(recebimentoId));
     await onSaved();
   };
@@ -40,7 +41,7 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
             <thead><tr>{["Data", "Pagamento", "Forma de pagamento", "Status", "Ações"].map(t => <th key={t}>{t}</th>)}</tr></thead>
             <tbody><LinhaPagamento pagamento={pagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome}
               clienteDocumento={pagamento.clienteDocumento} saldo={0} alocar={() => []} referencia="recebimento"
-              editavel={gerente} onEditingChange={setEditando} onSavingChange={setSaving} onSaved={atualizar}/></tbody>
+              ordemCobrancaId={pagamento.ordemCobrancaId || undefined} editavel={gerente} onEditingChange={setEditando} onSavingChange={setSaving} onSaved={atualizar}/></tbody>
           </table>
         </div>
         {!editando && <div className="overflow-x-auto rounded border border-slate-200"><table className="w-full min-w-[660px] text-left text-xs">

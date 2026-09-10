@@ -314,6 +314,7 @@ export interface RecebimentoCliente {
 }
 
 export interface PagamentoGerenciavel {
+  ordemCobrancaId?: string | null;
   valoresParcelasCartao?: number[];
   id: string;
   recebimentoId: string;
@@ -519,6 +520,7 @@ export interface OrdemCobrancaVale {
 }
 
 export interface OrdemCobranca {
+  pagamentos: PagamentoGerenciavel[];
   id: string;
   numeroSequencial: number;
   clienteId: string;

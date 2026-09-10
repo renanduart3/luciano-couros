@@ -9,6 +9,7 @@ import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
+import { SaldoClienteModal } from "./SaldoClienteModal";
 import { ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 
 const chavePrecoCliente = (produtoId: string, fornecedorId?: string | null) =>
@@ -61,6 +62,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   const [formError, setFormError] = useState("");
 
   // Customer History Modal State
+  const [clienteDemonstrativo, setClienteDemonstrativo] = useState<Cliente | null>(null);
   const [activeHistory, setActiveHistory] = useState<any | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingPagamentosHistory, setLoadingPagamentosHistory] = useState(false);
@@ -548,6 +550,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
         </div>
       )}
 
+      {clienteDemonstrativo && <SaldoClienteModal cliente={clienteDemonstrativo} onClose={() => setClienteDemonstrativo(null)}/>}
       {/* Customer Full History Modal ("Ficha do Cliente") */}
       {activeHistory && (
         <div className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
@@ -561,6 +564,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                 </span>
                 <h3 className="font-extrabold text-slate-900 text-base">Ficha de Perfil: {activeHistory.cliente.nome}</h3>
               </div>
+              <button onClick={() => setClienteDemonstrativo(activeHistory.cliente)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white">Saldo devedor / PDF</button>
               <button onClick={() => setActiveHistory(null)} className="p-1.5 hover:bg-slate-200 text-slate-400 rounded-lg">
                 <X size={18} />
               </button>

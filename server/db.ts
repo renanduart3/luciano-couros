@@ -981,6 +981,8 @@ export function initDatabase() {
     db.prepare('ALTER TABLE recebimento_titulos ADD COLUMN valorOriginal REAL').run();
     db.prepare('UPDATE recebimento_titulos SET valorOriginal = valor').run();
   }
+  if (!(db.prepare('PRAGMA table_info(recebimentos_cliente)').all() as any[]).some(c => c.name === 'ordemCobrancaId')) db.prepare('ALTER TABLE recebimentos_cliente ADD COLUMN ordemCobrancaId TEXT').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_recebimentos_ordem ON recebimentos_cliente(ordemCobrancaId)').run();
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'formaPagamentoPrevista')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN formaPagamentoPrevista TEXT').run();
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'valorRenegociado')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN valorRenegociado REAL NOT NULL DEFAULT 0').run();
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}

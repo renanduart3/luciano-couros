@@ -223,6 +223,7 @@ export const api = {
     parcelasCartao?: number;
     observacao?: string;
     parcelaOrdemId?: string;
+    ordemCobrancaId?: string;
     titulos?: TituloRecebimento[];
     dadosCheque?: {
       vencimento: string;
@@ -254,6 +255,7 @@ export const api = {
   getRecebimentoGerenciavel: (recebimentoId: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/gerenciar`).then(r => handleResponse<PagamentoGerenciavel>(r)),
   updateRecebimentoCliente: (recebimentoId: string, dados: {
+    ordemCobrancaId?: string;
     valoresParcelasCartao?: number[];
     pin: string;
     status: PagamentoGerenciavel["statusPagamento"];
@@ -315,7 +317,7 @@ export const api = {
     dataEmissao: string;
     vendaIds: string[];
     observacao?: string;
-    parcelas: Array<{ vencimento: string; valor: number }>;
+    parcelas?: Array<{ vencimento: string; valor: number }>;
   }) => fetch(`${API_BASE}/ordens-cobranca`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

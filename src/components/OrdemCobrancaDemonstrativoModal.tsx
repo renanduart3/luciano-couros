@@ -1,4 +1,5 @@
 import React from "react";
+import { FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { createPortal } from "react-dom";
 import { CalendarDays, MessageCircle, Printer, WalletCards, X } from "lucide-react";
 import { OrdemCobranca, OrdemCobrancaParcela } from "../types";
@@ -34,7 +35,7 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
         <header className="print:hidden flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3">
           <div>
             <h2 id="titulo-demonstrativo-ordem" className="font-black uppercase text-slate-950">Demonstrativo atualizado para cobrança</h2>
-            <p className="text-xs font-bold text-slate-500">Ordem #{ordem.numeroSequencial} · posição atual das parcelas</p>
+            <p className="text-xs font-bold text-slate-500">Ordem #{ordem.numeroSequencial} · posição atual dos pagamentos</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-black uppercase text-white"><MessageCircle size={16}/> Abrir WhatsApp</a>}
@@ -71,16 +72,17 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
             </div>
 
             <div className="border-t-2 border-slate-900 p-3">
-              <div className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-800"><CalendarDays size={16}/> Parcelas e situação atual</div>
-              <div className="overflow-x-auto rounded-lg border border-slate-300 print:overflow-visible">
-                <table className="w-full min-w-[720px] text-xs print:min-w-0">
-                  <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Parcela</th><th className="p-2 text-left">Vencimento</th><th className="p-2 text-right">Valor</th><th className="p-2 text-right">Pago</th><th className="p-2 text-right">Em aberto</th><th className="p-2 text-center">Situação</th></tr></thead>
-                  <tbody className="divide-y divide-slate-200">{ordem.parcelas.map((parcela) => {
-                    const situacao = situacaoParcela(parcela);
-                    return <tr key={parcela.id} className={`${situacao.linha} break-inside-avoid`}><td className="p-2 font-black">{parcela.numero}/{ordem.parcelas.length}</td><td className="p-2 font-bold">{formatDate(parcela.vencimento)}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(parcela.valor)}</td><td className="p-2 text-right font-mono font-black text-emerald-800">{formatCurrency(parcela.valorPago)}</td><td className="p-2 text-right font-mono font-black text-amber-900">{formatCurrency(parcela.saldo)}</td><td className="p-2 text-center"><span className={`inline-block rounded-md px-2 py-1 text-[9px] font-black ${situacao.classe}`}>{situacao.texto}</span></td></tr>;
-                  })}</tbody>
-                </table>
-              </div>
+              <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
+              <table className="w-full text-xs"><thead><tr><th className="p-2 text-left">Data / forma</th><th className="p-2 text-right">Valor</th><th className="p-2 text-left">Situação / títulos</th></tr></thead>
+                <tbody>{(ordem.pagamentos || []).map(p => <tr key={p.id} className="border-t border-slate-200">
+                  <td className="p-2">{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</td>
+                  <td className="p-2 text-right font-mono">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</td>
+                  <td className="p-2">{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}
+                    {p.titulos.map(t => <p key={t.id}>{t.numeroDocumento} · {formatDate(t.vencimento)} · {formatCurrency(t.valor)} · {t.status === 'compensado' ? 'Pago' : t.status === 'recusado' ? 'Recusado' : 'Aguardando'}</p>)}
+                  </td>
+                </tr>)}</tbody>
+              </table>
+              {!ordem.pagamentos?.length && <p className="text-xs text-slate-500">Nenhum pagamento registrado.</p>}
             </div>
 
             {ordem.observacao && <div className="border-t border-slate-300 bg-slate-50 px-4 py-3 text-xs"><strong className="block text-[10px] uppercase text-slate-500">Observação da negociação</strong><span className="font-bold text-slate-800">{ordem.observacao}</span></div>}

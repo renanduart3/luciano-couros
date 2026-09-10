@@ -53,8 +53,11 @@ export function criarGerenciadorReabertura(deps: {
     if (tipo === "vale" && Math.abs(Number(alvo.valorPago) - (valoresPorVale.get(id) || 0)) > 0.005) {
       falha("Este vale possui pagamentos antigos sem vínculo individual. É necessário conciliar esses lançamentos antes de reabrir, para preservar os saldos.");
     }
+    const ordens = recebimentos.flatMap(r => queryAll<any>(`SELECT DISTINCT oc.id AS ordemId, oc.status AS statusOrdem
+      FROM ordens_cobranca oc JOIN ordem_cobranca_recebimentos pr ON pr.ordemId = oc.id
+      WHERE pr.recebimentoId = ? AND pr.deletedAt IS NULL`, [r.id]));
     // Reabrir uma ordem antiga não pode colocar o mesmo vale em duas negociações ativas.
-    for (const parcela of parcelas) {
+    for (const parcela of ordens) {
       if (!["aberta", "quitada"].includes(parcela.statusOrdem)) falha("Este recebimento também pertence a uma ordem cancelada ou renegociada. Revise essa negociação antes do estorno.");
       const conflito = queryOne<any>(`SELECT outra.numeroSequencial FROM ordem_cobranca_vales original
         JOIN ordem_cobranca_vales novo ON novo.vendaId = original.vendaId AND novo.ordemId != original.ordemId AND novo.removidoAt IS NULL
@@ -68,7 +71,7 @@ export function criarGerenciadorReabertura(deps: {
     const variacaoBonus = dinheiro(movimentos.reduce((total, m) => total + (m.tipo === "credito" ? -Number(m.valor) : Number(m.valor)), 0));
     if (saldoBonus + variacaoBonus < -0.005) falha("O bônus gerado por este pagamento já foi utilizado. Estorne primeiro o uso desse bônus para não deixar a carteira negativa.");
     const lancamentos = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM pagamentos WHERE (id = ? OR recebimentoId = ?) AND deletedAt IS NULL ORDER BY id", [r.pagamentoId || "", r.id]));
-    const snapshot = { tipo, id, alvo, recebimentos, legados, alocacoes, titulos, parcelas, vales, movimentos, saldoBonus, lancamentos };
+    const snapshot = { tipo, id, alvo, recebimentos, legados, alocacoes, titulos, parcelas, ordens, vales, movimentos, saldoBonus, lancamentos };
     const revisao = crypto.createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
     const totalFinanceiro = dinheiro([...lancamentos, ...legados].reduce((total, p) => total + Number(p.valor), 0));
     const resumo = {

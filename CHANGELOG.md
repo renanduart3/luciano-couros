@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.29.0 — 2026-09-10
+
+- Ordens de cobrança por montante, com pagamentos independentes e formas distintas; parcelamento no crédito e cronogramas anteriores preservados para consulta.
+- Vales individuais permitem adicionar pagamentos separados, com edição e estorno protegidos por senha gerencial, saldo devedor e bônus por excedente.
+- Corrigida a atualização após estorno de recebimentos e removida a compensação automática de títulos apenas pela data de vencimento.
+- Ficha do cliente com demonstrativo próprio de vales pendentes: total do vale, total pago e saldo devedor; mais de 15 vales são consolidados com os três totais.
+- Comprovante de venda preservado sem alterações; demonstrativo de cobrança em componente separado.
+- Testes de integração cobrem formas mistas, títulos, bônus, senha, estornos e edição do montante; testes do demonstrativo validam filtros e consolidação em centavos.
+
 ## 1.28.1 — 2026-09-08
 
 - Boletos e cheques abrem Detalhes em janela própria; edição e comprovante ficam dentro dela, sem expandir o grid.

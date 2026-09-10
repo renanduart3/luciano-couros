@@ -576,10 +576,9 @@ function normalizarTitulosPagamento(formaPagamento: string, entrada: unknown, le
 function inserirTitulosRecebimento(recebimentoId: string, clienteId: string, titulos: any[], status = "aguardando", dataCompensacao?: string | null, motivoStatus?: string | null) {
   for (const titulo of titulos) {
     const statusSolicitado = status === "recusado" ? "recusado" : (titulo.status || status);
-    const compensacaoAutomatica = statusSolicitado === "aguardando" && titulo.vencimento <= dataHojeLocal();
-    const statusTitulo = compensacaoAutomatica ? "compensado" : statusSolicitado;
+    const statusTitulo = statusSolicitado;
     const compensacaoTitulo = statusTitulo === "compensado"
-      ? (titulo.dataCompensacao || dataCompensacao || (compensacaoAutomatica ? titulo.vencimento : null))
+      ? (titulo.dataCompensacao || dataCompensacao || dataHojeLocal())
       : null;
     execute(
     `INSERT INTO recebimento_titulos
@@ -625,36 +624,7 @@ function ehDataIsoValida(valor: unknown) {
   return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
 }
 
-function compensarTitulosVencidosAutomaticamente() {
-  const hoje = dataHojeLocal();
-  const vencidos = queryAll<any>(
-    `SELECT id, recebimentoId, numeroDocumento, vencimento
-     FROM recebimento_titulos
-     WHERE status = 'aguardando' AND vencimento <= ? AND deletedAt IS NULL`,
-    [hoje]
-  );
-  if (!vencidos.length) return 0;
-  runInTransaction(() => {
-    for (const titulo of vencidos) {
-      execute(
-        `UPDATE recebimento_titulos
-         SET status = 'compensado', dataCompensacao = vencimento, motivoStatus = NULL, updatedAt = CURRENT_TIMESTAMP
-         WHERE id = ? AND status = 'aguardando' AND deletedAt IS NULL`,
-        [titulo.id]
-      );
-      registrarAuditoria(null, "titulo_compensado_automaticamente", "recebimento_cliente", titulo.recebimentoId, {
-        tituloId: titulo.id,
-        numeroDocumento: titulo.numeroDocumento,
-        dataCompensacao: titulo.vencimento,
-      });
-    }
-  });
-  return vencidos.length;
-}
-
-compensarTitulosVencidosAutomaticamente();
-const compensacaoTitulosTimer = setInterval(compensarTitulosVencidosAutomaticamente, 60 * 60 * 1000);
-compensacaoTitulosTimer.unref();
+// Títulos vencidos continuam aguardando até confirmação explícita do usuário.
 
 // Compatibilidade temporária com o instrumento único criado diretamente na
 // venda. Novos recebimentos de vales e ordens usam recebimento_titulos.
@@ -774,6 +744,7 @@ function aplicarRecebimentoEmOrdens(recebimentoId: string, alocacoes: Array<{ ve
   }
 
   for (const [ordemId, total] of totaisPorOrdem) {
+    if (queryOne<any>('SELECT ordemCobrancaId FROM recebimentos_cliente WHERE id = ?', [recebimentoId])?.ordemCobrancaId) { recalcularOrdemCobranca(ordemId); continue; }
     let restante = total;
     const parcelas = queryAll<any>(
       `SELECT * FROM ordem_cobranca_parcelas
@@ -792,6 +763,17 @@ function aplicarRecebimentoEmOrdens(recebimentoId: string, alocacoes: Array<{ ve
       restante = Math.round(Math.max(0, restante - aplicado) * 100) / 100;
     }
     recalcularOrdemCobranca(ordemId);
+  }
+}
+
+function validarPagamentoOrdem(clienteId: string, ordemId: string, alocacoes: Array<{ vendaId: string; valor: number }>, valor: number, restaurado = 0) {
+  const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND clienteId = ? AND deletedAt IS NULL AND status IN ('aberta', 'quitada')", [ordemId, clienteId]);
+  if (!ordem) throw erroHttp('Ordem não encontrada ou encerrada. Atualize a tela.', 409);
+  const saldo = Math.round((Number(ordem.saldo) + restaurado) * 100) / 100;
+  const total = Math.round(alocacoes.reduce((s, a) => s + a.valor, 0) * 100) / 100;
+  if (!Number.isFinite(valor) || Math.abs(total - Math.min(valor, saldo)) > 0.005) throw erroHttp('O saldo da ordem mudou. Atualize antes de registrar o pagamento.', 409);
+  for (const a of alocacoes) {
+    if (!queryOne<any>('SELECT id FROM ordem_cobranca_vales WHERE ordemId = ? AND vendaId = ? AND removidoAt IS NULL', [ordemId, a.vendaId])) throw erroHttp('Um dos vales não pertence à ordem selecionada.', 409);
   }
 }
 
@@ -4292,7 +4274,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
       LEFT JOIN usuarios u ON u.id = a.usuarioId
       WHERE (a.entidade = 'ordem_cobranca' AND a.entidadeId = ?)
          OR (a.entidade = 'recebimento_cliente' AND a.entidadeId IN
-           (SELECT recebimentoId FROM ordem_cobranca_parcela_recebimentos WHERE ordemId = ?))
+           (SELECT recebimentoId FROM ordem_cobranca_recebimentos WHERE ordemId = ?))
       ORDER BY a.createdAt, a.rowid`, [ordem.id, ordem.id]);
     const registrados = new Set(auditorias.filter(a => a.acao === 'registrar_recebimento').map(a => a.entidadeId));
     const eventosAuditoria = auditorias.flatMap(a => {
@@ -4372,6 +4354,10 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
        ORDER BY v.numeroSequencial ASC`,
       [ordem.id]
       ),
+      pagamentos: queryAll<{ id: string }>(`SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
+        WHERE rc.deletedAt IS NULL AND rc.status IN ('ativo', 'recusado') AND
+        (rc.ordemCobrancaId = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos r WHERE r.recebimentoId = rc.id AND r.ordemId = ?))
+        ORDER BY rc.data, rc.createdAt, rc.id`, [ordem.id, ordem.id]).map(r => carregarRecebimentoGerenciavel(r.id)).filter(Boolean),
       parcelas: parcelas.map((parcela) => ({ ...parcela, pagamentos: queryAll<{ id: string }>(
         `SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
          JOIN ordem_cobranca_parcela_recebimentos pr ON pr.recebimentoId = rc.id
@@ -4418,11 +4404,11 @@ app.post("/api/ordens-cobranca", (req, res) => {
       vencimento: String(item?.vencimento || ""),
       valor: Math.round(Number(item?.valor || 0) * 100) / 100,
     })).sort((a: any, b: any) => a.vencimento.localeCompare(b.vencimento));
-    if (parcelas.length < 1 || parcelas.length > 36 || parcelas.some((item: any) => !ehDataIsoValida(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
+    if (parcelas.length > 36 || parcelas.some((item: any) => !ehDataIsoValida(item.vencimento) || !Number.isFinite(item.valor) || item.valor <= 0)) {
       throw erroHttp("Informe entre 1 e 36 parcelas, todas com data e valor maior que zero.", 400);
     }
     const totalParcelas = Math.round(parcelas.reduce((total: number, item: any) => total + item.valor, 0) * 100) / 100;
-    if (Math.abs(totalParcelas - totalOriginal) > 0.01) {
+    if (parcelas.length && Math.abs(totalParcelas - totalOriginal) > 0.01) {
       throw erroHttp(`A soma das parcelas deve ser R$ ${totalOriginal.toFixed(2).replace(".", ",")}.`, 400);
     }
 
@@ -4549,27 +4535,12 @@ app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
         "SELECT COALESCE(SUM(valorVinculado), 0) AS total FROM ordem_cobranca_vales WHERE ordemId = ? AND removidoAt IS NULL",
         [ordem.id]
       )?.total || 0) * 100) / 100;
-      const parcelas = queryAll<any>(
-        `SELECT ocp.*,
-                COALESCE((SELECT SUM(valor) FROM ordem_cobranca_parcela_recebimentos ocpr
-                          WHERE ocpr.parcelaId = ocp.id AND ocpr.deletedAt IS NULL), 0) AS recebido
-         FROM ordem_cobranca_parcelas ocp WHERE ocp.ordemId = ? AND ocp.deletedAt IS NULL
-         ORDER BY ocp.numero ASC`,
-        [ordem.id]
-      );
-      const pendentes = parcelas.filter((parcela) => String(parcela.status) === "pendente");
-      const totalPago = Math.round(parcelas.reduce((total, parcela) => total + Number(parcela.recebido || 0), 0) * 100) / 100;
-      if (totalOriginal < totalPago - 0.005 || pendentes.length === 0) {
+      const totalPago = Number(queryOne<any>('SELECT COALESCE(SUM(valor), 0) AS total FROM ordem_cobranca_recebimentos WHERE ordemId = ? AND deletedAt IS NULL', [ordem.id])?.total || 0);
+      if (totalOriginal < totalPago - 0.005) {
         throw erroHttp("Não foi possível ajustar esta ordem porque os pagamentos registrados já cobrem o novo total.", 409);
       }
 
-      const saldoCentavos = Math.round((totalOriginal - totalPago) * 100);
-      const base = Math.floor(saldoCentavos / pendentes.length);
-      const resto = saldoCentavos - base * pendentes.length;
-      pendentes.forEach((parcela, index) => {
-        const novoValor = Math.round((Number(parcela.recebido || 0) * 100) + base + (index < resto ? 1 : 0)) / 100;
-        execute("UPDATE ordem_cobranca_parcelas SET valor = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [novoValor, parcela.id]);
-      });
+      // O cronograma legado permanece como histórico; os pagamentos abatem o montante da ordem.
       execute("UPDATE ordens_cobranca SET totalOriginal = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [totalOriginal, ordem.id]);
       recalcularOrdemCobranca(ordem.id);
       registrarAuditoria(null, "ordem_cobranca_vales_alterados", "ordem_cobranca", ordem.id, {
@@ -4826,6 +4797,8 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
   try {
     const { id: clienteId } = req.params;
     const { data, formaPagamento, observacao, alocacoes, parcelaOrdemId } = req.body;
+    const ordemCobrancaId = String(req.body?.ordemCobrancaId || '').trim();
+    if (ordemCobrancaId && parcelaOrdemId) throw erroHttp('Selecione a ordem ou a parcela, não ambas.', 400);
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) {
@@ -4876,6 +4849,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     const pagamentoId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
 
     runInTransaction(() => {
+      if (ordemCobrancaId) validarPagamentoOrdem(clienteId, ordemCobrancaId, listaAlocacoes, recebido + bonusUtilizado);
       if (parcelaOrdemIdTexto) {
         validarPagamentoExclusivoParcela(clienteId, parcelaOrdemIdTexto, listaAlocacoes, arredondar(recebido + bonusUtilizado));
       }
@@ -4913,6 +4887,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
         [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, forma, parcelasCartao, observacao || null, pagamentoId]
       );
 
+      execute('UPDATE recebimentos_cliente SET ordemCobrancaId = ? WHERE id = ?', [ordemCobrancaId || null, recebimentoId]);
       inserirTitulosRecebimento(recebimentoId, clienteId, titulos);
 
       if (bonusUtilizado > 0.005) {
@@ -5046,7 +5021,6 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
 
 app.get("/api/cheques", (_req, res) => {
   try {
-    compensarTitulosVencidosAutomaticamente();
     const cheques = queryAll<any>(
       `SELECT rt.id, rt.recebimentoId, rt.clienteId, rt.tipo, rt.vencimento,
               rt.dataCompensacao, rt.nomeTitular, rt.documentoTitular AS cpfTitular,
@@ -5100,7 +5074,6 @@ app.get("/api/cheques", (_req, res) => {
 
 app.get("/api/recebimentos-cliente/:id/gerenciar", exigirGerente, (req, res) => {
   try {
-    compensarTitulosVencidosAutomaticamente();
     const recebimento = carregarRecebimentoGerenciavel(req.params.id);
     if (!recebimento) return res.status(404).json({ error: "Pagamento não encontrado ou já cancelado." });
     res.json(recebimento);
@@ -5416,7 +5389,10 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
          ORDER BY ocpr.createdAt ASC, ocp.numero ASC`,
         [recebimentoId]
       );
-      const parcelaOrdemExclusiva = parcelasOrdemAtuais.length === 1 ? parcelasOrdemAtuais[0] : null;
+      const ordemFlexivelId = String(req.body?.ordemCobrancaId || atual.ordemCobrancaId || '');
+      if (ordemFlexivelId && !queryOne<any>(`SELECT oc.id FROM ordens_cobranca oc WHERE oc.id = ? AND oc.clienteId = ? AND oc.deletedAt IS NULL AND oc.status IN ('aberta', 'quitada')
+        AND (oc.id = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos r WHERE r.ordemId = oc.id AND r.recebimentoId = ?))`, [ordemFlexivelId, atual.clienteId, atual.ordemCobrancaId || '', recebimentoId])) throw erroHttp('A ordem deste pagamento está indisponível. Atualize a tela.', 409);
+      const parcelaOrdemExclusiva = !ordemFlexivelId && parcelasOrdemAtuais.length === 1 ? parcelasOrdemAtuais[0] : null;
       const alocacaoAtivaPorVale = new Map<string, number>();
       for (const alocacao of alocacoesAtivas) {
         alocacaoAtivaPorVale.set(alocacao.vendaId, arredondar((alocacaoAtivaPorVale.get(alocacao.vendaId) || 0) + Number(alocacao.valor || 0)));
@@ -5426,6 +5402,11 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
           JOIN recebimento_alocacoes a ON a.vendaId = v.id
           WHERE a.recebimentoId = ? AND v.clienteId = ? AND v.deletedAt IS NULL AND v.status != 'cancelada'
           ORDER BY v.data, v.numeroSequencial, v.id`, [recebimentoId, atual.clienteId]);
+        if (ordemFlexivelId) {
+          candidatos.splice(0, candidatos.length, ...queryAll<any>(`SELECT v.id, v.saldoRestante FROM vendas v
+            JOIN ordem_cobranca_vales ov ON ov.vendaId = v.id AND ov.removidoAt IS NULL
+            WHERE ov.ordemId = ? AND v.deletedAt IS NULL AND v.status != 'cancelada' ORDER BY v.data, v.numeroSequencial`, [ordemFlexivelId]));
+        }
         if (parcelaOrdemExclusiva) {
           const outrosVales = queryAll<any>(`SELECT v.id, v.saldoRestante FROM vendas v
             JOIN ordem_cobranca_vales ov ON ov.vendaId = v.id AND ov.removidoAt IS NULL
@@ -5468,6 +5449,8 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
           true
         );
       }
+      if (ordemFlexivelId && status !== 'recusado') validarPagamentoOrdem(atual.clienteId, ordemFlexivelId, novasAlocacoes, valorInformado, atual.status === 'ativo' ? Number(atual.valorAplicado) : 0);
+      execute('UPDATE recebimentos_cliente SET ordemCobrancaId = ? WHERE id = ?', [ordemFlexivelId || null, recebimentoId]);
       const mapaAtual = new Map(alocacoesAtivas.map((item) => [item.vendaId, arredondar(item.valor)]));
       const mapaNovo = new Map(novasAlocacoes.map((item) => [item.vendaId, item.valor]));
       const distribuicaoMudou = mapaAtual.size !== mapaNovo.size || [...mapaNovo].some(([id, valor]) => Math.abs(Number(mapaAtual.get(id) || 0) - valor) > 0.005);

@@ -38,6 +38,11 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
     .filter((item) => item.unidade.toLowerCase().includes("metro"))
     .reduce((total, item) => total + Number(item.quantidade), 0);
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
+  const subtotalAtual = (venda.items || []).reduce((soma, item) => {
+    const quantidade = Number(item.quantidadeDisponivel ?? item.quantidade);
+    return soma + (Number(item.quantidade) > 0 ? Math.round(Number(item.total) * quantidade / Number(item.quantidade) * 100) / 100 : 0);
+  }, 0);
+  const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalLiquido)) * 100) / 100;
   const instrumento = venda.instrumentoRecebimento;
   const ehVale = Boolean(venda.vencimento);
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
@@ -92,6 +97,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </tbody>
       </table>
 
+      {Math.abs(abatimentoAtual) >= 0.01 && <div className="receipt-payment-line">
+        <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
+        <span><b>DESCONTOS / AJUSTES DE DEVOLUÇÃO:</b> {formatCurrency(abatimentoAtual)}</span>
+      </div>}
       <div className="receipt-payment-line">
         <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
         <span className="receipt-payment-value"><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>

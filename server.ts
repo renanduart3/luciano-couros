@@ -1,3 +1,4 @@
+import { totalItemVenda, totaisVenda, validarTotalEsperado } from "./src/lib/totaisVenda.js";
 import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
 import express, { type NextFunction, type Request, type Response } from "express";
 import path from "path";
@@ -3136,11 +3137,11 @@ app.post("/api/vendas", (req, res) => {
         const custoUnit = contextoPreco.custoUnitario;
 
         // Calculate totals
-        const totalItem = (qty * precoUnit) - descItem;
+        const totalItem = totalItemVenda(qty, precoUnit, descItem);
         const totalCustoItem = qty * custoUnit;
         const lucroItem = totalItem - totalCustoItem;
 
-        subtotal += (qty * precoUnit);
+        subtotal += totalItem;
 
         return {
           id: "itv_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
@@ -3161,8 +3162,11 @@ app.post("/api/vendas", (req, res) => {
       });
 
       // Calcule subtotal, desconto geral e total líquido automaticamente
-      const descGeral = Number(descontoGeral || 0);
-      const totalLiquido = subtotal - descGeral;
+      const totais = totaisVenda(resolvedItems, Number(descontoGeral || 0));
+      subtotal = totais.subtotal;
+      const descGeral = totais.desconto;
+      const totalLiquido = totais.totalLiquido;
+      validarTotalEsperado(req.body?.totalEsperado, totalLiquido);
       const vPago = Number(valorPago || 0);
       const saldoRestante = totalLiquido - vPago;
       const usandoCreditoCarteira = formaPagamento === "bonus";
@@ -3552,7 +3556,9 @@ app.put("/api/vendas/:id", (req, res) => {
         }
         chavesInformadas.add(chave);
         let atual = atuaisPorId.get(chave) as any;
-        const itemNovo = !atual;
+        const itemNovo = !atual
+          || (entrada.produtoId && entrada.produtoId !== atual.produtoId)
+          || (entrada.fornecedorId !== undefined && (entrada.fornecedorId || null) !== (atual.fornecedorId || null));
         if (itemNovo) {
           const produto = queryOne<any>(
             "SELECT * FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
@@ -3596,7 +3602,7 @@ app.put("/api/vendas/:id", (req, res) => {
         }
         const totalBruto = quantidade * precoUnitario;
         if (descontoItem > totalBruto) throw erroHttp(`O desconto de ${atual.descricao} excede o valor do item.`, 400);
-        const total = Math.round((totalBruto - descontoItem) * 100) / 100;
+        const total = totalItemVenda(quantidade, precoUnitario, descontoItem);
         const custoTotal = Math.round(quantidade * Number(atual.custoUnitario) * 100) / 100;
         return { ...atual, quantidade, precoUnitario, desconto: descontoItem, total, custoTotal, lucroBruto: Math.round((total - custoTotal) * 100) / 100 };
       });
@@ -3607,12 +3613,13 @@ app.put("/api/vendas/:id", (req, res) => {
         }
       }
 
-      const subtotal = Math.round(resolvidos.reduce((soma, item) => soma + item.total, 0) * 100) / 100;
-      const desconto = Number(req.body?.desconto || 0);
-      if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal) {
-        throw erroHttp("O desconto geral informado é inválido.", 400);
-      }
-      const novoTotal = Math.round((subtotal - desconto) * 100) / 100;
+      const creditoDevolucoes = queryOne<{ total: number }>(
+        "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ?", [vendaId]
+      )?.total || 0;
+      const { subtotal, desconto, totalLiquido: novoTotal } = totaisVenda(
+        resolvidos, Number(req.body?.desconto || 0), creditoDevolucoes
+      );
+      validarTotalEsperado(req.body?.totalEsperado, novoTotal);
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;

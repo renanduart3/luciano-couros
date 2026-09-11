@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const Module = require('node:module');
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
+const result = buildSync({ entryPoints: ['src/components/VendaComprovante.tsx'], bundle: true, platform: 'node', format: 'cjs', packages: 'external', loader: { '.png': 'dataurl' }, write: false });
+const mod = new Module(__filename);
+mod.filename = __filename;
+mod.paths = module.paths;
+mod._compile(result.outputFiles[0].text, __filename);
+const venda = { id: 'teste', numeroSequencial: 514, data: '2026-09-11', subtotal: 236.30, desconto: 0, totalLiquido: 236.30, valorPago: 0, vencimento: '2099-10-08', items: [{ id: 'item', descricao: 'ESTF COROLA', unidade: 'metro', quantidade: 2.49, precoUnitario: 94.9, total: 236.30 }] };
+const render = v => renderToStaticMarkup(React.createElement(mod.exports.VendaComprovante, { venda: v }));
+let html = render(venda);
+assert.equal((html.match(/236,30/g) || []).length, 4); // item e rodapé das duas vias
+assert.ok(!html.includes('0,24'));
+html = render({ ...venda, totalLiquido: 0.24, desconto: 236.06 });
+assert.ok(html.includes('236,06'));
+assert.ok(html.includes('DESCONTOS / AJUSTES DE DEVOLUÇÃO'));
+assert.equal((html.match(/0,24/g) || []).length, 2);
+html = render({ ...venda, totalLiquido: 141.4, items: [{ ...venda.items[0], quantidadeDisponivel: 1.49 }] });
+assert.equal((html.match(/141,40/g) || []).length, 4);
+console.log('OK: duas vias, troca sem desconto, abatimentos visíveis e quantidades devolvidas.');

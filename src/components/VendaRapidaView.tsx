@@ -1,3 +1,4 @@
+import { arredondarDinheiro } from "../lib/totaisVenda";
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
@@ -241,7 +242,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         quantidadeDevolvida: Number(item.quantidadeDevolvida || 0)
       };
     }));
-    setDescontoGeral(percentualDesconto ? percentualDesconto.toFixed(2).replace(".", ",") : "");
+    setDescontoGeral(percentualDesconto ? String(percentualDesconto).replace(".", ",") : "");
     setValorPago(Number(vendaEmEdicao.valorPago || 0).toFixed(2).replace(".", ","));
     setFormaPagamento(vendaEmEdicao.formaPagamento || ((vendaEmEdicao.parcelas || []).length > 0 ? "vale" : "avista_dinheiro"));
     setVencimento(vendaEmEdicao.vencimento || "");
@@ -427,7 +428,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const percentualDesconto = Number(orcamentoInicial.subtotal) > 0
       ? (Number(orcamentoInicial.desconto) / Number(orcamentoInicial.subtotal)) * 100
       : 0;
-    setDescontoGeral(percentualDesconto.toFixed(2).replace(".", ","));
+    setDescontoGeral(String(percentualDesconto).replace(".", ","));
     if (orcamentoInicial.observacoes) setObservacoes(orcamentoInicial.observacoes);
     setOrcamentoOrigemId(orcamentoInicial.id);
     setToastMsg(`${itensRecebidos.length} ${itensRecebidos.length === 1 ? "ITEM ADICIONADO" : "ITENS ADICIONADOS"} À VENDA.`);
@@ -469,13 +470,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const qty = parseBrazilianNumber(item.quantidade);
     const preco = parseBrazilianNumber(item.precoUnitario);
     const desc = parseBrazilianNumber(item.desconto);
-    return acc + (qty * preco) - desc;
+    return acc + arredondarDinheiro((qty * preco) - desc);
   }, 0);
   const quantidadeItensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length;
 
   const descGeralPercent = parseBrazilianNumber(descontoGeral);
-  const descGeral = subtotalItens * (descGeralPercent / 100);
-  const totalLiquido = Math.max(0, subtotalItens - descGeral);
+  const descGeral = arredondarDinheiro(subtotalItens * (descGeralPercent / 100));
+  const creditoDevolucoes = (vendaEmEdicao?.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito || 0), 0);
+  const totalLiquido = arredondarDinheiro(Math.max(0, subtotalItens - descGeral - creditoDevolucoes));
   const fatorPrecoEfetivo = subtotalItens > 0 ? totalLiquido / subtotalItens : 1;
   const itensQueExigemAutorizacao = itensVenda.filter((item) => {
     if (parseBrazilianNumber(item.quantidade) <= 0) return false;
@@ -895,6 +897,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     if (!clienteSelecionado) return;
     const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
 
+    if (!Number.isFinite(descGeralPercent) || descGeralPercent < 0 || descGeralPercent > 100 || creditoDevolucoes > subtotalItens - descGeral + 0.005) {
+      setFeedbackMsg({ type: "error", text: "Revise o desconto e as devoluções: o total da venda é inválido." });
+      return;
+    }
     setLoading(true);
     setFeedbackMsg(null);
     setAutorizacaoErro("");
@@ -905,6 +911,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           pin: pinEdicao,
           data: dataVendaEdicao || vendaEmEdicao.data,
           desconto: descGeral,
+          totalEsperado: totalLiquido,
           observacoes: observacoes || undefined,
           items: itensPreenchidos.map((item) => ({
             id: item.id || `novo_${item.produtoId}`,
@@ -926,6 +933,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         clienteId: clienteSelecionado.id,
         data: new Date().toISOString().split("T")[0],
         descontoGeral: descGeral,
+        totalEsperado: totalLiquido,
         items: itensPreenchidos.map(it => ({
           produtoId: it.produtoId,
           fornecedorId: it.fornecedorId,

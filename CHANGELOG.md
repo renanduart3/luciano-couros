@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.30.2 — 2026-09-11
+
+- Criação e edição de vendas usam os mesmos totais em centavos, com descontos por item e desconto geral; reabrir vendas e orçamentos preserva a precisão do percentual.
+- Edição reconhece a troca de produto ou fornecedor mesmo quando o identificador do item é mantido, preservando as restrições de materiais já devolvidos.
+- Créditos de devoluções continuam abatidos após editar a venda; divergências entre o total exibido e o calculado impedem o salvamento.
+- Comprovantes das duas vias mostram os descontos e ajustes que explicam a diferença entre o subtotal dos itens e o total da venda.
+- Testes cobrem troca, inclusão, remoção, preço, quantidade, reedição, descontos, devoluções, comprovantes e regressão financeira.
+
 ## 1.30.1 — 2026-09-11
 
 - Relatórios distribuem o total líquido registrado entre os itens vendidos, considerando descontos e quantidades devolvidas, inclusive ao filtrar materiais.

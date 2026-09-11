@@ -427,6 +427,7 @@ export const api = {
     clienteId: string;
     data: string;
     descontoGeral: number;
+    totalEsperado?: number;
     items: Array<{
       produtoId: string;
       fornecedorId?: string | null;
@@ -476,6 +477,7 @@ export const api = {
       body: JSON.stringify(dados)
     }).then(r => handleResponse<Venda>(r)),
   updateVenda: (id: string, dados: {
+    totalEsperado?: number;
     pin: string;
     data: string;
     desconto: number;

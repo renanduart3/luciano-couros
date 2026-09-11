@@ -1,3 +1,4 @@
+import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
 import express, { type NextFunction, type Request, type Response } from "express";
 import path from "path";
 import fs from "fs";
@@ -5923,7 +5924,7 @@ app.get("/api/relatorios/materiais-clientes", (req, res) => {
           iv.unidade,
           (iv.quantidade - COALESCE(dev.quantidade, 0)) AS quantidadeLiquida,
           (
-            iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+            ${valorItemRelatorioSql}
           ) * ((iv.quantidade - COALESCE(dev.quantidade, 0)) / NULLIF(iv.quantidade, 0)) AS valorLiquido,
           COALESCE(
             fv.nome,
@@ -6148,8 +6149,7 @@ app.get("/api/relatorios", (req, res) => {
          c.nome as clienteNome,
          ${quantidadeDevolvidaSql} AS quantidadeDevolvida,
          (
-           iv.total
-           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
+           ${valorItemRelatorioSql}
          ) AS valorVendaLiquido,
          COALESCE(
            fv.nome,
@@ -6180,7 +6180,7 @@ app.get("/api/relatorios", (req, res) => {
         ? Number(item.custoUnitario)
         : Number(item.custoAtualProduto || 0);
       const custoTotal = custoUnitario * quantidade;
-      const valorVendaLiquido = Number(item.valorVendaLiquido || item.total || 0) * proporcao;
+      const valorVendaLiquido = Number(item.valorVendaLiquido ?? item.total ?? 0) * proporcao;
       return {
         ...item,
         quantidade,
@@ -6257,7 +6257,7 @@ app.get("/api/relatorios", (req, res) => {
          iv.unidade,
          COALESCE(SUM(iv.quantidade - ${quantidadeDevolvidaSql}), 0) as totalQuantidade,
          COALESCE(SUM(
-           (iv.total - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END)
+           (${valorItemRelatorioSql})
            * ((iv.quantidade - ${quantidadeDevolvidaSql}) / NULLIF(iv.quantidade, 0))
          ), 0) as totalValor,
          COALESCE(SUM(
@@ -6267,8 +6267,7 @@ app.get("/api/relatorios", (req, res) => {
            END
          ), 0) as totalCusto,
          COALESCE(SUM(
-           (iv.total
-           - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END)
+           (${valorItemRelatorioSql})
            * ((iv.quantidade - ${quantidadeDevolvidaSql}) / NULLIF(iv.quantidade, 0))
            - CASE WHEN iv.custoUnitario > 0
                THEN iv.custoUnitario * (iv.quantidade - ${quantidadeDevolvidaSql})

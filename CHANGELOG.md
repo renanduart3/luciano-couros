@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.30.1 — 2026-09-11
+
+- Relatórios distribuem o total líquido registrado entre os itens vendidos, considerando descontos e quantidades devolvidas, inclusive ao filtrar materiais.
+- Corrigido o tratamento de valor líquido zero, evitando receita e lucro indevidos em itens gratuitos.
+- Testes de regressão cobrem rateio, filtros, descontos e devoluções parciais e integrais.
+
 ## 1.30.0 — 2026-09-10
 
 - Estorno e exclusão individual ou em lote dos pagamentos da ordem, com senha gerencial, auditoria e reversão integral em caso de falha.

@@ -97,7 +97,13 @@ async function main() {
 
     const vc = await criarVale(50), vd = await criarVale(50);
     const compartilhada = await criarOrdem([vc, vd], [50, 50]);
-    await pagar([{ vendaId: vc.id, valor: 50 }, { vendaId: vd.id, valor: 50 }]);
+    const compartilhado = await pagar([{ vendaId: vc.id, valor: 50 }, { vendaId: vd.id, valor: 50 }], { ordemCobrancaId: compartilhada.id });
+    // Simula vínculos históricos de um recebimento compartilhado entre parcelas.
+    // Novos pagamentos agrupados são criados exclusivamente pela ordem.
+    compartilhada.parcelas.forEach((p, i) => {
+      db.prepare('INSERT INTO ordem_cobranca_parcela_recebimentos (id, ordemId, parcelaId, recebimentoId, valor) VALUES (?, ?, ?, ?, ?)').run(`legacy_shared_${i}`, compartilhada.id, p.id, compartilhado.id, 50);
+      db.prepare("UPDATE ordem_cobranca_parcelas SET valorPago = 50, saldo = 0, status = 'paga' WHERE id = ?").run(p.id);
+    });
     const impacto = await previa('parcela', compartilhada.parcelas[0].id);
     assert.equal(impacto.compartilhado, true);
     assert.equal(impacto.vales.length, 2);
@@ -391,8 +397,16 @@ async function main() {
 
     const rollbackVale = await criarVale(50), rollbackVale2 = await criarVale(50);
     const rollbackOrdem = await criarOrdem([rollbackVale, rollbackVale2], []);
+    // Base histórica: dois pagamentos com bônus anteriores à regra de agrupamento.
+    db.prepare("UPDATE ordens_cobranca SET deletedAt = '2026-09-01' WHERE id = ?").run(rollbackOrdem.id);
     const rb1 = await pagar([{ vendaId: rollbackVale.id, valor: 50 }], { valorRecebido: 70 });
     const rb2 = await pagar([{ vendaId: rollbackVale2.id, valor: 50 }], { valorRecebido: 70 });
+    db.prepare("UPDATE ordens_cobranca SET deletedAt = NULL, valorPago = 100, saldo = 0, status = 'quitada' WHERE id = ?").run(rollbackOrdem.id);
+    [rb1, rb2].forEach((r, i) => {
+      const vendaId = [rollbackVale.id, rollbackVale2.id][i];
+      db.prepare('INSERT INTO ordem_cobranca_recebimentos (id, ordemId, recebimentoId, vendaId, valor) VALUES (?, ?, ?, ?, ?)').run(`legacy_rollback_${i}`, rollbackOrdem.id, r.id, vendaId, 50);
+      db.prepare('UPDATE ordem_cobranca_vales SET valorPago = 50, saldo = 0, ativo = 0 WHERE ordemId = ? AND vendaId = ?').run(rollbackOrdem.id, vendaId);
+    });
     const gastoVale = await criarVale(20);
     const gasto = await pagar([{ vendaId: gastoVale.id, valor: 20 }], { formaPagamento: 'bonus', valorRecebido: 0, bonusUtilizado: 20 });
     const rbItens = [rb1, rb2].map(p => ({ tipo: 'recebimento', id: p.id }));

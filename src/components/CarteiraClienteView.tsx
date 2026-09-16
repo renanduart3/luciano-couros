@@ -132,6 +132,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   const registrar = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!carteira) return;
+    if (selecionadas.size > 1) return setError("Para pagar vários vales, gere uma ordem de cobrança na tela Vales > Gerar ordem.");
     const alocacoes = carteira.dividas
       .filter((divida) => selecionadas.has(divida.id))
       .map((divida) => ({ vendaId: divida.id, valor: parseBrazilianNumber(valores[divida.id] || "") }))

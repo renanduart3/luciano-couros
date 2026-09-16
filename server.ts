@@ -3372,6 +3372,7 @@ app.post("/api/vendas", (req, res) => {
 
 app.post("/api/vendas/:id/devolucoes", (req, res) => {
   try {
+    exigirValeSemOrdemAberta(req.params.id);
     const vendaId = req.params.id;
     const { data, observacoes, pin, items } = req.body || {};
     const administrador = validarPinAdministrador(pin);
@@ -3518,6 +3519,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
 
 app.put("/api/vendas/:id", (req, res) => {
   try {
+    exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
       return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi alterada." });
@@ -3723,6 +3725,7 @@ app.put("/api/vendas/:id", (req, res) => {
 
 app.put("/api/vales/:id", (req, res) => {
   try {
+    exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
       return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi alterado." });
@@ -3779,6 +3782,7 @@ app.put("/api/vales/:id", (req, res) => {
 
 app.post("/api/vales/:id/cancelar", (req, res) => {
   try {
+    exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
       return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi cancelado." });
@@ -3827,6 +3831,7 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
 
 app.post("/api/vendas/:id/cancelar", (req, res) => {
   try {
+    exigirValeSemOrdemAberta(req.params.id);
     const { id } = req.params;
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
@@ -4816,6 +4821,19 @@ app.get("/api/clientes/:id/carteira", (req, res) => {
   }
 });
 
+function exigirValeSemOrdemAberta(vendaId: string) {
+  const ordem = queryOne<any>(`SELECT oc.numeroSequencial FROM ordem_cobranca_vales ov
+    JOIN ordens_cobranca oc ON oc.id = ov.ordemId
+    WHERE ov.vendaId = ? AND ov.removidoAt IS NULL AND oc.deletedAt IS NULL AND oc.status = 'aberta' LIMIT 1`, [vendaId]);
+  if (ordem) throw erroHttp(`Este vale pertence à ordem #${ordem.numeroSequencial}. Faça as alterações pela ordem até seu encerramento.`, 409);
+}
+
+function validarAgrupamentoPagamento(alocacoes: Array<{ vendaId: string }>, ordemId?: string, parcelaId?: string) {
+  if (ordemId || parcelaId) return;
+  if (new Set(alocacoes.map(a => a.vendaId)).size > 1) throw erroHttp('Para pagar vários vales, gere uma ordem de cobrança.', 409);
+  for (const alocacao of alocacoes) exigirValeSemOrdemAberta(alocacao.vendaId);
+}
+
 app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
   try {
     const { id: clienteId } = req.params;
@@ -4875,6 +4893,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     const pagamentoId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
 
     runInTransaction(() => {
+      validarAgrupamentoPagamento(listaAlocacoes, ordemCobrancaId, parcelaOrdemIdTexto);
       if (ordemCobrancaId) validarPagamentoOrdem(clienteId, ordemCobrancaId, listaAlocacoes, recebido + bonusUtilizado);
       if (parcelaOrdemIdTexto) {
         validarPagamentoExclusivoParcela(clienteId, parcelaOrdemIdTexto, listaAlocacoes, arredondar(recebido + bonusUtilizado));
@@ -5464,6 +5483,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
           valor: arredondar(Number(vale.saldoRestante) + (atual.status === 'ativo' ? Number(alocacaoAtivaPorVale.get(vale.id) || 0) : 0)),
         })).filter((vale) => vale.valor > 0.005));
       }
+      validarAgrupamentoPagamento(alocacoesSolicitadas, ordemFlexivelId, parcelaOrdemExclusiva?.parcelaId);
       let restanteParaDistribuir = valorInformado;
       if (parcelaOrdemExclusiva) {
         const destino = queryOne<any>('SELECT saldo FROM ordem_cobranca_parcelas WHERE id = ?', [parcelaOrdemExclusiva.parcelaId]);
@@ -5668,6 +5688,7 @@ app.post("/api/reabertura-pagamentos/:tipo/:id", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) return res.status(403).json({ error: "Senha do gerente inválida." });
+    if (req.params.tipo === "vale") exigirValeSemOrdemAberta(req.params.id);
     res.json(reabertura.executar(req.params.tipo as "vale" | "parcela" | "recebimento", req.params.id,
       String(req.body?.revisao || ""), administrador.id, String(req.body?.motivo || "").trim().slice(0, 300)));
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
@@ -5705,6 +5726,8 @@ app.get("/api/pagamentos", (req, res) => {
 app.post("/api/pagamentos", (req, res) => {
   try {
     const { clienteId, vendaId, data, valor, formaPagamento, observacao } = req.body;
+    if (!vendaId) throw erroHttp('Selecione um único vale. Para agrupar pagamentos, gere uma ordem de cobrança.', 409);
+    exigirValeSemOrdemAberta(String(vendaId));
     const parcelasCartao = normalizarParcelasCartao(String(formaPagamento || ""), req.body?.parcelasCartao);
     const vValor = Number(valor);
 
@@ -5795,6 +5818,8 @@ app.post("/api/pagamentos/:id/cancelar", (req, res) => {
       if (pag.recebimentoId) {
         throw erroHttp("Este lançamento pertence à Carteira do Cliente. Faça o estorno pelo recebimento da carteira.", 409);
       }
+
+      if (pag.vendaId) exigirValeSemOrdemAberta(pag.vendaId);
 
       // Soft delete do pagamento
       execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [nowStr, id]);

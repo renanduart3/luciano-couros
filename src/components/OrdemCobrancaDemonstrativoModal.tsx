@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, whatsappUrl } from "../lib/utils";
 
 interface Props {
   ordem: OrdemCobranca;
+  onOpenOrdem: () => void;
   onClose: () => void;
 }
 
@@ -26,7 +27,7 @@ const situacaoParcela = (parcela: OrdemCobrancaParcela) => {
   return { texto: "EM ABERTO", classe: "bg-amber-100 text-amber-900", linha: "bg-amber-50/40" };
 };
 
-export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
+export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }: Props) {
   const resumo = demonstrativoOrdem(ordem);
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
 
@@ -39,8 +40,9 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
             <p className="text-xs font-bold text-slate-500">Ordem #{ordem.numeroSequencial} · posição atual dos pagamentos</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-black uppercase text-white"><MessageCircle size={16}/> Abrir WhatsApp</a>}
-            <button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-black uppercase text-white"><Printer size={16}/> Imprimir / salvar PDF</button>
+            {linkWhatsApp && <a href={linkWhatsApp} aria-label="Abrir WhatsApp" title="Abrir WhatsApp" target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 text-xs font-black uppercase text-white"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20.5 11.7a8.5 8.5 0 0 1-12.6 7.5L3 20.5l1.3-4.8A8.5 8.5 0 1 1 20.5 11.7Z"/><path d="M8.3 7.2c-.7.2-1 1.2-.8 2.2.5 2.6 3.5 5.5 6.1 6.1 1 .2 2-.1 2.2-.8l.4-1.1-2.5-1.2-.9 1c-1.4-.6-2.5-1.7-3.1-3.1l1-.9-1.2-2.5Z" strokeLinejoin="round"/></svg></a>}
+            <button type="button" aria-label="Imprimir / salvar PDF" title="Imprimir / salvar PDF" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-900 px-4 text-xs font-black uppercase text-white"><Printer size={16}/></button>
+            <button type="button" onClick={onOpenOrdem} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-blue-700 px-4 text-xs font-black uppercase text-white"><WalletCards size={16}/> Abrir ordem</button>
             <button type="button" onClick={onClose} aria-label="Fechar demonstrativo" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-800 hover:bg-slate-100"><X size={16}/> Fechar</button>
           </div>
         </header>
@@ -55,10 +57,10 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
               <div className="text-right text-xs font-black"><span className="block text-slate-300">DATA DA ORDEM</span>{formatDate(ordem.dataEmissao)}<span className="mt-1 block text-[9px] text-slate-400">ATUALIZADO EM {formatDate(ordem.updatedAt)}</span></div>
             </header>
 
-            <div className="border-b-2 border-slate-900 bg-amber-50 px-4 py-3">
+            <div className="border-b-2 border-slate-900 bg-amber-50 px-4 py-1.5">
               <span className="text-[10px] font-black uppercase text-amber-800">Cliente</span>
-              <h3 className="text-lg font-black uppercase text-slate-950">{ordem.clienteNome}</h3>
-              <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-slate-700">
+              <h3 className="text-base leading-tight font-black uppercase text-slate-950">{ordem.clienteNome}</h3>
+              <div className="flex flex-wrap gap-x-5 gap-y-0 text-xs font-bold text-slate-700">
                 <span>CPF/CNPJ: <strong>{ordem.clienteDocumento || "NÃO INFORMADO"}</strong></span>
                 {ordem.clienteTelefone && <span>TELEFONE: <strong>{ordem.clienteTelefone}</strong></span>}
               </div>
@@ -66,15 +68,15 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose }: Props) {
 
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full min-w-[620px] text-xs print:min-w-0">
-                <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Negociado</th></tr></thead>
-                <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2">{formatDate(v.data)}</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td></tr>)}</tbody>
+                <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Nº</th><th className="p-2 text-left">Descrição</th><th className="p-2 text-right">Negociado</th><th className="p-2 text-left">Emissão</th></tr></thead>
+                <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2">VALE</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td><td className="p-2">{formatDate(v.data)}</td></tr>)}</tbody>
               </table>
             </div>
 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
               <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
-                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / venc.</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
+                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data do pagamento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
                 <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
                   <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
                   <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}</td>

@@ -6,7 +6,7 @@ export function demonstrativoOrdem(ordem: OrdemCobranca) {
   const linhas = (ordem.pagamentos || []).filter(p => p.status !== "cancelado").flatMap(p => {
     const forma = FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento;
     return p.titulos.length ? p.titulos.map((t, i) => ({
-      id: `${p.id}-${t.id || i}`, data: t.vencimento, forma,
+      id: `${p.id}-${t.id || i}`, data: p.data, forma,
       referencia: t.numeroDocumento || String(i + 1), valor: t.valor,
       status: t.status || "aguardando",
     })) : [{

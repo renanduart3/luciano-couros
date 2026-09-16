@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, FileText, History, ListChecks, MessageCircle, Plus, RefreshCw, Save, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
+import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
+import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { api } from "../lib/api";
 import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
@@ -97,7 +99,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   </div>;
 }
 
-function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobranca; onEditarVales: () => void }) {
+function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPagamento }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void; onOpenPagamento: (id: string) => void }) {
   return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
     <div className="grid gap-3 border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white lg:grid-cols-[1fr_auto] lg:items-center">
       <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
@@ -110,13 +112,13 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobra
     <div className="grid xl:grid-cols-[0.85fr_1.35fr]">
       <div className="border-b border-slate-300 xl:border-b-0 xl:border-r">
         <div className="flex min-h-11 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3"><div><p className="text-[11px] font-black uppercase text-slate-800">Vales vinculados</p><p className="text-[9px] font-bold text-slate-500">{ordem.vales.length} documento(s)</p></div>{ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-blue-300 bg-white px-2 text-[9px] font-black uppercase text-blue-800"><Edit3 size={12}/> Alterar</button>}</div>
-        <div className="divide-y divide-slate-100">{ordem.vales.map((vale) => <div key={vale.id} className="grid grid-cols-[0.65fr_0.9fr_1fr] items-center gap-2 px-3 py-2 text-[11px]"><strong className="font-mono">Vale #{vale.numeroSequencial}</strong><span className="font-bold text-slate-600">{formatDate(vale.data)}</span><span className="text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</span></div>)}</div>
+        <div className="divide-y divide-slate-100">{ordem.vales.map((vale) => <div key={vale.id} className="grid grid-cols-[0.65fr_0.9fr_1fr] items-center gap-2 px-3 py-2 text-[11px]"><button type="button" onClick={() => onOpenVale(vale.vendaId)} className="text-left font-mono font-bold text-blue-700 underline">Vale #{vale.numeroSequencial}</button><span className="font-bold text-slate-600">{formatDate(vale.data)}</span><span className="text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</span></div>)}</div>
         <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total dos vales</strong><strong className="font-mono">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</strong></div>
       </div>
       <div className="divide-y divide-slate-200">
         <p className="bg-slate-50 px-3 py-2 text-xs font-bold">Pagamentos</p>
         {(ordem.pagamentos || []).map(p => <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_7rem_9rem]">
-          <span>{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</span>
+          <button type="button" onClick={() => onOpenPagamento(p.id)} className="text-left text-blue-700 underline">{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</button>
           <strong className="whitespace-nowrap text-right font-mono tabular-nums">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
           <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}</span>
         </div>)}
@@ -128,6 +130,9 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales }: { ordem: OrdemCobra
 
 export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void }) {
   const gerente = useEhGerente();
+  const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
+  const [valeAberto, setValeAberto] = useState<Venda | null>(null);
+  const abrirVale = async (id: string) => { try { setValeAberto(await api.getVenda(id)); } catch (e: any) { setError(e.message); } };
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -204,8 +209,10 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
 
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
 
+  if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
-  {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onClose={() => setDemonstrativoAberto(false)} />}
+  {recebimentoAberto && <RecebimentoDetalhesModal recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
+  {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => setDemonstrativoAberto(false)} onClose={() => setDemonstrativoAberto(false)} />}
   {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
     <form onSubmit={encerrar} role="alertdialog" aria-modal="true" aria-labelledby="encerrar-ordem-titulo" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
@@ -230,7 +237,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
-          <ResumoCompartilhavelOrdem ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
+          <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} onOpenPagamento={setRecebimentoAberto} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
         <div className="flex gap-2">
@@ -252,14 +259,14 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
                 referencia={`ordem #${ordem.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => { marcarEdicao("novo", false); setNovoPagamento(false); }}><td/></LinhaPagamento>}
               {(ordem.projecoes || []).map(p => <LinhaPagamento key={p.id} projecao={p} colunasAntes={1}
                 clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento}
-                saldo={ordem.saldo} alocar={alocarPagamento} ordemCobrancaId={ordem.id} referencia={`previsão ${p.id.slice(0, 8)}`}
+                saldo={ordem.saldo} alocar={alocarPagamento} onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`previsão ${p.id.slice(0, 8)}`}
                 editavel={podeGerenciar && !acao} onEditingChange={v => marcarEdicao(p.id, v)} onSaved={atualizarPagamentos}
                 onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "projecao", id: p.id }] })}>
                 <td className="p-2"><input type="checkbox" aria-label="Selecionar previsão" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "projecao", id: p.id })}/></td>
               </LinhaPagamento>)}
               {[...(ordem.pagamentos || [])].reverse().map(p => <LinhaPagamento key={p.id} pagamento={p} colunasAntes={1} onEditingChange={v => marcarEdicao(p.id, v)} clienteId={ordem.clienteId}
               clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} saldo={0} alocar={alocarPagamento}
-              ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={podeGerenciar && !acao} onEstornar={() => abrirAcao({ acao: "estornar", itens: [{ tipo: "recebimento", id: p.id }] })} onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "recebimento", id: p.id }] })}
+              onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={podeGerenciar && !acao} onEstornar={() => abrirAcao({ acao: "estornar", itens: [{ tipo: "recebimento", id: p.id }] })} onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "recebimento", id: p.id }] })}
               onSaved={atualizarPagamentos} onComprovante={id => void abrirComprovanteSalvo(id)}><td className="p-2"><input type="checkbox" aria-label="Selecionar pagamento" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "recebimento", id: p.id })}/></td></LinhaPagamento>)}
 
             </tbody>

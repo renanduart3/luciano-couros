@@ -12,13 +12,14 @@ const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "P
 const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
 export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
-  projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
+  onDetalhes, projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
   projecao?: ProjecaoPagamentoOrdem; onEstornar?: () => void; onExcluir?: () => void;
   key?: string; children?: React.ReactNode; colunasAntes?: number; pagamento?: PagamentoGerenciavel; somenteReabertura?: boolean;
   clienteId: string; clienteNome: string; clienteDocumento?: string; saldo: number;
   alocar: (valor: number) => Array<{ vendaId: string; valor: number }>;
   parcelaOrdemId?: string; ordemCobrancaId?: string; referencia: string; onSaved: (resultado?: { estornado: boolean; ordem?: OrdemCobranca }) => Promise<void>;
+  onDetalhes?: (id: string) => void;
   onComprovante?: (id: string) => void; editavel?: boolean;
   alvoReabertura?: { tipo: "vale" | "parcela" | "recebimento"; id: string };
   iniciarEditando?: boolean; onCancel?: () => void; statusSemPagamento?: string; formaPagamentoPrevista?: string | null;
@@ -120,6 +121,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
         {editavel && onEstornar && <button type="button" onClick={onEstornar} className="rounded-lg border px-2 py-1 text-[10px] font-bold">Estornar</button>}
         {editavel && onExcluir && <button type="button" onClick={onExcluir} className="rounded-lg border border-red-200 px-2 py-1 text-[10px] font-bold text-red-700">Excluir</button>}
         {editavel && pagamento && saldo > 0.005 && <button type="button" onClick={() => iniciar(true)} className="rounded-lg border border-emerald-300 px-2 py-1 text-[10px] font-bold text-emerald-800">Receber saldo</button>}
+        {pagamento && onDetalhes && <button type="button" onClick={() => onDetalhes(pagamento.id)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800">Ver títulos / boletos</button>}
         {pagamento && onComprovante && <button type="button" onClick={() => onComprovante(pagamento.id)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800">Comprovante</button>}
       </>}</div></td>
     </tr>

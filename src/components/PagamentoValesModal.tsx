@@ -60,6 +60,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
 
   const registrar = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (vales.length !== 1) return setErro("Para pagar vários vales, gere uma ordem de cobrança.");
     if (valorInformado <= 0) return setErro("Informe um valor maior que zero.");
     if (formaPagamento === "bonus" && valorInformado > saldoBonus + 0.005) return setErro("O valor ultrapassa o bônus disponível do cliente.");
     if (formaPagamento === "bonus" && valorInformado > totalDivida + 0.005) return setErro("O bônus aplicado não pode ultrapassar a dívida selecionada.");
@@ -74,7 +75,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
         valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
-        observacao: observacao || `Pagamento múltiplo de ${vales.length} vale(s)`,
+        observacao: observacao || `Pagamento do vale #${vales[0]?.numeroSequencial}`,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes: alocacoes.map(({ vendaId, valor: valorAlocado }) => ({ vendaId, valor: valorAlocado })),
       });
@@ -95,7 +96,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => { setComprovante(null); onClose(); }} />;
   return <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/75 px-[10vw] py-[5vh] backdrop-blur-sm">
     <form onSubmit={registrar} role="dialog" aria-modal="true" aria-labelledby="pagamento-vales-titulo" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Pagamento de vales selecionados</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · {vales.length} vale(s) · dívida {formatCurrency(totalDivida)}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
+      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Pagamento individual de vale</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · {vales.length} vale(s) · dívida {formatCurrency(totalDivida)}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor de referência selecionado" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Referência dos vales selecionados. O total recebido é informado nos títulos.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
         {formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase}/>}

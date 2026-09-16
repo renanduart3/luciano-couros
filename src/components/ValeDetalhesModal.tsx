@@ -6,6 +6,7 @@ import { VendaComprovante } from "./VendaComprovante";
 import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
+import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
 import { LinhaPagamento } from "./LinhaPagamento";
 
 interface ValeDetalhesModalProps {
@@ -17,7 +18,9 @@ interface ValeDetalhesModalProps {
 }
 
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
+  const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
   const gerente = useEhGerente();
+  const bloqueado = ordemCobranca?.status === "aberta";
   const [novoPagamento, setNovoPagamento] = useState(false);
   const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); };
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
@@ -105,9 +108,10 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     catch (error: any) { setErro(error.message || "Não foi possível abrir o comprovante."); }
   };
 
+  if (recebimentoAberto) return <RecebimentoDetalhesModal somenteLeitura={bloqueado || !onUpdated} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteRecebimento(id); }} />;
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
-    <div id="print-vale-detail-overlay" className="fixed inset-0 z-[80] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
+    <div id="print-vale-detail-overlay" className="fixed inset-0 z-[110] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
       <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
         <header className="flex flex-col gap-3 border-b border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between print:hidden">
           <div className="flex items-center gap-3">
@@ -121,8 +125,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-black uppercase text-white sm:flex-none"><MessageCircle size={16}/> WhatsApp</a>}
             <button type="button" onClick={() => setAba("itens")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "itens" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><List size={16} /> Detalhes</button>
             <button type="button" onClick={() => setAba("comprovante")} className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-black uppercase sm:flex-none ${aba === "comprovante" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}><FileText size={16} /> Comprovante</button>
-            {onUpdated && vale.status !== "cancelada" && itens.some((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 text-xs font-black uppercase text-violet-800 sm:flex-none"><RotateCcw size={15} /> Devolver</button>}
-            {gerente && onUpdated && vale.status !== "cancelada" && <button type="button" onClick={() => { setModo("cancelar"); setErro(""); setPin(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3 text-xs font-black uppercase text-red-800 sm:flex-none"><Trash2 size={15} /> Cancelar</button>}
+            {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-violet-300 bg-violet-50 px-3 text-xs font-black uppercase text-violet-800 sm:flex-none"><RotateCcw size={15} /> Devolver</button>}
+            {!bloqueado && gerente && onUpdated && vale.status !== "cancelada" && <button type="button" onClick={() => { setModo("cancelar"); setErro(""); setPin(""); }} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-red-300 bg-red-50 px-3 text-xs font-black uppercase text-red-800 sm:flex-none"><Trash2 size={15} /> Cancelar</button>}
             <button type="button" onClick={imprimir} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-3 text-xs font-black uppercase text-white sm:flex-none"><Printer size={16} /> Imprimir</button>
             <button type="button" aria-label="Fechar detalhes do vale" onClick={onClose} className="inline-flex min-h-10 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-slate-600"><X size={18} /></button>
           </div>
@@ -166,10 +170,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               <Resumo titulo="Vencimento" valor={vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} icone />
             </div>
 
+            {bloqueado && <p className="text-xs font-bold text-blue-900">Este vale está disponível somente para consulta. Gerencie os pagamentos pela ordem até seu encerramento.</p>}
             {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
             <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
+              <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
               <table className="w-full min-w-[720px] text-xs">
                 <thead className="bg-slate-50 text-left"><tr>{["Data", "Pagamento", "Forma de pagamento", "Status", "Ações"].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
                 <tbody>{(vale.recebimentos?.length ? vale.recebimentos : legado ? [legado] : []).map((pagamento) =>
@@ -179,9 +184,10 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                     alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
                     referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos}
                     somenteReabertura={Boolean(legado)} alvoReabertura={legado ? { tipo: "vale", id: vale.id } : undefined}
+                    onDetalhes={legado ? undefined : setRecebimentoAberto}
                     onComprovante={legado ? undefined : id => void abrirComprovanteRecebimento(id)}
-                    editavel={Boolean(onUpdated) && vale.status !== "cancelada" && gerente}/>
-                )}{novoPagamento && <LinhaPagamento key="novo" iniciarEditando clienteId={vale.clienteId}
+                    editavel={!bloqueado && Boolean(onUpdated) && vale.status !== "cancelada" && gerente}/>
+                )}{!bloqueado && novoPagamento && <LinhaPagamento key="novo" iniciarEditando clienteId={vale.clienteId}
                   clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
                   saldo={Number(vale.saldoRestante)} alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
                   referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => setNovoPagamento(false)}/>}

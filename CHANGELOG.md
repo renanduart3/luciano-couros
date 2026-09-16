@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.31.0 — 2026-09-16
+
+- Pagamentos de vários vales exigem ordem de cobrança, com proteção na interface e nas rotas atuais e legadas da API.
+- Vales vinculados a ordens abertas ficam somente para consulta; edição individual é liberada após encerramento.
+- Links de navegação entre demonstrativo, ordens, vales e detalhes dos títulos e boletos.
+- Demonstrativo com cabeçalho compacto, coluna de descrição VALE, botão Abrir ordem e ações de impressão e WhatsApp por ícones.
+- Pagamentos registrados exibem a data do pagamento, inclusive para cheques e boletos, sem usar o vencimento do título.
+- Removido o aviso que deslocava os botões ao selecionar vários vales.
+- Testes de agrupamento, bloqueios, cancelamento, quitação, datas e regressões financeiras em bases isoladas.
+
 ## 1.30.2 — 2026-09-11
 
 - Criação e edição de vendas usam os mesmos totais em centavos, com descontos por item e desconto geral; reabrir vendas e orçamentos preserva a precisão do percentual.

@@ -17,6 +17,10 @@ const pix = { id: 'pix', data: '2026-09-10', formaPagamento: 'pix', status: 'ati
 let ordem = { totalOriginal: 5000, pagamentos: [cheque, pix] };
 let r = demonstrativoOrdem(ordem);
 assert.equal(r.linhas.length, 3);
+assert.deepEqual(r.linhas.map(l => l.data), ['2026-09-10', '2026-09-10', '2026-09-10']);
+const boleto = { ...cheque, formaPagamento: 'duplicata_emitente', data: '2026-09-15',
+  titulos: [{ ...cheque.titulos[0], vencimento: '2026-10-20', dataCompensacao: '2026-09-16' }] };
+assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [boleto] }).linhas[0].data, '2026-09-15');
 assert.deepEqual(r.linhas.map(l => l.valor), [2222, 1000, 1000]);
 assert.equal(r.pago, 3222);
 assert.equal(r.restante, 1778);

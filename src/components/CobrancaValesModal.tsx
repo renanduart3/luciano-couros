@@ -10,11 +10,12 @@ interface Props {
   clienteNome: string;
   vales: Venda[];
   valesDoCliente: Venda[];
+  onOpenOrdem: (ordem: OrdemCobranca) => void;
   onClose: () => void;
   onSaved?: (ordem: OrdemCobranca) => void;
 }
 
-export function CobrancaValesModal({ clienteId, clienteNome, vales, onClose, onSaved }: Props) {
+export function CobrancaValesModal({ clienteId, clienteNome, vales, onClose, onSaved, onOpenOrdem }: Props) {
   const [observacao, setObservacao] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -29,7 +30,7 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, onClose, onS
     } catch (e: any) { setError(e.message || "Não foi possível criar a ordem."); }
     finally { setSaving(false); }
   };
-  if (ordem) return <OrdemCobrancaDemonstrativoModal ordem={ordem} onClose={onClose}/>;
+  if (ordem) return <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => onOpenOrdem(ordem)} onClose={onClose}/>;
   return <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
     <section role="dialog" aria-modal="true" aria-labelledby="criar-ordem-titulo" className="payment-compact flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
       <header className="flex items-center justify-between bg-slate-900 px-3 py-2 text-white"><h2 id="criar-ordem-titulo" className="text-sm font-bold">Criar ordem de cobrança</h2><button disabled={saving} onClick={onClose} type="button" aria-label="Fechar cobrança"><X size={18}/></button></header>

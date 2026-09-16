@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.32.0 — 2026-09-16
+
+- CPF/CNPJ em cheques e boletos agora consulta o cadastro e preenche automaticamente o nome do cliente, com aviso não bloqueante quando não houver correspondência.
+- A consulta ocorre ao completar o documento ou sair do campo, evita requisições repetidas e mantém espaço fixo para o feedback sem deslocar o formulário.
+- Pagamentos registrados apresentam a coluna simplesmente como Data.
+
 ## 1.31.1 — 2026-09-16
 
 - Demonstrativo de cobrança usa a data prevista de cada boleto ou cheque; PIX, débito e crédito mantêm a data informada no pagamento, inclusive quando futura.

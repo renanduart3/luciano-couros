@@ -1316,6 +1316,29 @@ app.get("/api/clientes", (req, res) => {
   }
 });
 
+app.get("/api/clientes/por-documento", (req, res) => {
+  try {
+    const documento = String(req.query.documento || "").replace(/\D/g, "");
+    if (![11, 14].includes(documento.length)) {
+      return res.status(400).json({ error: "Informe um CPF ou CNPJ completo." });
+    }
+
+    const cliente = queryOne<{ id: string; nome: string; documento: string | null }>(
+      `SELECT id, nome, documento
+       FROM clientes
+       WHERE deletedAt IS NULL
+         AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(documento, ''), '.', ''), '-', ''), '/', ''), ' ', ''), ',', '') = ?
+       ORDER BY ativo DESC, nome ASC
+       LIMIT 1`,
+      [documento]
+    );
+
+    res.json({ cliente: cliente || null });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post("/api/clientes", (req, res) => {
   try {
     const { nome, telefone, documento, endereco, observacoes, ativo, isWhatsapp } = req.body;

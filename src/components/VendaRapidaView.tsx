@@ -15,6 +15,7 @@ import { dataComPrazo, ParcelaValeRascunho } from "./ParcelasValeEditor";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { ehCheque, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
+import { ClienteDocumentoLookupInput } from "./ClienteDocumentoLookupInput";
 
 interface VendaRapidaViewProps {
   onSaleSaved: () => void;
@@ -1623,12 +1624,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               )}
 
               {!vendaEmEdicao && formaExigeInstrumento && (
-                <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-2 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-2 xl:grid-cols-6">
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Vencimento *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
-                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ titular *</label><input value={instrumentoCpfTitular} onChange={(event) => setInstrumentoCpfTitular(event.target.value.slice(0, 24))} placeholder={clienteSelecionado?.documento || "CPF/CNPJ"} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
-                  {formaPagamento === "cheque_terceiro" && <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">CPF/CNPJ terceiro *</label><input value={instrumentoCpfTerceiro} onChange={(event) => setInstrumentoCpfTerceiro(event.target.value.slice(0, 24))} placeholder="CPF/CNPJ DO TERCEIRO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>}
+                  <ClienteDocumentoLookupInput label="CPF/CNPJ titular *" required value={instrumentoCpfTitular} onChange={setInstrumentoCpfTitular} onClienteEncontrado={setInstrumentoEmitente} placeholder={clienteSelecionado?.documento || "CPF/CNPJ"} labelClassName="block text-[10px] font-extrabold uppercase text-sky-800" inputClassName="mt-1 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" />
+                  {formaPagamento === "cheque_terceiro" && <ClienteDocumentoLookupInput label="CPF/CNPJ terceiro *" required value={instrumentoCpfTerceiro} onChange={setInstrumentoCpfTerceiro} onClienteEncontrado={setInstrumentoEmitente} placeholder="CPF/CNPJ DO TERCEIRO" labelClassName="block text-[10px] font-extrabold uppercase text-sky-800" inputClassName="mt-1 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" />}
+                  <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nome do emitente/terceiro</label><input value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value.slice(0, 160))} placeholder="PREENCHIDO PELO CPF/CNPJ" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="NÚMERO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
-                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-5">O vencimento gera alerta; não marca o cheque como recebido automaticamente.</p>
+                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-6">O vencimento gera alerta; não marca o cheque como recebido automaticamente.</p>
                 </div>
               )}
 

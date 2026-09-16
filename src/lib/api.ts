@@ -146,6 +146,11 @@ export const api = {
 
   // CLIENTES
   getClientes: () => fetch(`${API_BASE}/clientes`).then(r => handleResponse<Cliente[]>(r)),
+  getClientePorDocumento: (documento: string) => {
+    const params = new URLSearchParams({ documento });
+    return fetch(`${API_BASE}/clientes/por-documento?${params.toString()}`)
+      .then(r => handleResponse<{ cliente: Pick<Cliente, "id" | "nome" | "documento"> | null }>(r));
+  },
   createCliente: (cliente: Omit<Cliente, "id" | "createdAt" | "updatedAt">) => 
     fetch(`${API_BASE}/clientes`, {
       method: "POST",

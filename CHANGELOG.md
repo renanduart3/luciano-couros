@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.31.1 — 2026-09-16
+
+- Demonstrativo de cobrança usa a data prevista de cada boleto ou cheque; PIX, débito e crédito mantêm a data informada no pagamento, inclusive quando futura.
+- Coluna renomeada para Data / prevista para refletir os dois tipos de data.
+- Testes cobrem datas distintas de registro, vencimento e compensação, títulos de emitente e terceiro, diferentes situações e pagamentos futuros.
+
 ## 1.31.0 — 2026-09-16
 
 - Pagamentos de vários vales exigem ordem de cobrança, com proteção na interface e nas rotas atuais e legadas da API.

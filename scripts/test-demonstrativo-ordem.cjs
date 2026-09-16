@@ -17,10 +17,22 @@ const pix = { id: 'pix', data: '2026-09-10', formaPagamento: 'pix', status: 'ati
 let ordem = { totalOriginal: 5000, pagamentos: [cheque, pix] };
 let r = demonstrativoOrdem(ordem);
 assert.equal(r.linhas.length, 3);
-assert.deepEqual(r.linhas.map(l => l.data), ['2026-09-10', '2026-09-10', '2026-09-10']);
+assert.deepEqual(r.linhas.map(l => l.data), ['2026-09-10', '2026-10-16', '2026-09-10']);
 const boleto = { ...cheque, formaPagamento: 'duplicata_emitente', data: '2026-09-15',
   titulos: [{ ...cheque.titulos[0], vencimento: '2026-10-20', dataCompensacao: '2026-09-16' }] };
-assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [boleto] }).linhas[0].data, '2026-09-15');
+assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [boleto] }).linhas[0].data, '2026-10-20');
+for (const formaPagamento of ['cheque_emitente', 'cheque_terceiro', 'duplicata_emitente', 'duplicata_terceiro']) {
+  for (const status of ['aguardando', 'compensado', 'recusado']) {
+    const pagamento = { ...boleto, formaPagamento, titulos: boleto.titulos.map(t => ({ ...t, status })) };
+    assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [pagamento] }).linhas[0].data, '2026-10-20');
+  }
+}
+for (const formaPagamento of ['pix', 'avista_debito', 'cartao_credito']) {
+  for (const data of ['2026-09-10', '2099-12-20']) {
+    assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, formaPagamento, data }] }).linhas[0].data, data);
+  }
+}
+assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...boleto, titulos: [{ ...boleto.titulos[0], vencimento: '' }] }] }).linhas[0].data, boleto.data);
 assert.deepEqual(r.linhas.map(l => l.valor), [2222, 1000, 1000]);
 assert.equal(r.pago, 3222);
 assert.equal(r.restante, 1778);

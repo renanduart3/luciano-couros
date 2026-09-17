@@ -9,7 +9,9 @@ import { criarGerenciadorReabertura } from "./server/reabertura.js";
 import { compensarPagamentosProgramados, programacaoDoTitulo, dataFinanceiraValida, registrarMovimentacaoFinanceira } from "./server/programacaoPagamentos.js";
 import { textoHistoricoOrdem } from "./server/historicoOrdem.js";
 import { createServer as createViteServer } from "vite";
-import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP_DIR, LIVE_DB_FILE, rebuildClienteProdutosHabituais } from "./server/db.js";
+import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP_DIR, getActiveDbFile, isMockModeEnabled, rebuildClienteProdutosHabituais } from "./server/db.js";
+
+import backupFiles from "./scripts/backup-files.cjs";
 
 // Initialize express app
 const app = express();
@@ -430,68 +432,38 @@ function reduzirParcelasValePorDevolucao(vendaId: string, valorCredito: number) 
 }
 
 // --- BACKUP & RESTORATION UTILITIES ---
-if (!fs.existsSync(BACKUP_DIR)) {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
-}
-
-// Function to create a backup
-function createBackupFile(type: "manual" | "auto" = "manual"): string {
-  const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const timeStr = new Date().toTimeString().split(" ")[0].replace(/:/g, "-"); // HH-MM-SS
-  const filename = `${type}_${dateStr}_${timeStr}.db`;
-  const backupPath = path.join(BACKUP_DIR, filename);
-  
-  // Close the database connection briefly to ensure consistency, or use online backup mechanism
-  // better-sqlite3 offers an elegant backup() method that doesn't block!
-  db.backup(backupPath)
-    .then(() => {
-      console.log(`Backup (${type}) created successfully at: ${backupPath}`);
-    })
-    .catch((err) => {
-      console.error("Failed to create database backup:", err);
-    });
-
-  return filename;
-}
-
-// Daily automatic backup runner
-function runAutoBackup() {
+let backupBusy = false;
+let restoringBackup = false;
+app.use("/api", (_req, res, next) => {
+  if (restoringBackup) return res.status(503).json({ error: "Restauracao em andamento. Aguarde o reinicio do sistema." });
+  next();
+});
+async function createBackupFile(type: "manual" | "auto" = "manual"): Promise<string> {
+  if (backupBusy || restoringBackup) throw new Error("Ja existe uma operacao de backup em andamento.");
+  backupBusy = true;
   try {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const files = fs.readdirSync(BACKUP_DIR);
-    const hasTodayAuto = files.some(f => f.startsWith(`auto_${todayStr}`));
-    
-    if (!hasTodayAuto) {
-      console.log("No automatic backup found for today. Creating one...");
-      createBackupFile("auto");
-    }
-
-    // Retenção configurável
-    const retentionRow = queryOne<{ valor: string }>(
-      "SELECT valor FROM configuracoes WHERE chave = ?",
-      ["retencao_backups_dias"]
-    );
-    const retentionDays = retentionRow ? parseInt(retentionRow.valor, 10) : 30;
-    
-    const now = Date.now();
-    for (const file of files) {
-      const filePath = path.join(BACKUP_DIR, file);
-      const stat = fs.statSync(filePath);
-      const diffDays = (now - stat.mtimeMs) / (1000 * 60 * 60 * 24);
-      
-      if (diffDays > retentionDays) {
-        console.log(`Deleting old backup file: ${file} (older than ${retentionDays} days)`);
-        fs.unlinkSync(filePath);
-      }
-    }
-  } catch (err) {
-    console.error("Error during automatic backup routine:", err);
-  }
+    return await backupFiles.createSnapshot(db, BACKUP_DIR, type, isMockModeEnabled() ? "mock" : "live");
+  } finally { backupBusy = false; }
 }
+async function runAutoBackup() {
+  if (backupBusy || restoringBackup) return;
+  try {
+    const mode = isMockModeEnabled() ? "mock" : "live";
+    const today = backupFiles.stamp().slice(0, 10);
+    const validToday = fs.readdirSync(BACKUP_DIR).some(name => {
+      if (!name.startsWith(`auto_${mode}_${today}_`)) return false;
+      try { backupFiles.checkDatabase(backupFiles.safeBackupPath(BACKUP_DIR, name)); return true; } catch { return false; }
+    });
+    if (!validToday) await createBackupFile("auto");
+    const row = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = ?", ["retencao_backups_dias"]);
+    const days = Number(row?.valor || 30);
+    backupFiles.pruneBackups(BACKUP_DIR, Number.isInteger(days) && days > 0 && days <= 3650 ? days : 30);
+  } catch (error) { console.error("Falha na rotina de backup:", error); }
+}
+// Runs on startup and checks hourly, including after a missed day while powered off.
+void runAutoBackup();
+setInterval(() => void runAutoBackup(), 60 * 60 * 1000);
 
-// Run auto backup on boot, and then every 12 hours
-runAutoBackup();
-setInterval(runAutoBackup, 12 * 60 * 60 * 1000);
 
 
 // --- API ROUTES ---
@@ -6489,9 +6461,12 @@ app.get("/api/backups", (req, res) => {
   try {
     const files = fs.readdirSync(BACKUP_DIR);
     const backups = files
-      .filter((file) => file.endsWith(".db"))
+      .filter((file) => {
+        const info = backupFiles.backupInfo(file);
+        return info && info.type !== "update" && info.mode === (isMockModeEnabled() ? "mock" : "live");
+      })
       .map((file) => {
-        const filePath = path.join(BACKUP_DIR, file);
+        const filePath = backupFiles.safeBackupPath(BACKUP_DIR, file);
         const stat = fs.statSync(filePath);
         return {
           filename: file,
@@ -6506,68 +6481,58 @@ app.get("/api/backups", (req, res) => {
   }
 });
 
-app.post("/api/backups", (req, res) => {
+app.post("/api/backups", async (req, res) => {
   try {
-    const filename = createBackupFile("manual");
+    const filename = await createBackupFile("manual");
     res.json({ success: true, message: "Backup criado com sucesso!", filename });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/backups/restaurar", (req, res) => {
+app.post("/api/backups/restaurar", async (req, res) => {
+  if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde a operacao de backup atual." });
+  let closed = false;
+  let staged = "";
   try {
     const { filename } = req.body;
-    if (!filename) {
-      return res.status(400).json({ error: "Nome do arquivo de backup não informado." });
+    const info = backupFiles.backupInfo(typeof filename === "string" ? filename : "");
+    if (!info || info.mode !== (isMockModeEnabled() ? "mock" : "live")) {
+      return res.status(400).json({ error: "Backup de outro ambiente ou legado. Solicite revisao tecnica para restaurar arquivos antigos." });
     }
-
-    const backupPath = path.join(BACKUP_DIR, filename);
-    if (!fs.existsSync(backupPath)) {
-      return res.status(404).json({ error: "Arquivo de backup não encontrado." });
-    }
-
-    // Close the database connection to release lock
+    const source = backupFiles.safeBackupPath(BACKUP_DIR, filename);
+    backupFiles.checkDatabase(source);
+    // Keep a recovery copy before replacing the active database.
+    restoringBackup = true;
+    await backupFiles.createSnapshot(db, BACKUP_DIR, "manual", isMockModeEnabled() ? "mock" : "live");
+    const target = getActiveDbFile();
+    staged = `${target}.restore-tmp`;
+    fs.copyFileSync(source, staged);
+    backupFiles.checkDatabase(staged);
+    db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
-
-    // Copy backup over main database
-    fs.copyFileSync(backupPath, LIVE_DB_FILE);
-
-    // Re-initialize database
-    // We import it on demand or since db was exported from ./server/db.ts,
-    // we can re-open it. Since better-sqlite3 instance is cached, we need to restart or re-instantiate.
-    // In node, to safely reload, restarting the dev server is cleanest.
-    // Exit with a non-zero code so the Windows service (or another supervisor)
-    // recognizes this as a restart request and starts a fresh process.
-    // This is the absolute SAFEST way to prevent corrupt in-memory SQLite handles after a restore.
-    res.json({ 
-      success: true, 
-      message: "Backup restaurado com sucesso! O servidor está reiniciando para carregar os dados novos." 
-    });
-
-    setTimeout(() => {
-      console.log("Exiting to trigger container / tsx restart for database refresh...");
-      process.exit(1);
-    }, 1000);
-
+    closed = true;
+    for (const suffix of ["-wal", "-shm"]) {
+      if (fs.existsSync(target + suffix)) fs.unlinkSync(target + suffix);
+    }
+    fs.renameSync(staged, target);
+    res.json({ success: true, message: "Backup restaurado. O servico sera reiniciado; sem servico instalado, inicie o sistema novamente." });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
+  } finally {
+    if (staged && fs.existsSync(staged)) fs.unlinkSync(staged);
+    if (closed) setTimeout(() => process.exit(1), 500);
+    else restoringBackup = false;
   }
 });
 
 app.delete("/api/backups/:filename", (req, res) => {
+  if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde a operacao de backup atual." });
   try {
-    const { filename } = req.params;
-    const backupPath = path.join(BACKUP_DIR, filename);
-    if (fs.existsSync(backupPath)) {
-      fs.unlinkSync(backupPath);
-      res.json({ success: true, message: "Backup excluído." });
-    } else {
-      res.status(404).json({ error: "Arquivo não encontrado." });
-    }
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    const backupPath = backupFiles.safeBackupPath(BACKUP_DIR, req.params.filename);
+    fs.unlinkSync(backupPath);
+    res.json({ success: true, message: "Backup excluido." });
+  } catch (error: any) { res.status(400).json({ error: error.message }); }
 });
 
 app.use("/api", (_req, res) => {

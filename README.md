@@ -124,18 +124,17 @@ Para entregar uma nova versão, publique-a na branch `main` e peça ao cliente p
 
 O sistema usa versionamento semântico e mantém a versão oficial no `package.json`. O procedimento completo para incrementar a versão, registrar alterações, criar a tag e publicar está em [`docs/VERSIONAMENTO.md`](docs/VERSIONAMENTO.md). O histórico funcional fica em [`CHANGELOG.md`](CHANGELOG.md).
 
-Logs de execução ficam em `.runtime` e backups ficam em `data/backups`.
+Logs de execução ficam em `.runtime`. Os dados e backups podem ficar fora do projeto.
 
-#### Local permanente dos dados
+#### Local permanente dos dados e Google Drive
 
-Todos os dados do cliente ficam na pasta `data`, que nunca é substituída pelo atualizador:
+Execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd** no computador do cliente. O assistente para o sistema, copia e valida os bancos e configura a pasta externa (padrão: `C:\ProgramData\LucianoCouros\data`). Os originais são preservados para conferência.
 
-- `data/database.db`: banco de produção que deve receber os dados reais.
-- `data/database_mock.db`: banco fictício usado quando o modo de demonstração está ativo.
-- `data/mock_config.json`: seleção local entre modo real e fictício.
-- `data/backups`: backups automáticos, manuais e anteriores às atualizações.
+O apontamento fica em `installation-paths.json`, protegido pelo atualizador e excluído do Git. Sem esse arquivo, instalações existentes continuam usando `data`. Se houver somente um banco legado na raiz, execute o assistente antes de iniciar.
 
-Para instalar ou restaurar um banco real com o servidor parado, coloque-o em `data/database.db`. Instalações antigas que ainda tenham `database.db` na raiz são migradas automaticamente na primeira inicialização, sem apagar o arquivo original.
+Na pasta externa ficam `database.db`, `database_mock.db`, `mock_config.json` e `backups`. Sincronize **somente `backups`** com o Google Drive para computador, nunca os bancos ativos. A retenção é de **30 dias**, com preservação da última cópia válida em caso de falha prolongada.
+
+Consulte [o procedimento de migração, recuperação e configuração do Drive](docs/BACKUPS-E-MIGRACAO.md).
 
 ### Pré-requisitos
 *   Node.js (versão 18 ou superior)
@@ -193,5 +192,5 @@ npm run start
 ---
 
 ## 🔒 Segurança e Resiliência dos Dados
-*   **Backups Isolados**: O banco de dados gera instantâneos estáveis sob demanda ou em tarefas programadas para a pasta `/backups` de modo a blindar a operação contra falhas de hardware ou exclusões acidentais.
+*   **Backups Isolados**: O banco de dados gera instantâneos estáveis sob demanda ou em tarefas programadas para a pasta `/backups` para recuperação de dados. A proteção contra perda do disco depende de uma cópia externa, como a sincronização configurada no Google Drive.
 *   **Soft Deletes**: Deleção lógica para vendas, garantindo que mesmo itens cancelados continuem no histórico operacional para fins de integridade de caixa e auditoria de faturamento.

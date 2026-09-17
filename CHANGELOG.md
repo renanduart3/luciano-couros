@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.33.0 — 2026-09-16
+
+- Assistente Windows para migrar bancos e backups para uma pasta externa, com validação SQLite, apontamento persistente e preservação dos originais.
+- Backups concluídos e validados antes da confirmação, nomes separados por ambiente e retenção de 30 dias corrigida para arquivos e diretórios de atualização.
+- Restauração com validação de nomes, integridade, cópia preventiva e proteção contra mistura de produção e demonstração.
+- Atualizador usa o mesmo apontamento; documentação para sincronizar somente backups pelo Google Drive.
+- Testes de migração com WAL, retenção e restauração real em bancos isolados.
+
 ## 1.32.0 — 2026-09-16
 
 - CPF/CNPJ em cheques e boletos agora consulta o cadastro e preenche automaticamente o nome do cliente, com aviso não bloqueante quando não houver correspondência.

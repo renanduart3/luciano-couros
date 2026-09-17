@@ -337,7 +337,10 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
                 Esta aplicação funciona no modelo <strong>local-first</strong>, o que significa que todos os seus dados estão salvos com segurança no próprio disco do servidor local (banco SQLite).
               </p>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Para evitar perda de dados, o sistema realiza um <strong>backup diário automatizado</strong> retendo os últimos 30 dias de arquivos de forma invisível.
+                Enquanto estiver em execução, o sistema cria um <strong>backup diário automatizado</strong>, com retenção padrão de 30 dias. A última cópia válida é preservada em caso de falha prolongada.
+              </p>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                A cópia na nuvem depende do Google Drive configurado e sincronizando a pasta de backups. Criar uma cópia local não confirma o envio à nuvem.
               </p>
             </div>
 

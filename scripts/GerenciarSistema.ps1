@@ -1,14 +1,24 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart", "Status")]
+    [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart", "Status", "MigrateData")]
     [string]$Action,
-    [switch]$NoBrowser
+    [switch]$NoBrowser,
+    [string]$Destination
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $RuntimeDir = Join-Path $ProjectRoot ".runtime"
 $DataDir = Join-Path $ProjectRoot "data"
+$PathsFile = Join-Path $ProjectRoot "installation-paths.json"
+$DataHelper = Join-Path $PSScriptRoot "manage-data.cjs"
+function Update-DataPaths {
+    $result = & node.exe (Join-Path $PSScriptRoot "data-paths.cjs")
+    if ($LASTEXITCODE -ne 0) { throw "Nao foi possivel localizar os dados. Confira installation-paths.json." }
+    $paths = ($result -join "`n") | ConvertFrom-Json
+    $script:DataDir = $paths.dataDir
+    $script:BackupDir = $paths.backupDir
+}
 $PidFile = Join-Path $RuntimeDir "server.pid"
 $OutputLog = Join-Path $RuntimeDir "server.log"
 $ErrorLog = Join-Path $RuntimeDir "server-error.log"
@@ -196,15 +206,43 @@ function Start-System {
 }
 
 function Backup-Databases {
-    $databaseFiles = @(Get-ChildItem -LiteralPath $DataDir -File -Filter "database*.db*" -ErrorAction SilentlyContinue)
-    if ($databaseFiles.Count -eq 0) { return }
-    $timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
-    $backupDir = Join-Path $DataDir "backups\antes-da-atualizacao_$timestamp"
-    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    foreach ($databaseFile in $databaseFiles) { Copy-Item -LiteralPath $databaseFile.FullName -Destination $backupDir -Force }
-    $configFile = Join-Path $DataDir "mock_config.json"
-    if (Test-Path -LiteralPath $configFile) { Copy-Item -LiteralPath $configFile -Destination $backupDir -Force }
-    Write-Host "Backup dos dados criado em: $backupDir" -ForegroundColor Green
+    & node.exe $DataHelper snapshot
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao validar o backup. Atualizacao cancelada." }
+}
+
+function Migrate-SystemData {
+    Assert-Administrator
+    if ([string]::IsNullOrWhiteSpace($Destination)) {
+        $defaultDestination = Join-Path $env:ProgramData "LucianoCouros\data"
+        $script:Destination = Read-Host "Pasta externa de dados (Enter para $defaultDestination)"
+        if ([string]::IsNullOrWhiteSpace($Destination)) { $script:Destination = $defaultDestination }
+    }
+    Write-Step "Preparando migracao para $Destination"
+    if (Test-Path -LiteralPath $PathsFile) { throw "Esta instalacao ja possui installation-paths.json. Confira o caminho antes de migrar novamente." }
+    if (Test-Path -LiteralPath $Destination) { throw "O destino ja existe. Escolha uma pasta nova para preservar os dados." }
+    Stop-System
+    Assert-PortAvailable
+    # Build before switching the pointer, so an old executable never starts against old paths.
+    Build-System
+    $switched = $false
+    try {
+        & node.exe $DataHelper migrate $Destination
+        if ($LASTEXITCODE -ne 0) { throw "Migracao nao concluida; originais preservados." }
+        $switched = $true
+        Update-DataPaths
+        Start-System
+        Write-Host "Dados externos: $DataDir" -ForegroundColor Green
+        Write-Host "Sincronize SOMENTE esta pasta no Google Drive: $BackupDir" -ForegroundColor Green
+        Write-Host "Originais preservados no projeto. Remova-os somente apos conferir os dados e testar uma restauracao." -ForegroundColor Yellow
+    } catch {
+        $migrationError = $_
+        if ($switched) {
+            Stop-System
+            Remove-Item -LiteralPath $PathsFile -Force
+            Write-Host "Apontamento desfeito. Os dados originais e a copia externa foram preservados." -ForegroundColor Yellow
+        }
+        throw $migrationError
+    }
 }
 
 function Apply-UpdatePackage {
@@ -252,14 +290,21 @@ function Apply-UpdatePackage {
         }
     }
 
-    $robocopyArgs = @($sourceDir, $ProjectRoot, "/E", "/R:2", "/W:1", "/XD", ".git", "node_modules", "dist", ".runtime", "backups", "data", "/XF", "database*.db*", "mock_config.json", ".env", "atualizacao.zip")
+    $robocopyArgs = @($sourceDir, $ProjectRoot, "/E", "/R:2", "/W:1", "/XD", ".git", "node_modules", "dist", ".runtime", "backups", "data", "/XF", "database*.db*", "mock_config.json", ".env", "installation-paths.json", "installation-paths.json.tmp", "atualizacao.zip")
     & robocopy.exe @robocopyArgs | Out-Host
     if ($LASTEXITCODE -gt 7) { throw "Falha ao copiar os arquivos da atualizacao (codigo $LASTEXITCODE)." }
 
-    $appliedPackagesDir = Join-Path $ProjectRoot "backups\pacotes-aplicados"
+    $appliedPackagesDir = Join-Path $ProjectRoot ".runtime\pacotes-aplicados"
     New-Item -ItemType Directory -Path $appliedPackagesDir -Force | Out-Null
     $appliedZip = Join-Path $appliedPackagesDir ("atualizacao_" + (Get-Date -Format "yyyy-MM-dd_HH-mm-ss") + ".zip")
     Move-Item -LiteralPath $zipFile -Destination $appliedZip -Force
+    $archiveRoot = [IO.Path]::GetFullPath($appliedPackagesDir)
+    Get-ChildItem -LiteralPath $archiveRoot -File | Where-Object {
+        $_.Name -match '^atualizacao_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.zip$' -and $_.LastWriteTime -lt (Get-Date).AddDays(-30)
+    } | ForEach-Object {
+        if ([IO.Path]::GetDirectoryName($_.FullName) -ne $archiveRoot) { throw "Arquivo fora da pasta de pacotes." }
+        Remove-Item -LiteralPath $_.FullName -Force
+    }
     Remove-Item -LiteralPath $extractDir -Recurse -Force
 }
 
@@ -407,7 +452,9 @@ function Update-System {
 try {
     Set-Location -LiteralPath $ProjectRoot
     New-Item -ItemType Directory -Path $RuntimeDir -Force | Out-Null
+    if ($Action -notin @("Stop", "Uninstall", "Status")) { Update-DataPaths }
     switch ($Action) {
+        "MigrateData" { Migrate-SystemData }
         "Install" { Install-SystemService }
         "Uninstall" { Uninstall-SystemService }
         "Update" { Update-System }

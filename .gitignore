@@ -16,3 +16,7 @@ coverage/
 *.log
 .env*
 !.env.example
+installation-paths.json
+installation-paths.json.tmp
+tmp/
+output/

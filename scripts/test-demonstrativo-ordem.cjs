@@ -37,7 +37,7 @@ assert.deepEqual(r.linhas.map(l => l.valor), [2222, 1000, 1000]);
 assert.equal(r.pago, 3222);
 assert.equal(r.restante, 1778);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...cheque, status: 'cancelado' }, pix] }).pago, 1000);
-assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, valorRecebido: 1200 }] }).pago, 1000);
+assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, valorRecebido: 1200 }] }).pago, 1200);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, valorAplicadoOrdem: 500 }] }).pago, 500);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [] }).restante, 5000);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...cheque, titulos: cheque.titulos.map(t => ({ ...t, status: 'recusado' })) }] }).pago, 0);

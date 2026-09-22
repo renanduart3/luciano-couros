@@ -1,3 +1,4 @@
+import { financeiroVale } from "../lib/financeiro";
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
@@ -47,7 +48,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const ehVale = Boolean(venda.vencimento);
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
   const parcelasCartao = normalizarQuantidadeParcelas(venda.parcelasCartao);
-  const valorRecebido = Number(venda.valorPago || 0);
+  const valorRecebido = financeiroVale(venda).recebido;
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
   const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
   const titulo = instrumento?.tipo?.startsWith("cheque")

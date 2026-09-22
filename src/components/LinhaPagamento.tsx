@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import { Banknote, FileText, Pencil, RotateCcw, Trash2 } from "lucide-react";
+import { recebidoDaLinha } from "../lib/financeiro";
 import { api } from "../lib/api";
 import { OrdemCobranca, ProjecaoPagamentoOrdem, PagamentoGerenciavel, TituloRecebimento } from "../types";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
@@ -8,12 +10,13 @@ import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { distribuirCentavos } from '../lib/distribuicaoPagamento';
 
 type Situacao = "em_aberto" | "compensado" | "aguardando" | "recusado";
-const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "Pago", aguardando: "Aguardando compensação", recusado: "Recusado" };
+const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "Confirmado", aguardando: "Aguardando", recusado: "Recusado" };
 const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
 export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
-  onDetalhes, projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
+  vendaIdContexto, onDetalhes, projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
+  vendaIdContexto?: string;
   projecao?: ProjecaoPagamentoOrdem; onEstornar?: () => void; onExcluir?: () => void;
   key?: string; children?: React.ReactNode; colunasAntes?: number; pagamento?: PagamentoGerenciavel; somenteReabertura?: boolean;
   clienteId: string; clienteNome: string; clienteDocumento?: string; saldo: number;
@@ -46,7 +49,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [concluido, setConcluido] = useState(false);
   const titulo = ehTituloPagamento(forma);
   const total = titulo ? Math.round(titulos.reduce((s, t) => s + (t.status === "recusado" ? 0 : Number(t.valor || 0)), 0) * 100) / 100 : parseBrazilianNumber(valor);
-  const colunas = colunasAntes + 5;
+  const recebido = pagamento ? recebidoDaLinha(pagamento, vendaIdContexto, ordemCobrancaId) : 0;
+  const colunas = colunasAntes + 6;
   const iniciar = (criar = false) => {
     const existente = criar ? undefined : pagamento || projecao?.dados;
     setRevisaoEdicao(projecao?.revisao || existente?.revisao);
@@ -108,21 +112,26 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     finally { setSaving(false); }
   };
   return <>
-    <tr className={editando ? "payment-compact bg-blue-50" : "payment-compact bg-white"}>{children}
+    <tr data-recebimento-id={pagamento?.id} tabIndex={-1} className={editando ? "payment-compact bg-blue-50" : "payment-compact bg-white"}>{children}
       <td className="p-2">{editando ? <input aria-label={`Data ${referencia}`} type="date" value={data} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => setData(e.target.value)} className={campo}/> : pagamento || projecao ? formatDate((pagamento || projecao!.dados).data) : "—"}</td>
-      <td className="p-2 text-right font-mono">{editando ? <input aria-label={`Valor ${referencia}`} inputMode="decimal" value={titulo ? total.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} readOnly={titulo} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => setValor(e.target.value)} className={`${campo} min-w-24 text-right`}/> : pagamento || projecao ? formatCurrency((pagamento || projecao!.dados).valorRecebido + (pagamento || projecao!.dados).bonusUtilizado) : "—"}</td>
+      <td className="p-2 text-right font-mono">{editando ? <input aria-label={`Valor ${referencia}`} inputMode="decimal" value={titulo ? total.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} readOnly={titulo} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => setValor(e.target.value)} className={`${campo} min-w-24 text-right`}/>  : pagamento || projecao ? <>
+        <span className="font-bold">{formatCurrency((pagamento || projecao!.dados).valorRecebido)}</span>
+        {Number((pagamento || projecao!.dados).bonusUtilizado) > 0 && <span className="block text-[10px] font-sans text-violet-800">+ {formatCurrency((pagamento || projecao!.dados).bonusUtilizado)} em bônus utilizado</span>}
+        {pagamento?.status === "ativo" && pagamento.bonusGerado > 0 && <span className="block text-[10px] font-sans text-violet-800">Excedente em bônus: {formatCurrency(pagamento.bonusGerado)}</span>}
+      </> : "—"}</td>
+      <td className="p-2 text-right font-mono font-bold text-emerald-800">{pagamento ? formatCurrency(recebido) : "—"}</td>
       <td className="p-2">{editando ? <select aria-label={`Forma ${referencia}`} value={forma} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => { setForma(e.target.value); setTitulos([]); setSituacao(projecao && situacao === "em_aberto" ? "em_aberto" : ehTituloPagamento(e.target.value) ? "aguardando" : "compensado"); }} className={`${campo} min-w-32`}>{FORMAS_PAGAMENTO.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select> : projecao ? FORMAS_PAGAMENTO.find(f => f.value === projecao.dados.formaPagamento)?.label : pagamento ? FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label || pagamento.formaPagamento : FORMAS_PAGAMENTO.find(f => f.value === formaPagamentoPrevista)?.label || "—"}</td>
       <td className="p-2">{editando ? <select aria-label={`Status ${referencia}`} value={situacao} disabled={saving || revisando || concluido} onChange={e => void trocarStatus(e.target.value as Situacao)} className={`${campo} min-w-32`}>
         {!onEstornar && !novo && pagamento?.status === "ativo" && <option value="em_aberto">Em aberto</option>}
-        {projecao && <option value="em_aberto">Pendente (previsão)</option>}<option value="compensado">Pago</option>{titulo && <option value="aguardando">Aguardando compensação</option>}{titulo && !novo && <option value="recusado">Recusado</option>}
-      </select> : <span className={pagamento?.statusPagamento === "compensado" ? "text-emerald-800" : "text-amber-800"}>{pagamento ? nomes[pagamento.statusPagamento] : projecao ? "Pendente" : statusSemPagamento || nomes.em_aberto}</span>}</td>
+        {projecao && <option value="em_aberto">Planejado (não recebido)</option>}<option value="compensado">Confirmado</option>{titulo && <option value="aguardando">Aguardando</option>}{titulo && !novo && <option value="recusado">Recusado</option>}
+      </select> : <span className={pagamento?.statusPagamento === "compensado" ? "text-emerald-800" : "text-amber-800"}>{pagamento ? nomes[pagamento.statusPagamento] : projecao ? "Planejado · não recebido" : statusSemPagamento || nomes.em_aberto}</span>}</td>
       <td className="p-2"><div className="flex flex-wrap justify-end gap-1">{editando ? <><button type="button" disabled={saving || revisando || concluido || (!projecao && situacao === "em_aberto" && (!plano || !confirmado))} onClick={() => void salvar()} className="rounded-lg bg-emerald-700 px-2 py-1 text-[10px] font-black text-white disabled:opacity-40">{saving ? "Salvando…" : projecao && situacao === "em_aberto" ? "Salvar previsão" : novo ? "Registrar" : "Salvar"}</button><button type="button" disabled={saving} onClick={() => { setEditando(false); setErro(""); setPin(""); onCancel?.(); }} className="rounded-lg border px-2 py-1 text-[10px] font-bold">Cancelar</button></> : <>
-        {editavel && <button type="button" onClick={() => iniciar()} className="rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black">Editar</button>}
-        {editavel && onEstornar && <button type="button" onClick={onEstornar} className="rounded-lg border px-2 py-1 text-[10px] font-bold">Estornar</button>}
-        {editavel && onExcluir && <button type="button" onClick={onExcluir} className="rounded-lg border border-red-200 px-2 py-1 text-[10px] font-bold text-red-700">Excluir</button>}
+        {editavel && <button type="button" title="Editar" aria-label="Editar" onClick={() => iniciar()} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black"><Pencil size={16}/></button>}
+        {editavel && onEstornar && <button type="button" title="Estornar" aria-label="Estornar" onClick={onEstornar} className="rounded-lg border px-2 py-1 text-[10px] font-bold"><RotateCcw size={16}/></button>}
+        {editavel && onExcluir && <button type="button" title="Excluir" aria-label="Excluir" onClick={onExcluir} className="rounded-lg border border-red-200 px-2 py-1 text-[10px] font-bold text-red-700"><Trash2 size={16}/></button>}
         {editavel && pagamento && saldo > 0.005 && <button type="button" onClick={() => iniciar(true)} className="rounded-lg border border-emerald-300 px-2 py-1 text-[10px] font-bold text-emerald-800">Receber saldo</button>}
-        {pagamento && onDetalhes && <button type="button" onClick={() => onDetalhes(pagamento.id)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800">Ver títulos / boletos</button>}
-        {pagamento && onComprovante && <button type="button" onClick={() => onComprovante(pagamento.id)} className="rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800">Comprovante</button>}
+        {pagamento && onDetalhes && <button type="button" title="Ver títulos / boletos" aria-label="Ver títulos / boletos" onClick={() => onDetalhes(pagamento.id)} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800"><Banknote size={16}/></button>}
+        {pagamento && onComprovante && <button type="button" title="Comprovante" aria-label="Comprovante" onClick={() => onComprovante(pagamento.id)} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800"><FileText size={16}/></button>}
       </>}</div></td>
     </tr>
     {editando && <tr className="payment-compact bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">

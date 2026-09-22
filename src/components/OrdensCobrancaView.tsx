@@ -7,6 +7,8 @@ import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from 
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ConfirmarAcaoPagamentosOrdem } from "./ConfirmarAcaoPagamentosOrdem";
+import { financeiroOrdem } from "../lib/financeiro";
+import { resumoRecebimentos } from "../lib/resumoRecebimentos";
 import { situacaoAgendaOrdem } from "../lib/situacaoOrdem";
 import { ItemAcaoPagamentoOrdem } from "../types";
 import { LinhaPagamento } from "./LinhaPagamento";
@@ -100,14 +102,27 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
 }
 
 function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPagamento }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void; onOpenPagamento: (id: string) => void }) {
+  const financeiro = financeiroOrdem(ordem);
+  const resumo = resumoRecebimentos(ordem.pagamentos || []);
+  const planejado = (ordem.projecoes || []).reduce((s, p) => s + Math.round((Number(p.dados.valorRecebido) + Number(p.dados.bonusUtilizado || 0)) * 100), 0) / 100;
   return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
     <div className="grid gap-3 border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white lg:grid-cols-[1fr_auto] lg:items-center">
       <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
       <div className="grid grid-cols-3 gap-2 text-right">
         <div className="rounded-lg bg-white/10 px-3 py-2"><span className="block text-[9px] font-black uppercase text-slate-300">Negociado</span><strong className="whitespace-nowrap font-mono text-sm">{formatCurrency(ordem.totalOriginal)}</strong></div>
-        <div className="rounded-lg bg-emerald-500/20 px-3 py-2"><span className="block text-[9px] font-black uppercase text-emerald-200">Pago</span><strong className="whitespace-nowrap font-mono text-sm text-emerald-100">{formatCurrency(ordem.valorPago)}</strong></div>
-        <div className="rounded-lg bg-amber-500/20 px-3 py-2"><span className="block text-[9px] font-black uppercase text-amber-200">Em aberto</span><strong className="whitespace-nowrap font-mono text-sm text-amber-100">{formatCurrency(ordem.saldo)}</strong></div>
+        <div className="rounded-lg bg-emerald-500/20 px-3 py-2"><span className="block text-[9px] font-black uppercase text-emerald-200">Recebido</span><strong className="whitespace-nowrap font-mono text-sm text-emerald-100">{formatCurrency(financeiroOrdem(ordem).recebido)}</strong></div>
+        <div className="rounded-lg bg-amber-500/20 px-3 py-2"><span className="block text-[9px] font-black uppercase text-amber-200">Restante</span><strong className="whitespace-nowrap font-mono text-sm text-amber-100">{formatCurrency(financeiroOrdem(ordem).restante)}</strong></div>
       </div>
+    </div>
+    <div className="border-b border-slate-300 bg-slate-50 p-3">
+      <p className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</p>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 text-xs">
+        <div><p className="text-slate-600">Aguardando</p><strong className="font-mono text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
+        <div><p className="text-slate-600">Planejado · não recebido</p><strong className="font-mono text-blue-800">{formatCurrency(planejado)}</strong></div>
+        <div><p className="text-slate-600">Excedente em bônus</p><strong className="font-mono text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
+      </div>
+      <p className="mt-2 text-[10px] text-slate-600">Planejamentos e títulos aguardando não entram em Recebido. A compensação ocorre automaticamente no vencimento.{resumo.bonusUtilizado > 0 && ` Bônus utilizado: ${formatCurrency(resumo.bonusUtilizado)} (crédito anterior).`}</p>
+      {(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicadoOrdem !== undefined && p.valorAplicado > p.valorAplicadoOrdem + 0.005) && <p className="mt-1 text-[10px] text-slate-600">Há recebimentos compartilhados com outros vales ou ordens. Os cards mostram somente a parte desta ordem.</p>}
     </div>
     <div className="grid xl:grid-cols-[0.85fr_1.35fr]">
       <div className="border-b border-slate-300 xl:border-b-0 xl:border-r">
@@ -120,7 +135,7 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPag
         {(ordem.pagamentos || []).map(p => <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_7rem_9rem]">
           <button type="button" onClick={() => onOpenPagamento(p.id)} className="text-left text-blue-700 underline">{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</button>
           <strong className="whitespace-nowrap text-right font-mono tabular-nums">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
-          <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Pago' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando compensação'}</span>
+          <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Confirmado' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando'}</span>
         </div>)}
         {!ordem.pagamentos?.length && <p className="px-3 py-2 text-xs text-slate-500">Nenhum pagamento registrado.</p>}
       </div>
@@ -128,8 +143,16 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPag
   </section>;
 }
 
-export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void }) {
+export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebimentoDestaque }: { recebimentoDestaque?: string; ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void }) {
   const gerente = useEhGerente();
+  const pagamentosRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!recebimentoDestaque) return;
+    const linha = Array.from<HTMLTableRowElement>(pagamentosRef.current?.querySelectorAll<HTMLTableRowElement>("tr[data-recebimento-id]") || [])
+      .find(item => item.dataset.recebimentoId === recebimentoDestaque);
+    linha?.scrollIntoView({ block: "center" });
+    linha?.focus({ preventScroll: true });
+  }, [recebimentoDestaque]);
   const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
   const [valeAberto, setValeAberto] = useState<Venda | null>(null);
   const abrirVale = async (id: string) => { try { setValeAberto(await api.getVenda(id)); } catch (e: any) { setError(e.message); } };
@@ -211,7 +234,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
 
   if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
-  {recebimentoAberto && <RecebimentoDetalhesModal recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
+  {recebimentoAberto && <RecebimentoDetalhesModal ordemContextoId={ordem.id} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
   {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => setDemonstrativoAberto(false)} onClose={() => setDemonstrativoAberto(false)} />}
   {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
@@ -251,12 +274,13 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
             <button disabled={!!acao || edicoes.size > 0 || !selecionados.length || selecionados.some(i => i.tipo === "projecao")} onClick={() => abrirAcao({ acao: "estornar", itens: selecionados })} className="rounded border px-2 py-1 text-xs disabled:opacity-40">Estornar selecionados</button>
             <button disabled={!!acao || edicoes.size > 0 || !selecionados.length} onClick={() => abrirAcao({ acao: "excluir", itens: selecionados })} className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-40">Excluir selecionados</button></>}
           <button type="button" disabled={!!acao || edicoes.size > 0 || novoPagamento || ordem.saldo <= 0.005 || ordem.status !== 'aberta'} onClick={() => setNovoPagamento(true)} className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button></div>
-          <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="w-full min-w-[700px] text-left text-xs">
-            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Forma de pagamento', 'Status', 'Ações'].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
+          <div ref={pagamentosRef} className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="w-full min-w-[700px] text-left text-xs">
+            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Recebido', 'Forma de pagamento', 'Situação', 'Ações'].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
             <tbody>
               {novoPagamento && <LinhaPagamento key="novo" iniciarEditando colunasAntes={1} onEditingChange={v => marcarEdicao("novo", v)} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome}
                 clienteDocumento={ordem.clienteDocumento} saldo={ordem.saldo} alocar={alocarPagamento} ordemCobrancaId={ordem.id}
                 referencia={`ordem #${ordem.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => { marcarEdicao("novo", false); setNovoPagamento(false); }}><td/></LinhaPagamento>}
+              {!!ordem.projecoes?.length && <tr className="bg-blue-50"><th colSpan={7} className="p-2 text-left text-xs text-blue-900">Planejado · ainda não recebido</th></tr>}
               {(ordem.projecoes || []).map(p => <LinhaPagamento key={p.id} projecao={p} colunasAntes={1}
                 clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento}
                 saldo={ordem.saldo} alocar={alocarPagamento} onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`previsão ${p.id.slice(0, 8)}`}
@@ -264,6 +288,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
                 onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "projecao", id: p.id }] })}>
                 <td className="p-2"><input type="checkbox" aria-label="Selecionar previsão" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "projecao", id: p.id })}/></td>
               </LinhaPagamento>)}
+              {!!ordem.pagamentos?.length && <tr className="bg-slate-100"><th colSpan={7} className="p-2 text-left text-xs text-slate-700">Recebimentos registrados</th></tr>}
               {[...(ordem.pagamentos || [])].reverse().map(p => <LinhaPagamento key={p.id} pagamento={p} colunasAntes={1} onEditingChange={v => marcarEdicao(p.id, v)} clienteId={ordem.clienteId}
               clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} saldo={0} alocar={alocarPagamento}
               onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={podeGerenciar && !acao} onEstornar={() => abrirAcao({ acao: "estornar", itens: [{ tipo: "recebimento", id: p.id }] })} onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "recebimento", id: p.id }] })}
@@ -271,7 +296,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged }: { orde
 
             </tbody>
           </table></div>
-          <p className="text-right text-xs font-bold text-amber-900">Saldo a receber: {formatCurrency(ordem.saldo)}</p>
+          <p className="text-right text-xs font-bold text-amber-900">Restante: {formatCurrency(financeiroOrdem(ordem).restante)}</p>
         </div> : <div className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
           {ordem.parcelas.length > 0 && <details className="px-3 py-2 text-xs"><summary className="cursor-pointer font-bold">Parcelamento anterior (somente consulta)</summary>{ordem.parcelas.map(p => <p key={p.id} className="mt-1">Parcela {p.numero} · {formatDate(p.vencimento)} · {formatCurrency(p.valor)}</p>)}</details>}
           {(ordem.eventos || []).map((evento) => <div key={evento.id} className="flex gap-3 px-3 py-2 text-[11px] leading-5"><span className="shrink-0 font-mono text-slate-500">{formatDate(evento.data)}</span><p className={evento.tipo === "estorno" ? "text-red-700" : "text-slate-700"}>{evento.texto}</p></div>)}
@@ -348,7 +373,7 @@ export function OrdensCobrancaView({ refreshKey, onChanged }: Props) {
     <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label><label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="numero_desc">Nº da ordem (maior)</option><option value="numero_asc">Nº da ordem (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
     {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center font-bold text-slate-500">Carregando ordens...</div> : error ? <div className="flex items-center gap-2 rounded-2xl border border-red-300 bg-red-50 p-4 font-bold text-red-800"><AlertCircle size={18}/>{error}</div> : filtradasOrdenadas.length === 0 ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-10 text-center"><FileClock className="mx-auto text-blue-600" size={34}/><p className="mt-3 font-black text-blue-950">Nenhuma ordem neste filtro</p></div> : <div className="grid gap-3">{filtradasOrdenadas.map((ordem) => {
       const agenda = situacaoAgendaOrdem(ordem);
-      return <article key={ordem.id} className="grid gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[0.55fr_1.5fr_0.8fr_0.8fr_0.9fr_auto] lg:items-center"><div><p className="text-[10px] font-black uppercase text-slate-500">Ordem</p><p className="font-mono text-lg font-black">#{ordem.numeroSequencial}</p><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div><div><p className="text-[10px] font-black uppercase text-slate-500">Cliente</p><p className="font-black uppercase text-slate-950">{ordem.clienteNome}</p><p className="text-[10px] font-bold text-slate-500">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><p className="text-xs font-bold text-slate-500">{ordem.vales.length} vale(s) · {ordem.pagamentos?.length || 0} pagamento(s)</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="font-mono font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Pago</p><p className="font-mono font-black text-emerald-800">{formatCurrency(ordem.valorPago)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">{agenda.titulo}</p>{agenda.vencimento ? <><p className="inline-flex items-center gap-1 font-black text-amber-900"><CalendarClock size={14}/>{formatDate(agenda.vencimento)}</p><p className="font-mono text-xs font-black">{formatCurrency(agenda.valor || 0)}</p></> : <p className="inline-flex items-center gap-1 font-black text-emerald-800"><CheckCircle2 size={15}/>{agenda.texto}</p>}</div><div className="flex justify-end"><button type="button" onClick={() => setDetalhadaId(ordem.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Eye size={14}/> Detalhes</button></div></article>;
+      return <article key={ordem.id} className="grid gap-3 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm lg:grid-cols-[0.5fr_1.3fr_0.7fr_0.7fr_0.7fr_0.9fr_auto] lg:items-center"><div><p className="text-[10px] font-black uppercase text-slate-500">Ordem</p><p className="font-mono text-lg font-black">#{ordem.numeroSequencial}</p><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div><div><p className="text-[10px] font-black uppercase text-slate-500">Cliente</p><p className="font-black uppercase text-slate-950">{ordem.clienteNome}</p><p className="text-[10px] font-bold text-slate-500">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><p className="text-xs font-bold text-slate-500">{ordem.vales.length} vale(s) · {ordem.pagamentos?.length || 0} pagamento(s)</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Negociado</p><p className="font-mono font-black">{formatCurrency(ordem.totalOriginal)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Recebido</p><p className="font-mono font-black text-emerald-800">{formatCurrency(financeiroOrdem(ordem).recebido)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">Restante</p><p className="font-mono font-black text-amber-800">{formatCurrency(financeiroOrdem(ordem).restante)}</p></div><div><p className="text-[10px] font-black uppercase text-slate-500">{agenda.titulo}</p>{agenda.vencimento ? <><p className="inline-flex items-center gap-1 font-black text-amber-900"><CalendarClock size={14}/>{formatDate(agenda.vencimento)}</p><p className="font-mono text-xs font-black">{formatCurrency(agenda.valor || 0)}</p></> : <p className="inline-flex items-center gap-1 font-black text-emerald-800"><CheckCircle2 size={15}/>{agenda.texto}</p>}</div><div className="flex justify-end"><button type="button" onClick={() => setDetalhadaId(ordem.id)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 text-[10px] font-black uppercase text-white"><Eye size={14}/> Detalhes</button></div></article>;
     })}</div>}
   </div>;
 }

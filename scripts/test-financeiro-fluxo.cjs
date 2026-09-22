@@ -1,0 +1,50 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const Module = require('node:module');
+const {buildSync} = require('esbuild');
+const raiz = process.cwd();
+const temp = fs.mkdtempSync(path.join(os.tmpdir(),'luciano-fluxo-'));
+process.env.DATA_DIR = temp;
+let source = fs.readFileSync('server.ts','utf8').replace('startServer();','export { app, db, carregarRecebimentoGerenciavel, carregarDetalhesVenda, listarOrdensCobranca, compensarPagamentosProgramados };');
+source = source.replace('runAutoBackup();','').replace('setInterval(runAutoBackup, 12 * 60 * 60 * 1000);','').replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();','').replace('setTimeout(executarProgramacaoFinanceira, 0).unref();','');
+source += '\nexport { financeiroOrdem } from "./src/lib/financeiro";';
+const build = buildSync({stdin:{contents:source,resolveDir:raiz,loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
+process.chdir(temp);
+const mod = new Module(path.join(raiz,'scripts/fluxo-runtime.cjs')); mod.filename=mod.id;mod.paths=module.paths;mod._compile(build.outputFiles[0].text,mod.filename);
+const {db,app,carregarDetalhesVenda:detalhar,carregarRecebimentoGerenciavel:recebimento,financeiroOrdem,compensarPagamentosProgramados:compensar}=mod.exports;
+function relatorio(query={}) {
+ const route=app._router.stack.find(s=>s.route?.path==='/api/relatorios').route.stack[0].handle;
+ let result, status=200;
+ route({query},{status(n){status=n;return this},json(r){result=r}});
+ assert.equal(status,200,JSON.stringify(result));return result;
+}
+try {
+ db.prepare("INSERT INTO clientes(id,nome) VALUES ('c','Teste fluxo')").run();
+ db.prepare("INSERT INTO vendas(id,numeroSequencial,clienteId,data,subtotal,desconto,totalLiquido,valorPago,saldoRestante,status,vencimento) VALUES ('v',1,'c','2099-01-01',100,0,100,100,0,'paga','2099-01-10')").run();
+ db.prepare("INSERT INTO pagamentos(id,clienteId,data,valor,formaPagamento,recebimentoId) VALUES ('pg','c','2099-01-01',900,'cheque_emitente','r')").run();
+ db.prepare("INSERT INTO recebimentos_cliente(id,clienteId,data,valorRecebido,valorAplicado,bonusGerado,formaPagamento,pagamentoId) VALUES ('r','c','2099-01-01',900,100,800,'cheque_emitente','pg')").run();
+ db.prepare("INSERT INTO recebimento_alocacoes(id,recebimentoId,vendaId,valor) VALUES ('a','r','v',100)").run();
+ db.prepare("INSERT INTO recebimento_titulos(id,recebimentoId,clienteId,tipo,nomeTitular,documentoTitular,valor,vencimento,numeroDocumento,status,compensacaoAutomatica) VALUES ('t','r','c','cheque_emitente','Teste','111',900,'2099-01-15','1','aguardando',1)").run();
+ const vale=()=>detalhar(db.prepare("SELECT * FROM vendas WHERE id='v'").get());
+ const ordem=()=>financeiroOrdem({id:'o',totalOriginal:100,pagamentos:[{...recebimento('r'),valorAplicadoOrdem:100}]});
+ assert.equal(vale().financeiro.recebido,0);assert.equal(vale().financeiro.restante,100);assert.equal(ordem().restante,100);
+ assert.equal(relatorio({statusVenda:'pendente'}).vendas.length,1);assert.equal(relatorio({statusVenda:'paga'}).vendas.length,0);
+ let r=relatorio({valeStatus:'abertos'});assert.equal(r.vales.length,1);assert.equal(r.vales[0].saldoRestante,100);assert.equal(r.pagamentos.length,0);assert.equal(r.clientesResumo.find(c=>c.clienteId==='c').saldoDevedor,100);
+ assert.equal(compensar('2099-01-15'),1);assert.equal(compensar('2099-01-15'),0);
+ assert.equal(vale().financeiro.recebido,900);assert.equal(vale().financeiro.bonus,800);assert.equal(vale().financeiro.restante,0);assert.equal(ordem().recebido,900);assert.equal(ordem().restante,0);
+ r=relatorio({startDate:'2099-01-15',endDate:'2099-01-15'});assert.equal(r.pagamentos.reduce((s,p)=>s+p.valor,0),900);assert.equal(r.pagamentos[0].data,'2099-01-15');
+ assert.equal(relatorio({startDate:'2099-01-01',endDate:'2099-01-01'}).pagamentos.length,0);
+ r=relatorio({valeStatus:'quitados'});assert.equal(r.vales[0].valorPago,900);assert.equal(r.vales[0].saldoRestante,0);
+ db.prepare("UPDATE recebimento_titulos SET status='aguardando',dataCompensacao=NULL,vencimento='2099-02-15',compensacaoAutomatica=1 WHERE id='t'").run();
+ assert.equal(vale().financeiro.recebido,0);assert.equal(ordem().restante,100);assert.equal(relatorio().pagamentos.length,0);
+ assert.equal(compensar('2099-02-14'),0);assert.equal(compensar('2099-02-15'),1);assert.equal(vale().financeiro.recebido,900);
+ db.prepare("UPDATE recebimento_titulos SET status='recusado' WHERE id='t'").run();
+ assert.equal(vale().financeiro.recebido,0);assert.equal(relatorio().pagamentos.length,0);
+ db.prepare("UPDATE recebimentos_cliente SET status='recusado' WHERE id='r'").run();
+ db.prepare("UPDATE recebimento_alocacoes SET deletedAt=CURRENT_TIMESTAMP WHERE id='a'").run();
+ db.prepare("UPDATE vendas SET valorPago=0,saldoRestante=100,status='pendente' WHERE id='v'").run();
+ assert.equal(vale().financeiro.restante,100);assert.equal(relatorio({valeStatus:'abertos'}).vales[0].saldoRestante,100);
+ console.log('OK: vale/ordem/relatórios; futuro, vencimento automático, idempotência, 100/900/800, caixa por data, adiamento e recusa.');
+} finally {db.close();}

@@ -91,8 +91,8 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
 
             <footer className="grid grid-cols-3 border-t-2 border-slate-900 bg-emerald-100 text-right">
               <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Negociado</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(ordem.totalOriginal)}</strong></div>
-              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Total pago</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(resumo.pago)}</strong></div>
-              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante a pagar</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
+              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Recebido</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(resumo.pago)}</strong></div>
+              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
             </footer>
           </section>
         </div>

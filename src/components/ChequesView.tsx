@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, Banknote, FileText, CheckCircle2, RefreshCw, Search } from "lucide-react";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, todayLocalIso } from "../lib/utils";
 import { ChequeGerencial, ComprovanteRecebimento } from "../types";
@@ -96,11 +96,12 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
   return <div className="space-y-4">
     {editandoId && <RecebimentoDetalhesModal recebimentoId={editandoId} onSaved={atualizarEditado} onClose={() => setEditandoId(null)} onComprovante={id => { setEditandoId(null); void abrirComprovante(id); }}/>}
     {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <button type="button" onClick={() => setFiltro("aguardando")} className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left shadow-sm"><p className="text-[10px] font-black uppercase text-amber-700">Em carteira</p><p className="mt-1 text-2xl font-black text-amber-950">{totais.aguardando}</p><p className="text-xs font-bold text-amber-800">{formatCurrency(totais.valorAguardando)}</p></button>
-      <button type="button" onClick={() => setFiltro("compensados_hoje")} className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left shadow-sm"><p className="text-[10px] font-black uppercase text-blue-700">Compensados hoje</p><p className="mt-1 text-2xl font-black text-blue-950">{totais.compensadosHoje}</p><p className="text-xs font-bold text-blue-700">{formatCurrency(totais.valorCompensadoHoje)}</p></button>
-      <button type="button" onClick={() => setFiltro("recusados")} className="rounded-2xl border border-red-200 bg-red-50 p-4 text-left shadow-sm"><p className="text-[10px] font-black uppercase text-red-700">Com problema</p><p className="mt-1 text-2xl font-black text-red-950">{totais.recusados}</p><p className="text-xs font-bold text-red-800">recusados / devolvidos</p></button>
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-[10px] font-black uppercase text-slate-500">No filtro atual</p><p className="mt-1 text-2xl font-black text-slate-950">{filtrados.length}</p><p className="text-xs font-bold text-slate-600">{formatCurrency(filtrados.reduce((total, cheque) => total + Number(cheque.valorRecebido), 0))}</p></div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {[
+        ["Valor", cheques.reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+        ["Recebido", cheques.filter(t=>t.status==="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+        ["Restante", cheques.filter(t=>t.status!=="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+      ].map(([label,valor])=><div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 text-2xl font-black">{formatCurrency(Number(valor))}</p><p className="text-[10px] text-slate-500">Total dos cheques e boletos cadastrados</p></div>)}
     </div>
 
     <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
@@ -123,7 +124,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
             <td className="p-3"><strong>{cheque.clienteNome}</strong><p className="text-[10px] text-slate-500">{cheque.nomeTitular} · {cheque.cpfTitular}</p></td>
             <td className="p-3 text-right font-mono font-bold">{formatCurrency(cheque.valorRecebido)}</td>
             <td className="p-3"><div className="flex flex-wrap gap-1">{cheque.vales.map(v => <button key={v.vendaId} type="button" onClick={() => onOpenVale(v.vendaId)} className="rounded bg-slate-100 px-2 py-1">Vale #{v.numeroSequencial}</button>)}{cheque.ordens.map(o => <button key={o.ordemId} type="button" onClick={() => onOpenOrdem(o.ordemId)} className="rounded bg-blue-50 px-2 py-1 text-blue-800">Ordem #{o.numeroSequencial}</button>)}</div></td>
-            <td className="p-3 text-right"><button type="button" onClick={() => setEditandoId(cheque.recebimentoId)} className="rounded-md border border-slate-300 px-2 py-1 text-xs font-bold">Detalhes</button></td>
+            <td className="p-3 text-right"><button title="Detalhes do cheque ou boleto" aria-label="Detalhes do cheque ou boleto" type="button" onClick={() => setEditandoId(cheque.recebimentoId)} className="rounded-md border border-slate-300 px-2 py-1 text-xs font-bold"><Banknote size={16}/></button><button type="button" title="Comprovante" aria-label="Comprovante" disabled={carregandoComprovanteId === cheque.recebimentoId} onClick={() => void abrirComprovante(cheque.recebimentoId)} className="ml-1 inline-flex min-h-8 min-w-8 items-center justify-center rounded-md border border-slate-300 text-blue-800 disabled:opacity-50"><FileText size={16}/></button></td>
           </tr>
         </React.Fragment>)}</tbody>
       </table></div>

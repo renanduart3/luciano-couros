@@ -150,6 +150,7 @@ export interface DevolucaoVenda {
 }
 
 export interface Venda {
+  financeiro?: import("./lib/financeiro").PosicaoFinanceira;
   id: string;
   numeroSequencial: number;
   clienteId: string;

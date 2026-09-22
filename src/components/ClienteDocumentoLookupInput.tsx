@@ -32,6 +32,7 @@ function buscarCliente(documento: string): Promise<ResultadoConsulta> {
 
 interface Props {
   label: string;
+  hideLabel?: boolean;
   value: string;
   onChange: (value: string) => void;
   onClienteEncontrado: (nome: string) => void;
@@ -44,6 +45,7 @@ interface Props {
 
 export function ClienteDocumentoLookupInput({
   label,
+  hideLabel = false,
   value,
   onChange,
   onClienteEncontrado,
@@ -54,6 +56,7 @@ export function ClienteDocumentoLookupInput({
   inputClassName = "",
 }: Props) {
   const [situacao, setSituacao] = useState<SituacaoConsulta>("incompleto");
+  const [emFoco, setEmFoco] = useState(false);
   const feedbackId = useId();
   const aoEncontrarRef = useRef(onClienteEncontrado);
   const timerRef = useRef<number | null>(null);
@@ -92,12 +95,13 @@ export function ClienteDocumentoLookupInput({
 
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
-      consultar(documento, documento.length === 14);
+      consultar(documento, true);
     }, 350);
 
     return () => {
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       timerRef.current = null;
+      sequenciaRef.current += 1;
     };
   }, [consultar, disabled, value]);
 
@@ -116,21 +120,31 @@ export function ClienteDocumentoLookupInput({
       ? "Não foi possível consultar agora"
       : situacao === "consultando"
         ? "Consultando cliente..."
-        : null;
+        : hideLabel && emFoco && situacao === "encontrado"
+          ? "Nome preenchido"
+          : null;
 
   return <label className={labelClassName}>
-    {label}
+    <span className={hideLabel ? "sr-only" : undefined}>{label}</span>
     <input
       required={required}
       disabled={disabled}
       value={value}
-      onChange={(event) => onChange(event.target.value.slice(0, 24))}
-      onBlur={consultarAoSair}
+      onChange={(event) => {
+        // Invalida imediatamente a resposta do documento anterior.
+        sequenciaRef.current += 1;
+        if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+        setSituacao("incompleto");
+        onChange(event.target.value.slice(0, 24));
+      }}
+      onFocus={() => setEmFoco(true)}
+      onBlur={() => { setEmFoco(false); consultarAoSair(); }}
       placeholder={placeholder}
       aria-invalid={naoEncontrado || undefined}
       aria-describedby={feedbackId}
       className={`${inputClassName} ${naoEncontrado ? "border-amber-500 bg-amber-50" : ""}`}
     />
-    <span id={feedbackId} aria-live="polite" className={`mt-0.5 block min-h-[12px] text-[9px] font-bold leading-3 normal-case ${naoEncontrado ? "text-amber-700" : "text-slate-500"}`}>{descricao || ""}</span>
+    <span id={feedbackId} aria-live="polite" className={`mt-0.5 block ${hideLabel && !descricao ? "hidden" : "min-h-[12px]"} text-[9px] font-bold leading-3 normal-case ${naoEncontrado ? "text-amber-700" : "text-slate-500"}`}>{descricao || ""}</span>
   </label>;
 }

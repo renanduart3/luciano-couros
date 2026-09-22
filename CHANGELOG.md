@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.33.0 — 2026-09-22
+
+- Cadastro de cheques e boletos em grade, com valores novos em branco, sem coluna de observação e consulta de CPF/CNPJ corrigida.
+- Cards Valor, Recebido e Restante nos vales; Negociado permanece nas ordens. Excedentes, compensação por vencimento, adiamentos e recusas refletidos nos relatórios.
+- Coluna Recebido por pagamento mostra a composição confirmada do vale ou da ordem, incluindo recebimentos compartilhados e compensação parcial.
+- Ações de títulos, comprovantes, edição e estorno por ícones com descrições acessíveis; removidas explicações repetidas dos vales.
+- Recebimentos vinculados a ordens direcionam a edição para a ordem, com navegação direta.
+
 ## 1.32.0 — 2026-09-16
 
 - CPF/CNPJ em cheques e boletos agora consulta o cadastro e preenche automaticamente o nome do cliente, com aviso não bloqueante quando não houver correspondência.

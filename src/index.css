@@ -940,3 +940,19 @@ body main .payment-compact th { padding: 6px; }
   .payment-receipt-table-wrap { overflow: visible !important; }
   .payment-receipt-section tr { break-inside: avoid; page-break-inside: avoid; }
 }
+
+/* A grade mantém células contínuas mesmo dentro dos editores compactos. */
+body main .titulos-planilha td { padding: 0; }
+body main .titulos-planilha th { padding: 8px; }
+body main .titulos-planilha input.titulo-pagamento-input.titulo-pagamento-input,
+body main .titulos-planilha select {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 4px 8px !important;
+  border-radius: 0;
+  font-size: 12px !important;
+}
+@media (max-width: 767px) {
+  body main .titulos-planilha input.titulo-pagamento-input.titulo-pagamento-input,
+  body main .titulos-planilha select { font-size: 16px !important; }
+}

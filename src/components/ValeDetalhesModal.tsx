@@ -7,6 +7,8 @@ import { api } from "../lib/api";
 import { useEhGerente } from "../auth/AuthContext";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
+import { financeiroVale } from "../lib/financeiro";
+import { resumoRecebimentos } from "../lib/resumoRecebimentos";
 import { LinhaPagamento } from "./LinhaPagamento";
 
 interface ValeDetalhesModalProps {
@@ -40,6 +42,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     bonusUtilizado: 0, bonusGerado: 0, formaPagamento: vale.formaPagamento || "Pagamento antigo", status: "ativo", statusPagamento: "compensado",
     titulos: [], alocacoes: [], historico: [], createdAt: vale.data, updatedAt: vale.data,
   } : undefined;
+  const financeiro = financeiroVale(vale);
+  const resumo = resumoRecebimentos(vale.recebimentos || [], vale.id);
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
   const linkWhatsApp = whatsappUrl(vale.clienteTelefone);
@@ -161,14 +165,21 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
 
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
-              <Resumo titulo="Total atual" valor={formatCurrency(vale.totalLiquido)} />
-              <Resumo titulo="Devolvido" valor={formatCurrency(totalDevolvido)} destaque={totalDevolvido > 0 ? "text-violet-800" : "text-slate-500"} />
-              <Resumo titulo="Valor pago" valor={formatCurrency(vale.valorPago)} destaque="text-blue-800" />
-              <Resumo titulo="Saldo atual" valor={formatCurrency(vale.saldoRestante)} destaque="text-amber-800" />
-              <Resumo titulo="Itens" valor={String(itens.length)} />
-              <Resumo titulo="Vencimento" valor={vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} icone />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <Resumo titulo="Valor" valor={formatCurrency(vale.totalLiquido)} />
+              <Resumo titulo="Recebido" valor={formatCurrency(financeiro.recebido)} destaque="text-blue-800" />
+              <Resumo titulo="Restante" valor={formatCurrency(financeiro.restante)} destaque="text-amber-800" />
             </div>
+            <p className="text-xs text-slate-600">Vencimento: {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} · {itens.length} itens{totalDevolvido > 0 && ` · Devolvido: ${formatCurrency(totalDevolvido)}`}</p>
+            {!!vale.recebimentos?.length && <div className="rounded-xl border border-slate-300 bg-white p-3">
+              <h3 className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
+                <div><p className="text-xs text-slate-600">Excedente gerado em bônus</p><strong className="font-mono text-lg text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
+              </div>
+              {financeiro.bonus > 0 && <p className="mt-2 text-xs text-violet-800">O excedente foi registrado como crédito na carteira do cliente. Este valor é o bônus gerado pelos pagamentos, não o saldo disponível atual da carteira.</p>}
+              {resumo.bonusUtilizado > 0 && <p className="mt-2 text-xs text-slate-600">Bônus utilizado: {formatCurrency(resumo.bonusUtilizado)}. É crédito anterior, não um novo recebimento.</p>}
+            </div>}
 
             {bloqueado && <p className="text-xs font-bold text-blue-900">Este vale está disponível somente para consulta. Gerencie os pagamentos pela ordem até seu encerramento.</p>}
             {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
@@ -176,9 +187,9 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
               <table className="w-full min-w-[720px] text-xs">
-                <thead className="bg-slate-50 text-left"><tr>{["Data", "Pagamento", "Forma de pagamento", "Status", "Ações"].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
+                <thead className="bg-slate-50 text-left"><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Situação", "Ações"].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
                 <tbody>{(vale.recebimentos?.length ? vale.recebimentos : legado ? [legado] : []).map((pagamento) =>
-                  <LinhaPagamento key={pagamento?.id || vale.id} pagamento={pagamento} clienteId={vale.clienteId}
+                  <LinhaPagamento key={pagamento?.id || vale.id} pagamento={pagamento} vendaIdContexto={legado ? undefined : vale.id} clienteId={vale.clienteId}
                     clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
                     saldo={0}
                     alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}

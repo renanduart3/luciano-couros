@@ -24,7 +24,7 @@ export function registrarMovimentacaoFinanceira(recebimentoId: string, tipo: str
 // Apenas mudar o vencimento para uma nova data futura reativa sua programação.
 export function programacaoDoTitulo(titulo: any, anterior: any, hoje = dataFinanceiraHoje()) {
   if (titulo.status !== "aguardando" || !dataFinanceiraValida(titulo.vencimento)) return 0;
-  if (!anterior) return titulo.vencimento >= hoje ? 1 : 0;
+  if (!anterior) return 1;
   if (anterior.vencimento !== titulo.vencimento) return titulo.vencimento >= hoje ? 1 : 0;
   if (anterior.status !== titulo.status) return 0;
   return Number(anterior.compensacaoAutomatica) === 1 ? 1 : 0;
@@ -56,6 +56,14 @@ export function compensarPagamentosProgramados(hoje = dataFinanceiraHoje(), aoCo
       // O recebimento já abate o vale na entrada. Não reaplicar dívida ou bônus.
       execute("UPDATE recebimentos_cliente SET updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [titulo.recebimentoId]);
       aoCompensar?.(titulo.recebimentoId);
+      quantidade++;
+    }
+    // Cheques antigos emitidos diretamente na venda também amadurecem no vencimento.
+    for (const titulo of queryAll<any>("SELECT * FROM instrumentos_recebimento WHERE deletedAt IS NULL AND status = 'em_carteira' AND vencimento <= ?", [hoje])) {
+      if (!dataFinanceiraValida(titulo.vencimento)) continue;
+      execute("UPDATE instrumentos_recebimento SET status = 'compensado', updatedAt = CURRENT_TIMESTAMP WHERE id = ? AND status = 'em_carteira'", [titulo.id]);
+      execute("INSERT INTO auditoria (id, acao, entidade, entidadeId, detalhes) VALUES (?, 'titulo_compensado', 'instrumento_recebimento', ?, ?)",
+        [crypto.randomUUID(), titulo.id, JSON.stringify({origem:"programacao_automatica",dataCompensacao:titulo.vencimento,valor:titulo.valor})]);
       quantidade++;
     }
     return quantidade;

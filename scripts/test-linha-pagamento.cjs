@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const Module = require('node:module');
+const React = require('react');
+const {renderToStaticMarkup} = require('react-dom/server');
+const result = buildSync({stdin:{contents:'export { LinhaPagamento } from "./src/components/LinhaPagamento"; export * from "./src/lib/financeiro";',resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
+const mod = new Module(__filename);mod.filename=__filename;mod.paths=module.paths;mod._compile(result.outputFiles[0].text,__filename);
+const {recebidoDaLinha,financeiroOrdem,calcularFinanceiroVale,LinhaPagamento}=mod.exports;
+const p={id:'p',status:'ativo',statusPagamento:'aguardando',data:'2026-09-22',formaPagamento:'cheque_emitente',valorRecebido:900,valorAplicado:100,valorAplicadoOrdem:100,bonusUtilizado:0,bonusGerado:800,
+ alocacoes:[{vendaId:'a',valor:25},{vendaId:'b',valor:75}],titulos:[{valor:300,status:'compensado'},{valor:600,status:'aguardando'}]};
+assert.equal(recebidoDaLinha(p,'a'),75);assert.equal(recebidoDaLinha(p,'b'),225);
+assert.equal(recebidoDaLinha(p,undefined,'o'),300);
+assert.equal(recebidoDaLinha(p,'a'),calcularFinanceiroVale({id:'a',totalLiquido:25,valorPago:25,recebimentos:[p]}).recebido);
+assert.equal(recebidoDaLinha(p,undefined,'o'),financeiroOrdem({id:'o',totalOriginal:100,pagamentos:[p]}).recebido);
+assert.equal(recebidoDaLinha({...p,status:'recusado'},'a'),0);
+assert.equal(recebidoDaLinha({...p,titulos:[],statusPagamento:'compensado',valorRecebido:0,bonusUtilizado:100},'a'),25);
+const html=renderToStaticMarkup(React.createElement('table',null,React.createElement('tbody',null,React.createElement(LinhaPagamento,{pagamento:p,vendaIdContexto:'a',clienteId:'c',clienteNome:'Teste',saldo:0,alocar:()=>[],referencia:'vale',onSaved:async()=>{},onDetalhes:()=>{},onComprovante:()=>{}}))));
+assert.equal((html.match(/<td /g)||[]).length,6);
+assert.ok(html.includes('75,00'));assert.ok(!html.includes('Abatido'));
+assert.ok(html.includes('aria-label="Comprovante"'));assert.ok(html.includes('data-recebimento-id="p"'));
+assert.ok(!html.includes('>Comprovante</button>'));
+console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');

@@ -629,8 +629,7 @@ body main .payment-compact button {
   padding-block: 4px;
   font-size: 11px;
 }
-body main .payment-compact td,
-body main .payment-compact th { padding: 6px; }
+
 .payment-details-dialog {
   position: fixed;
   inset: 50% auto auto 50%;
@@ -955,4 +954,54 @@ body main .titulos-planilha select {
 @media (max-width: 767px) {
   body main .titulos-planilha input.titulo-pagamento-input.titulo-pagamento-input,
   body main .titulos-planilha select { font-size: 16px !important; }
+}
+
+/* Pagamentos: cabeçalhos e células compartilham alinhamento e área de ações. */
+body .payments-table { width: 100%; border-collapse: collapse; }
+body .payments-table th, body .payments-table td { padding: 10px 12px; vertical-align: middle; }
+body .payments-table th { text-align: left; }
+body .payments-table th[data-label="Valor"], body .payments-table th[data-label="Recebido"],
+body .payments-table th[data-label="Ações"] { text-align: right; }
+body .payments-table td[data-label="Valor"], body .payments-table td[data-label="Recebido"] { font-variant-numeric: tabular-nums; white-space: nowrap; }
+body .payment-actions { display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: 6px; }
+body main .payment-actions button, body .payment-actions button { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; padding: 7px; border: 1px solid #cbd5e1; border-radius: 8px; }
+body .payment-actions button[aria-label] { background: white; }
+body .payment-actions button[aria-label]:hover { background: #f1f5f9; border-color: #94a3b8; }
+body .payment-actions button:focus-visible, .vale-header button:focus-visible, .vale-header summary:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.vale-header { background: white; border-bottom: 1px solid #e2e8f0; padding: 20px 24px 0; }
+.vale-header-identity { display: flex; align-items: flex-start; gap: 12px; }
+.vale-header-symbol { padding: 12px; background: #f1f5f9; color: #475569; border-radius: 12px; }
+body .vale-header h2 { font-size: 20px; font-weight: 750; text-transform: none; margin: 0 0 5px; }
+body .vale-header p { font-size: 14px; font-weight: 600; text-transform: none; color: #475569; margin: 0; overflow-wrap: anywhere; }
+.vale-header-identity span:not(.vale-header-symbol) { font-size: 12px; color: #64748b; }
+.vale-header-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.vale-tabs { display: flex; gap: 20px; align-self: stretch; }
+body .vale-tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 12px 0; border-bottom: 3px solid transparent; border-radius: 0; color: #64748b; font-size: 13px; font-weight: 650; text-transform: none; }
+body .vale-tabs button[aria-pressed="true"] { color: #0f172a; border-bottom-color: #0f172a; }
+.vale-header-tools { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; }
+body .vale-icon-button { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 10px; cursor: pointer; }
+.vale-icon-button:hover { background: #f1f5f9; }
+.vale-more-actions { position: relative; }
+.vale-more-actions summary { list-style: none; }
+.vale-more-actions summary::-webkit-details-marker { display: none; }
+.vale-actions-menu { position: absolute; z-index: 30; right: 0; top: calc(100% + 4px); min-width: 190px; padding: 6px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 12px 30px #0f172a26; }
+body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 10px; font-size: 13px; text-transform: none; text-align: left; border-radius: 8px; }
+.vale-actions-menu button:hover { background: #f8fafc; }
+@media screen and (max-width: 767px) {
+  body .payments-table { display: block; min-width: 0; }
+  body .payments-table thead { display: none; }
+  body .payments-table tbody { display: block; }
+  body .payments-table .payment-row { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 12px; padding: 16px; border-bottom: 1px solid #e2e8f0; }
+  body .payments-table .payment-row > td { display: block; padding: 0; min-width: 0; text-align: left; }
+  body .payments-table .payment-row > td::before { content: attr(data-label); display: block; margin-bottom: 6px; color: #64748b; font-size: 10px; font-weight: 600; }
+  body .payments-table .payment-row > td[data-label="Ações"] { grid-column: 1 / -1; border-top: 1px solid #e2e8f0; padding-top: 10px; }
+  body .payment-actions { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+  body main .payment-actions button, body .payment-actions button { min-width: 44px; min-height: 44px; }
+  body .payments-table .payment-editor-row, body .payments-table .payment-editor-row > td { display: block; width: 100%; }
+  body .payments-table .payment-editor-row > td { overflow-x: auto; }
+  .vale-header { padding: 16px 16px 0; }
+  .vale-header-symbol { display: none; }
+  .vale-header-navigation { flex-wrap: wrap; gap: 4px; }
+  .vale-tabs { gap: 16px; }
+  body .vale-icon-button { width: 44px; height: 44px; }
 }

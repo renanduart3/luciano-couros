@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.33.1 — 2026-09-22
+
+- Alinhamento consistente entre cabeçalhos, valores e ações dos pagamentos em vales, ordens e detalhes dos recebimentos.
+- Lixeira disponível nos pagamentos individuais, com confirmação, senha gerencial e estorno auditável; preservadas as ações da ordem.
+- Pagamentos em blocos responsivos no celular, com ações visíveis e alvos de toque de 44 px.
+- Topo do vale reorganizado em identificação, abas de navegação e ações compactas; devolução e cancelamento acessíveis pelo menu Mais ações.
+
 ## 1.33.0 — 2026-09-22
 
 - Cadastro de cheques e boletos em grade, com valores novos em branco, sem coluna de observação e consulta de CPF/CNPJ corrigida.

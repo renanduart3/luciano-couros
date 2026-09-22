@@ -66,8 +66,8 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
           {vinculadas.length === 0 && <p role="alert" className="text-red-800">Não foi possível localizar a ordem vinculada. Feche e abra os detalhes para atualizar.</p>}
         </div>}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-xs">
-            <thead><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Status", "Ações"].map(t => <th key={t}>{t}</th>)}</tr></thead>
+          <table className="payments-table w-full min-w-[700px] text-left text-xs">
+            <thead><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Status", "Ações"].map(t => <th data-label={t} key={t}>{t}</th>)}</tr></thead>
             <tbody><LinhaPagamento pagamento={pagamento} clienteId={pagamento.clienteId} clienteNome={pagamento.clienteNome}
               clienteDocumento={pagamento.clienteDocumento} saldo={0} alocar={() => []} referencia="recebimento"
               ordemCobrancaId={pagamento.ordemCobrancaId || undefined} editavel={gerente && !somenteLeitura && !possuiVinculoOrdem} onEditingChange={setEditando} onSavingChange={setSaving} onSaved={atualizar}/></tbody>

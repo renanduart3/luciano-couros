@@ -17,6 +17,7 @@ assert.equal(recebidoDaLinha({...p,titulos:[],statusPagamento:'compensado',valor
 const html=renderToStaticMarkup(React.createElement('table',null,React.createElement('tbody',null,React.createElement(LinhaPagamento,{pagamento:p,vendaIdContexto:'a',clienteId:'c',clienteNome:'Teste',saldo:0,alocar:()=>[],referencia:'vale',onSaved:async()=>{},onDetalhes:()=>{},onComprovante:()=>{}}))));
 assert.equal((html.match(/<td /g)||[]).length,6);
 assert.ok(html.includes('75,00'));assert.ok(!html.includes('Abatido'));
+assert.ok(html.includes('aria-label="Excluir"'));assert.ok(html.includes('data-label="Recebido"'));assert.ok(html.includes('payment-actions'));
 assert.ok(html.includes('aria-label="Comprovante"'));assert.ok(html.includes('data-recebimento-id="p"'));
 assert.ok(!html.includes('>Comprovante</button>'));
 console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');

@@ -274,8 +274,8 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
             <button disabled={!!acao || edicoes.size > 0 || !selecionados.length || selecionados.some(i => i.tipo === "projecao")} onClick={() => abrirAcao({ acao: "estornar", itens: selecionados })} className="rounded border px-2 py-1 text-xs disabled:opacity-40">Estornar selecionados</button>
             <button disabled={!!acao || edicoes.size > 0 || !selecionados.length} onClick={() => abrirAcao({ acao: "excluir", itens: selecionados })} className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-40">Excluir selecionados</button></>}
           <button type="button" disabled={!!acao || edicoes.size > 0 || novoPagamento || ordem.saldo <= 0.005 || ordem.status !== 'aberta'} onClick={() => setNovoPagamento(true)} className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button></div>
-          <div ref={pagamentosRef} className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="w-full min-w-[700px] text-left text-xs">
-            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Recebido', 'Forma de pagamento', 'Situação', 'Ações'].map(t => <th key={t} className="p-2">{t}</th>)}</tr></thead>
+          <div ref={pagamentosRef} className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="payments-table w-full min-w-[700px] text-left text-xs">
+            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Recebido', 'Forma de pagamento', 'Situação', 'Ações'].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
             <tbody>
               {novoPagamento && <LinhaPagamento key="novo" iniciarEditando colunasAntes={1} onEditingChange={v => marcarEdicao("novo", v)} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome}
                 clienteDocumento={ordem.clienteDocumento} saldo={ordem.saldo} alocar={alocarPagamento} ordemCobrancaId={ordem.id}

@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.34.1 — 2026-09-24
+
+- Ordens passam a exibir somente Negociado, Pago e Restante; vales exibem Devedor, Pago e Restante, considerando cheques e boletos aguardando dentro de Pago.
+- O cabeçalho do vale mostra o saldo de bônus disponível na carteira quando o cliente possui crédito, seguindo o comportamento já usado nas ordens.
+
 ## 1.34.0 — 2026-09-24
 
 - Ordens e vales distinguem valor confirmado, títulos a compensar, pagamento presumido, restante devido e excedente previsto; cheques e boletos futuros continuam editáveis.

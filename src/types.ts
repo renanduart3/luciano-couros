@@ -160,6 +160,7 @@ export interface Venda {
   clienteTelefone?: string;
   clienteEndereco?: string;
   clienteDocumento?: string;
+  saldoBonus?: number;
   data: string; // YYYY-MM-DD
   subtotal: number;
   desconto: number;

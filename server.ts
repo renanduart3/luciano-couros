@@ -2976,6 +2976,7 @@ app.get("/api/vendas", (req, res) => {
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              COALESCE((SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END) FROM cliente_bonus_movimentos bm WHERE bm.clienteId = v.clienteId AND bm.deletedAt IS NULL), 0) as saldoBonus,
               (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
@@ -3025,6 +3026,7 @@ app.get("/api/vendas/:id", (req, res) => {
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              COALESCE((SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END) FROM cliente_bonus_movimentos bm WHERE bm.clienteId = v.clienteId AND bm.deletedAt IS NULL), 0) as saldoBonus,
               (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),

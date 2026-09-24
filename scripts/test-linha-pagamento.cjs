@@ -3,9 +3,9 @@ const { buildSync } = require('esbuild');
 const Module = require('node:module');
 const React = require('react');
 const {renderToStaticMarkup} = require('react-dom/server');
-const result = buildSync({stdin:{contents:'export { LinhaPagamento } from "./src/components/LinhaPagamento"; export { TitulosPagamentoEditor } from "./src/components/TitulosPagamentoEditor"; export * from "./src/lib/financeiro";',resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
+const result = buildSync({stdin:{contents:'export { LinhaPagamento } from "./src/components/LinhaPagamento"; export { TitulosPagamentoEditor } from "./src/components/TitulosPagamentoEditor"; export { ResumoFinanceiroFixo } from "./src/components/ResumoFinanceiroFixo"; export * from "./src/lib/financeiro";',resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
 const mod = new Module(__filename);mod.filename=__filename;mod.paths=module.paths;mod._compile(result.outputFiles[0].text,__filename);
-const {recebidoDaLinha,financeiroOrdem,calcularFinanceiroVale,LinhaPagamento,TitulosPagamentoEditor}=mod.exports;
+const {recebidoDaLinha,financeiroOrdem,calcularFinanceiroVale,LinhaPagamento,TitulosPagamentoEditor,ResumoFinanceiroFixo}=mod.exports;
 const p={id:'p',status:'ativo',statusPagamento:'aguardando',data:'2026-09-22',formaPagamento:'cheque_emitente',valorRecebido:900,valorAplicado:100,valorAplicadoOrdem:100,bonusUtilizado:0,bonusGerado:800,
  alocacoes:[{vendaId:'a',valor:25},{vendaId:'b',valor:75}],titulos:[{valor:300,status:'compensado'},{valor:600,status:'aguardando'}]};
 assert.equal(recebidoDaLinha(p,'a'),75);assert.equal(recebidoDaLinha(p,'b'),225);
@@ -29,4 +29,8 @@ for(let i=1;i<ordemEsperada.length;i++) assert.ok(chequeHtml.indexOf(ordemEspera
 assert.ok(chequeHtml.includes('>Nº cheque<'));assert.ok(!chequeHtml.includes('>Nº boleto<'));
 assert.ok(boletoHtml.includes('>Nº boleto<'));assert.ok(!boletoHtml.includes('>Nº cheque<'));
 assert.ok(chequeHtml.includes('aria-label="Observação, linha 1"'));
+const resumoHtml=renderToStaticMarkup(React.createElement(ResumoFinanceiroFixo,{negociado:1000,rotuloTotal:'Devedor',financeiro:{negociado:1000,recebido:200,aguardando:400,presumido:600,restante:800,restantePresumido:400,bonus:0,excedentePresumido:0,creditoUtilizado:0}}));
+assert.ok(resumoHtml.includes('>Devedor<'));assert.ok(resumoHtml.includes('>Pago<'));assert.ok(resumoHtml.includes('>Restante<'));
+assert.ok(!resumoHtml.includes('>Entrou<'));assert.ok(!resumoHtml.includes('Pago presumido'));
+assert.ok(resumoHtml.includes('R$\u00a0600,00'));assert.ok(resumoHtml.includes('R$\u00a0400,00'));
 console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');

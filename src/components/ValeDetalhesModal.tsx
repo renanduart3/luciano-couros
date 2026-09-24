@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -131,7 +131,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
             <span className="vale-header-symbol"><FileText size={22}/></span>
-            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span></div>
+            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span>{Number(vale.saldoBonus) > 0.005 && <strong className="ml-2 inline-flex items-center gap-1 rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800"><WalletCards size={13}/> BÔNUS {formatCurrency(vale.saldoBonus)}</strong>}</div>
             <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button"><X size={20}/></button>
           </div>
           <div className="vale-header-navigation">
@@ -153,7 +153,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>
           </div>
         </header>
-        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro}/>
+        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor"/>
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
@@ -188,7 +188,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {!!vale.recebimentos?.length && <div className="rounded-xl border border-slate-300 bg-white p-3">
               <h3 className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar (incluídos no presumido)</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
+                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar (incluídos no pago)</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
                 <div><p className="text-xs text-slate-600">Excedente gerado em bônus</p><strong className="font-mono text-lg text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
               </div>
               {financeiro.bonus > 0 && <p className="mt-2 text-xs text-violet-800">O excedente foi registrado como crédito na carteira do cliente. Este valor é o bônus gerado pelos pagamentos, não o saldo disponível atual da carteira.</p>}

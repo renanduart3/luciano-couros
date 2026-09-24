@@ -36,4 +36,8 @@ assert.ok(!resumoHtml.includes('>Entrou<'));assert.ok(!resumoHtml.includes('Pago
 assert.ok(resumoHtml.includes('R$\u00a0600,00'));assert.ok(resumoHtml.includes('R$\u00a0400,00'));
 const valeFonte=fs.readFileSync('src/components/ValeDetalhesModal.tsx','utf8');
 assert.ok(!valeFonte.includes('O excedente foi registrado como crédito na carteira do cliente'));
+const ordemFonte=fs.readFileSync('src/components/OrdensCobrancaView.tsx','utf8');
+assert.ok(!ordemFonte.includes('Valores dos recebimentos vinculados'));
+assert.ok(ordemFonte.includes('Total pago'));
+assert.ok(!ordemFonte.includes('Restante: {formatCurrency(financeiroOrdem(ordem).restante)}'));
 console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');

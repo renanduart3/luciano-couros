@@ -8,7 +8,6 @@ import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso, whatsa
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ConfirmarAcaoPagamentosOrdem } from "./ConfirmarAcaoPagamentosOrdem";
 import { financeiroOrdem } from "../lib/financeiro";
-import { resumoRecebimentos } from "../lib/resumoRecebimentos";
 import { situacaoAgendaOrdem } from "../lib/situacaoOrdem";
 import { ItemAcaoPagamentoOrdem } from "../types";
 import { LinhaPagamento } from "./LinhaPagamento";
@@ -106,21 +105,9 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
 
 function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPagamento }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void; onOpenPagamento: (id: string) => void }) {
   const financeiro = financeiroOrdem(ordem);
-  const resumo = resumoRecebimentos(ordem.pagamentos || []);
-  const planejado = (ordem.projecoes || []).reduce((s, p) => s + Math.round((Number(p.dados.valorRecebido) + Number(p.dados.bonusUtilizado || 0)) * 100), 0) / 100;
   return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
     <div className="border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white">
       <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
-    </div>
-    <div className="border-b border-slate-300 bg-slate-50 p-3">
-      <p className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</p>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 text-xs">
-        <div><p className="text-slate-600">Aguardando</p><strong className="font-mono text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
-        <div><p className="text-slate-600">Planejado · não recebido</p><strong className="font-mono text-blue-800">{formatCurrency(planejado)}</strong></div>
-        <div><p className="text-slate-600">Excedente em bônus</p><strong className="font-mono text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
-      </div>
-      <p className="mt-2 text-[10px] text-slate-600">Títulos aguardando contam como pagos.{resumo.bonusUtilizado > 0 && ` Bônus usado: ${formatCurrency(resumo.bonusUtilizado)}.`}</p>
-      {(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicadoOrdem !== undefined && p.valorAplicado > p.valorAplicadoOrdem + 0.005) && <p className="mt-1 text-[10px] text-slate-600">Valores somente desta ordem.</p>}
     </div>
     <div className="grid xl:grid-cols-[0.85fr_1.35fr]">
       <div className="border-b border-slate-300 xl:border-b-0 xl:border-r">
@@ -136,6 +123,7 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPag
           <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Confirmado' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando'}</span>
         </div>)}
         {!ordem.pagamentos?.length && <p className="px-3 py-2 text-xs text-slate-500">Nenhum pagamento registrado.</p>}
+        <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total pago</strong><strong className="font-mono text-emerald-800">{formatCurrency(financeiro.presumido)}</strong></div>
       </div>
     </div>
   </section>;
@@ -303,7 +291,6 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
 
             </tbody>
           </table>{(ordem.pagamentos?.length || 0) > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={ordem.pagamentos.length} onPageChange={setPaginaPagamentos}/>}</div>
-          <p className="text-right text-xs font-bold text-amber-900">Restante: {formatCurrency(financeiroOrdem(ordem).restante)}</p>
         </div> : <div className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
           {ordem.parcelas.length > 0 && <details className="px-3 py-2 text-xs"><summary className="cursor-pointer font-bold">Parcelamento anterior (somente consulta)</summary>{ordem.parcelas.map(p => <p key={p.id} className="mt-1">Parcela {p.numero} · {formatDate(p.vencimento)} · {formatCurrency(p.valor)}</p>)}</details>}
           {(ordem.eventos || []).map((evento) => <div key={evento.id} className="flex gap-3 px-3 py-2 text-[11px] leading-5"><span className="shrink-0 font-mono text-slate-500">{formatDate(evento.data)}</span><p className={evento.tipo === "estorno" ? "text-red-700" : "text-slate-700"}>{evento.texto}</p></div>)}

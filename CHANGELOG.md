@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.34.3 — 2026-09-24
+
+- Removido o bloco redundante de valores vinculados nos detalhes da ordem e o restante repetido abaixo da tabela.
+- A coluna de pagamentos passa a exibir o total pago, incluindo cheques e boletos aguardando e desconsiderando títulos recusados ou removidos.
+
 ## 1.34.2 — 2026-09-24
 
 - Removido o texto explicativo sobre o bônus gerado no detalhe do vale.

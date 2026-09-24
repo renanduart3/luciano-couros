@@ -289,7 +289,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
           <form onSubmit={confirmarRemocaoProdutoCliente} className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-red-100 bg-red-50 p-5">
               <h3 className="font-black text-red-950">EXCLUIR PREÇO DO CLIENTE</h3>
-              <p className="mt-1 text-xs font-bold text-red-800">{produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. fornecedor ${produtoRemocao.fornecedorReferencia}` : ""} será removido dos preços e do orçamento vigente deste cliente.</p>
+              <p className="mt-1 text-xs font-bold text-red-800">Remover {produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. ${produtoRemocao.fornecedorReferencia}` : ""} deste cliente?</p>
             </div>
             <div className="space-y-3 p-5">
               <label className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</label>
@@ -308,7 +308,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Clientes</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Gestão de contatos, histórico de compras, saldos devedores e estatísticas.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Contatos, compras e saldos.</p>
         </div>
         <button 
           onClick={() => handleOpenForm()}
@@ -653,7 +653,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     <TrendingUp size={14} />
                     Preços praticados para este cliente
                   </h4>
-                  <p className="mt-1 text-xs text-slate-500">Cada produto vendido entra automaticamente nesta relação. Ajuste o preço individual ou remova o item do cliente.</p>
+                  <p className="mt-1 text-xs text-slate-500">Edite o preço ou remova o item.</p>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full min-w-[920px] text-left text-xs">

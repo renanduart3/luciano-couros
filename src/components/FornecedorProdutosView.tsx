@@ -94,7 +94,7 @@ export function FornecedorProdutosView() {
   const desvincularProduto = async (item: FornecedorProduto) => {
     if (!await confirmacao.confirmar({
       titulo: "Remover produto do fornecedor",
-      mensagem: `Remover ${item.produtoNome} da lista de produtos associados? O histórico de compras será preservado.`,
+      mensagem: `Remover ${item.produtoNome}? O histórico será mantido.`,
       textoConfirmar: "Remover associação"
     })) return;
     setSaving(true);
@@ -102,7 +102,7 @@ export function FornecedorProdutosView() {
     try {
       await api.desvincularFornecedorProduto(fornecedorId, item.produtoId);
       setCatalogo(await api.getFornecedorProdutos(fornecedorId));
-      setFeedback("Produto removido da associação. Uma nova compra poderá vinculá-lo novamente automaticamente.");
+      setFeedback("Associação removida.");
     } catch (error: any) {
       setFeedback(error.message || "Não foi possível remover a associação.");
     } finally {
@@ -156,7 +156,7 @@ export function FornecedorProdutosView() {
       {confirmacao.dialogo}
       <div className="border-b border-slate-200 pb-4">
         <h2 className="text-2xl font-black text-slate-950">Produtos por fornecedor</h2>
-        <p className="mt-1 text-sm text-slate-600">O vínculo é opcional. Produtos cadastrados manualmente continuam disponíveis para venda mesmo sem fornecedor.</p>
+        <p className="mt-1 text-sm text-slate-600">Vínculo opcional.</p>
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -182,7 +182,7 @@ export function FornecedorProdutosView() {
           </form>
 
           {editando && <form onSubmit={salvarEdicao} className="rounded-2xl border border-blue-300 bg-blue-50 p-5 shadow-sm">
-            <div className="mb-4 flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Pencil size={17} className="text-blue-800" /><h3 className="font-black text-blue-950">Editar valores de {editando.produtoNome}</h3></div><p className="mt-1 text-xs font-bold text-blue-700">A alteração será salva somente após validar o PIN do administrador.</p></div><button type="button" aria-label="Fechar edição" onClick={() => { setEditando(null); setEdicaoPin(""); setErroEdicao(""); }} className="rounded-lg border border-blue-200 bg-white p-2 text-blue-800"><X size={16} /></button></div>
+            <div className="mb-4 flex items-start justify-between gap-3"><div><div className="flex items-center gap-2"><Pencil size={17} className="text-blue-800" /><h3 className="font-black text-blue-950">Editar valores de {editando.produtoNome}</h3></div><p className="mt-1 text-xs font-bold text-blue-700">Exige PIN do administrador.</p></div><button type="button" aria-label="Fechar edição" onClick={() => { setEditando(null); setEdicaoPin(""); setErroEdicao(""); }} className="rounded-lg border border-blue-200 bg-white p-2 text-blue-800"><X size={16} /></button></div>
             <div className="grid gap-3 lg:grid-cols-12 lg:items-end">
               <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Custo *</span><input required inputMode="decimal" value={edicaoCusto} onChange={(event) => { setEdicaoCusto(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
               <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Preço-base *</span><input required inputMode="decimal" value={edicaoPrecoVenda} onChange={(event) => { setEdicaoPrecoVenda(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>

@@ -163,7 +163,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Recebimentos</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Baixa de vales, liquidação de débitos e histórico das entradas de clientes.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Baixas e histórico.</p>
         </div>
         
         <button 
@@ -275,9 +275,7 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-slate-400 mt-1">
-                  Se você não vincular a uma venda específica, o sistema deduzirá o valor automaticamente das faturas vencidas mais antigas deste cliente.
-                </p>
+                <p className="text-[10px] text-slate-400 mt-1">Sem vínculo: abate a dívida mais antiga.</p>
               </div>
             )}
 

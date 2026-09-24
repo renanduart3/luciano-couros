@@ -104,7 +104,7 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
       <div><h3 className="text-sm font-bold text-sky-950">{boleto ? "Boletos" : "Cheques"}{referenciaPagamento && <span className="ml-2 text-xs font-normal text-slate-600">· {referenciaPagamento}</span>}</h3><p className="mt-1 text-xs text-slate-600">Um documento por linha. Use Tab para avançar entre as células.</p></div>
       <button type="button" onClick={adicionar} disabled={atingiuLimite} className="inline-flex min-h-9 items-center gap-1 rounded-md bg-sky-800 px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400"><Plus size={14}/>Adicionar linha</button>
     </div>
-    {possuiLegadoAcimaDoLimite && <p className="bg-amber-50 px-3 py-2 text-xs text-amber-900">Este pagamento antigo possui {titulos.length} títulos. Eles podem ser editados, mas não é possível adicionar novas linhas.</p>}
+    {possuiLegadoAcimaDoLimite && <p className="bg-amber-50 px-3 py-2 text-xs text-amber-900">{titulos.length} títulos. Novas linhas indisponíveis.</p>}
     <div ref={gradeRef} className="max-h-[50vh] overflow-auto" role="region" aria-label={`Planilha de ${boleto ? "boletos" : "cheques"}`} tabIndex={0}>
       <table className={`w-full border-collapse text-left text-xs ${editarStatus ? "min-w-[1080px]" : "min-w-[860px]"}`}>
         <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700"><tr>{cabecalhos.map((nome, i) => <th key={i} scope="col" className="border-b border-r border-slate-300 px-2 py-2 font-bold whitespace-nowrap">{nome || <span className="sr-only">Excluir</span>}</th>)}</tr></thead>

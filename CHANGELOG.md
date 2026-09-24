@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.34.2 — 2026-09-24
+
+- Removido o texto explicativo sobre o bônus gerado no detalhe do vale.
+- Textos auxiliares das telas foram eliminados ou encurtados, preservando apenas alertas operacionais essenciais.
+
 ## 1.34.1 — 2026-09-24
 
 - Ordens passam a exibir somente Negociado, Pago e Restante; vales exibem Devedor, Pago e Restante, considerando cheques e boletos aguardando dentro de Pago.

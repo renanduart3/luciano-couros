@@ -29,7 +29,7 @@ export function ConfirmarAcaoPagamentosOrdem({ ordemId, acao, itens, onCancel, o
   };
   return <form onSubmit={confirmar} className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs">
     <p className="mb-2 font-bold">{plano ? `${acao === "estornar" ? "Estornar" : "Excluir"} ${plano.quantidade} pagamento(s) · estorno financeiro: ${formatCurrency(plano.totalFinanceiro)}` : erro ? "Operação indisponível" : "Conferindo valores…"}</p>
-    <p className="mb-2">{acao === "estornar" ? "As linhas ficam pendentes, sem compensação automática." : "As linhas saem do controle ativo; o histórico é preservado."} A ordem permanece ativa.</p>
+    <p className="mb-2">{acao === "estornar" ? "Pagamentos ficarão pendentes." : "O histórico será preservado."}</p>
     <div className="flex flex-wrap items-center gap-2"><label>Senha do gerente <input autoFocus type="password" autoComplete="off" maxLength={64} value={pin} onChange={e => setPin(e.target.value)} disabled={saving || concluido} className="h-8 w-40 rounded border px-2"/></label><button disabled={!plano || saving || concluido || pin.length < 4} className="rounded bg-red-700 px-3 py-1.5 font-bold text-white disabled:opacity-40">Confirmar</button><button type="button" disabled={saving} onClick={onCancel} className="rounded border px-3 py-1.5">Voltar</button></div>
     {erro && <p role="alert" className="mt-2 font-bold text-red-800">{erro}</p>}
   </form>;

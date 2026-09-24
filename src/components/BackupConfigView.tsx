@@ -180,7 +180,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
       {/* Header */}
       <div className="border-b border-slate-100 pb-4">
         <h2 className="text-2xl font-bold text-slate-950 tracking-tight font-sans">Configurações & Backups</h2>
-        <p className="text-slate-500 text-sm mt-0.5">Definições da marca da loja, segurança de dados e restauração de cópias de segurança.</p>
+        <p className="text-slate-500 text-sm mt-0.5">Marca, segurança e backups.</p>
       </div>
 
       <div className="flex gap-2 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100 p-1">
@@ -220,7 +220,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
         <form onSubmit={handleSaveConfig} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm sm:p-7">
           <div className="mb-6 flex items-start gap-3 border-b border-slate-100 pb-5">
             <span className="rounded-xl bg-emerald-100 p-2.5 text-emerald-700"><Store size={20} /></span>
-            <div><h3 className="text-base font-extrabold text-slate-950">Dados impressos no comprovante</h3><p className="mt-1 text-xs text-slate-500">Qualquer alteração salva aqui aparece nas duas vias da próxima impressão.</p></div>
+            <div><h3 className="text-base font-extrabold text-slate-950">Dados impressos no comprovante</h3><p className="mt-1 text-xs text-slate-500">Aplicado nas próximas impressões.</p></div>
           </div>
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <label className="space-y-1.5 sm:col-span-2"><span className="text-xs font-bold uppercase text-slate-500">Nome comercial *</span><input required value={storeName} onChange={(e) => setStoreName(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:border-emerald-500" /></label>
@@ -421,8 +421,8 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
 
             <div className="p-4 bg-red-50 text-red-800 text-xs rounded-xl border border-red-100 space-y-2">
               <p className="font-bold">Atenção!</p>
-              <p>Esta operação irá substituir TODOS os dados de vendas, pagamentos, clientes e produtos atuais pelos dados salvos nesta data específica de backup.</p>
-              <p>Os dados lançados após este arquivo de backup serão perdidos permanentemente.</p>
+              <p>O backup substituirá todos os dados atuais.</p>
+              <p>Dados posteriores serão perdidos.</p>
             </div>
 
             <div className="space-y-1.5">

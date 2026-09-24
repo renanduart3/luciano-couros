@@ -91,7 +91,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   };
 
   return <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-3">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase text-blue-900">Editar vales da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Marque os vales que devem permanecer agrupados. O montante e o saldo serão atualizados.</p></div><strong className="font-mono text-lg text-blue-950">{formatCurrency(totalSelecionado)}</strong></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-xs font-black uppercase text-blue-900">Editar vales da ordem</p><p className="mt-1 text-xs font-bold text-blue-700">Selecione os vales da ordem.</p></div><strong className="font-mono text-lg text-blue-950">{formatCurrency(totalSelecionado)}</strong></div>
     {loading ? <p className="mt-3 rounded-lg bg-white p-3 text-sm font-bold text-slate-500">Carregando vales...</p> : <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">{disponiveis.map((vale) => {
       const atual = atuais.get(vale.id);
       const possuiPagamento = Number(atual?.valorPago || 0) > 0.005;
@@ -119,8 +119,8 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPag
         <div><p className="text-slate-600">Planejado · não recebido</p><strong className="font-mono text-blue-800">{formatCurrency(planejado)}</strong></div>
         <div><p className="text-slate-600">Excedente em bônus</p><strong className="font-mono text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
       </div>
-      <p className="mt-2 text-[10px] text-slate-600">Cheques e boletos aguardando já compõem o valor pago; vencimentos e situações permanecem disponíveis para controle e edição.{resumo.bonusUtilizado > 0 && ` Bônus utilizado: ${formatCurrency(resumo.bonusUtilizado)} (crédito anterior).`}</p>
-      {(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicadoOrdem !== undefined && p.valorAplicado > p.valorAplicadoOrdem + 0.005) && <p className="mt-1 text-[10px] text-slate-600">Há recebimentos compartilhados com outros vales ou ordens. Os cards mostram somente a parte desta ordem.</p>}
+      <p className="mt-2 text-[10px] text-slate-600">Títulos aguardando contam como pagos.{resumo.bonusUtilizado > 0 && ` Bônus usado: ${formatCurrency(resumo.bonusUtilizado)}.`}</p>
+      {(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicadoOrdem !== undefined && p.valorAplicado > p.valorAplicadoOrdem + 0.005) && <p className="mt-1 text-[10px] text-slate-600">Valores somente desta ordem.</p>}
     </div>
     <div className="grid xl:grid-cols-[0.85fr_1.35fr]">
       <div className="border-b border-slate-300 xl:border-b-0 xl:border-r">
@@ -251,7 +251,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
       </header>
       <div className="space-y-4 p-5">
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold leading-5 text-blue-950">
-          A ordem será encerrada sem cancelar os vales. Todo saldo ainda devido ficará novamente disponível para cobrança ou nova negociação.
+          Os vales continuarão disponíveis para cobrança.
         </div>
         <label className="block text-[10px] font-black uppercase text-slate-600">Senha do gerente<input autoFocus type="password" autoComplete="off" value={pinEncerramento} onChange={(event) => { setPinEncerramento(event.target.value.slice(0, 64)); setError(""); }} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /></label>
         <label className="block text-[10px] font-black uppercase text-slate-600">Motivo (opcional)<textarea rows={2} value={motivoEncerramento} onChange={(event) => setMotivoEncerramento(event.target.value.slice(0, 300))} placeholder="Ex.: cliente solicitou novas datas" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm font-bold" /></label>

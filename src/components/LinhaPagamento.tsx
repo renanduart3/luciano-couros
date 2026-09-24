@@ -80,7 +80,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const salvar = async () => {
     if (saving || revisando || concluido) return;
     setErro("");
-    if (somenteReabertura && !novo && situacao !== "em_aberto") return setErro("Pagamento antigo: selecione Em aberto para estornar e, depois, registre o pagamento corrigido.");
+    if (somenteReabertura && !novo && situacao !== "em_aberto") return setErro("Selecione Em aberto para corrigir o pagamento.");
     if ((!novo || projecao) && pin.length < 4) return setErro("Informe a senha do gerente.");
     if (situacao === "em_aberto" && !projecao && (!plano || !confirmado)) return setErro("Confira e confirme o estorno abaixo.");
     if (situacao !== "em_aberto" && (!data || !Number.isFinite(total) || (total <= 0 && situacao !== "recusado"))) return setErro("Informe data e valor válidos.");

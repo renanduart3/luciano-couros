@@ -842,7 +842,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     });
 
     const mensagem = `${itensSelecionados.length} ${itensSelecionados.length === 1 ? "item adicionado" : "itens adicionados"} da venda #${vendaAnteriorSelecionada.numeroSequencial}.`;
-    setFeedbackMsg({ type: "success", text: `${mensagem} Quantidades e preços continuam editáveis.` });
+    setFeedbackMsg({ type: "success", text: mensagem });
     setToastMsg(mensagem);
   };
 
@@ -1133,7 +1133,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         <div className="flex flex-col gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <strong className="text-sm text-blue-950">Editando venda #{vendaEmEdicao.numeroSequencial}</strong>
-            <p className="text-xs font-semibold text-blue-800">Itens, quantidades, preços, desconto e observação podem ser ajustados. O pagamento já registrado será preservado.</p>
+            <p className="text-xs font-semibold text-blue-800">O pagamento será preservado.</p>
           </div>
           <label className="flex items-center gap-2 text-[10px] font-black uppercase text-blue-900">
             Data
@@ -1232,9 +1232,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                     />
                   </div>
-                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900">
-                    O preço autorizado passará a ser automaticamente o preço atual de <strong>{clienteSelecionado?.nome}</strong>. As vendas anteriores continuarão preservadas no histórico.
-                  </p>
+                  <p className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900">Novo preço de <strong>{clienteSelecionado?.nome}</strong>.</p>
                 </>
               )}
 
@@ -1485,12 +1483,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         {/* Análise por item, inspirada na planilha histórica do cliente. */}
         <section className="hidden">
           <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-900"><TableProperties size={17} className="text-emerald-600" /> Análise durante a venda</h3><p className="mt-1 text-xs font-medium text-slate-500">Uma linha para cada material. Desconto geral rateado proporcionalmente.</p></div>
+            <div><h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-slate-900"><TableProperties size={17} className="text-emerald-600" /> Análise durante a venda</h3><p className="mt-1 text-xs font-medium text-slate-500">Uma linha por material.</p></div>
             {dadosAdmVisiveis ? <button type="button" onClick={() => setDadosAdmVisiveis(false)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-extrabold text-emerald-800"><Unlock size={15} /> Dados administrativos visíveis</button> : <button type="button" onClick={() => { setAnalisePinErro(""); setAnalisePin(""); setShowAnalisePin(true); }} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-xs font-extrabold text-white"><Lock size={15} /> Ver custo e lucro com PIN</button>}
           </div>
           <div className="border-b border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div><p className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><History size={16} className="text-emerald-600" /> Reaproveitar uma venda anterior</p><p className="mt-1 text-[11px] text-slate-500">Consulte por período e traga produtos com quantidade e preço praticado.</p></div>
+              <div><p className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><History size={16} className="text-emerald-600" /> Reaproveitar uma venda anterior</p><p className="mt-1 text-[11px] text-slate-500">Busque por período.</p></div>
               <button type="button" disabled={!clienteSelecionado || (clienteHistorico?.vendas || []).length === 0} onClick={() => { setHistoricoPage(1); setVendaAnteriorId(""); setItensVendaAnteriorSelecionados([]); setHistoricoVendasOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white disabled:bg-slate-300"><CalendarRange size={16} /> Abrir histórico de vendas</button>
             </div>
           </div>
@@ -1631,7 +1629,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Data *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="NÚMERO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   {formaPagamento === "cheque_terceiro" && <ClienteDocumentoLookupInput label="CPF/CNPJ terceiro *" required value={instrumentoCpfTerceiro} onChange={setInstrumentoCpfTerceiro} onClienteEncontrado={setInstrumentoEmitente} placeholder="CPF/CNPJ DO TERCEIRO" labelClassName="block text-[10px] font-extrabold uppercase text-sky-800" inputClassName="mt-1 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" />}
-                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-6">O vencimento gera alerta; não marca o cheque como recebido automaticamente.</p>
+                  <p className="text-[10px] font-semibold text-sky-800 sm:col-span-2 xl:col-span-6">Vencimento para controle.</p>
                 </div>
               )}
 
@@ -1652,7 +1650,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       className="rounded border border-amber-200 bg-white px-2 py-1 font-bold text-slate-900 outline-none focus:border-amber-500"
                     />
                   </div>
-                  <p className="font-semibold text-amber-800">O parcelamento será definido somente quando uma ordem de cobrança for criada.</p>
+                  <p className="font-semibold text-amber-800">Parcelamento definido na ordem.</p>
                 </div>
               )}
 

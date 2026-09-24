@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { buildSync } = require('esbuild');
 const Module = require('node:module');
+const fs = require('node:fs');
 const React = require('react');
 const {renderToStaticMarkup} = require('react-dom/server');
 const result = buildSync({stdin:{contents:'export { LinhaPagamento } from "./src/components/LinhaPagamento"; export { TitulosPagamentoEditor } from "./src/components/TitulosPagamentoEditor"; export { ResumoFinanceiroFixo } from "./src/components/ResumoFinanceiroFixo"; export * from "./src/lib/financeiro";',resolveDir:process.cwd(),loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
@@ -33,4 +34,6 @@ const resumoHtml=renderToStaticMarkup(React.createElement(ResumoFinanceiroFixo,{
 assert.ok(resumoHtml.includes('>Devedor<'));assert.ok(resumoHtml.includes('>Pago<'));assert.ok(resumoHtml.includes('>Restante<'));
 assert.ok(!resumoHtml.includes('>Entrou<'));assert.ok(!resumoHtml.includes('Pago presumido'));
 assert.ok(resumoHtml.includes('R$\u00a0600,00'));assert.ok(resumoHtml.includes('R$\u00a0400,00'));
+const valeFonte=fs.readFileSync('src/components/ValeDetalhesModal.tsx','utf8');
+assert.ok(!valeFonte.includes('O excedente foi registrado como crédito na carteira do cliente'));
 console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');

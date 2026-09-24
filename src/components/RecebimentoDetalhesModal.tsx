@@ -63,7 +63,7 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
             ? "Este recebimento está vinculado a uma ordem. Faça as alterações pelos pagamentos da ordem."
             : "Este recebimento pertence a uma ordem encerrada. Consulte a ordem para corrigir ou estornar o pagamento."}</p>
           <div className="flex flex-wrap gap-2">{vinculadas.map(o => <button key={o.id} type="button" onClick={() => abrirOrdem(o)} className="rounded-md bg-blue-700 px-3 py-2 font-bold text-white">{gerente && ["aberta", "quitada"].includes(o.status) ? "Editar na ordem" : "Abrir ordem"} #{o.numeroSequencial}</button>)}</div>
-          {vinculadas.length === 0 && <p role="alert" className="text-red-800">Não foi possível localizar a ordem vinculada. Feche e abra os detalhes para atualizar.</p>}
+          {vinculadas.length === 0 && <p role="alert" className="text-red-800">Ordem vinculada não encontrada. Reabra os detalhes.</p>}
         </div>}
         <div className="overflow-x-auto">
           <table className="payments-table w-full min-w-[700px] text-left text-xs">

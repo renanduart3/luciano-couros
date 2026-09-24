@@ -655,7 +655,7 @@ export function RelatoriosView() {
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
-            <div className="border-b border-slate-200 bg-slate-50 p-4"><h3 className="font-black text-slate-950">Análise de materiais × clientes</h3><p className="mt-1 text-xs font-bold text-slate-500">Uma linha por cliente, material e unidade no período. Quantidades e valores já descontam devoluções.</p></div>
+            <div className="border-b border-slate-200 bg-slate-50 p-4"><h3 className="font-black text-slate-950">Análise de materiais × clientes</h3><p className="mt-1 text-xs font-bold text-slate-500">Valores líquidos de devoluções.</p></div>
             <TabelaMateriaisCliente linhas={dadosMateriais?.items || []} pagina={dadosMateriais?.page || paginaMateriais} tamanhoPagina={dadosMateriais?.pageSize || MATERIAIS_POR_PAGINA} />
             <Pagination page={dadosMateriais?.page || paginaMateriais} pageSize={dadosMateriais?.pageSize || MATERIAIS_POR_PAGINA} totalItems={dadosMateriais?.totalItems || 0} onPageChange={setPaginaMateriais} alwaysVisible />
           </div>

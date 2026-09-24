@@ -47,7 +47,7 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
   return <dialog ref={dialog} aria-labelledby="recebimento-titulo" className="payment-details-dialog payment-compact bg-white text-xs text-slate-900" onCancel={e => { e.preventDefault(); if (!saving) onClose(); }}>
     <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 bg-slate-900 px-3 py-2 text-white">
       <div><h2 id="recebimento-titulo" className="font-bold">Detalhes do recebimento</h2>{pagamento && <p className="mt-1">{pagamento.clienteNome}{pagamento.clienteDocumento && <span className="ml-2 text-slate-300">CPF/CNPJ: {pagamento.clienteDocumento}</span>}</p>}</div>
-      <div className="flex gap-2">{pagamento && <button title="Comprovante" aria-label="Comprovante" disabled={saving} type="button" onClick={() => onComprovante(recebimentoId)} className="rounded border border-slate-500 px-2"><FileText size={16}/></button>}<button disabled={saving} type="button" onClick={onClose} className="rounded border border-slate-500 px-2">Fechar</button></div>
+      <div className="flex gap-2">{pagamento && <button title="Abrir comprovante" aria-label="Abrir comprovante" disabled={saving} type="button" onClick={() => onComprovante(recebimentoId)} className="inline-flex items-center gap-1 rounded border border-slate-500 px-2 py-1 font-bold"><FileText size={16}/> Abrir comprovante</button>}<button disabled={saving} type="button" onClick={onClose} className="rounded border border-slate-500 px-2">Fechar</button></div>
     </header>
     <div className="space-y-2 p-3">
       {erro && <p role="alert" className="text-red-800">{erro}</p>}
@@ -74,9 +74,9 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
           </table>
         </div>
         {!editando && <div className="overflow-x-auto rounded border border-slate-200"><table className="w-full min-w-[660px] text-left text-xs">
-          <thead><tr>{["Título", "Titular", "Vencimento", "Valor", "Status", "Compensação"].map(t => <th key={t}>{t}</th>)}</tr></thead>
+          <thead><tr>{["Tipo / número", "Titular / CPF-CNPJ", "Vencimento", "Valor", "Status", "Compensação"].map(t => <th key={t}>{t}</th>)}</tr></thead>
           <tbody>{pagamento.titulos.map((t, i) => <tr key={t.id || i} className="border-t border-slate-200">
-            <td>{t.numeroDocumento || i + 1}{t.observacao && <div className="max-w-52 whitespace-normal text-slate-500">{t.observacao}</div>}</td><td>{t.nomeTitular}<div className="text-slate-500">{t.documentoTitular}</div></td>
+            <td><strong>{t.tipo.startsWith("duplicata") ? "Boleto" : "Cheque"}</strong><div>{t.numeroDocumento || i + 1}</div>{t.observacao && <div className="max-w-52 whitespace-normal text-slate-500">{t.observacao}</div>}</td><td>{t.nomeTitular}<div className="text-slate-500">{t.documentoTitular}</div></td>
             <td>{formatDate(t.vencimento)}</td><td className="font-mono">{formatCurrency(t.valor)}</td>
             <td>{t.status === "compensado" ? "Pago" : t.status === "recusado" ? "Recusado" : "Aguardando"}</td>
             <td>{t.dataCompensacao ? formatDate(t.dataCompensacao) : "—"}</td>

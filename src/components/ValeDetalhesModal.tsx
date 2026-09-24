@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CalendarClock, Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -10,6 +10,9 @@ import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
 import { financeiroVale } from "../lib/financeiro";
 import { resumoRecebimentos } from "../lib/resumoRecebimentos";
 import { LinhaPagamento } from "./LinhaPagamento";
+import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
+import { Pagination, paginate } from "./Pagination";
+import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -24,9 +27,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const gerente = useEhGerente();
   const bloqueado = ordemCobranca?.status === "aberta";
   const [novoPagamento, setNovoPagamento] = useState(false);
-  const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); };
+  const [paginaPagamentos, setPaginaPagamentos] = useState(1);
+  const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); setPaginaPagamentos(1); };
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
+  const [finalizacao, setFinalizacao] = useState(false);
   const [pin, setPin] = useState("");
   const [motivo, setMotivo] = useState("");
   const [dataDevolucao, setDataDevolucao] = useState(todayLocalIso());
@@ -43,6 +48,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
     titulos: [], alocacoes: [], historico: [], createdAt: vale.data, updatedAt: vale.data,
   } : undefined;
   const financeiro = financeiroVale(vale);
+  const pagamentosDoVale = vale.recebimentos?.length ? vale.recebimentos : legado ? [legado] : [];
+  const pagamentosPagina = paginate(pagamentosDoVale, paginaPagamentos, 10);
   const resumo = resumoRecebimentos(vale.recebimentos || [], vale.id);
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
@@ -116,8 +123,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[110] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
-      <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
-        <header className="vale-header print:hidden">
+      <div className="flex max-h-[calc(100vh-1.5rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl sm:max-h-[calc(100vh-3rem)] print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
+        {finalizacao && <FinalizarFinanceiroModal titulo={`vale #${vale.numeroSequencial}`} restante={financeiro.restantePresumido} excedente={financeiro.excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
+          const resultado = await api.finalizarVale(vale.id, dados);
+          onUpdated?.(resultado.vale);
+          return { mensagem: resultado.valeResidual ? `Vale finalizado. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Vale finalizado e saldos encerrados." };
+        }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
             <span className="vale-header-symbol"><FileText size={22}/></span>
             <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span></div>
@@ -135,15 +146,17 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                 <summary className="vale-icon-button" aria-label="Mais ações do vale" title="Mais ações"><MoreHorizontal size={20}/></summary>
                 <div className="vale-actions-menu">
                   {itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" aria-label="Devolver itens" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }}><RotateCcw size={16}/> Devolver itens</button>}
+                  {gerente && !vale.finalizadoAt && <button type="button" aria-label="Finalizar vale" className="text-emerald-800" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setFinalizacao(true); }}><ShieldCheck size={16}/> Finalizar vale</button>}
                   {gerente && <button type="button" aria-label="Cancelar vale" className="text-red-700" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setModo("cancelar"); setErro(""); setPin(""); }}><Trash2 size={16}/> Cancelar vale</button>}
                 </div>
               </details>}
             </div>
           </div>
         </header>
+        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro}/>
 
         {aba === "itens" ? (
-          <div className="space-y-4 p-3 sm:p-5 print:hidden">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
@@ -171,16 +184,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Resumo titulo="Valor" valor={formatCurrency(vale.totalLiquido)} />
-              <Resumo titulo="Recebido" valor={formatCurrency(financeiro.recebido)} destaque="text-blue-800" />
-              <Resumo titulo="Restante" valor={formatCurrency(financeiro.restante)} destaque="text-amber-800" />
-            </div>
             <p className="text-xs text-slate-600">Vencimento: {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} · {itens.length} itens{totalDevolvido > 0 && ` · Devolvido: ${formatCurrency(totalDevolvido)}`}</p>
             {!!vale.recebimentos?.length && <div className="rounded-xl border border-slate-300 bg-white p-3">
               <h3 className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</h3>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
+                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar (incluídos no presumido)</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
                 <div><p className="text-xs text-slate-600">Excedente gerado em bônus</p><strong className="font-mono text-lg text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
               </div>
               {financeiro.bonus > 0 && <p className="mt-2 text-xs text-violet-800">O excedente foi registrado como crédito na carteira do cliente. Este valor é o bônus gerado pelos pagamentos, não o saldo disponível atual da carteira.</p>}
@@ -194,7 +202,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
               <table className="payments-table w-full min-w-[720px] text-xs">
                 <thead className="bg-slate-50 text-left"><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Situação", "Ações"].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
-                <tbody>{(vale.recebimentos?.length ? vale.recebimentos : legado ? [legado] : []).map((pagamento) =>
+                <tbody>{pagamentosPagina.map((pagamento) =>
                   <LinhaPagamento key={pagamento?.id || vale.id} pagamento={pagamento} vendaIdContexto={legado ? undefined : vale.id} clienteId={vale.clienteId}
                     clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
                     saldo={0}
@@ -209,8 +217,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                   saldo={Number(vale.saldoRestante)} alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
                   referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => setNovoPagamento(false)}/>}
                 </tbody>
-              </table>
-            </div>
+              </table>{pagamentosDoVale.length > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={pagamentosDoVale.length} onPageChange={setPaginaPagamentos}/>}</div>
 
             <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">
               <table className="w-full min-w-[820px] text-sm">
@@ -275,15 +282,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {vale.observacoes && <div className="rounded-xl border border-slate-300 bg-white p-3"><span className="text-[10px] font-black uppercase text-slate-500">Observações</span><p className="mt-1 text-sm font-bold text-slate-800">{vale.observacoes}</p></div>}
           </div>
         ) : (
-          <div className="max-w-full overflow-x-auto p-2 sm:p-4 print:overflow-visible print:p-0">
+          <div className="min-h-0 flex-1 max-w-full overflow-auto p-2 sm:p-4 print:overflow-visible print:p-0">
             <VendaComprovante venda={vale} />
           </div>
         )}
       </div>
     </div>
   );
-}
-
-function Resumo({ titulo, valor, destaque = "text-slate-950", icone = false }: { titulo: string; valor: string; destaque?: string; icone?: boolean }) {
-  return <div className="rounded-xl border border-slate-300 bg-white p-3"><span className="flex items-center gap-1 text-[10px] font-black uppercase text-slate-500">{icone && <CalendarClock size={13} />}{titulo}</span><strong className={`mt-1 block text-base ${destaque}`}>{valor}</strong></div>;
 }

@@ -26,7 +26,8 @@ export function anexarFinanceiroVales(vendas: any[]) {
   return vendas;
 }
 
-// Caixa por data efetiva de compensação. Um título futuro nunca entra no relatório como recebido.
+// Para o balanço, um título entregue é considerado pago desde o registro. A data
+// de compensação continua disponível somente para controle e títulos recusados saem do cálculo.
 export const pagamentosConfirmadosSql = `
  SELECT p.id, p.clienteId, p.vendaId, CASE WHEN p.formaPagamento LIKE 'cheque%' OR p.formaPagamento LIKE 'duplicata%' THEN
  COALESCE((SELECT i.vencimento FROM instrumentos_recebimento i WHERE i.vendaId=p.vendaId AND i.deletedAt IS NULL AND i.status='compensado' ORDER BY i.createdAt DESC LIMIT 1),p.data) ELSE p.data END AS data, p.valor, p.formaPagamento, p.parcelasCartao,
@@ -35,11 +36,11 @@ export const pagamentosConfirmadosSql = `
  WHERE p.deletedAt IS NULL
  AND NOT EXISTS (SELECT 1 FROM recebimento_titulos t WHERE t.recebimentoId = p.recebimentoId AND t.deletedAt IS NULL)
  AND NOT EXISTS (SELECT 1 FROM recebimentos_cliente r WHERE r.id = p.recebimentoId AND (r.deletedAt IS NOT NULL OR r.status <> 'ativo'))
- AND NOT EXISTS (SELECT 1 FROM instrumentos_recebimento i WHERE i.vendaId = p.vendaId AND i.deletedAt IS NULL AND i.status IN ('aguardando','em_carteira','recusado') AND (p.formaPagamento LIKE 'cheque%' OR p.formaPagamento LIKE 'duplicata%'))
+ AND NOT EXISTS (SELECT 1 FROM instrumentos_recebimento i WHERE i.vendaId = p.vendaId AND i.deletedAt IS NULL AND i.status = 'recusado' AND (p.formaPagamento LIKE 'cheque%' OR p.formaPagamento LIKE 'duplicata%'))
  UNION ALL
- SELECT t.id, p.clienteId, p.vendaId, COALESCE(NULLIF(t.dataCompensacao,''),t.vencimento), t.valor,
+ SELECT t.id, p.clienteId, p.vendaId, CASE WHEN t.status = 'compensado' THEN COALESCE(NULLIF(t.dataCompensacao,''), p.data) ELSE p.data END, t.valor,
  t.tipo, p.parcelasCartao, p.observacao, p.recebimentoId, p.deletedAt, p.createdAt
  FROM pagamentos p JOIN recebimentos_cliente r ON r.id = p.recebimentoId
  JOIN recebimento_titulos t ON t.recebimentoId = r.id
  WHERE p.deletedAt IS NULL AND r.deletedAt IS NULL AND r.status = 'ativo'
- AND t.deletedAt IS NULL AND t.status = 'compensado'`;
+ AND t.deletedAt IS NULL AND t.status IN ('aguardando', 'compensado')`;

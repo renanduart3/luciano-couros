@@ -360,6 +360,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
     }).then(r => handleResponse<OrdemCobranca>(r)),
+  finalizarOrdemCobranca: (id: string, dados: { pin: string; destinoRestante: "novo_vale" | "zerar"; zerarExcedente: boolean; motivo?: string }) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/finalizar`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ ordem: OrdemCobranca; valeResidual: { id: string; numeroSequencial: number; valor: number } | null }>(r)),
+  finalizarVale: (id: string, dados: { pin: string; destinoRestante: "novo_vale" | "zerar"; zerarExcedente: boolean; motivo?: string }) =>
+    fetch(`${API_BASE}/vendas/${id}/finalizar`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
+    }).then(r => handleResponse<{ vale: Venda; valeResidual: { id: string; numeroSequencial: number; valor: number } | null }>(r)),
 
   // FORNECEDORES
   getFornecedores: () => fetch(`${API_BASE}/fornecedores`).then(r => handleResponse<Fornecedor[]>(r)),

@@ -166,6 +166,9 @@ export interface Venda {
   totalLiquido: number;
   valorPago: number;
   saldoRestante: number;
+  contabilizaReceita?: number;
+  valeOrigemIds?: string;
+  finalizadoAt?: string;
   status: "paga" | "pendente" | "cancelada";
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
@@ -539,6 +542,8 @@ export interface OrdemCobranca {
   totalOriginal: number;
   valorPago: number;
   saldo: number;
+  finalizadoAt?: string;
+  valeResidualId?: string;
   saldoBonus: number;
   status: "aberta" | "quitada" | "cancelada" | "renegociada";
   observacao?: string;

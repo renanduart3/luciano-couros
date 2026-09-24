@@ -845,6 +845,11 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE recebimento_instrumentos ADD COLUMN dataCompensacao TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_instrumentos ADD COLUMN motivoStatus TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE vendas ADD COLUMN contabilizaReceita INTEGER NOT NULL DEFAULT 1`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE vendas ADD COLUMN valeOrigemIds TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE vendas ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN valeResidualId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}

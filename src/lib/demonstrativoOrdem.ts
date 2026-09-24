@@ -16,5 +16,5 @@ export function demonstrativoOrdem(ordem: OrdemCobranca) {
     }];
   });
   const financeiro = financeiroOrdem(ordem);
-  return { linhas, pago: financeiro.recebido, restante: financeiro.restante };
+  return { linhas, pago: financeiro.presumido, restante: financeiro.restantePresumido };
 }

@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.34.0 — 2026-09-24
+
+- Ordens e vales distinguem valor confirmado, títulos a compensar, pagamento presumido, restante devido e excedente previsto; cheques e boletos futuros continuam editáveis.
+- Gerente pode finalizar ordens e vales, zerar diferenças ou transferir o restante para um novo vale com referência explícita a todos os documentos de origem, sem duplicar a receita da venda.
+- Detalhes dos recebimentos exibem vínculos navegáveis, dados completos dos títulos e acesso textual ao comprovante; a lista de ordens passa a ter paginação de 10, 20 ou 50 itens.
+- Parcelas iguais no cartão são consolidadas na apresentação (por exemplo, `4x de R$ 300,00`).
+- O resumo financeiro de ordens e vales permanece fixo fora da área rolável; títulos aguardando passam a compor o pagamento e os relatórios desde o registro, saindo do balanço somente quando recusados ou removidos.
+- Cadastro de cheques e boletos segue a sequência nome, CPF/CNPJ, valor, vencimento, número específico do documento e observação; boleto exibe somente “Nº boleto” e cheque somente “Nº cheque”. Diferenças de um centavo no rateio do cartão não fragmentam mais a descrição visual das parcelas.
+
 ## 1.33.1 — 2026-09-22
 
 - Alinhamento consistente entre cabeçalhos, valores e ações dos pagamentos em vales, ordens e detalhes dos recebimentos.

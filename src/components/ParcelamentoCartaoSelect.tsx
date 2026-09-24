@@ -7,18 +7,18 @@ export function normalizarQuantidadeParcelas(parcelas: number | undefined) {
 }
 
 export function descreverParcelamentoCartao(valorTotal: number, parcelas: number | undefined, valores?: number[]) {
-  if (valores?.length) return valores.map((v, i) => `${i + 1}ª ${formatCurrency(v)}`).join(' · ');
+  if (valores?.length) {
+    const centavos = valores.map(valor => Math.round(Number(valor) * 100));
+    if (Math.max(...centavos) - Math.min(...centavos) <= 1) {
+      return `${valores.length}x de ${formatCurrency(Math.min(...centavos) / 100)}`;
+    }
+    return valores.map((valor, indice) => `${indice + 1}ª ${formatCurrency(valor)}`).join(" · ");
+  }
   const quantidade = normalizarQuantidadeParcelas(parcelas);
   const totalCentavos = Math.max(0, Math.round(Number(valorTotal || 0) * 100));
-  const valorBaseCentavos = Math.floor(totalCentavos / quantidade);
-  const parcelasComCentavoExtra = totalCentavos % quantidade;
-  const valorBase = valorBaseCentavos / 100;
+  const valorBase = Math.round(totalCentavos / quantidade) / 100;
   if (quantidade === 1) return `1x de ${formatCurrency(totalCentavos / 100)}`;
-  if (parcelasComCentavoExtra === 0) return `${quantidade}x de ${formatCurrency(valorBase)}`;
-  const parcelasBase = quantidade - parcelasComCentavoExtra;
-  const partes = [`${parcelasComCentavoExtra}x de ${formatCurrency(valorBase + 0.01)}`];
-  if (parcelasBase > 0) partes.push(`${parcelasBase}x de ${formatCurrency(valorBase)}`);
-  return partes.join(" + ");
+  return `${quantidade}x de ${formatCurrency(valorBase)}`;
 }
 
 export function ResumoParcelamentoCartao({ formaPagamento, parcelasCartao, valorTotal, valoresParcelasCartao, className = "" }: {

@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Search, Trash2, Printer, Eye, Filter, FileText, Pencil, X, ShieldCheck
+  Search, Trash2, Printer, Eye, Filter, FileText, Pencil, X, ShieldCheck, RotateCcw
 } from "lucide-react";
 import { Venda } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, formatDecimal, todayLocalIso } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
 import { paginate, Pagination } from "./Pagination";
 import { useEhGerente } from "../auth/AuthContext";
 import { ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
+import { BonusVendaDestaque } from "./BonusVendaDestaque";
 
 const PAGE_SIZE = 12;
 
@@ -34,6 +35,14 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
   const [pinCancelamento, setPinCancelamento] = useState("");
   const [erroCancelamento, setErroCancelamento] = useState("");
   const [canceling, setCanceling] = useState(false);
+  const [vendaDevolucao, setVendaDevolucao] = useState<Venda | null>(null);
+  const [quantidadesDevolucao, setQuantidadesDevolucao] = useState<Record<string, string>>({});
+  const [dataDevolucao, setDataDevolucao] = useState(todayLocalIso());
+  const [observacaoDevolucao, setObservacaoDevolucao] = useState("");
+  const [pinDevolucao, setPinDevolucao] = useState("");
+  const [erroDevolucao, setErroDevolucao] = useState("");
+  const [resultadoDevolucao, setResultadoDevolucao] = useState("");
+  const [devolvendo, setDevolvendo] = useState(false);
 
   const fetchVendas = async () => {
     setLoading(true);
@@ -98,12 +107,76 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
     }
   };
 
+  const abrirDevolucao = async (venda: Venda) => {
+    setErroDevolucao("");
+    setResultadoDevolucao("");
+    setQuantidadesDevolucao({});
+    setPinDevolucao("");
+    setObservacaoDevolucao("");
+    setDataDevolucao(todayLocalIso());
+    try { setVendaDevolucao(await api.getVenda(venda.id)); }
+    catch (err: any) { setError(err.message || "Não foi possível carregar a venda."); }
+  };
+
+  const confirmarDevolucao = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!vendaDevolucao) return;
+    setDevolvendo(true);
+    setErroDevolucao("");
+    try {
+      const itens = (vendaDevolucao.items || []).flatMap((item) => {
+        const texto = (quantidadesDevolucao[item.id] || "").trim().replace(",", ".");
+        if (!texto) return [];
+        const quantidade = Number(texto);
+        if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > Number(item.quantidadeDisponivel ?? item.quantidade) + 0.000001) {
+          throw new Error(`Confira a quantidade de ${item.descricao}.`);
+        }
+        return [{ itemVendaId: item.id, quantidade }];
+      });
+      if (itens.length === 0) throw new Error("Informe a quantidade de ao menos um produto.");
+      const resultado = await api.createDevolucaoVenda(vendaDevolucao.id, {
+        data: dataDevolucao, observacoes: observacaoDevolucao, pin: pinDevolucao, items: itens
+      });
+      setVendaDevolucao(null);
+      setVendaDetalhada(resultado.venda);
+      setResultadoDevolucao(`${formatCurrency(resultado.valorCredito)} devolvido. ${resultado.bonusGerado > 0.005 ? `${formatCurrency(resultado.bonusGerado)} disponível como crédito para o cliente.` : ""}`);
+      await fetchVendas();
+      onRefreshStats?.();
+    } catch (err: any) {
+      setPinDevolucao("");
+      setErroDevolucao(err.message || "Não foi possível registrar a devolução.");
+    } finally { setDevolvendo(false); }
+  };
+
   const triggerPrintDetail = () => {
     window.print();
   };
 
   return (
     <div id="sales-list-view" className="space-y-6">
+      {vendaDevolucao && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-3 print:hidden">
+          <form onSubmit={(event) => { void confirmarDevolucao(event); }} role="dialog" aria-modal="true" aria-labelledby="devolver-venda-titulo" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+              <div><h3 id="devolver-venda-titulo" className="font-black text-slate-950">Devolver produtos da venda #{vendaDevolucao.numeroSequencial}</h3><p className="text-xs text-slate-600">Informe somente as quantidades devolvidas nesta operação.</p></div>
+              <button type="button" aria-label="Fechar devolução" onClick={() => setVendaDevolucao(null)} className="rounded-lg p-2 text-slate-700"><X size={18} /></button>
+            </div>
+            <div className="space-y-4 p-4">
+              <div className="space-y-2">{(vendaDevolucao.items || []).filter(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005).map(item => (
+                <label key={item.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-sm">
+                  <span className="min-w-0 flex-1"><strong className="block truncate text-slate-950">{item.descricao}</strong><small className="text-slate-600">Disponível: {formatDecimal(item.quantidadeDisponivel ?? item.quantidade)} {item.unidade}</small></span>
+                  <input type="number" min="0" max={Number(item.quantidadeDisponivel ?? item.quantidade)} step="any" inputMode="decimal" value={quantidadesDevolucao[item.id] || ""} onChange={event => { setQuantidadesDevolucao(atuais => ({ ...atuais, [item.id]: event.target.value })); setErroDevolucao(""); }} aria-label={`Quantidade devolvida de ${item.descricao}`} placeholder="0" className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-right font-bold" />
+                </label>
+              ))}</div>
+              <div className="grid gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-slate-700">Data da devolução<input required type="date" value={dataDevolucao} onChange={event => setDataDevolucao(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" /></label><label className="text-xs font-bold text-slate-700">Observação (opcional)<input maxLength={100} value={observacaoDevolucao} onChange={event => setObservacaoDevolucao(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 p-2" /></label></div>
+              <label className="block text-xs font-bold text-slate-700">Senha do administrador<input required type="password" autoComplete="off" value={pinDevolucao} onChange={event => setPinDevolucao(event.target.value.slice(0, 64))} className="mt-1 w-full rounded-lg border border-slate-300 p-2" /></label>
+              <p className="text-xs text-slate-600">Em vendas já pagas, o valor devolvido fica registrado como crédito do cliente no sistema.</p>
+              {erroDevolucao && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{erroDevolucao}</p>}
+            </div>
+            <div className="flex justify-end gap-2 border-t border-slate-200 p-4"><button type="button" onClick={() => setVendaDevolucao(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-bold">Cancelar</button><button type="submit" disabled={devolvendo || !pinDevolucao} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">{devolvendo ? "Registrando..." : "Confirmar devolução"}</button></div>
+          </form>
+        </div>
+      )}
       {vendaCancelamento && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
           <form onSubmit={handleCancelVenda} role="dialog" aria-modal="true" aria-labelledby="cancelar-venda-titulo" className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -125,7 +198,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Vendas Realizadas</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Histórico geral, cancelamentos e segunda via de recibos.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Histórico geral, devoluções, cancelamentos e segunda via de recibos. Devoluções exigem senha administrativa.</p>
         </div>
         <button 
           onClick={fetchVendas}
@@ -201,6 +274,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                       <td className="p-4 text-center">
                         <p className="font-extrabold text-slate-900">#{v.numeroSequencial}</p>
                         <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatDate(v.data)}</p>
+                        <BonusVendaDestaque venda={v} className="mt-1" />
                       </td>
                       <td className="p-4">
                         <p className="font-bold text-slate-900">{v.clienteNome}</p>
@@ -225,6 +299,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                       <td className="p-4 text-center">
                         <div className="flex flex-wrap justify-center gap-1.5">
                           <button onClick={() => setVendaDetalhada(v)} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-200 hover:text-slate-900"><Eye size={14} /> Detalhe</button>
+                          {v.status !== "cancelada" && (v.items || []).some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { void abrirDevolucao(v); }} title="Devolver produtos (requer senha administrativa)" className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-bold text-violet-800 hover:bg-violet-100"><RotateCcw size={14} /> Devolver</button>}
                           {v.status !== "cancelada" && <button onClick={() => onEditarVenda?.(v)} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800 transition-colors hover:bg-blue-100"><Pencil size={14} /> Editar</button>}
                           {gerente && v.status !== "cancelada" && <button disabled={canceling} onClick={() => { setVendaCancelamento(v); setPinCancelamento(""); setErroCancelamento(""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50"><Trash2 size={14} /> Excluir</button>}
                         </div>
@@ -249,10 +324,13 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                 <h3 className="text-base font-extrabold text-slate-900">Detalhes da Venda #{vendaDetalhada.numeroSequencial}</h3>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
+                <BonusVendaDestaque venda={vendaDetalhada} />
+                {vendaDetalhada.status !== "cancelada" && (vendaDetalhada.items || []).some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { void abrirDevolucao(vendaDetalhada); }} title="Devolver produtos (requer senha administrativa)" className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-300 bg-white px-4 text-xs font-black uppercase text-violet-800"><RotateCcw size={16} /> Devolver produtos</button>}
                 <button type="button" onClick={triggerPrintDetail} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-black uppercase text-white hover:bg-emerald-700"><Printer size={16} /> Imprimir</button>
                 <button type="button" onClick={() => setVendaDetalhada(null)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700 hover:bg-slate-100"><X size={16} /> Fechar</button>
               </div>
             </div>
+            {resultadoDevolucao && <p className="m-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm font-bold text-emerald-900 print:hidden">{resultadoDevolucao}</p>}
             <div id="print-receipt-detail" className="max-w-full overflow-x-auto print:overflow-visible">
               <VendaComprovante venda={vendaDetalhada} />
             </div>

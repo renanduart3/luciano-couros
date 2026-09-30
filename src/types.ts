@@ -144,6 +144,7 @@ export interface DevolucaoVenda {
   valorCredito: number;
   abatimentoVale: number;
   bonusGerado: number;
+  modalidade?: "abatimento" | "bonus_integral";
   observacoes?: string;
   createdAt: string;
   items: ItemDevolucaoVenda[];
@@ -161,6 +162,8 @@ export interface Venda {
   clienteEndereco?: string;
   clienteDocumento?: string;
   saldoBonus?: number;
+  bonusGeradoVenda?: number;
+  totalMercadoriasAposDevolucoes?: number;
   data: string; // YYYY-MM-DD
   subtotal: number;
   desconto: number;

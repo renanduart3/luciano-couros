@@ -404,6 +404,13 @@ textarea {
   font-weight: 800;
 }
 
+.receipt-items-table .receipt-return-row td {
+  color: #b91c1c !important;
+  font-weight: 800;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
 .receipt-ref { width: 14mm; }
 .receipt-supplier-ref { width: 14mm; }
 .receipt-qty { width: 18mm; }

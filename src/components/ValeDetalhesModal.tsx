@@ -13,6 +13,7 @@ import { LinhaPagamento } from "./LinhaPagamento";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { Pagination, paginate } from "./Pagination";
 import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
+import { BonusVendaDestaque } from "./BonusVendaDestaque";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -101,8 +102,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
       setMotivo("");
       setQuantidadesDevolucao({});
       setResultadoDevolucao(
-        `${formatCurrency(resultado.abatimentoVale)} abatido do vale` +
-        (resultado.bonusGerado > 0 ? ` e ${formatCurrency(resultado.bonusGerado)} creditado como bônus.` : ".")
+        `${formatCurrency(resultado.bonusGerado)} creditado como bônus. A dívida e as parcelas do vale permanecem inalteradas.`
       );
       onUpdated?.(resultado.venda);
     } catch (error: any) {
@@ -131,7 +131,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
             <span className="vale-header-symbol"><FileText size={22}/></span>
-            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span>{Number(vale.saldoBonus) > 0.005 && <strong className="ml-2 inline-flex items-center gap-1 rounded-lg bg-violet-100 px-2 py-1 text-xs font-black text-violet-800"><WalletCards size={13}/> BÔNUS {formatCurrency(vale.saldoBonus)}</strong>}</div>
+            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span><BonusVendaDestaque venda={vale} className="ml-2" />{Number(vale.saldoBonus) > 0.005 && <strong className="ml-2 inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-xs font-black text-violet-800"><WalletCards size={13}/> SALDO DO CLIENTE {formatCurrency(vale.saldoBonus)}</strong>}</div>
             <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button"><X size={20}/></button>
           </div>
           <div className="vale-header-navigation">
@@ -142,10 +142,10 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             <div className="vale-header-tools">
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
               <button type="button" onClick={imprimir} title="Imprimir vale" aria-label="Imprimir vale" className="vale-icon-button"><Printer size={19}/></button>
-              {!bloqueado && onUpdated && vale.status !== "cancelada" && (gerente || itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005)) && <details className="vale-more-actions">
+              {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setAba("itens"); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} title="Devolver itens do vale (requer senha administrativa)" aria-label="Devolver itens do vale" className="vale-icon-button text-violet-800"><RotateCcw size={19}/></button>}
+              {!bloqueado && onUpdated && vale.status !== "cancelada" && gerente && <details className="vale-more-actions">
                 <summary className="vale-icon-button" aria-label="Mais ações do vale" title="Mais ações"><MoreHorizontal size={20}/></summary>
                 <div className="vale-actions-menu">
-                  {itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" aria-label="Devolver itens" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }}><RotateCcw size={16}/> Devolver itens</button>}
                   {gerente && !vale.finalizadoAt && <button type="button" aria-label="Finalizar vale" className="text-emerald-800" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setFinalizacao(true); }}><ShieldCheck size={16}/> Finalizar vale</button>}
                   {gerente && <button type="button" aria-label="Cancelar vale" className="text-red-700" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setModo("cancelar"); setErro(""); setPin(""); }}><Trash2 size={16}/> Cancelar vale</button>}
                 </div>
@@ -160,7 +160,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-violet-950">Devolver itens do vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-violet-800">Excedente vira bônus.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-violet-800"><X size={17} /></button></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-violet-950">Devolver itens do vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-violet-800">O valor integral da devolução vira bônus. A dívida e as parcelas do vale permanecem.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-violet-800"><X size={17} /></button></div>
               <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
                 <div className="divide-y divide-slate-100">
                   {itens.filter((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005).map((item) => {

@@ -2,7 +2,7 @@ import { financeiroVale } from "../lib/financeiro";
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
-import { Venda } from "../types";
+import { ItemVenda, Venda } from "../types";
 import logo from "../img/logo.png";
 import { descreverParcelamentoCartao, normalizarQuantidadeParcelas } from "./ParcelamentoCartaoSelect";
 
@@ -29,8 +29,9 @@ const LOJA_PADRAO: LojaComprovante = {
 // Versão de avaliação com mais respiro. Voltar para 18 reativa
 // automaticamente as medidas compactas preservadas no CSS.
 const ITENS_POR_FOLHA = 15;
+type ItemComprovante = ItemVenda & { linhaDevolucao?: boolean };
 
-function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: Venda["items"] }) {
+function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: ItemComprovante[] }) {
   const layoutRespirado = ITENS_POR_FOLHA === 15;
   const todosItens = (venda.items || itens)
     .map((item) => ({ ...item, quantidade: Number(item.quantidadeDisponivel ?? item.quantidade) }))
@@ -38,12 +39,11 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const quantidadeMetros = todosItens
     .filter((item) => item.unidade.toLowerCase().includes("metro"))
     .reduce((total, item) => total + Number(item.quantidade), 0);
-  const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - itens.length) });
-  const subtotalAtual = (venda.items || []).reduce((soma, item) => {
-    const quantidade = Number(item.quantidadeDisponivel ?? item.quantidade);
-    return soma + (Number(item.quantidade) > 0 ? Math.round(Number(item.total) * quantidade / Number(item.quantidade) * 100) / 100 : 0);
-  }, 0);
-  const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalLiquido)) * 100) / 100;
+  const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - (itens?.length || 0)) });
+  const bonusDevolucao = (venda.devolucoes || []).reduce((soma, devolucao) => soma + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0);
+  const subtotalAtual = (venda.items || []).reduce((soma, item) => soma + Number(item.total), 0)
+    - (venda.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito), 0);
+  const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalMercadoriasAposDevolucoes ?? venda.totalLiquido)) * 100) / 100;
   const instrumento = venda.instrumentoRecebimento;
   const ehVale = Boolean(venda.vencimento);
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
@@ -85,11 +85,11 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-supplier-ref">FORN.</th><th className="receipt-qty">{layoutRespirado ? "QTD." : "QUANT."}</th><th>DISCRIMINAÇÃO</th><th className="receipt-money receipt-unit-money">{layoutRespirado ? "UNITÁRIO" : "P. UNITÁRIO"}</th><th className="receipt-money">PREÇO TOTAL</th></tr></thead>
         <tbody>
           {itens.map((item, index) => (
-            <tr key={item.id || index}>
+            <tr key={item.id || index} className={item.linhaDevolucao ? "receipt-return-row" : undefined}>
               <td className="receipt-product-code">{String(item.referencia || "").slice(0, 4)}</td>
               <td className="receipt-supplier-code">{String(item.fornecedorReferencia || "").slice(0, 4)}</td>
               <td className="receipt-number">{formatDecimal(item.quantidade)}</td>
-              <td>{item.descricao}</td>
+              <td>{item.linhaDevolucao ? `DEVOLVIDO: ${item.descricao}` : item.descricao}</td>
               <td className="receipt-number">{formatCurrency(item.precoUnitario)}</td>
               <td className="receipt-number">{formatCurrency(item.total)}</td>
             </tr>
@@ -98,9 +98,9 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </tbody>
       </table>
 
-      {Math.abs(abatimentoAtual) >= 0.01 && <div className="receipt-payment-line">
+      {(Math.abs(abatimentoAtual) >= 0.01 || bonusDevolucao >= 0.01) && <div className="receipt-payment-line">
         <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
-        <span><b>DESCONTOS / AJUSTES DE DEVOLUÇÃO:</b> {formatCurrency(abatimentoAtual)}</span>
+        <span><b>{bonusDevolucao >= 0.01 ? "BÔNUS DEV. (DÍVIDA MANTIDA):" : "DESCONTOS / AJUSTES DE DEVOLUÇÃO:"}</b> {formatCurrency(bonusDevolucao >= 0.01 ? bonusDevolucao : abatimentoAtual)}</span>
       </div>}
       <div className="receipt-payment-line">
         <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
@@ -135,21 +135,36 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
   }, []);
 
   const chave = useMemo(() => `${venda.id}-${venda.updatedAt || venda.data}`, [venda]);
-  const itensAtuais = useMemo(() => (venda.items || [])
-    .map((item) => {
-      const quantidade = Number(item.quantidadeDisponivel ?? item.quantidade);
-      const proporcao = Number(item.quantidade) > 0 ? quantidade / Number(item.quantidade) : 0;
-      return {
+  const itensAtuais = useMemo(() => {
+    const devolvidos = new Map<string, { quantidade: number; credito: number }>();
+    for (const devolucao of venda.devolucoes || []) {
+      for (const item of devolucao.items || []) {
+        const atual = devolvidos.get(item.itemVendaId) || { quantidade: 0, credito: 0 };
+        devolvidos.set(item.itemVendaId, {
+          quantidade: atual.quantidade + Number(item.quantidade),
+          credito: atual.credito + Number(item.totalCredito)
+        });
+      }
+    }
+    const itensOriginais = venda.items || [];
+    const linhasDevolvidas = itensOriginais.flatMap((item) => {
+      const devolvido = devolvidos.get(item.id);
+      if (!devolvido || devolvido.quantidade <= 0.005) return [];
+      return [{
         ...item,
-        quantidade,
-        total: Math.round(Number(item.total) * proporcao * 100) / 100
-      };
-    })
-    .filter((item) => item.quantidade > 0.005), [venda.items]);
+        id: `${item.id}-devolvido`,
+        quantidade: -devolvido.quantidade,
+        precoUnitario: devolvido.quantidade > 0 ? devolvido.credito / devolvido.quantidade : 0,
+        total: -Math.round(devolvido.credito * 100) / 100,
+        linhaDevolucao: true
+      }];
+    });
+    return [...itensOriginais, ...linhasDevolvidas];
+  }, [venda.items, venda.devolucoes]);
   const paginas = useMemo(() => {
     const itens = itensAtuais;
     if (itens.length === 0) return [[]];
-    const resultado: Venda["items"][] = [];
+    const resultado: ItemComprovante[][] = [];
     for (let inicio = 0; inicio < itens.length; inicio += ITENS_POR_FOLHA) {
       resultado.push(itens.slice(inicio, inicio + ITENS_POR_FOLHA));
     }

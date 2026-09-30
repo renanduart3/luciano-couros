@@ -789,6 +789,7 @@ export function initDatabase() {
         valorCredito REAL NOT NULL,
         abatimentoVale REAL NOT NULL DEFAULT 0,
         bonusGerado REAL NOT NULL DEFAULT 0,
+        modalidade TEXT NOT NULL DEFAULT 'abatimento',
         observacoes TEXT,
         createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
         updatedAt TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1031,6 +1032,7 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE cliente_bonus_movimentos ADD COLUMN vendaId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE devolucoes_venda ADD COLUMN abatimentoVale REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE devolucoes_venda ADD COLUMN bonusGerado REAL`).run(); } catch (e) {}
+  if (!(db.prepare('PRAGMA table_info(devolucoes_venda)').all() as any[]).some(c => c.name === 'modalidade')) db.prepare("ALTER TABLE devolucoes_venda ADD COLUMN modalidade TEXT NOT NULL DEFAULT 'abatimento'").run();
   db.prepare(`
     UPDATE devolucoes_venda
     SET bonusGerado = COALESCE((

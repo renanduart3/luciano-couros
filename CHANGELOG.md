@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.35.0 — 2026-09-30
+
+- Devolução parcial ou total de itens pelo histórico de vendas e pelos detalhes dos vales, com quantidade informada, senha administrativa e registro auditável.
+- Devoluções de vales geram bônus integral para o cliente sem alterar a dívida ou as parcelas; o bônus pode ser usado depois em um pagamento. Vendas comuns já pagas continuam gerando crédito.
+- Listas e detalhes de vendas e vales destacam o bônus gerado por devoluções e pagamentos excedentes vinculados ao documento.
+- Comprovantes agrupam as linhas devolvidas após os itens originais, em vermelho, mantendo no máximo 15 linhas por folha e o layout das duas vias.
+- Relatórios e indicadores descontam as mercadorias devolvidas sem confundir o valor líquido vendido com o saldo financeiro ainda devido pelo vale.
+- Testes cobrem quantidades, autorização, bônus, dívidas, relatórios e paginação do comprovante.
+
 ## 1.34.3 — 2026-09-24
 
 - Removido o bloco redundante de valores vinculados nos detalhes da ordem e o restante repetido abaixo da tabela.

@@ -1224,7 +1224,7 @@ app.get("/api/dashboard", (req, res) => {
 
     // Vendas de hoje (não canceladas)
     const vendasHoje = queryOne<{ count: number; total: number }>(
-      "SELECT COUNT(*) as count, COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE data = ? AND deletedAt IS NULL AND COALESCE(contabilizaReceita, 1) = 1",
+      `SELECT COUNT(*) as count, COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.data = ? AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [todayStr]
     ) || { count: 0, total: 0 };
 
@@ -1240,29 +1240,29 @@ app.get("/api/dashboard", (req, res) => {
 
     // Vendas no mês atual (não canceladas)
     const vendasMes = queryOne<{ count: number; total: number }>(
-      "SELECT COUNT(*) as count, COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE data >= ? AND data <= ? AND deletedAt IS NULL AND COALESCE(contabilizaReceita, 1) = 1",
+      `SELECT COUNT(*) as count, COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [firstDayOfMonth, todayStr]
     ) || { count: 0, total: 0 };
 
     // Lucro bruto no mês atual (lucro total de itens de vendas não canceladas no mês)
     const lucroMes = queryOne<{ total: number }>(
-      `SELECT COALESCE(SUM(
+      `SELECT COALESCE(SUM((
          iv.total
          - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
          - iv.custoTotal
-       ), 0) as total 
+       ) * (iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)) / NULLIF(iv.quantidade, 0)), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL`,
+       WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL AND v.status <> 'cancelada'`,
       [firstDayOfMonth, todayStr]
     ) || { total: 0 };
 
     // Metros vendidos no mês (itens com unidade = 'metro' em vendas ativas do mês)
     const metrosMes = queryOne<{ total: number }>(
-      `SELECT COALESCE(SUM(iv.quantidade), 0) as total
+      `SELECT COALESCE(SUM(iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.data >= ? AND v.data <= ? AND iv.unidade = 'metro' AND v.deletedAt IS NULL`,
+       WHERE v.data >= ? AND v.data <= ? AND iv.unidade = 'metro' AND v.deletedAt IS NULL AND v.status <> 'cancelada'`,
       [firstDayOfMonth, todayStr]
     ) || { total: 0 };
 
@@ -1423,9 +1423,9 @@ app.get("/api/clientes/:id/historico", (req, res) => {
       return res.status(404).json({ error: "Cliente não encontrado." });
     }
 
-    // 1. Total comprado (soma do totalLiquido das vendas ativas)
+    // 1. Total de mercadorias líquido dos créditos integrais de devolução.
     const totalCompradoRow = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE clienteId = ? AND status <> 'cancelada' AND deletedAt IS NULL AND COALESCE(contabilizaReceita, 1) = 1",
+      `SELECT COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [id]
     );
 
@@ -2796,7 +2796,41 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 });
 
 
+function bonusGeradoPorVenda(ids: string[]): Map<string, number> {
+  const resultado = new Map<string, number>();
+  if (ids.length === 0) return resultado;
+  const marcadores = ids.map(() => "?").join(",");
+  const movimentos = queryAll<{ vendaId: string; total: number }>(
+    `SELECT vendaId, SUM(valor) AS total FROM (
+       SELECT bm.vendaId, bm.valor
+       FROM cliente_bonus_movimentos bm
+       WHERE bm.tipo = 'credito' AND bm.deletedAt IS NULL
+         AND bm.observacao LIKE 'Crédito excedente da devolução%'
+         AND bm.vendaId IN (${marcadores})
+       UNION ALL
+       SELECT a.vendaId, bm.valor
+       FROM cliente_bonus_movimentos bm
+       JOIN (
+         SELECT recebimentoId, MIN(vendaId) AS vendaId
+         FROM recebimento_alocacoes
+         WHERE deletedAt IS NULL
+         GROUP BY recebimentoId
+         HAVING COUNT(DISTINCT vendaId) = 1
+       ) a ON a.recebimentoId = bm.recebimentoId
+       WHERE bm.tipo = 'credito' AND bm.deletedAt IS NULL AND bm.vendaId IS NULL
+         AND a.vendaId IN (${marcadores})
+     ) creditos GROUP BY vendaId`,
+    [...ids, ...ids]
+  );
+  for (const movimento of movimentos) resultado.set(movimento.vendaId, Math.round(Number(movimento.total) * 100) / 100);
+  return resultado;
+}
+
+const valorDevolvidoEmBonusSql = (alias: string) =>
+  `COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0)`;
+
 function carregarDetalhesVenda(venda: any) {
+  venda.bonusGeradoVenda = bonusGeradoPorVenda([venda.id]).get(venda.id) || 0;
   venda.items = queryAll<any>(
     `SELECT iv.*,
             p.codigo as referencia,
@@ -2833,6 +2867,7 @@ function carregarDetalhesVenda(venda: any) {
       [devolucao.id]
     );
   }
+  venda.totalMercadoriasAposDevolucoes = Math.round((Number(venda.totalLiquido) - venda.devolucoes.reduce((total: number, devolucao: any) => total + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0)) * 100) / 100;
   venda.instrumentoRecebimento = queryOne(
     `SELECT tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao
      FROM instrumentos_recebimento
@@ -2881,6 +2916,7 @@ function carregarDetalhesVenda(venda: any) {
 function carregarDetalhesVendasEmLote(vendas: any[]) {
   if (vendas.length === 0) return vendas;
   const ids = vendas.map((venda) => venda.id);
+  const bonusPorVenda = bonusGeradoPorVenda(ids);
   const marcadores = ids.map(() => "?").join(",");
   const agrupar = (linhas: any[], chave: string) => {
     const mapa = new Map<string, any[]>();
@@ -2946,8 +2982,10 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   ), "vendaId");
 
   vendas.forEach((venda) => {
+    venda.bonusGeradoVenda = bonusPorVenda.get(venda.id) || 0;
     venda.items = itensPorVenda.get(venda.id) || [];
     venda.devolucoes = devolucoesPorVenda.get(venda.id) || [];
+    venda.totalMercadoriasAposDevolucoes = Math.round((Number(venda.totalLiquido) - venda.devolucoes.reduce((total: number, devolucao: any) => total + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0)) * 100) / 100;
     venda.instrumentoRecebimento = instrumentoPorVenda.get(venda.id) || null;
     venda.parcelas = parcelasPorVenda.get(venda.id) || [];
     if (venda.parcelas.length === 0 && venda.vencimento) {
@@ -3416,6 +3454,11 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       );
       if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
 
+      const idsInformados = items.map((entrada: any) => String(entrada.itemVendaId || ""));
+      if (new Set(idsInformados).size !== idsInformados.length) {
+        throw erroHttp("Cada item da venda pode aparecer apenas uma vez na devolução.", 400);
+      }
+
       const resolvidos = items.map((entrada: any) => {
         const item = queryOne<any>(
           `SELECT iv.*,
@@ -3443,11 +3486,12 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       });
 
       const valorCredito = Math.round(resolvidos.reduce((total, item) => total + item.totalCredito, 0) * 100) / 100;
+      const bonusIntegral = Boolean(venda.vencimento);
       const devolucaoId = "dev_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
       execute(
-        `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, String(observacoes || "").trim().slice(0, 100) || null]
+        `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, modalidade, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, bonusIntegral ? "bonus_integral" : "abatimento", String(observacoes || "").trim().slice(0, 100) || null]
       );
       for (const item of resolvidos) {
         execute(
@@ -3468,12 +3512,12 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       const saldoAnterior = Number(venda.saldoRestante);
-      const novoTotal = Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
-      const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
-      const novoSaldo = Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
-      const abatimentoVale = Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
-      const bonusGerado = Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
-      const primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, valorCredito);
+      const novoTotal = bonusIntegral ? totalAnterior : Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
+      const novoPago = bonusIntegral ? pagoAnterior : Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
+      const novoSaldo = bonusIntegral ? saldoAnterior : Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const abatimentoVale = bonusIntegral ? 0 : Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
+      const bonusGerado = bonusIntegral ? valorCredito : Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
+      const primeiroVencimento = bonusIntegral ? venda.vencimento : reduzirParcelasValePorDevolucao(vendaId, valorCredito);
 
       execute(
         `UPDATE devolucoes_venda
@@ -3489,7 +3533,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
          WHERE id = ?`,
         [novoTotal, novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", primeiroVencimento, vendaId]
       );
-      recalcularParcelasVale(vendaId);
+      if (!bonusIntegral) recalcularParcelasVale(vendaId);
 
       if (bonusGerado > 0.005) {
         execute(
@@ -3511,6 +3555,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
         valorCredito,
         abatimentoVale,
         bonusGerado,
+        modalidade: bonusIntegral ? "bonus_integral" : "abatimento",
         totalAnterior,
         totalAtual: novoTotal,
         saldoAnterior,
@@ -3566,6 +3611,10 @@ app.put("/api/vendas/:id", (req, res) => {
         [vendaId]
       );
       if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
+
+      if (queryOne<{ id: string }>("SELECT id FROM devolucoes_venda WHERE vendaId = ? AND modalidade = 'bonus_integral' LIMIT 1", [vendaId])) {
+        throw erroHttp("Este vale possui devolução convertida em bônus integral. A edição da venda está bloqueada para preservar os valores históricos.", 409);
+      }
 
       const itensAtuais = queryAll<any>(
         `SELECT iv.*,
@@ -3642,7 +3691,7 @@ app.put("/api/vendas/:id", (req, res) => {
       }
 
       const creditoDevolucoes = queryOne<{ total: number }>(
-        "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ?", [vendaId]
+        "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ? AND modalidade <> 'bonus_integral'", [vendaId]
       )?.total || 0;
       const { subtotal, desconto, totalLiquido: novoTotal } = totaisVenda(
         resolvidos, Number(req.body?.desconto || 0), creditoDevolucoes
@@ -3821,6 +3870,9 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
       );
       if (!venda) throw erroHttp("Vale não encontrado.", 404);
       if (venda.status === "cancelada") throw erroHttp("Este vale já está cancelado.", 409);
+      if (queryOne<{ id: string }>("SELECT id FROM devolucoes_venda WHERE vendaId = ? LIMIT 1", [id])) {
+        throw erroHttp("Este vale possui devoluções registradas. Corrija os créditos do cliente antes de cancelar o vale.", 409);
+      }
 
       execute("UPDATE vendas SET status = 'cancelada', saldoRestante = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [id]);
       execute("UPDATE vale_parcelas SET status = 'cancelada', saldo = 0, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
@@ -6283,13 +6335,18 @@ app.get("/api/relatorios", (req, res) => {
 
     // A. VENDAS POR PERÍODO / CLIENTE
     const vendas = queryAll<any>(
-      `SELECT v.*, c.nome as clienteNome, printf('%04d', c.rowid) as clienteCodigo
+      `SELECT v.*, c.nome as clienteNome, printf('%04d', c.rowid) as clienteCodigo,
+              ${valorDevolvidoEmBonusSql("v")} AS creditoBonusIntegral
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
        ${whereClause}
        ORDER BY v.data DESC, v.numeroSequencial DESC`,
       params
-    );
+    ).map((venda) => ({
+      ...venda,
+      totalFinanceiroVale: venda.totalLiquido,
+      totalLiquido: Math.round((Number(venda.totalLiquido) - Number(venda.creditoBonusIntegral)) * 100) / 100
+    }));
 
     // B. ITENS VENDIDOS (com detalhamento de metros, lucro, custo)
     const quantidadeDevolvidaSql = "COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)";
@@ -6374,7 +6431,7 @@ app.get("/api/relatorios", (req, res) => {
          COALESCE(SUM(CASE WHEN LOWER(iv.unidade) NOT LIKE '%metro%' THEN
            iv.quantidade - COALESCE(dev.quantidade, 0) ELSE 0 END), 0) AS quantidadeUnidades,
          COALESCE((
-           SELECT SUM(vg.totalLiquido)
+           SELECT SUM(vg.totalLiquido - ${valorDevolvidoEmBonusSql("vg")})
            FROM vendas vg
            WHERE vg.clienteId = ?
              AND vg.deletedAt IS NULL
@@ -6461,7 +6518,7 @@ app.get("/api/relatorios", (req, res) => {
          c.nome as clienteNome,
          c.telefone as clienteTelefone,
          COUNT(v.id) as totalVendas,
-         COALESCE(SUM(v.totalLiquido), 0) as totalComprado,
+         COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as totalComprado,
          COALESCE(SUM(v.saldoRestante), 0) as saldoDevedor
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
@@ -6488,7 +6545,7 @@ app.get("/api/relatorios", (req, res) => {
          c.nome as clienteNome,
          c.telefone as clienteTelefone,
          COUNT(DISTINCT v.id) as totalVendas,
-         COALESCE(SUM(v.totalLiquido), 0) as totalComprado,
+         COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as totalComprado,
          COALESCE(MAX(v.data), '') as ultimaCompra,
          COALESCE((
            SELECT SUM(p.valor) FROM (${pagamentosConfirmadosSql}) p

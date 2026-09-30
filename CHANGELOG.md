@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.36.0 — 2026-09-30
+
+- Bônus gerado por vale ou venda aparece somente nos respectivos detalhes, não nas listagens. O detalhe do vale exibe o bônus próprio ao lado de Devedor, Pago e Restante, sem duplicar o saldo geral do cliente.
+- Ficha do cliente mostra paginação explícita na lista de clientes e pagina o histórico de vendas.
+- Removidos da ficha os cartões de lucro, vales e média de vales. Nova tabela apresenta somente vales ainda devidos, identifica os vencidos e oferece acesso direto ao vale no gerenciamento.
+- Testes validam a seleção dos vales pendentes, seu vencimento e o resumo de bônus no detalhe.
+
 ## 1.35.0 — 2026-09-30
 
 - Devolução parcial ou total de itens pelo histórico de vendas e pelos detalhes dos vales, com quantidade informada, senha administrativa e registro auditável.

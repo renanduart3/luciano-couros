@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
+import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -13,7 +13,6 @@ import { LinhaPagamento } from "./LinhaPagamento";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { Pagination, paginate } from "./Pagination";
 import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
-import { BonusVendaDestaque } from "./BonusVendaDestaque";
 
 interface ValeDetalhesModalProps {
   vale: Venda;
@@ -131,7 +130,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
             <span className="vale-header-symbol"><FileText size={22}/></span>
-            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span><BonusVendaDestaque venda={vale} className="ml-2" />{Number(vale.saldoBonus) > 0.005 && <strong className="ml-2 inline-flex items-center gap-1 rounded-lg bg-violet-50 px-2 py-1 text-xs font-black text-violet-800"><WalletCards size={13}/> SALDO DO CLIENTE {formatCurrency(vale.saldoBonus)}</strong>}</div>
+            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span></div>
             <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button"><X size={20}/></button>
           </div>
           <div className="vale-header-navigation">
@@ -153,7 +152,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>
           </div>
         </header>
-        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor"/>
+        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)}/>
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">

@@ -274,7 +274,6 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                       <td className="p-4 text-center">
                         <p className="font-extrabold text-slate-900">#{v.numeroSequencial}</p>
                         <p className="text-[10px] text-slate-400 font-mono mt-0.5">{formatDate(v.data)}</p>
-                        <BonusVendaDestaque venda={v} className="mt-1" />
                       </td>
                       <td className="p-4">
                         <p className="font-bold text-slate-900">{v.clienteNome}</p>

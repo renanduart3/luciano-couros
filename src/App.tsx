@@ -21,6 +21,7 @@ export default function App() {
   
   // Pivot shortcut state (e.g. going from dashboard overdue alert to sales ledger)
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [selectedValeId, setSelectedValeId] = useState<string | null>(null);
 
   useEffect(() => {
     let ativo = true;
@@ -74,6 +75,7 @@ export default function App() {
         return (
           <ClientesView 
             onRefreshStats={handleRefreshStats}
+            onOpenVale={(valeId) => { setSelectedValeId(valeId); setCurrentView("vales"); }}
           />
         );
       case "compra":
@@ -90,6 +92,8 @@ export default function App() {
         return (
           <ValesView
             onRefreshStats={handleRefreshStats}
+            selectedValeId={selectedValeId}
+            onClearSelectedValeId={() => setSelectedValeId(null)}
           />
         );
       case "relatorios":

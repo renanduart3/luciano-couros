@@ -34,7 +34,11 @@ const resumoHtml=renderToStaticMarkup(React.createElement(ResumoFinanceiroFixo,{
 assert.ok(resumoHtml.includes('>Devedor<'));assert.ok(resumoHtml.includes('>Pago<'));assert.ok(resumoHtml.includes('>Restante<'));
 assert.ok(!resumoHtml.includes('>Entrou<'));assert.ok(!resumoHtml.includes('Pago presumido'));
 assert.ok(resumoHtml.includes('R$\u00a0600,00'));assert.ok(resumoHtml.includes('R$\u00a0400,00'));
+const resumoComBonus=renderToStaticMarkup(React.createElement(ResumoFinanceiroFixo,{negociado:1000,rotuloTotal:'Devedor',bonusGerado:380,financeiro:{negociado:1000,recebido:200,aguardando:400,presumido:600,restante:800,restantePresumido:400,bonus:0,excedentePresumido:0,creditoUtilizado:0}}));
+assert.ok(resumoComBonus.includes('Bônus deste vale'));assert.ok(resumoComBonus.includes('R$\u00a0380,00'));
+assert.equal((resumoComBonus.match(/Bônus deste vale/g)||[]).length,1);
 const valeFonte=fs.readFileSync('src/components/ValeDetalhesModal.tsx','utf8');
+assert.ok(!valeFonte.includes('SALDO DO CLIENTE'));
 assert.ok(!valeFonte.includes('O excedente foi registrado como crédito na carteira do cliente'));
 const ordemFonte=fs.readFileSync('src/components/OrdensCobrancaView.tsx','utf8');
 assert.ok(!ordemFonte.includes('Valores dos recebimentos vinculados'));

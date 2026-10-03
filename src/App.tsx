@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ShieldAlert } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { ClientesView } from "./components/ClientesView";
 import { ProdutosView } from "./components/ProdutosView";
@@ -14,6 +15,7 @@ import { UsuarioSistema } from "./types";
 import { AuthProvider } from "./auth/AuthContext";
 
 export default function App() {
+  const [backupAlert, setBackupAlert] = useState(false);
   const [currentView, setCurrentView] = useState("venda");
   const [usuario, setUsuario] = useState<UsuarioSistema | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -40,6 +42,15 @@ export default function App() {
   useEffect(() => {
     if (usuario && usuario.perfil !== "administrador" && currentView !== "venda") setCurrentView("venda");
   }, [usuario, currentView]);
+
+  useEffect(() => {
+    if (usuario?.perfil !== "administrador") { setBackupAlert(false); return; }
+    let active = true;
+    const refresh = () => { api.getBackupStatus().then(status => { if (active) setBackupAlert(status.alert); }).catch(() => {}); };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [usuario, statsKey]);
 
   const bloquearSessao = async () => {
     try { await api.logout(); } catch { /* o bloqueio local deve ocorrer mesmo sem resposta */ }
@@ -102,7 +113,8 @@ export default function App() {
         );
       case "config":
         return (
-          <BackupConfigView 
+          <BackupConfigView
+            initialTab={backupAlert ? "sistema" : "loja"}
             onRefreshConfig={handleRefreshStats}
           />
         );
@@ -134,6 +146,7 @@ export default function App() {
       {/* Main Workspace */}
       <main className="min-w-0 flex-1 flex flex-col h-full overflow-hidden">
         
+        {backupAlert && <button onClick={() => navegarParaView("config")} className="shrink-0 bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2 px-5 py-2 print:hidden" title="Três ou mais tentativas de backup falharam. Clique para conferir."><ShieldAlert size={16} />Backup precisa de atenção</button>}
         {/* Top Mini Header Bar */}
         <header className="hidden shrink-0 items-center justify-between border-b border-slate-200/50 bg-white px-5 py-2 md:flex print:hidden">
           <div className="text-xs text-slate-400 font-bold font-mono">

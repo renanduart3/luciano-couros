@@ -86,6 +86,12 @@ async function main() {
     assert.ok(ready, logs);
     assert.equal((await request('POST', '/auth/configurar-gerente', { nome: 'Teste', senha: 'BackupTeste123' })).status, 201);
     assert.equal((await request('POST', '/auth/login', { login: 'gerente', senha: 'BackupTeste123' })).status, 200);
+    const customBackup = path.join(fixture, 'drive-backups');
+    fs.mkdirSync(customBackup);
+    assert.equal((await request('PUT', '/backups/config', { folder: httpData, time: '18:00' })).status, 400);
+    assert.equal((await request('PUT', '/backups/config', { folder: customBackup, time: '25:00' })).status, 400);
+    assert.equal((await request('PUT', '/backups/config', { folder: customBackup, time: '18:00' })).status, 200);
+    assert.equal((await request('GET', '/backups/config')).data.folder, customBackup);
     let manual;
     for (let i=0; i<40; i++) {
       manual = await request('POST', '/backups');
@@ -93,8 +99,28 @@ async function main() {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.equal(manual.status, 200, JSON.stringify(manual));
-    const saved = path.join(httpData, 'backups', manual.data.filename);
+    const saved = path.join(customBackup, manual.data.filename);
     assert.ok(fs.existsSync(saved), 'HTTP must return only after the backup exists');
+    // Unavailable destination: three failures surface an alert and survive persisted state.
+    for (let i = 0; i < 40; i++) {
+      const retry = await request('POST', '/backups');
+      if (retry.status === 200) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    const offlineBackup = customBackup + '-offline';
+    fs.renameSync(customBackup, offlineBackup);
+    for (let i = 0; i < 3; i++) assert.equal((await request('POST', '/backups')).status, 500);
+    const failedStatus = (await request('GET', '/backups/status')).data;
+    assert.equal(failedStatus.alert, true);
+    assert.equal(failedStatus.failures, 3);
+    assert.ok(failedStatus.nextRetry);
+    assert.equal((await request('GET', '/backups/config')).status, 200, 'Settings stay editable when folder is unavailable');
+    const inspect = new Database(path.join(httpData, 'database.db'), { readonly: true });
+    assert.equal(JSON.parse(inspect.prepare("SELECT valor FROM configuracoes WHERE chave='backup_estado'").get().valor).failures, 3);
+    inspect.close();
+    fs.renameSync(offlineBackup, customBackup);
+    assert.equal((await request('POST', '/backups')).status, 200);
+    assert.equal((await request('GET', '/backups/status')).data.alert, false);
     const verifier = new Database(saved, { readonly: true });
     assert.equal(verifier.pragma('integrity_check', { simple: true }), 'ok'); verifier.close();
     assert.equal((await request('POST', '/backups/restaurar', { filename: '../database.db' })).status, 400);

@@ -8,15 +8,23 @@ import { UsuariosConfigView } from "./UsuariosConfigView";
 
 interface BackupConfigViewProps {
   onRefreshConfig?: () => void;
+  initialTab?: "loja" | "sistema";
 }
 
-export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
-  const [activeTab, setActiveTab] = useState<"loja" | "usuarios" | "sistema">("loja");
+export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: BackupConfigViewProps) {
+  const [activeTab, setActiveTab] = useState<"loja" | "usuarios" | "sistema">(initialTab);
+  useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [storeName, setStoreName] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
   const [storePhone, setStorePhone] = useState("");
   const [storeMobile, setStoreMobile] = useState("");
   const [storeEmail, setStoreEmail] = useState("");
+  const [selectingFolder, setSelectingFolder] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<Awaited<ReturnType<typeof api.getBackupStatus>> | null>(null);
+  const [backupFolder, setBackupFolder] = useState("");
+  const [backupTime, setBackupTime] = useState("18:00");
+  const [savingBackup, setSavingBackup] = useState(false);
+  const [backupFeedback, setBackupFeedback] = useState("");
   const [backups, setBackups] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -40,16 +48,19 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     setLoading(true);
     setError(null);
     try {
-      const [config, backupList, segurancaStatus] = await Promise.all([
+      const [config, backupList, segurancaStatus, backupSettings] = await Promise.all([
         api.getConfig(),
-        api.getBackups(),
-        api.getSegurancaStatus()
+        api.getBackups().catch(() => []),
+        api.getSegurancaStatus(),
+        api.getBackupSettings()
       ]);
       setStoreName(config.store_name || "Luciano Couros");
       setStoreAddress(config.store_address || "R. Lunard, 289 - B. Caiçara - CEP: 30.770-030 - BH/MG");
       setStorePhone(config.store_phone || "(31) 3413-5778");
       setStoreMobile(config.store_mobile || "98800-5778 e 98719-4108");
       setStoreEmail(config.store_email || "lucianocouros@hotmail.com");
+      setBackupFolder(backupSettings.folder);
+      setBackupTime(backupSettings.time);
       setBackups(backupList);
       setSeguranca(segurancaStatus);
       setAdminNome(segurancaStatus.nome);
@@ -62,6 +73,14 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { api.getBackupStatus().then(status => { if (active) setBackupStatus(status); }).catch(() => {}); };
+    refresh();
+    const timer = window.setInterval(refresh, 60000);
+    return () => { active = false; window.clearInterval(timer); };
   }, []);
 
   const handleSaveConfig = async (e: React.FormEvent) => {
@@ -93,6 +112,7 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
     try {
       await api.createBackup();
       alert("Backup manual gerado com sucesso!");
+      setBackupStatus(await api.getBackupStatus());
       const updatedList = await api.getBackups();
       setBackups(updatedList);
     } catch (err: any) {
@@ -325,6 +345,38 @@ export function BackupConfigView({ onRefreshConfig }: BackupConfigViewProps) {
               >
                 <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar senha" : "Configurar senha"}
               </button>
+            </form>
+
+            <form className="bg-slate-50 rounded-2xl p-6 space-y-3" onSubmit={async e => {
+              e.preventDefault(); setSavingBackup(true); setBackupFeedback("");
+              try {
+                const saved = await api.saveBackupSettings({ folder: backupFolder, time: backupTime });
+                setBackupFolder(saved.folder); setBackupTime(saved.time);
+                setBackups(await api.getBackups());
+                onRefreshConfig?.();
+                setBackupFeedback("Pasta e horário salvos. Use Criar Backup Agora para conferir o destino.");
+              } catch (err: any) { setBackupFeedback(err.message || "Erro ao salvar backup."); }
+              finally { setSavingBackup(false); }
+            }}>
+              <h4 className="font-bold">Backup diário</h4>
+              <label className="block text-sm">Pasta de destino no servidor
+                <input required readOnly className="block w-full border rounded-lg p-2 mt-1 bg-white" value={backupFolder} placeholder="Selecione uma pasta" />
+              </label>
+              <button type="button" disabled={selectingFolder || savingBackup} className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {
+                setSelectingFolder(true); setBackupFeedback("");
+                try { const result = await api.selectBackupFolder(); if (result.folder) setBackupFolder(result.folder); }
+                catch (err: any) { setBackupFeedback(err.message || "Erro ao selecionar pasta."); }
+                finally { setSelectingFolder(false); }
+              }}>{selectingFolder ? "Aguardando seleção no Windows..." : "Selecionar pasta..."}</button>
+              <p className="text-xs text-slate-600">Selecione a mesma pasta existente que você adicionou no Google Drive para computador. Os backups manuais também serão salvos nela. Backups antigos permanecem na pasta anterior.</p>
+              <label className="block text-sm">Horário diário (hora local do servidor)
+                <input required type="time" className="block border rounded-lg p-2 mt-1" value={backupTime} onChange={e => setBackupTime(e.target.value)} />
+              </label>
+              <p className="text-xs text-slate-600">Mantenha o computador ligado e o sistema em execução. Ao ligar após perder um ou mais horários, o sistema faz uma única cópia atual e depois retoma a rotina diária.</p>
+              <button disabled={savingBackup} className="bg-slate-900 text-white rounded-lg px-4 py-2">{savingBackup ? "Salvando..." : "Salvar backup diário"}</button>
+              {backupStatus?.alert && <p role="alert" className="text-sm text-red-700 flex items-start gap-2"><ShieldAlert size={18} className="shrink-0" />Backup precisa de atenção: {backupStatus.failures} falhas consecutivas. {backupStatus.lastError} Nova tentativa: {backupStatus.nextRetry ? new Date(backupStatus.nextRetry).toLocaleString("pt-BR") : "aguardando"}.</p>}
+              {backupStatus?.lastSuccess && <p className="text-xs text-slate-600">Último backup local concluído: {new Date(backupStatus.lastSuccess).toLocaleString("pt-BR")}</p>}
+              {backupFeedback && <p role="status" className="text-sm">{backupFeedback}</p>}
             </form>
 
             {/* Information Card */}

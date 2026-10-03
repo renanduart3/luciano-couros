@@ -25,7 +25,7 @@ As exclusoes locais sincronizam para a nuvem. A lixeira e o armazenamento compar
 
 ## Funcionamento
 
-- Verificacao na inicializacao e a cada hora; no maximo um automatico valido por dia e por ambiente, usando a data local do computador.
+- Verificacao na inicializacao e a cada minuto, usando a hora local do servidor. Horarios perdidos sao cobertos por uma unica copia atual; a agenda normal continua depois disso.
 - Copia temporaria na pasta irma `.backup-staging`, verificacao `integrity_check` e renomeacao para o destino definitivo. A interface aguarda a conclusao.
 - Retencao de 30 dias para automaticos, manuais e diretorios `antes-da-atualizacao_*`, usando a data do nome. A configuracao existente continua disponivel para uso tecnico; a migracao aplica 30 dias aos bancos existentes.
 - Limpeza somente de nomes reconhecidos; desconhecidos, links e arquivos incompletos nao sao apagados automaticamente. Uma falha de remocao nao interrompe a limpeza dos demais.
@@ -41,3 +41,17 @@ Servidor e atualizador leem `installation-paths.json`. O atualizador preserva es
 Se o banco externo configurado estiver ausente, a inicializacao falha explicitamente, em vez de criar um banco vazio. Para recuperar numa nova maquina, restaure uma copia valida com o servico parado em uma pasta local, configure o apontamento e confira o modo de producao. Nao copie WAL/SHM de outro banco por cima da copia restaurada.
 
 Para testes: `npm run lint`, `npm run build` e `node scripts/test-backups.cjs`. O teste usa bancos temporarios, simula WAL, retencao, caminho ausente, falha de copia e restauracao HTTP real, sem tocar no banco do cliente.
+
+## Pasta e horario pela plataforma
+
+Em Configuracoes & Backups > Sistema, PIN e backups, clique em Selecionar pasta para abrir o seletor nativo do Windows e escolha a pasta existente adicionada ao Google Drive para computador e o horario diario (padrao 18:00). Salve e use Criar Backup Agora para conferir o arquivo no destino e depois no site do Drive. Nao e necessario migrar o banco ativo para configurar esse destino.
+
+Backups manuais, automaticos e a lista para restauracao usam a pasta escolhida. Copias anteriores permanecem na pasta antiga. O sistema verifica a agenda a cada minuto, sem varrer nem validar arquivos enquanto nao houver backup pendente. Ao iniciar depois de perder um ou mais horarios, cria uma unica copia atual, mesmo antes do horario de hoje, e retoma o agendamento normal. Uma copia de recuperacao pela manha e a copia de hoje no horario escolhido podem ocorrer no mesmo dia. O estado da agenda e persistido para evitar duplicacao apos reinicios. Nao recupera estados historicos dos dias em que esteve desligado.
+
+A configuracao e armazenada no banco de cada ambiente. O destino deve ficar separado dos bancos ativos. Para recuperar apos reinstalacao, configure novamente a pasta existente e restaure a copia desejada; o GitHub nao contem os dados nem essa configuracao. A sincronizacao e as exclusoes continuam sob controle do Google Drive.
+
+O seletor deve ser acionado no navegador do proprio servidor Windows. Na instalacao como servico, o controlador da bandeja abre a janela na sessao do usuario; se estiver fechado ou desatualizado, reabra com ABRIR CONTROLE DO SISTEMA.cmd. Quando o servidor roda num terminal na sessao do usuario, abre o seletor diretamente, mesmo usando a compilacao de producao. O comando de abertura substitui uma instancia antiga do controlador quando ela nao responde ao seletor. Cancelar preserva a pasta atual.
+
+Falhas consecutivas sao persistidas. As novas tentativas aguardam 5, 15, 30 e depois 60 minutos, inclusive apos reiniciar. A terceira falha mostra um icone/aviso clicavel ao gerente e os detalhes nas configuracoes. Um backup local concluido limpa o aviso; isso nao confirma upload do Google Drive. O sistema evita copias concorrentes, valida SQLite antes de publicar e conserva a ultima copia valida. A limpeza de retencao ocorre apos concluir um backup; falha na limpeza nao transforma um backup concluido em falha.
+
+Teste adicional: `node scripts/test-backup-scheduler.cjs` cobre horarios perdidos, retomada, reinicios, intervalos de repeticao e a comunicacao com o seletor sem abrir uma janela real.

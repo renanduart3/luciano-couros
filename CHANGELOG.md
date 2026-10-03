@@ -4,13 +4,68 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
-## 1.33.0 — 2026-09-16
+## Em desenvolvimento — backups externos
 
 - Assistente Windows para migrar bancos e backups para uma pasta externa, com validação SQLite, apontamento persistente e preservação dos originais.
 - Backups concluídos e validados antes da confirmação, nomes separados por ambiente e retenção de 30 dias corrigida para arquivos e diretórios de atualização.
 - Restauração com validação de nomes, integridade, cópia preventiva e proteção contra mistura de produção e demonstração.
 - Atualizador usa o mesmo apontamento; documentação para sincronizar somente backups pelo Google Drive.
 - Testes de migração com WAL, retenção e restauração real em bancos isolados.
+
+## 1.36.0 — 2026-09-30
+
+- Bônus gerado por vale ou venda aparece somente nos respectivos detalhes, não nas listagens. O detalhe do vale exibe o bônus próprio ao lado de Devedor, Pago e Restante, sem duplicar o saldo geral do cliente.
+- Ficha do cliente mostra paginação explícita na lista de clientes e pagina o histórico de vendas.
+- Removidos da ficha os cartões de lucro, vales e média de vales. Nova tabela apresenta somente vales ainda devidos, identifica os vencidos e oferece acesso direto ao vale no gerenciamento.
+- Testes validam a seleção dos vales pendentes, seu vencimento e o resumo de bônus no detalhe.
+
+## 1.35.0 — 2026-09-30
+
+- Devolução parcial ou total de itens pelo histórico de vendas e pelos detalhes dos vales, com quantidade informada, senha administrativa e registro auditável.
+- Devoluções de vales geram bônus integral para o cliente sem alterar a dívida ou as parcelas; o bônus pode ser usado depois em um pagamento. Vendas comuns já pagas continuam gerando crédito.
+- Listas e detalhes de vendas e vales destacam o bônus gerado por devoluções e pagamentos excedentes vinculados ao documento.
+- Comprovantes agrupam as linhas devolvidas após os itens originais, em vermelho, mantendo no máximo 15 linhas por folha e o layout das duas vias.
+- Relatórios e indicadores descontam as mercadorias devolvidas sem confundir o valor líquido vendido com o saldo financeiro ainda devido pelo vale.
+- Testes cobrem quantidades, autorização, bônus, dívidas, relatórios e paginação do comprovante.
+
+## 1.34.3 — 2026-09-24
+
+- Removido o bloco redundante de valores vinculados nos detalhes da ordem e o restante repetido abaixo da tabela.
+- A coluna de pagamentos passa a exibir o total pago, incluindo cheques e boletos aguardando e desconsiderando títulos recusados ou removidos.
+
+## 1.34.2 — 2026-09-24
+
+- Removido o texto explicativo sobre o bônus gerado no detalhe do vale.
+- Textos auxiliares das telas foram eliminados ou encurtados, preservando apenas alertas operacionais essenciais.
+
+## 1.34.1 — 2026-09-24
+
+- Ordens passam a exibir somente Negociado, Pago e Restante; vales exibem Devedor, Pago e Restante, considerando cheques e boletos aguardando dentro de Pago.
+- O cabeçalho do vale mostra o saldo de bônus disponível na carteira quando o cliente possui crédito, seguindo o comportamento já usado nas ordens.
+
+## 1.34.0 — 2026-09-24
+
+- Ordens e vales distinguem valor confirmado, títulos a compensar, pagamento presumido, restante devido e excedente previsto; cheques e boletos futuros continuam editáveis.
+- Gerente pode finalizar ordens e vales, zerar diferenças ou transferir o restante para um novo vale com referência explícita a todos os documentos de origem, sem duplicar a receita da venda.
+- Detalhes dos recebimentos exibem vínculos navegáveis, dados completos dos títulos e acesso textual ao comprovante; a lista de ordens passa a ter paginação de 10, 20 ou 50 itens.
+- Parcelas iguais no cartão são consolidadas na apresentação (por exemplo, `4x de R$ 300,00`).
+- O resumo financeiro de ordens e vales permanece fixo fora da área rolável; títulos aguardando passam a compor o pagamento e os relatórios desde o registro, saindo do balanço somente quando recusados ou removidos.
+- Cadastro de cheques e boletos segue a sequência nome, CPF/CNPJ, valor, vencimento, número específico do documento e observação; boleto exibe somente “Nº boleto” e cheque somente “Nº cheque”. Diferenças de um centavo no rateio do cartão não fragmentam mais a descrição visual das parcelas.
+
+## 1.33.1 — 2026-09-22
+
+- Alinhamento consistente entre cabeçalhos, valores e ações dos pagamentos em vales, ordens e detalhes dos recebimentos.
+- Lixeira disponível nos pagamentos individuais, com confirmação, senha gerencial e estorno auditável; preservadas as ações da ordem.
+- Pagamentos em blocos responsivos no celular, com ações visíveis e alvos de toque de 44 px.
+- Topo do vale reorganizado em identificação, abas de navegação e ações compactas; devolução e cancelamento acessíveis pelo menu Mais ações.
+
+## 1.33.0 — 2026-09-22
+
+- Cadastro de cheques e boletos em grade, com valores novos em branco, sem coluna de observação e consulta de CPF/CNPJ corrigida.
+- Cards Valor, Recebido e Restante nos vales; Negociado permanece nas ordens. Excedentes, compensação por vencimento, adiamentos e recusas refletidos nos relatórios.
+- Coluna Recebido por pagamento mostra a composição confirmada do vale ou da ordem, incluindo recebimentos compartilhados e compensação parcial.
+- Ações de títulos, comprovantes, edição e estorno por ícones com descrições acessíveis; removidas explicações repetidas dos vales.
+- Recebimentos vinculados a ordens direcionam a edição para a ordem, com navegação direta.
 
 ## 1.32.0 — 2026-09-16
 

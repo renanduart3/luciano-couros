@@ -176,7 +176,7 @@ export function ProdutosView() {
       <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-950">Materiais e Produtos</h2>
-          <p className="mt-0.5 text-sm text-slate-500">O produto centraliza referências, custos e preços por fornecedor. O cadastro do fornecedor permanece apenas cadastral.</p>
+          <p className="mt-0.5 text-sm text-slate-500">Referências, custos e preços por fornecedor.</p>
         </div>
         <button onClick={() => handleOpenForm()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 sm:w-auto">
           <Plus size={16} /> Novo material
@@ -227,10 +227,10 @@ export function ProdutosView() {
             <fieldset className="rounded-xl border border-slate-300 bg-slate-50 p-3">
               <legend className="px-1 text-xs font-black uppercase text-slate-700">Configuração por fornecedor</legend>
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-xs font-semibold text-slate-600">Cada fornecedor ocupa uma linha com sua própria referência, custo e preço-base de venda.</p>
+                <p className="text-xs font-semibold text-slate-600">Uma linha por fornecedor.</p>
                 <button type="button" onClick={adicionarLinhaFornecedor} disabled={fornecedores.length === 0 || configuracoesFornecedores.length >= fornecedores.length} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-700 px-3 text-xs font-black text-white disabled:bg-slate-300"><Plus size={15} /> ADICIONAR FORNECEDOR</button>
               </div>
-              {fornecedores.length === 0 ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">Cadastre primeiro um fornecedor. O produto pode ser salvo sem associação.</p> :
+              {fornecedores.length === 0 ? <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-bold text-amber-900">Sem fornecedor. O vínculo é opcional.</p> :
               <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
                 <table className="w-full min-w-[850px] text-left text-xs">
                   <thead><tr className="border-b border-slate-300 bg-slate-100 font-black uppercase text-slate-700"><th className="p-2">Fornecedor</th><th className="p-2">REF. do fornecedor</th><th className="p-2 text-right">Custo no fornecedor</th><th className="p-2 text-right">Preço-base de venda</th><th className="p-2 text-center">Ação</th></tr></thead>

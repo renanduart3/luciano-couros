@@ -47,7 +47,7 @@ try {
   const anterior = { status: 'compensado', vencimento: '2028-03-01', compensacaoAutomatica: 0 };
   assert.equal(programar({ ...anterior, status: 'aguardando' }, anterior, '2028-02-29'), 0);
   assert.equal(programar({ ...anterior, status: 'aguardando', vencimento: '2028-03-02' }, anterior, '2028-02-29'), 1);
-  assert.equal(programar({ status: 'aguardando', vencimento: '2028-02-28' }, null, '2028-02-29'), 0);
+  assert.equal(programar({ status: 'aguardando', vencimento: '2028-02-28' }, null, '2028-02-29'), 1);
   assert.equal(programar({ status: 'aguardando', vencimento: '2028-03-01' }, null, '2028-02-29'), 1);
   assert.equal(dataFinanceiraValida('2027-02-29'), false);
   assert.equal(dataFinanceiraValida('2028-02-29'), true);

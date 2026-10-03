@@ -84,7 +84,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       setFeedback(`Pagamento registrado: ${formatCurrency(resultado.valorAplicado)} abatido` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
       setComprovante(await api.getComprovanteRecebimento(resultado.id));
       void Promise.resolve(onSaved()).catch(() => {
-        setErro("O pagamento foi registrado, mas não foi possível atualizar os saldos automaticamente. Feche e abra a tela para atualizar.");
+        setErro("Pagamento registrado. Reabra a tela para atualizar os saldos.");
       });
     } catch (error: any) {
       setErro(error.message || "Não foi possível registrar o pagamento.");

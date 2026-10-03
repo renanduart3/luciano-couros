@@ -1,3 +1,4 @@
+import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
 import { totalItemVenda, totaisVenda, validarTotalEsperado } from "./src/lib/totaisVenda.js";
 import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
 import express, { type NextFunction, type Request, type Response } from "express";
@@ -686,12 +687,13 @@ function recalcularOrdemCobranca(ordemId: string) {
     [ordemId]
   );
   const totalPago = Math.round(Math.min(Number(ordem.totalOriginal), Number(totalPagoRow?.total || 0)) * 100) / 100;
-  const saldo = Math.round(Math.max(0, Number(ordem.totalOriginal) - totalPago) * 100) / 100;
+  const saldoCalculado = Math.round(Math.max(0, Number(ordem.totalOriginal) - totalPago) * 100) / 100;
+  const saldo = ordem.finalizadoAt ? 0 : saldoCalculado;
   const aguardando = queryOne<any>(`SELECT 1 FROM recebimento_titulos t
     JOIN recebimentos_cliente r ON r.id = t.recebimentoId AND r.deletedAt IS NULL AND r.status = 'ativo'
     WHERE t.deletedAt IS NULL AND t.status = 'aguardando' AND EXISTS (
       SELECT 1 FROM ordem_cobranca_recebimentos o WHERE o.ordemId = ? AND o.recebimentoId = r.id AND o.deletedAt IS NULL) LIMIT 1`, [ordemId]);
-  const status = ordem.status === "cancelada" || ordem.status === "renegociada"
+  const status = ordem.finalizadoAt ? "quitada" : ordem.status === "cancelada" || ordem.status === "renegociada"
     ? ordem.status
     : saldo <= 0.005 && !aguardando ? "quitada" : "aberta";
   execute(
@@ -1188,56 +1190,51 @@ app.put("/api/seguranca/admin-pin", exigirGerente, (req, res) => {
 // 2. DASHBOARD
 app.get("/api/dashboard", (req, res) => {
   try {
-    const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    executarProgramacaoFinanceira();
+    const todayStr = dataHojeLocal();
     const firstDayOfMonth = todayStr.substring(0, 8) + "01";
 
     // Vendas de hoje (não canceladas)
     const vendasHoje = queryOne<{ count: number; total: number }>(
-      "SELECT COUNT(*) as count, COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE data = ? AND deletedAt IS NULL",
+      `SELECT COUNT(*) as count, COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.data = ? AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [todayStr]
     ) || { count: 0, total: 0 };
 
     // Valor recebido hoje (pagamentos não cancelados realizados hoje)
     const recebidoHoje = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(valor), 0) as total FROM pagamentos WHERE data = ? AND deletedAt IS NULL",
+      `SELECT COALESCE(SUM(valor), 0) as total FROM (${pagamentosConfirmadosSql}) WHERE data = ? AND deletedAt IS NULL`,
       [todayStr]
     ) || { total: 0 };
 
-    // Valor pendente (saldo restante total de vendas ativas)
-    const valorPendente = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(saldoRestante), 0) as total FROM vendas WHERE status = 'pendente' AND deletedAt IS NULL"
-    ) || { total: 0 };
-
-    const valorVencido = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(saldoRestante), 0) as total FROM vendas WHERE status = 'pendente' AND vencimento < ? AND deletedAt IS NULL",
-      [todayStr]
-    ) || { total: 0 };
+    const posicoesDashboard = anexarFinanceiroVales(queryAll<any>("SELECT * FROM vendas WHERE deletedAt IS NULL AND status <> 'cancelada'"));
+    const valorPendente = {total: posicoesDashboard.reduce((s,v)=>s+v.financeiro.restantePresumido,0)};
+    const valorVencido = {total: posicoesDashboard.filter(v=>v.vencimento && v.vencimento<todayStr).reduce((s,v)=>s+v.financeiro.restantePresumido,0)};
 
     // Vendas no mês atual (não canceladas)
     const vendasMes = queryOne<{ count: number; total: number }>(
-      "SELECT COUNT(*) as count, COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE data >= ? AND data <= ? AND deletedAt IS NULL",
+      `SELECT COUNT(*) as count, COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [firstDayOfMonth, todayStr]
     ) || { count: 0, total: 0 };
 
     // Lucro bruto no mês atual (lucro total de itens de vendas não canceladas no mês)
     const lucroMes = queryOne<{ total: number }>(
-      `SELECT COALESCE(SUM(
+      `SELECT COALESCE(SUM((
          iv.total
          - CASE WHEN v.subtotal > 0 THEN v.desconto * (iv.total / v.subtotal) ELSE 0 END
          - iv.custoTotal
-       ), 0) as total 
+       ) * (iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)) / NULLIF(iv.quantidade, 0)), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL`,
+       WHERE v.data >= ? AND v.data <= ? AND v.deletedAt IS NULL AND v.status <> 'cancelada'`,
       [firstDayOfMonth, todayStr]
     ) || { total: 0 };
 
     // Metros vendidos no mês (itens com unidade = 'metro' em vendas ativas do mês)
     const metrosMes = queryOne<{ total: number }>(
-      `SELECT COALESCE(SUM(iv.quantidade), 0) as total
+      `SELECT COALESCE(SUM(iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)), 0) as total
        FROM itens_venda iv
        JOIN vendas v ON iv.vendaId = v.id
-       WHERE v.data >= ? AND v.data <= ? AND iv.unidade = 'metro' AND v.deletedAt IS NULL`,
+       WHERE v.data >= ? AND v.data <= ? AND iv.unidade = 'metro' AND v.deletedAt IS NULL AND v.status <> 'cancelada'`,
       [firstDayOfMonth, todayStr]
     ) || { total: 0 };
 
@@ -1398,15 +1395,15 @@ app.get("/api/clientes/:id/historico", (req, res) => {
       return res.status(404).json({ error: "Cliente não encontrado." });
     }
 
-    // 1. Total comprado (soma do totalLiquido das vendas ativas)
+    // 1. Total de mercadorias líquido dos créditos integrais de devolução.
     const totalCompradoRow = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(totalLiquido), 0) as total FROM vendas WHERE clienteId = ? AND status <> 'cancelada' AND deletedAt IS NULL",
+      `SELECT COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as total FROM vendas v WHERE v.clienteId = ? AND v.status <> 'cancelada' AND v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1`,
       [id]
     );
 
     // 2. Total pago (soma do valor dos pagamentos ativos)
     const totalPagoRow = queryOne<{ total: number }>(
-      "SELECT COALESCE(SUM(valor), 0) as total FROM pagamentos WHERE clienteId = ? AND deletedAt IS NULL",
+      `SELECT COALESCE(SUM(valor), 0) as total FROM (${pagamentosConfirmadosSql}) WHERE clienteId = ? AND deletedAt IS NULL`,
       [id]
     );
 
@@ -2771,7 +2768,41 @@ app.delete("/api/orcamentos/:id", (req, res) => {
 });
 
 
+function bonusGeradoPorVenda(ids: string[]): Map<string, number> {
+  const resultado = new Map<string, number>();
+  if (ids.length === 0) return resultado;
+  const marcadores = ids.map(() => "?").join(",");
+  const movimentos = queryAll<{ vendaId: string; total: number }>(
+    `SELECT vendaId, SUM(valor) AS total FROM (
+       SELECT bm.vendaId, bm.valor
+       FROM cliente_bonus_movimentos bm
+       WHERE bm.tipo = 'credito' AND bm.deletedAt IS NULL
+         AND bm.observacao LIKE 'Crédito excedente da devolução%'
+         AND bm.vendaId IN (${marcadores})
+       UNION ALL
+       SELECT a.vendaId, bm.valor
+       FROM cliente_bonus_movimentos bm
+       JOIN (
+         SELECT recebimentoId, MIN(vendaId) AS vendaId
+         FROM recebimento_alocacoes
+         WHERE deletedAt IS NULL
+         GROUP BY recebimentoId
+         HAVING COUNT(DISTINCT vendaId) = 1
+       ) a ON a.recebimentoId = bm.recebimentoId
+       WHERE bm.tipo = 'credito' AND bm.deletedAt IS NULL AND bm.vendaId IS NULL
+         AND a.vendaId IN (${marcadores})
+     ) creditos GROUP BY vendaId`,
+    [...ids, ...ids]
+  );
+  for (const movimento of movimentos) resultado.set(movimento.vendaId, Math.round(Number(movimento.total) * 100) / 100);
+  return resultado;
+}
+
+const valorDevolvidoEmBonusSql = (alias: string) =>
+  `COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0)`;
+
 function carregarDetalhesVenda(venda: any) {
+  venda.bonusGeradoVenda = bonusGeradoPorVenda([venda.id]).get(venda.id) || 0;
   venda.items = queryAll<any>(
     `SELECT iv.*,
             p.codigo as referencia,
@@ -2808,6 +2839,7 @@ function carregarDetalhesVenda(venda: any) {
       [devolucao.id]
     );
   }
+  venda.totalMercadoriasAposDevolucoes = Math.round((Number(venda.totalLiquido) - venda.devolucoes.reduce((total: number, devolucao: any) => total + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0)) * 100) / 100;
   venda.instrumentoRecebimento = queryOne(
     `SELECT tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao
      FROM instrumentos_recebimento
@@ -2847,6 +2879,7 @@ function carregarDetalhesVenda(venda: any) {
       updatedAt: venda.updatedAt,
     }];
   }
+  anexarFinanceiroVales([venda]);
   return venda;
 }
 
@@ -2855,6 +2888,7 @@ function carregarDetalhesVenda(venda: any) {
 function carregarDetalhesVendasEmLote(vendas: any[]) {
   if (vendas.length === 0) return vendas;
   const ids = vendas.map((venda) => venda.id);
+  const bonusPorVenda = bonusGeradoPorVenda(ids);
   const marcadores = ids.map(() => "?").join(",");
   const agrupar = (linhas: any[], chave: string) => {
     const mapa = new Map<string, any[]>();
@@ -2920,8 +2954,10 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   ), "vendaId");
 
   vendas.forEach((venda) => {
+    venda.bonusGeradoVenda = bonusPorVenda.get(venda.id) || 0;
     venda.items = itensPorVenda.get(venda.id) || [];
     venda.devolucoes = devolucoesPorVenda.get(venda.id) || [];
+    venda.totalMercadoriasAposDevolucoes = Math.round((Number(venda.totalLiquido) - venda.devolucoes.reduce((total: number, devolucao: any) => total + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0)) * 100) / 100;
     venda.instrumentoRecebimento = instrumentoPorVenda.get(venda.id) || null;
     venda.parcelas = parcelasPorVenda.get(venda.id) || [];
     if (venda.parcelas.length === 0 && venda.vencimento) {
@@ -2936,18 +2972,21 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
       }];
     }
   });
+  anexarFinanceiroVales(vendas);
   return vendas;
 }
 
 // 6. VENDAS
 app.get("/api/vendas", (req, res) => {
   try {
+    executarProgramacaoFinanceira();
     const rows = queryAll<any>(
       `SELECT v.*,
               c.nome as clienteNome,
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              COALESCE((SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END) FROM cliente_bonus_movimentos bm WHERE bm.clienteId = v.clienteId AND bm.deletedAt IS NULL), 0) as saldoBonus,
               (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
@@ -2990,12 +3029,14 @@ app.get("/api/vendas/proximo-numero", (req, res) => {
 
 app.get("/api/vendas/:id", (req, res) => {
   try {
+    executarProgramacaoFinanceira();
     const venda = queryOne<any>(
       `SELECT v.*,
               c.nome as clienteNome,
               c.telefone as clienteTelefone,
               c.endereco as clienteEndereco,
               c.documento as clienteDocumento,
+              COALESCE((SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END) FROM cliente_bonus_movimentos bm WHERE bm.clienteId = v.clienteId AND bm.deletedAt IS NULL), 0) as saldoBonus,
               (SELECT u.nome FROM usuarios u WHERE u.id = v.vendedorId) as vendedorNome,
               COALESCE(
                 (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
@@ -3385,6 +3426,11 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       );
       if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
 
+      const idsInformados = items.map((entrada: any) => String(entrada.itemVendaId || ""));
+      if (new Set(idsInformados).size !== idsInformados.length) {
+        throw erroHttp("Cada item da venda pode aparecer apenas uma vez na devolução.", 400);
+      }
+
       const resolvidos = items.map((entrada: any) => {
         const item = queryOne<any>(
           `SELECT iv.*,
@@ -3412,11 +3458,12 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       });
 
       const valorCredito = Math.round(resolvidos.reduce((total, item) => total + item.totalCredito, 0) * 100) / 100;
+      const bonusIntegral = Boolean(venda.vencimento);
       const devolucaoId = "dev_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
       execute(
-        `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, String(observacoes || "").trim().slice(0, 100) || null]
+        `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, modalidade, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, bonusIntegral ? "bonus_integral" : "abatimento", String(observacoes || "").trim().slice(0, 100) || null]
       );
       for (const item of resolvidos) {
         execute(
@@ -3437,12 +3484,12 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       const saldoAnterior = Number(venda.saldoRestante);
-      const novoTotal = Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
-      const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
-      const novoSaldo = Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
-      const abatimentoVale = Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
-      const bonusGerado = Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
-      const primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, valorCredito);
+      const novoTotal = bonusIntegral ? totalAnterior : Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
+      const novoPago = bonusIntegral ? pagoAnterior : Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
+      const novoSaldo = bonusIntegral ? saldoAnterior : Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const abatimentoVale = bonusIntegral ? 0 : Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
+      const bonusGerado = bonusIntegral ? valorCredito : Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
+      const primeiroVencimento = bonusIntegral ? venda.vencimento : reduzirParcelasValePorDevolucao(vendaId, valorCredito);
 
       execute(
         `UPDATE devolucoes_venda
@@ -3458,7 +3505,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
          WHERE id = ?`,
         [novoTotal, novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", primeiroVencimento, vendaId]
       );
-      recalcularParcelasVale(vendaId);
+      if (!bonusIntegral) recalcularParcelasVale(vendaId);
 
       if (bonusGerado > 0.005) {
         execute(
@@ -3480,6 +3527,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
         valorCredito,
         abatimentoVale,
         bonusGerado,
+        modalidade: bonusIntegral ? "bonus_integral" : "abatimento",
         totalAnterior,
         totalAtual: novoTotal,
         saldoAnterior,
@@ -3535,6 +3583,10 @@ app.put("/api/vendas/:id", (req, res) => {
         [vendaId]
       );
       if (!venda) throw erroHttp("Venda não encontrada ou cancelada.", 404);
+
+      if (queryOne<{ id: string }>("SELECT id FROM devolucoes_venda WHERE vendaId = ? AND modalidade = 'bonus_integral' LIMIT 1", [vendaId])) {
+        throw erroHttp("Este vale possui devolução convertida em bônus integral. A edição da venda está bloqueada para preservar os valores históricos.", 409);
+      }
 
       const itensAtuais = queryAll<any>(
         `SELECT iv.*,
@@ -3611,7 +3663,7 @@ app.put("/api/vendas/:id", (req, res) => {
       }
 
       const creditoDevolucoes = queryOne<{ total: number }>(
-        "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ?", [vendaId]
+        "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ? AND modalidade <> 'bonus_integral'", [vendaId]
       )?.total || 0;
       const { subtotal, desconto, totalLiquido: novoTotal } = totaisVenda(
         resolvidos, Number(req.body?.desconto || 0), creditoDevolucoes
@@ -3790,6 +3842,9 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
       );
       if (!venda) throw erroHttp("Vale não encontrado.", 404);
       if (venda.status === "cancelada") throw erroHttp("Este vale já está cancelado.", 409);
+      if (queryOne<{ id: string }>("SELECT id FROM devolucoes_venda WHERE vendaId = ? LIMIT 1", [id])) {
+        throw erroHttp("Este vale possui devoluções registradas. Corrija os créditos do cliente antes de cancelar o vale.", 409);
+      }
 
       execute("UPDATE vendas SET status = 'cancelada', saldoRestante = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [id]);
       execute("UPDATE vale_parcelas SET status = 'cancelada', saldo = 0, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
@@ -4395,6 +4450,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
 
 app.get("/api/ordens-cobranca", (req, res) => {
   try {
+    executarProgramacaoFinanceira();
     const clienteId = String(req.query.clienteId || "");
     res.json(listarOrdensCobranca(clienteId ? "AND oc.clienteId = ?" : "", clienteId ? [clienteId] : []));
   } catch (error: any) {
@@ -4716,6 +4772,110 @@ app.post("/api/ordens-cobranca/:id/encerrar", (req, res) => {
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
+});
+
+function criarValeResidual(clienteId: string, valor: number, numerosOrigem: number[], observacaoExtra = "") {
+  const centavos = Math.max(0, Math.round(Number(valor || 0) * 100));
+  if (centavos <= 0) return null;
+  const total = centavos / 100;
+  const id = "venda_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+  const numero = Number(queryOne<{ numero: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM vendas")?.numero || 1);
+  const data = dataHojeLocal();
+  const origens = [...new Set(numerosOrigem.map(Number))].sort((a, b) => a - b);
+  const descricao = `Restante dos vales ${origens.map(item => `#${item}`).join(", ")}${observacaoExtra ? `. ${observacaoExtra}` : ""}`;
+  execute(
+    `INSERT INTO vendas
+      (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante,
+       status, vencimento, observacoes, contabilizaReceita, valeOrigemIds)
+     VALUES (?, ?, ?, ?, 0, 0, ?, 0, ?, 'pendente', ?, ?, 0, ?)`,
+    [id, numero, clienteId, data, total, total, data, descricao, JSON.stringify(origens)]
+  );
+  execute(
+    `INSERT INTO vale_parcelas (id, vendaId, numero, vencimento, valor, valorPago, saldo, status)
+     VALUES (?, ?, 1, ?, ?, 0, ?, 'pendente')`,
+    ["vpar_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), id, data, total, total]
+  );
+  return { id, numeroSequencial: numero, valor: total };
+}
+
+function zerarExcedenteComDebito(clienteId: string, valor: number, observacao: string) {
+  const solicitado = Math.max(0, Math.round(Number(valor || 0) * 100)) / 100;
+  if (solicitado <= 0.005) return 0;
+  const saldo = Number(queryOne<{ saldo: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
+     FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`, [clienteId]
+  )?.saldo || 0);
+  if (saldo + 0.005 < solicitado) throw erroHttp("O excedente já foi utilizado na carteira. Estorne o uso antes de zerá-lo.", 409);
+  execute(
+    `INSERT INTO cliente_bonus_movimentos (id, clienteId, data, tipo, valor, observacao)
+     VALUES (?, ?, ?, 'debito', ?, ?)`,
+    ["bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), clienteId, dataHojeLocal(), solicitado, observacao]
+  );
+  return solicitado;
+}
+
+app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
+    const destinoRestante = req.body?.destinoRestante === "zerar" ? "zerar" : "novo_vale";
+    let residual: ReturnType<typeof criarValeResidual> = null;
+    runInTransaction(() => {
+      const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status IN ('aberta','quitada') AND finalizadoAt IS NULL AND deletedAt IS NULL", [req.params.id]);
+      if (!ordem) throw erroHttp("A ordem já foi finalizada ou não foi encontrada.", 409);
+      const vales = queryAll<any>(`SELECT v.id, v.numeroSequencial, v.saldoRestante
+        FROM ordem_cobranca_vales ocv JOIN vendas v ON v.id = ocv.vendaId
+        WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL`, [ordem.id]);
+      const restante = Math.max(0, Math.round(Number(ordem.saldo || 0) * 100) / 100);
+      if (restante > 0.005 && destinoRestante === "novo_vale") {
+        residual = criarValeResidual(ordem.clienteId, restante, vales.map(v => v.numeroSequencial), `Gerado ao finalizar a ordem #${ordem.numeroSequencial}.`);
+      }
+      if (req.body?.zerarExcedente) {
+        const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total
+          FROM recebimentos_cliente rc WHERE rc.deletedAt IS NULL AND rc.status = 'ativo' AND
+          (rc.ordemCobrancaId = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos ocr WHERE ocr.ordemId = ? AND ocr.recebimentoId = rc.id AND ocr.deletedAt IS NULL))`, [ordem.id, ordem.id])?.total || 0);
+        zerarExcedenteComDebito(ordem.clienteId, bonus, `Excedente zerado ao finalizar a ordem #${ordem.numeroSequencial}`);
+      }
+      const agora = new Date().toISOString();
+      for (const vale of vales) {
+        execute("UPDATE vendas SET saldoRestante = 0, status = 'paga', finalizadoAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [agora, vale.id]);
+        execute("UPDATE vale_parcelas SET saldo = 0, status = 'paga', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [vale.id]);
+      }
+      execute("UPDATE ordem_cobranca_vales SET saldo = 0, ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND removidoAt IS NULL", [ordem.id]);
+      execute("UPDATE ordem_cobranca_parcelas SET status = CASE WHEN status = 'pendente' THEN 'renegociada' ELSE status END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND deletedAt IS NULL", [ordem.id]);
+      execute("UPDATE ordens_cobranca SET saldo = 0, status = 'quitada', finalizadoAt = ?, valeResidualId = ?, motivoEncerramento = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
+        [agora, residual?.id || null, String(req.body?.motivo || "").trim() || null, ordem.id]);
+      registrarAuditoria(administrador.id, "ordem_cobranca_finalizada", "ordem_cobranca", ordem.id, { destinoRestante, restante, valeResidual: residual, excedenteZerado: Boolean(req.body?.zerarExcedente), vales: vales.map(v => v.numeroSequencial) });
+    });
+    res.json({ ordem: listarOrdensCobranca("AND oc.id = ?", [req.params.id])[0], valeResidual: residual });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
+app.post("/api/vendas/:id/finalizar", (req, res) => {
+  try {
+    exigirValeSemOrdemAberta(req.params.id);
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
+    const destinoRestante = req.body?.destinoRestante === "zerar" ? "zerar" : "novo_vale";
+    let residual: ReturnType<typeof criarValeResidual> = null;
+    runInTransaction(() => {
+      const vale = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status <> 'cancelada' AND finalizadoAt IS NULL", [req.params.id]);
+      if (!vale) throw erroHttp("O vale já foi finalizado ou não foi encontrado.", 409);
+      const restante = Math.max(0, Math.round(Number(vale.saldoRestante || 0) * 100) / 100);
+      if (restante > 0.005 && destinoRestante === "novo_vale") residual = criarValeResidual(vale.clienteId, restante, [vale.numeroSequencial], `Gerado ao finalizar o vale #${vale.numeroSequencial}.`);
+      if (req.body?.zerarExcedente) {
+        const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total FROM recebimentos_cliente rc
+          WHERE rc.deletedAt IS NULL AND rc.status = 'ativo' AND EXISTS
+          (SELECT 1 FROM recebimento_alocacoes ra WHERE ra.recebimentoId = rc.id AND ra.vendaId = ? AND ra.deletedAt IS NULL)`, [vale.id])?.total || 0);
+        zerarExcedenteComDebito(vale.clienteId, bonus, `Excedente zerado ao finalizar o vale #${vale.numeroSequencial}`);
+      }
+      const agora = new Date().toISOString();
+      execute("UPDATE vendas SET saldoRestante = 0, status = 'paga', finalizadoAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [agora, vale.id]);
+      execute("UPDATE vale_parcelas SET saldo = 0, status = 'paga', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [vale.id]);
+      registrarAuditoria(administrador.id, "vale_finalizado", "venda", vale.id, { destinoRestante, restante, valeResidual: residual, excedenteZerado: Boolean(req.body?.zerarExcedente) });
+    });
+    res.json({ vale: carregarDetalhesVenda(queryOne<any>(`SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco, c.documento AS clienteDocumento FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?`, [req.params.id])), valeResidual: residual });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
 // 9. CARTEIRA DO CLIENTE
@@ -5074,6 +5234,7 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
 
 app.get("/api/cheques", (_req, res) => {
   try {
+    executarProgramacaoFinanceira();
     const cheques = queryAll<any>(
       `SELECT rt.id, rt.recebimentoId, rt.clienteId, rt.tipo, rt.vencimento,
               rt.dataCompensacao, rt.nomeTitular, rt.documentoTitular AS cpfTitular,
@@ -6111,12 +6272,13 @@ app.get("/api/relatorios/materiais-clientes", (req, res) => {
 
 app.get("/api/relatorios", (req, res) => {
   try {
+    executarProgramacaoFinanceira();
     const {
       startDate, endDate, clienteId, produtoId, fornecedorId, formaPagamento,
       statusVenda, valeStatus, vencimentoInicio, vencimentoFim
     } = req.query;
 
-    let filters = ["v.deletedAt IS NULL", "v.status <> 'cancelada'"];
+    let filters = ["v.deletedAt IS NULL", "v.status <> 'cancelada'", "COALESCE(v.contabilizaReceita, 1) = 1"];
     let params: any[] = [];
 
     if (startDate) {
@@ -6131,22 +6293,32 @@ app.get("/api/relatorios", (req, res) => {
       filters.push("v.clienteId = ?");
       params.push(clienteId);
     }
-    if (statusVenda) {
-      filters.push("v.status = ?");
-      params.push(statusVenda);
-    }
+
 
     const whereClause = filters.length > 0 ? "WHERE " + filters.join(" AND ") : "";
 
+    const posicoes = anexarFinanceiroVales(queryAll<any>("SELECT * FROM vendas WHERE deletedAt IS NULL AND status <> 'cancelada'"));
+    const posicaoPorId = new Map(posicoes.map(v => [v.id,v.financeiro]));
+    const posicaoRelatorio = (v: any) => {
+      const financeiro = posicaoPorId.get(v.id);
+      return financeiro ? {...v, financeiro, valorPago: financeiro.presumido, saldoRestante: financeiro.restantePresumido,
+        status: financeiro.restantePresumido > 0.005 ? "pendente" : "paga"} : v;
+    };
+
     // A. VENDAS POR PERÍODO / CLIENTE
     const vendas = queryAll<any>(
-      `SELECT v.*, c.nome as clienteNome, printf('%04d', c.rowid) as clienteCodigo
+      `SELECT v.*, c.nome as clienteNome, printf('%04d', c.rowid) as clienteCodigo,
+              ${valorDevolvidoEmBonusSql("v")} AS creditoBonusIntegral
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
        ${whereClause}
        ORDER BY v.data DESC, v.numeroSequencial DESC`,
       params
-    );
+    ).map((venda) => ({
+      ...venda,
+      totalFinanceiroVale: venda.totalLiquido,
+      totalLiquido: Math.round((Number(venda.totalLiquido) - Number(venda.creditoBonusIntegral)) * 100) / 100
+    }));
 
     // B. ITENS VENDIDOS (com detalhamento de metros, lucro, custo)
     const quantidadeDevolvidaSql = "COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0)";
@@ -6231,11 +6403,12 @@ app.get("/api/relatorios", (req, res) => {
          COALESCE(SUM(CASE WHEN LOWER(iv.unidade) NOT LIKE '%metro%' THEN
            iv.quantidade - COALESCE(dev.quantidade, 0) ELSE 0 END), 0) AS quantidadeUnidades,
          COALESCE((
-           SELECT SUM(vg.totalLiquido)
+           SELECT SUM(vg.totalLiquido - ${valorDevolvidoEmBonusSql("vg")})
            FROM vendas vg
            WHERE vg.clienteId = ?
              AND vg.deletedAt IS NULL
              AND vg.status <> 'cancelada'
+             AND COALESCE(vg.contabilizaReceita, 1) = 1
          ), 0) AS valorLiquido,
          COALESCE(SUM(
            CASE WHEN iv.custoUnitario > 0
@@ -6269,7 +6442,7 @@ app.get("/api/relatorios", (req, res) => {
     const pagWhere = "WHERE " + pagFilters.join(" AND ");
     const pagamentos = queryAll<any>(
       `SELECT p.*, c.nome as clienteNome, v.numeroSequencial as vendaSequencial
-       FROM pagamentos p
+       FROM (${pagamentosConfirmadosSql}) p
        JOIN clientes c ON p.clienteId = c.id
        LEFT JOIN vendas v ON p.vendaId = v.id
        ${pagWhere}
@@ -6317,7 +6490,7 @@ app.get("/api/relatorios", (req, res) => {
          c.nome as clienteNome,
          c.telefone as clienteTelefone,
          COUNT(v.id) as totalVendas,
-         COALESCE(SUM(v.totalLiquido), 0) as totalComprado,
+         COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as totalComprado,
          COALESCE(SUM(v.saldoRestante), 0) as saldoDevedor
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
@@ -6327,18 +6500,14 @@ app.get("/api/relatorios", (req, res) => {
       params
     );
 
-    const hoje = new Date().toISOString().split("T")[0];
-    const carteiraVencida = queryOne<any>(
-      `SELECT
-         COUNT(*) as quantidade,
-         COALESCE(SUM(saldoRestante), 0) as total,
-         COALESCE(SUM(CASE WHEN julianday(?) - julianday(vencimento) <= 7 THEN saldoRestante ELSE 0 END), 0) as ate7Dias,
-         COALESCE(SUM(CASE WHEN julianday(?) - julianday(vencimento) BETWEEN 8 AND 30 THEN saldoRestante ELSE 0 END), 0) as de8a30Dias,
-         COALESCE(SUM(CASE WHEN julianday(?) - julianday(vencimento) > 30 THEN saldoRestante ELSE 0 END), 0) as mais30Dias
-       FROM vendas
-       WHERE status = 'pendente' AND vencimento < ? AND deletedAt IS NULL`,
-      [hoje, hoje, hoje, hoje]
-    );
+    const hoje = dataHojeLocal();
+    const vencidas = posicoes.filter(v => v.financeiro.restantePresumido > 0.005 && v.vencimento && v.vencimento < hoje);
+    const carteiraVencida = { quantidade: vencidas.length, total: 0, ate7Dias: 0, de8a30Dias: 0, mais30Dias: 0 };
+    for (const v of vencidas) {
+      const dias = Math.round((Date.parse(hoje+"T12:00:00Z")-Date.parse(v.vencimento+"T12:00:00Z"))/86400000);
+      carteiraVencida.total += v.financeiro.restantePresumido;
+      carteiraVencida[dias <= 7 ? "ate7Dias" : dias <= 30 ? "de8a30Dias" : "mais30Dias"] += v.financeiro.restantePresumido;
+    }
 
     // D. CLIENTES: movimento dentro do período e posição financeira atual.
     const clientesResumo = queryAll<any>(
@@ -6348,10 +6517,10 @@ app.get("/api/relatorios", (req, res) => {
          c.nome as clienteNome,
          c.telefone as clienteTelefone,
          COUNT(DISTINCT v.id) as totalVendas,
-         COALESCE(SUM(v.totalLiquido), 0) as totalComprado,
+         COALESCE(SUM(v.totalLiquido - ${valorDevolvidoEmBonusSql("v")}), 0) as totalComprado,
          COALESCE(MAX(v.data), '') as ultimaCompra,
          COALESCE((
-           SELECT SUM(p.valor) FROM pagamentos p
+           SELECT SUM(p.valor) FROM (${pagamentosConfirmadosSql}) p
            WHERE p.clienteId = c.id AND p.deletedAt IS NULL
              ${startDate ? "AND p.data >= ?" : ""}
              ${endDate ? "AND p.data <= ?" : ""}
@@ -6366,7 +6535,7 @@ app.get("/api/relatorios", (req, res) => {
            WHERE bm.clienteId = c.id AND bm.deletedAt IS NULL
          ), 0) as saldoBonus
        FROM clientes c
-       LEFT JOIN vendas v ON v.clienteId = c.id AND v.deletedAt IS NULL AND v.status <> 'cancelada'
+       LEFT JOIN vendas v ON v.clienteId = c.id AND v.deletedAt IS NULL AND v.status <> 'cancelada' AND COALESCE(v.contabilizaReceita, 1) = 1
          ${startDate ? "AND v.data >= ?" : ""}
          ${endDate ? "AND v.data <= ?" : ""}
        WHERE c.deletedAt IS NULL ${clienteId ? "AND c.id = ?" : ""}
@@ -6413,16 +6582,12 @@ app.get("/api/relatorios", (req, res) => {
     if (clienteId) { valeFilters.push("v.clienteId = ?"); valeParams.push(clienteId); }
     if (vencimentoInicio) { valeFilters.push("v.vencimento >= ?"); valeParams.push(vencimentoInicio); }
     if (vencimentoFim) { valeFilters.push("v.vencimento <= ?"); valeParams.push(vencimentoFim); }
-    if (valeStatus === "abertos") valeFilters.push("v.status = 'pendente'");
-    if (valeStatus === "vencidos") { valeFilters.push("v.status = 'pendente'"); valeFilters.push("v.vencimento < ?"); valeParams.push(hoje); }
-    if (valeStatus === "a_vencer") { valeFilters.push("v.status = 'pendente'"); valeFilters.push("v.vencimento >= ?"); valeParams.push(hoje); }
-    if (valeStatus === "quitados") valeFilters.push("v.status = 'paga'");
-    const vales = queryAll<any>(
+    let vales = queryAll<any>(
       `SELECT
          v.*, c.nome as clienteNome, c.telefone as clienteTelefone,
          c.endereco as clienteEndereco, c.documento as clienteDocumento,
          COALESCE(
-           (SELECT p.formaPagamento FROM pagamentos p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
+           (SELECT p.formaPagamento FROM (${pagamentosConfirmadosSql}) p WHERE p.vendaId = v.id AND p.deletedAt IS NULL ORDER BY p.createdAt ASC LIMIT 1),
            CASE WHEN v.saldoRestante > 0 THEN 'vale' ELSE NULL END
          ) as formaPagamento,
          CASE WHEN v.status = 'pendente' AND v.vencimento < ?
@@ -6435,9 +6600,15 @@ app.get("/api/relatorios", (req, res) => {
       [hoje, hoje, ...valeParams]
     );
     carregarDetalhesVendasEmLote(vales);
+    vales = vales.map(posicaoRelatorio).map(v => ({...v,diasAtraso: v.saldoRestante > 0.005 && v.vencimento < hoje
+      ? Math.floor((Date.parse(hoje+"T12:00:00Z")-Date.parse(v.vencimento+"T12:00:00Z"))/86400000) : 0})).filter(v =>
+      valeStatus === "abertos" ? v.saldoRestante > 0.005 : valeStatus === "quitados" ? v.saldoRestante <= 0.005
+      : valeStatus === "vencidos" ? v.diasAtraso > 0 : valeStatus === "a_vencer" ? v.saldoRestante > 0.005 && v.vencimento >= hoje : true);
+    for (const cliente of clientesResumo) cliente.saldoDevedor = posicoes.filter(v=>v.clienteId===cliente.clienteId).reduce((s,v)=>s+v.financeiro.restantePresumido,0);
+    for (const cliente of rankingClientes) cliente.saldoDevedor = posicoes.filter(v=>v.clienteId===cliente.clienteId).reduce((s,v)=>s+v.financeiro.restantePresumido,0);
 
     res.json({
-      vendas,
+      vendas: vendas.map(posicaoRelatorio).filter(v => !statusVenda || v.status === statusVenda),
       itensVendidos,
       clienteResumoGeral,
       pagamentos,

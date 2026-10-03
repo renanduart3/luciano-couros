@@ -314,7 +314,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
     if (cliente?.id && cliente.id !== selecionado.id && items.length > 0) {
       if (!await confirmacao.confirmar({
         titulo: "Alterar cliente",
-        mensagem: "Alterar o cliente manterá os itens, mas atualizará apenas os próximos preços adicionados. Continuar?",
+        mensagem: "Alterar cliente? Os itens serão mantidos.",
         textoConfirmar: "Alterar cliente",
         variante: "atencao"
       })) return;

@@ -6,10 +6,12 @@ interface PaginationProps {
   pageSize: number;
   totalItems: number;
   onPageChange: (page: number) => void;
+  pageSizeOptions?: number[];
+  onPageSizeChange?: (pageSize: number) => void;
   alwaysVisible?: boolean;
 }
 
-export function Pagination({ page, pageSize, totalItems, onPageChange, alwaysVisible = false }: PaginationProps) {
+export function Pagination({ page, pageSize, totalItems, onPageChange, pageSizeOptions, onPageSizeChange, alwaysVisible = false }: PaginationProps) {
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   if (!alwaysVisible && totalItems <= pageSize) return null;
 
@@ -18,9 +20,7 @@ export function Pagination({ page, pageSize, totalItems, onPageChange, alwaysVis
 
   return (
     <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
-      <span className="font-semibold text-slate-500">
-        Exibindo {firstItem}–{lastItem} de {totalItems}
-      </span>
+      <div className="flex items-center gap-3"><span className="font-semibold text-slate-500">Exibindo {firstItem}–{lastItem} de {totalItems}</span>{pageSizeOptions?.length && onPageSizeChange ? <label className="font-bold text-slate-600">Por página <select value={pageSize} onChange={e => onPageSizeChange(Number(e.target.value))} className="ml-1 rounded border border-slate-300 bg-white px-2 py-1">{pageSizeOptions.map(opcao => <option key={opcao} value={opcao}>{opcao}</option>)}</select></label> : null}</div>
       <div className="flex items-center justify-between gap-2 sm:justify-end">
         <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 font-bold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">
           <ChevronLeft size={14} /> Anterior

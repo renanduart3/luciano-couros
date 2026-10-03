@@ -144,12 +144,14 @@ export interface DevolucaoVenda {
   valorCredito: number;
   abatimentoVale: number;
   bonusGerado: number;
+  modalidade?: "abatimento" | "bonus_integral";
   observacoes?: string;
   createdAt: string;
   items: ItemDevolucaoVenda[];
 }
 
 export interface Venda {
+  financeiro?: import("./lib/financeiro").PosicaoFinanceira;
   id: string;
   numeroSequencial: number;
   clienteId: string;
@@ -159,12 +161,18 @@ export interface Venda {
   clienteTelefone?: string;
   clienteEndereco?: string;
   clienteDocumento?: string;
+  saldoBonus?: number;
+  bonusGeradoVenda?: number;
+  totalMercadoriasAposDevolucoes?: number;
   data: string; // YYYY-MM-DD
   subtotal: number;
   desconto: number;
   totalLiquido: number;
   valorPago: number;
   saldoRestante: number;
+  contabilizaReceita?: number;
+  valeOrigemIds?: string;
+  finalizadoAt?: string;
   status: "paga" | "pendente" | "cancelada";
   vencimento?: string; // YYYY-MM-DD
   observacoes?: string;
@@ -538,6 +546,8 @@ export interface OrdemCobranca {
   totalOriginal: number;
   valorPago: number;
   saldo: number;
+  finalizadoAt?: string;
+  valeResidualId?: string;
   saldoBonus: number;
   status: "aberta" | "quitada" | "cancelada" | "renegociada";
   observacao?: string;

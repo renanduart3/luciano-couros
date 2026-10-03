@@ -30,6 +30,7 @@ export function textoHistoricoOrdem(acao: string, d: any): string | null {
       return `Título ${d.numeroDocumento || ''} compensado${d.dataCompensacao ? ` em ${data(d.dataCompensacao)}` : ''}${d.origem === 'programacao_automatica' ? ' automaticamente' : ''}.`;
     case 'titulo_compensado_automaticamente': return `Título ${d.numeroDocumento || ''} compensado${d.dataCompensacao ? ` em ${data(d.dataCompensacao)}` : ''}.`;
     case 'ordem_cobranca_encerrada': return `Ordem ${d.status === 'renegociada' ? 'encerrada para renegociação' : 'cancelada'}${d.motivo ? `: ${d.motivo}` : '.'}`;
+    case 'ordem_cobranca_finalizada': return `Ordem finalizada. Restante ${moeda(d.restante)} ${d.valeResidual ? `transferido para o vale #${d.valeResidual.numeroSequencial}` : 'zerado'}${d.excedenteZerado ? '; excedente zerado' : '; excedente mantido na carteira'}.`;
     default: return null;
   }
 }

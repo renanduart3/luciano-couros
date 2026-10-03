@@ -4,7 +4,9 @@ import {
 } from "lucide-react";
 import { CarteiraResumo, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
+import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
+import { financeiroVale } from "../lib/financeiro";
+import { listarValesPendentesCliente, vencimentoPendente } from "../lib/valesCliente";
 import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
@@ -16,29 +18,12 @@ const chavePrecoCliente = (produtoId: string, fornecedorId?: string | null) =>
   `${produtoId}::${fornecedorId || ""}`;
 
 const PAGE_SIZE = 10;
-
-function calcularResumoVales(vendas: Venda[]) {
-  const vales = vendas.filter((venda) =>
-    venda.status === "pendente" && Number(venda.saldoRestante) > 0.005 && Boolean(venda.vencimento)
-  );
-  const vencimentos = vales.flatMap((vale) => {
-    const parcelasAbertas = (vale.parcelas || []).filter((parcela) => parcela.status === "pendente" && Number(parcela.saldo) > 0.005);
-    return parcelasAbertas.length > 0 ? parcelasAbertas.map((parcela) => parcela.vencimento) : [vale.vencimento!];
-  });
-  const timestamps = vencimentos
-    .map((data) => new Date(`${data}T12:00:00`).getTime())
-    .filter(Number.isFinite);
-  const media = timestamps.length > 0
-    ? new Date(Math.round(timestamps.reduce((soma, valor) => soma + valor, 0) / timestamps.length)).toISOString().slice(0, 10)
-    : null;
-  return { quantidade: vales.length, parcelas: timestamps.length, dataMedia: media };
-}
-
 interface ClientesViewProps {
   onRefreshStats?: () => void;
+  onOpenVale?: (valeId: string) => void;
 }
 
-export function ClientesView({ onRefreshStats }: ClientesViewProps) {
+export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) {
   const confirmacao = useConfirmacao();
   const gerente = useEhGerente();
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -64,6 +49,8 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
   // Customer History Modal State
   const [clienteDemonstrativo, setClienteDemonstrativo] = useState<Cliente | null>(null);
   const [activeHistory, setActiveHistory] = useState<any | null>(null);
+  const [historicoPage, setHistoricoPage] = useState(1);
+  const [valesPage, setValesPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loadingPagamentosHistory, setLoadingPagamentosHistory] = useState(false);
   const [produtosCliente, setProdutosCliente] = useState<ProdutoHabitual[]>([]);
@@ -172,6 +159,8 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
 
   const handleViewHistory = async (cli: Cliente) => {
     setLoadingHistory(true);
+    setHistoricoPage(1);
+    setValesPage(1);
     try {
       const [data, produtosHabituais, orcamentoCliente, carteira] = await Promise.all([
         api.getClienteHistorico(cli.id),
@@ -223,7 +212,11 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
     (c.documento && c.documento.includes(busca))
   );
   const clientesPagina = paginate<Cliente>(filteredClientes, page, PAGE_SIZE);
-  const resumoVales = calcularResumoVales(activeHistory?.vendas || []);
+  const vendasHistorico = (activeHistory?.vendas || []) as Venda[];
+  const vendasHistoricoPagina = paginate(vendasHistorico, historicoPage, PAGE_SIZE);
+  const hoje = todayLocalIso();
+  const valesPendentes = listarValesPendentesCliente(vendasHistorico);
+  const valesPendentesPagina = paginate(valesPendentes, valesPage, PAGE_SIZE);
   const devolucoesCliente = (activeHistory?.vendas || [])
     .flatMap((venda: Venda) => (venda.devolucoes || []).map((devolucao) => ({
       ...devolucao,
@@ -289,7 +282,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
           <form onSubmit={confirmarRemocaoProdutoCliente} className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="border-b border-red-100 bg-red-50 p-5">
               <h3 className="font-black text-red-950">EXCLUIR PREÇO DO CLIENTE</h3>
-              <p className="mt-1 text-xs font-bold text-red-800">{produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. fornecedor ${produtoRemocao.fornecedorReferencia}` : ""} será removido dos preços e do orçamento vigente deste cliente.</p>
+              <p className="mt-1 text-xs font-bold text-red-800">Remover {produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. ${produtoRemocao.fornecedorReferencia}` : ""} deste cliente?</p>
             </div>
             <div className="space-y-3 p-5">
               <label className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</label>
@@ -308,7 +301,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-100 pb-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-950 tracking-tight">Clientes</h2>
-          <p className="text-slate-500 text-sm mt-0.5">Gestão de contatos, histórico de compras, saldos devedores e estatísticas.</p>
+          <p className="text-slate-500 text-sm mt-0.5">Contatos, compras e saldos.</p>
         </div>
         <button 
           onClick={() => handleOpenForm()}
@@ -433,7 +426,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
               </tbody>
             </table>
           </div>
-          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filteredClientes.length} onPageChange={setPage} />
+          <Pagination page={page} pageSize={PAGE_SIZE} totalItems={filteredClientes.length} onPageChange={setPage} alwaysVisible />
         </div>
       )}
 
@@ -574,7 +567,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
               
               {/* Profile statistics cards */}
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 
                 <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
                   <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">COMPRADO</p>
@@ -598,27 +591,43 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">LUCRO</p>
-                  <p className="mt-1 text-sm font-extrabold text-teal-600">{formatCurrency(activeHistory.estatisticas.lucroBruto)}</p>
-                </div>
-
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-amber-700">VALES</p>
-                  <p className="mt-1 text-sm font-extrabold text-amber-950">{resumoVales.quantidade}</p>
-                  <p className="text-[8px] font-bold uppercase text-amber-700">{resumoVales.parcelas} VENC.</p>
-                </div>
-
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-blue-700">MÉDIA VALES</p>
-                  <p className="mt-1 text-sm font-extrabold text-blue-950">{resumoVales.dataMedia ? formatDate(resumoVales.dataMedia) : "—"}</p>
-                </div>
-
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-center">
                   <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider text-violet-700"><WalletCards size={11} /> BÔNUS</p>
                   <p className="mt-1 text-sm font-extrabold text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
                 </div>
 
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  <FileText size={14} /> Vales em aberto e vencidos ({valesPendentes.length})
+                </h4>
+                <div className="overflow-hidden rounded-xl border border-slate-200">
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left text-xs">
+                      <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase text-slate-500"><tr>
+                        <th className="p-3">Vale</th><th className="p-3">Vencimento</th><th className="p-3 text-right">Devedor</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Restante</th><th className="p-3 text-center">Situação</th><th className="p-3 text-center">Ação</th>
+                      </tr></thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {valesPendentesPagina.length === 0 ? <tr><td colSpan={7} className="p-6 text-center font-semibold text-slate-500">Este cliente não possui vales com saldo em aberto.</td></tr> : valesPendentesPagina.map((vale) => {
+                          const posicao = financeiroVale(vale);
+                          const proximoVencimento = vencimentoPendente(vale);
+                          const vencido = proximoVencimento < hoje;
+                          return <tr key={vale.id} className="hover:bg-slate-50">
+                            <td className="p-3 font-mono font-black text-slate-900">#{vale.numeroSequencial}</td>
+                            <td className="p-3 font-mono">{formatDate(proximoVencimento)}</td>
+                            <td className="p-3 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td>
+                            <td className="p-3 text-right font-mono text-emerald-800">{formatCurrency(posicao.presumido)}</td>
+                            <td className="p-3 text-right font-mono font-black text-amber-800">{formatCurrency(posicao.restantePresumido)}</td>
+                            <td className="p-3 text-center"><span className={`rounded-lg px-2 py-1 font-black uppercase ${vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{vencido ? "Vencido" : "A vencer"}</span></td>
+                            <td className="p-3 text-center"><button type="button" onClick={() => onOpenVale?.(vale.id)} className="rounded-lg bg-slate-900 px-3 py-2 font-black text-white hover:bg-slate-700">Abrir vale</button></td>
+                          </tr>;
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <Pagination page={valesPage} pageSize={PAGE_SIZE} totalItems={valesPendentes.length} onPageChange={setValesPage} alwaysVisible />
+                </div>
               </div>
 
               {/* Current customer budget */}
@@ -653,7 +662,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                     <TrendingUp size={14} />
                     Preços praticados para este cliente
                   </h4>
-                  <p className="mt-1 text-xs text-slate-500">Cada produto vendido entra automaticamente nesta relação. Ajuste o preço individual ou remova o item do cliente.</p>
+                  <p className="mt-1 text-xs text-slate-500">Edite o preço ou remova o item.</p>
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full min-w-[920px] text-left text-xs">
@@ -720,7 +729,8 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                   <FileText size={14} className="text-slate-500" />
                   Histórico de Vendas
                 </h4>
-                <div className="border border-slate-100 rounded-xl overflow-hidden max-h-[250px] overflow-y-auto">
+                <div className="border border-slate-100 rounded-xl overflow-hidden">
+                  <div className="max-h-[250px] overflow-x-auto overflow-y-auto">
                   <table className="w-full text-xs text-left">
                     <thead>
                       <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 sticky top-0">
@@ -738,7 +748,7 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                           <td colSpan={6} className="p-4 text-center text-slate-400">Nenhuma compra cadastrada.</td>
                         </tr>
                       ) : (
-                        activeHistory.vendas.map((v: Venda) => (
+                        vendasHistoricoPagina.map((v: Venda) => (
                           <tr key={v.id} className="hover:bg-slate-50/20">
                             <td className="p-3 text-center font-extrabold text-slate-900">#{v.numeroSequencial}</td>
                             <td className="p-3 font-mono">{formatDate(v.data)}</td>
@@ -762,6 +772,8 @@ export function ClientesView({ onRefreshStats }: ClientesViewProps) {
                       )}
                     </tbody>
                   </table>
+                  </div>
+                  <Pagination page={historicoPage} pageSize={PAGE_SIZE} totalItems={vendasHistorico.length} onPageChange={setHistoricoPage} alwaysVisible />
                 </div>
               </div>
 

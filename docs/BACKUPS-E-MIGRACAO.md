@@ -55,3 +55,21 @@ O seletor deve ser acionado no navegador do proprio servidor Windows. Na instala
 Falhas consecutivas sao persistidas. As novas tentativas aguardam 5, 15, 30 e depois 60 minutos, inclusive apos reiniciar. A terceira falha mostra um icone/aviso clicavel ao gerente e os detalhes nas configuracoes. Um backup local concluido limpa o aviso; isso nao confirma upload do Google Drive. O sistema evita copias concorrentes, valida SQLite antes de publicar e conserva a ultima copia valida. A limpeza de retencao ocorre apos concluir um backup; falha na limpeza nao transforma um backup concluido em falha.
 
 Teste adicional: `node scripts/test-backup-scheduler.cjs` cobre horarios perdidos, retomada, reinicios, intervalos de repeticao e a comunicacao com o seletor sem abrir uma janela real.
+
+## Arquitetura de protecao e recuperacao em outro computador
+
+- A instalacao pelo comando de instalar servico prepara os dados em `C:\ProgramData\LucianoCouros\data`. Em instalacoes antigas, migra enquanto parado e preserva os originais; se o destino existir e houver dados locais, cancela para evitar escolher ou sobrescrever o banco errado. O tecnico deve revisar o conflito. Uma reinstalacao sem dados locais pode reconectar um banco externo existente validado.
+- Executar apenas o servidor pelo terminal continua compativel com instalacoes antigas e testes; nao migra dados automaticamente. Nelas, use MIGRAR DADOS PARA FORA DO SISTEMA.cmd para efetivar o isolamento.
+- O programa, os dados ativos e a pasta de copias sao separados. Selecione uma pasta externa dedicada aos backups no Google Drive. Nunca sincronize o banco ativo, WAL/SHM ou a pasta de dados inteira.
+- A plataforma e o atualizador agora consultam o mesmo destino escolhido no ambiente ativo. O atualizador grava uma pasta antes-da-atualizacao com os bancos e a configuracao de demonstracao. Ela e uma copia tecnica, diferente dos arquivos individuais restauraveis pela interface.
+- Dados do cliente e installation-paths.json nao fazem parte do Git nem do pacote entregue. A pasta escolhida para backups personalizados nao pode estar dentro da instalacao.
+
+Para recuperar depois da perda total do PC:
+
+1. Instale a mesma branch ou uma versao compativel em outro Windows. A instalacao cria dados locais externos novos.
+2. Configure um gerente temporario para entrar. Instale o Google Drive, acesse a conta proprietaria dos backups e baixe a copia mais recente concluida. Pastas sincronizadas do computador antigo podem estar na secao Computadores do Drive; a instalacao nova nao as descobre automaticamente.
+3. Coloque os arquivos baixados numa pasta local externa dedicada. Selecione-a na plataforma e salve. Confira o ambiente real/demonstracao e escolha o arquivo desejado na lista.
+4. Restaure e aguarde o reinicio. Os dados comerciais, usuarios e configuracoes voltam ao momento do backup. Use as credenciais do gerente que existiam nesse backup.
+5. Confira clientes, vendas, saldos e um novo backup manual. A restauracao preserva a pasta e o horario escolhidos no PC novo, em vez de reutilizar um caminho da maquina antiga. Configure a sincronizacao dessa nova pasta no Drive.
+
+O teste automatizado simula uma instalacao limpa em outro diretorio, sem o banco original, com uma copia do arquivo de backup em outro caminho. Ele verifica a recuperacao dos dados e a preservacao do destino novo. O envio real e o download do Google Drive devem ser conferidos separadamente: backup local concluido nao garante que chegou a nuvem. A perda maxima de dados depende do ultimo backup efetivamente enviado; operacoes posteriores nao estao nessa copia.

@@ -21,6 +21,18 @@ function checkDatabase(file) {
     if (result.length !== 1 || result[0].integrity_check !== 'ok') throw new Error(`Backup invalido: ${path.basename(file)}`);
   } finally { database.close(); }
 }
+function configureRecoveryDestination(file, folder, time) {
+  const database = new Database(file, { fileMustExist: true });
+  try {
+    database.transaction(() => {
+      const upsert = database.prepare("INSERT INTO configuracoes(chave,valor) VALUES (?,?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor");
+      upsert.run('backup_pasta', folder);
+      upsert.run('backup_horario', time);
+      database.prepare("DELETE FROM configuracoes WHERE chave='backup_estado'").run();
+    })();
+    database.pragma('wal_checkpoint(TRUNCATE)');
+  } finally { database.close(); }
+}
 function safeBackupPath(dir, name) {
   if (typeof name !== 'string' || !backupInfo(name) || !name.endsWith('.db') || path.basename(name) !== name) {
     throw new Error('Nome de backup invalido.');
@@ -93,4 +105,4 @@ function pruneBackups(dir, days = 30, now = new Date()) {
   }
   return removed;
 }
-module.exports = { stamp, backupInfo, checkDatabase, safeBackupPath, createSnapshot, pruneBackups };
+module.exports = { configureRecoveryDestination, stamp, backupInfo, checkDatabase, safeBackupPath, createSnapshot, pruneBackups };

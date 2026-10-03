@@ -450,6 +450,8 @@ function getBackupSettings() {
 function validateBackupFolder(folder: string) {
   if (!path.isAbsolute(folder)) throw new Error("Informe o caminho absoluto da pasta no computador do servidor.");
   const resolvedFolder = fs.existsSync(folder) ? fs.realpathSync(folder) : path.resolve(folder);
+  const projectRelative = path.relative(fs.realpathSync(process.cwd()), resolvedFolder);
+  if (!projectRelative || (projectRelative !== ".." && !projectRelative.startsWith(".." + path.sep) && !path.isAbsolute(projectRelative))) throw new Error("Escolha uma pasta de backups fora da instalacao do sistema.");
   const relative = path.relative(resolvedFolder, fs.realpathSync(path.dirname(getActiveDbFile())));
   if (!relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))) {
     throw new Error("Escolha uma pasta separada dos bancos ativos.");
@@ -457,7 +459,7 @@ function validateBackupFolder(folder: string) {
 }
 function backupDirectory() {
   const { folder } = getBackupSettings();
-  validateBackupFolder(folder);
+  if (folder !== BACKUP_DIR) validateBackupFolder(folder);
   if (folder !== BACKUP_DIR && !fs.statSync(folder).isDirectory()) throw new Error("Pasta de backup indisponivel.");
   return folder;
 }
@@ -6773,6 +6775,7 @@ app.post("/api/backups/restaurar", async (req, res) => {
     const target = getActiveDbFile();
     staged = `${target}.restore-tmp`;
     fs.copyFileSync(source, staged);
+    backupFiles.configureRecoveryDestination(staged, backupDirectory(), getBackupSettings().time);
     backupFiles.checkDatabase(staged);
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();

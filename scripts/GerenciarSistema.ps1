@@ -377,15 +377,18 @@ function Install-TrayShortcut {
 
 function Install-SystemService {
     Assert-Administrator
-    if ($null -ne (Get-SystemService)) {
-        Write-Host "O servico $ServiceDisplayName ja esta instalado." -ForegroundColor Yellow
+    $alreadyInstalled = $null -ne (Get-SystemService)
+    Stop-System
+    Build-System
+    Write-Step "Preparando dados permanentes fora da instalacao"
+    & node.exe $DataHelper prepare-install (Join-Path $env:ProgramData "LucianoCouros\data")
+    if ($LASTEXITCODE -ne 0) { throw "Falha ao preparar dados externos. Os dados existentes foram preservados." }
+    Update-DataPaths
+    if ($alreadyInstalled) {
         Install-TrayShortcut
         Start-System
         return
     }
-
-    Stop-System
-    Build-System
     New-Item -ItemType Directory -Path $ServiceDir -Force | Out-Null
     if (-not (Test-Path -LiteralPath $ServiceExecutable)) {
         Write-Step "Baixando o componente do servico do Windows"

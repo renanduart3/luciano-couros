@@ -128,7 +128,7 @@ Logs de execução ficam em `.runtime`. Os dados e backups podem ficar fora do p
 
 #### Local permanente dos dados e Google Drive
 
-Execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd** no computador do cliente. O assistente para o sistema, copia e valida os bancos e configura a pasta externa (padrão: `C:\ProgramData\LucianoCouros\data`). Os originais são preservados para conferência.
+A instalação pelo comando de instalar serviço prepara os dados fora do projeto, por padrão em `C:\ProgramData\LucianoCouros\data`. Para instalações antigas executadas diretamente, execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd** no computador do cliente. O assistente para o sistema, copia e valida os bancos e configura a pasta externa (padrão: `C:\ProgramData\LucianoCouros\data`). Os originais são preservados para conferência.
 
 O apontamento fica em `installation-paths.json`, protegido pelo atualizador e excluído do Git. Sem esse arquivo, instalações existentes continuam usando `data`. Se houver somente um banco legado na raiz, execute o assistente antes de iniciar.
 

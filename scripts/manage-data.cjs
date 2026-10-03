@@ -3,6 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const Database = require('better-sqlite3');
 const { resolveDataPaths } = require('./data-paths.cjs');
+const { maintenanceBackupDir } = require('./backup-destination.cjs');
 const { checkDatabase, stamp, pruneBackups } = require('./backup-files.cjs');
 
 function contains(parent, child) {
@@ -82,13 +83,39 @@ async function migrate(root, destination) {
   console.log(JSON.stringify(manifest, null, 2));
   return manifest;
 }
+async function prepareInstallation(root, destination) {
+  const paths = resolveDataPaths(root);
+  if (paths.external) return paths;
+  if (process.env.DATA_DIR || process.env.BACKUP_DIR) throw new Error('Remova DATA_DIR/BACKUP_DIR antes de instalar.');
+  if (!path.isAbsolute(destination) || contains(path.resolve(root), path.resolve(destination)) || contains(path.resolve(destination), path.resolve(root))) throw new Error('Dados devem ficar fora da instalacao.');
+  const existingLocal = fs.existsSync(path.join(paths.dataDir, 'database.db')) || fs.existsSync(path.join(root, 'database.db'));
+  if (existingLocal) return migrate(root, destination);
+  // Reinstallation can reconnect existing external data, but never overwrite it.
+  if (fs.existsSync(destination)) {
+    checkDatabase(path.join(destination, 'database.db'));
+    const mode = path.join(destination, 'mock_config.json');
+    if (fs.existsSync(mode) && JSON.parse(fs.readFileSync(mode, 'utf8').replace(/^\uFEFF/, '')).mockEnabled) checkDatabase(path.join(destination, 'database_mock.db'));
+  } else {
+    fs.mkdirSync(destination, { recursive: true });
+    const database = new Database(path.join(destination, 'database.db'));
+    database.close();
+  }
+  const dataDir = fs.realpathSync(destination);
+  if (contains(fs.realpathSync(root), dataDir) || contains(dataDir, fs.realpathSync(root))) throw new Error('Destino real dos dados invalido.');
+  const backupDir = path.join(dataDir, 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  fs.writeFileSync(paths.configFile + '.tmp', JSON.stringify({ dataDir, backupDir }, null, 2));
+  fs.renameSync(paths.configFile + '.tmp', paths.configFile);
+  return { dataDir, backupDir };
+}
 async function preUpdate(root) {
   const paths = resolveDataPaths(root);
   const source = fs.existsSync(path.join(paths.dataDir, 'database.db')) ? paths.dataDir : root;
-  const staging = path.join(path.dirname(paths.backupDir), '.backup-staging', crypto.randomUUID());
+  const backupDir = maintenanceBackupDir({ ...paths, dataDir: source });
+  const staging = path.join(path.dirname(backupDir), '.backup-staging', crypto.randomUUID());
   await snapshotFiles(source, staging);
-  fs.mkdirSync(paths.backupDir, { recursive: true });
-  const target = path.join(paths.backupDir, `antes-da-atualizacao_${stamp()}_${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(backupDir, { recursive: true });
+  const target = path.join(backupDir, `antes-da-atualizacao_${stamp()}_${crypto.randomBytes(4).toString('hex')}`);
   fs.renameSync(staging, target);
   console.log(`Backup anterior a atualizacao: ${target}`);
 }
@@ -97,9 +124,10 @@ if (require.main === module) {
   (async () => {
     if (action === 'paths') console.log(JSON.stringify(resolveDataPaths()));
     else if (action === 'migrate') await migrate(process.cwd(), destination || '');
+    else if (action === 'prepare-install') await prepareInstallation(process.cwd(), destination || '');
     else if (action === 'snapshot') await preUpdate(process.cwd());
-    else if (action === 'prune') pruneBackups(resolveDataPaths().backupDir, 30);
+    else if (action === 'prune') pruneBackups(maintenanceBackupDir(resolveDataPaths()), 30);
     else throw new Error('Comando de dados desconhecido.');
   })().catch(error => { console.error(error.message); process.exitCode = 1; });
 }
-module.exports = { migrate, snapshotFiles, contains };
+module.exports = { migrate, snapshotFiles, contains, prepareInstallation, preUpdate };

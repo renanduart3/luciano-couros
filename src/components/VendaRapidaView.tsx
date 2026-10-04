@@ -153,6 +153,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   // Checkout Fields
   const [descontoGeral, setDescontoGeral] = useState("");
+  const [bonusAplicado, setBonusAplicado] = useState("");
+  useEffect(() => { setBonusAplicado(""); }, [clienteSelecionado?.id]);
   const [valorPago, setValorPago] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("vale");
   const [parcelasCartao, setParcelasCartao] = useState(1);
@@ -496,9 +498,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     : formaPagamento === "vale";
   const vendaComCredito = formaPagamento === "bonus";
   const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
-  const vPago = vendaEmEdicao ? Math.min(totalLiquido, Number(vendaEmEdicao.valorPago || 0)) : vendaNoVale ? 0 : vendaComCredito
-    ? Math.min(totalLiquido, saldoCreditoCarteira)
-    : valorPago === "" ? totalLiquido : parseBrazilianNumber(valorPago);
+  const bonusSelecionado = vendaComCredito ? Math.min(totalLiquido, saldoCreditoCarteira) : parseBrazilianNumber(bonusAplicado);
+  const recebidoInicial = vendaNoVale || vendaComCredito ? 0 : valorPago === "" ? Math.max(0, totalLiquido - bonusSelecionado) : parseBrazilianNumber(valorPago);
+  const vPago = vendaEmEdicao ? Math.min(totalLiquido, Number(vendaEmEdicao.valorPago || 0)) : recebidoInicial + bonusSelecionado;
   const saldoRestante = Math.max(0, totalLiquido - vPago);
 
   useEffect(() => {
@@ -952,7 +954,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           precoUnitario: parseBrazilianNumber(it.precoUnitario),
           desconto: parseBrazilianNumber(it.desconto)
         })),
-        valorPago: vPago,
+        valorPago: recebidoInicial,
+        bonusUtilizado: bonusSelecionado,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? parcelasCartao : undefined,
         vencimento: vencimento || undefined,
@@ -989,7 +992,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           cpfTitular: instrumentoCpfTitular.trim(),
           cpfTerceiro: instrumentoCpfTerceiro.trim() || undefined,
           banco: "",
-          valor: vPago,
+          valor: recebidoInicial,
           vencimento: instrumentoVencimento,
           status: "a_receber"
         } : undefined,
@@ -1050,6 +1053,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       setFeedbackMsg({ type: "error", text: "Informe vencimento, CPF/CNPJ e número do cheque." });
       return;
     }
+    if (![recebidoInicial, bonusSelecionado].every(Number.isFinite) || recebidoInicial < 0 || bonusSelecionado < 0 || bonusSelecionado > saldoCreditoCarteira + 0.005 || vPago > totalLiquido + 0.005) {
+      setFeedbackMsg({ type: "error", text: "Confira o pagamento e o bônus: respeite o crédito disponível e o total da venda." });
+      return;
+    }
     if (vendaComCredito && saldoCreditoCarteira <= 0) {
       setFeedbackMsg({ type: "error", text: "Este cliente não possui crédito disponível na carteira." });
       return;
@@ -1105,6 +1112,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setHistoricoPage(1);
     setDescontoGeral("");
     setValorPago("");
+    setBonusAplicado("");
     setVencimento("");
     setParcelasVale([]);
     setObservacoes("");
@@ -1565,7 +1573,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   value={vendaNoVale ? "" : vendaComCredito ? vPago.toFixed(2).replace(".", ",") : valorPago}
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
-                  placeholder="0,00"
+                  placeholder={vendaNoVale ? "0,00" : recebidoInicial.toFixed(2).replace(".", ",")}
                   disabled={Boolean(vendaEmEdicao) || vendaNoVale || vendaComCredito}
                   className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
@@ -1619,7 +1627,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
               {vendaEmEdicao && <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold text-slate-600">Forma de pagamento e recebimentos preservados nesta edição.</p>}
 
-              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={vPago} className="ml-auto max-w-xs" />}
+              {!vendaEmEdicao && !vendaComCredito && <label className="block rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold">Bônus a utilizar · disponível {formatCurrency(saldoCreditoCarteira)}<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonusAplicado} onChange={e => setBonusAplicado(e.target.value)} className="ml-3 w-32 rounded border p-2"/><span className="ml-3">Abatimento total: {formatCurrency(vPago)}</span></label>}
+              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={recebidoInicial} className="ml-auto max-w-xs" />}
 
               {vendaComCredito && (
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
@@ -1632,7 +1641,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-2 xl:grid-cols-6">
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nome do emitente/terceiro</label><input value={instrumentoEmitente} onChange={(event) => setInstrumentoEmitente(event.target.value.slice(0, 160))} placeholder="PREENCHIDO PELO CPF/CNPJ" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <ClienteDocumentoLookupInput label="CPF/CNPJ titular *" required value={instrumentoCpfTitular} onChange={setInstrumentoCpfTitular} onClienteEncontrado={setInstrumentoEmitente} placeholder={clienteSelecionado?.documento || "CPF/CNPJ"} labelClassName="block text-[10px] font-extrabold uppercase text-sky-800" inputClassName="mt-1 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" />
-                  <div><span className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Valor</span><strong className="block rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900">{formatCurrency(vPago)}</strong></div>
+                  <div><span className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Valor</span><strong className="block rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm text-slate-900">{formatCurrency(recebidoInicial)}</strong></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Data *</label><input type="date" value={instrumentoVencimento} onChange={(event) => setInstrumentoVencimento(event.target.value)} className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   <div><label className="mb-1 block text-[10px] font-extrabold uppercase text-sky-800">Nº cheque *</label><input type="text" value={instrumentoNumero} onChange={(event) => setInstrumentoNumero(event.target.value)} placeholder="NÚMERO" className="w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" /></div>
                   {formaPagamento === "cheque_terceiro" && <ClienteDocumentoLookupInput label="CPF/CNPJ terceiro *" required value={instrumentoCpfTerceiro} onChange={setInstrumentoCpfTerceiro} onClienteEncontrado={setInstrumentoEmitente} placeholder="CPF/CNPJ DO TERCEIRO" labelClassName="block text-[10px] font-extrabold uppercase text-sky-800" inputClassName="mt-1 w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-sky-500" />}

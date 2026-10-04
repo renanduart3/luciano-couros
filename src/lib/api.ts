@@ -269,6 +269,7 @@ export const api = {
     status: PagamentoGerenciavel["statusPagamento"];
     data: string;
     valorRecebido: number;
+    bonusUtilizado?: number;
     formaPagamento: string;
     parcelasCartao?: number;
     observacao?: string;
@@ -319,7 +320,7 @@ export const api = {
   acaoPagamentosOrdem: (id: string, dados: { acao: "estornar" | "excluir"; itens: import("../types").ItemAcaoPagamentoOrdem[]; revisao: string; pin: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/pagamentos/acoes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<OrdemCobranca>(r)),
-  updateProjecaoOrdem: (id: string, projecaoId: string, dados: { pin: string; revisao: string; data: string; formaPagamento: string; valorRecebido: number; parcelasCartao?: number; valoresParcelasCartao?: number[]; titulos?: TituloRecebimento[] }) =>
+  updateProjecaoOrdem: (id: string, projecaoId: string, dados: { pin: string; revisao: string; data: string; formaPagamento: string; valorRecebido: number; bonusUtilizado?: number; parcelasCartao?: number; valoresParcelasCartao?: number[]; titulos?: TituloRecebimento[] }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/projecoes/${projecaoId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<OrdemCobranca>(r)),
   // ORDENS DE COBRANÇA
@@ -465,6 +466,7 @@ export const api = {
       faltante?: boolean;
     }>;
     valorPago: number;
+    bonusUtilizado?: number;
     formaPagamento: string;
     parcelasCartao?: number;
     vencimento?: string;

@@ -32,6 +32,9 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [excluindo, setExcluindo] = useState(false);
   const [novo, setNovo] = useState(!pagamento);
   const [data, setData] = useState(todayLocalIso());
+  const [bonus, setBonus] = useState("");
+  const [saldoBonus, setSaldoBonus] = useState(0);
+  useEffect(() => { if (editando) api.getCarteiraResumo(clienteId).then(r => setSaldoBonus(Number(r.saldoBonus || 0))).catch(() => setSaldoBonus(0)); }, [clienteId, editando]);
   const [valor, setValor] = useState("");
   const [forma, setForma] = useState("pix");
   const [situacao, setSituacao] = useState<Situacao>("compensado");
@@ -50,6 +53,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [concluido, setConcluido] = useState(false);
   const titulo = ehTituloPagamento(forma);
   const total = titulo ? Math.round(titulos.reduce((s, t) => s + (t.status === "recusado" ? 0 : Number(t.valor || 0)), 0) * 100) / 100 : parseBrazilianNumber(valor);
+  const bonusUsado = forma === "bonus" ? total : parseBrazilianNumber(bonus);
+  const totalAbatimento = forma === "bonus" ? total : total + bonusUsado;
   const recebido = pagamento ? recebidoDaLinha(pagamento, vendaIdContexto, ordemCobrancaId) : 0;
   const colunas = colunasAntes + 6;
   const iniciar = (criar = false) => {
@@ -57,8 +62,9 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     const existente = criar ? undefined : pagamento || projecao?.dados;
     setRevisaoEdicao(projecao?.revisao || existente?.revisao);
     setNovo(!pagamento || criar); setConcluido(false); setPlano(null); setConfirmado(false); setErro(""); setPin("");
+    setBonus(String(existente?.formaPagamento === "bonus" ? 0 : existente?.bonusUtilizado || 0).replace(".", ","));
     setData(existente?.data || todayLocalIso());
-    setValor(Number(existente ? existente.valorRecebido + existente.bonusUtilizado : saldo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    setValor(Number(existente ? (existente.formaPagamento === "bonus" ? existente.bonusUtilizado : existente.valorRecebido) : saldo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const formaInicial = existente?.formaPagamento || formaPagamentoPrevista || pagamento?.formaPagamento || "pix";
     setForma(formaInicial); setSituacao(projecao ? "em_aberto" : existente?.statusPagamento || (ehTituloPagamento(formaInicial) ? "aguardando" : "compensado"));
     setTitulos(existente?.titulos || []); setCartao(existente?.parcelasCartao || 1); setEditando(true);
@@ -83,27 +89,27 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     if (somenteReabertura && !novo && situacao !== "em_aberto") return setErro("Selecione Em aberto para corrigir o pagamento.");
     if ((!novo || projecao) && pin.length < 4) return setErro("Informe a senha do gerente.");
     if (situacao === "em_aberto" && !projecao && (!plano || !confirmado)) return setErro("Confira e confirme o estorno abaixo.");
-    if (situacao !== "em_aberto" && (!data || !Number.isFinite(total) || (total <= 0 && situacao !== "recusado"))) return setErro("Informe data e valor válidos.");
+    if (situacao !== "em_aberto" && (!data || !Number.isFinite(totalAbatimento) || bonusUsado < 0 || total < 0 || (totalAbatimento <= 0 && situacao !== "recusado"))) return setErro("Informe data e valor válidos.");
     setSaving(true);
     try {
       let ordemAtualizada: OrdemCobranca | undefined;
       if (projecao && situacao === "em_aberto") {
         ordemAtualizada = await api.updateProjecaoOrdem(ordemCobrancaId!, projecao.id, { pin, revisao: revisaoEdicao!,
-          data, formaPagamento: forma, valorRecebido: total, parcelasCartao: forma === "cartao_credito" ? credito.length : cartao,
+          data, formaPagamento: forma, valorRecebido: total, bonusUtilizado: bonusUsado, parcelasCartao: forma === "cartao_credito" ? credito.length : cartao,
           valoresParcelasCartao: forma === "cartao_credito" ? credito : undefined, titulos: titulo ? titulos : undefined });
       } else if (situacao === "em_aberto" && pagamento && plano) {
         await api.reabrirPagamento(alvoReabertura?.tipo || "recebimento", alvoReabertura?.id || pagamento.id, { pin, revisao: plano.revisao, motivo: `Reabertura de ${referencia}` });
       } else if (!novo && pagamento) {
         const resultado = await api.updateRecebimentoCliente(pagamento.id, { pin, revisao: revisaoEdicao, ordemCobrancaId, status: situacao as PagamentoGerenciavel["statusPagamento"], data,
-          valorRecebido: total, formaPagamento: forma, parcelasCartao: forma === 'cartao_credito' ? credito.length : cartao, valoresParcelasCartao: forma === 'cartao_credito' ? credito : undefined,
+          valorRecebido: total, bonusUtilizado: bonusUsado, formaPagamento: forma, parcelasCartao: forma === 'cartao_credito' ? credito.length : cartao, valoresParcelasCartao: forma === 'cartao_credito' ? credito : undefined,
           dataCompensacao: situacao === "compensado" ? data : undefined,
           observacao: pagamento.observacao, titulos: titulo ? titulos : undefined, alocacoes: [], distribuicaoAutomatica: true });
         ordemAtualizada = resultado.ordemAtualizada;
       } else {
         if (forma === "bonus" && total > saldo + 0.005) throw new Error("O uso de bônus não pode ultrapassar o saldo.");
-        const resultado = await api.createRecebimentoCliente(clienteId, { projecaoId: projecao?.id, projecaoRevisao: revisaoEdicao, pin: projecao ? pin : undefined, data, valorRecebido: forma === "bonus" ? 0 : total, bonusUtilizado: forma === "bonus" ? total : 0,
+        const resultado = await api.createRecebimentoCliente(clienteId, { projecaoId: projecao?.id, projecaoRevisao: revisaoEdicao, pin: projecao ? pin : undefined, data, valorRecebido: forma === "bonus" ? 0 : total, bonusUtilizado: bonusUsado,
           formaPagamento: forma, parcelasCartao: forma === 'cartao_credito' ? credito.length : cartao, valoresParcelasCartao: forma === 'cartao_credito' ? credito : undefined, titulos: titulo ? titulos : undefined,
-          parcelaOrdemId, ordemCobrancaId, observacao: `Pagamento de ${referencia}`, alocacoes: alocar(total) });
+          parcelaOrdemId, ordemCobrancaId, observacao: `Pagamento de ${referencia}`, alocacoes: alocar(totalAbatimento) });
         ordemAtualizada = resultado.ordemAtualizada;
       }
       // A gravação terminou; falha no recarregamento não pode repetir um recebimento.
@@ -137,6 +143,11 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
       </>}</div></td>
     </tr>
     {editando && <tr className="payment-editor-row payment-compact bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">
+      {(projecao || situacao !== "em_aberto") && <div className="my-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-xs">
+        <span>Bônus disponível: {formatCurrency(saldoBonus + (!novo && pagamento?.status === "ativo" ? pagamento.bonusUtilizado : 0))}</span>
+        {forma !== "bonus" && <label className="ml-3 inline-flex items-center gap-2">Bônus a utilizar<input aria-label={`Bônus ${referencia}`} inputMode="decimal" value={bonus} onChange={e => { if (!titulo) setValor(Math.max(0, parseBrazilianNumber(valor) + parseBrazilianNumber(bonus) - parseBrazilianNumber(e.target.value)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} disabled={saving || concluido} className={`${campo} max-w-32`}/></label>}
+        <span className="ml-3 font-bold">Pagamento + bônus: {formatCurrency(totalAbatimento)}</span>
+      </div>}
       {(projecao || situacao !== "em_aberto") && <><TitulosPagamentoEditor formaPagamento={forma} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={parseBrazilianNumber(valor)} titulos={titulos} onChange={itens => { const atualizados = itens.map(t => ({ ...t, status: t.status || situacao as TituloRecebimento["status"], dataCompensacao: (t.status || situacao) === "compensado" ? t.dataCompensacao || data : undefined })); setTitulos(atualizados); if (atualizados.length && !(projecao && situacao === "em_aberto")) setSituacao(atualizados.every(t => t.status === "recusado") ? "recusado" : atualizados.some(t => t.status === "aguardando") ? "aguardando" : "compensado"); }} editarStatus={!novo} referenciaPagamento={referencia} limiteLinhas={Math.max(12, pagamento?.titulos.length || 0)}/>{forma === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={forma} parcelas={cartao} onChange={setCartao} valorTotal={total} disabled={saving || concluido}/>}</>}
       {revisando && <p className="text-xs">Conferindo estorno…</p>}
       {plano && situacao === "em_aberto" && <label className="my-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"><input type="checkbox" checked={confirmado} disabled={saving || concluido} onChange={e => setConfirmado(e.target.checked)}/><span>{excluindo ? "Excluir este pagamento, estornar" : "Estornar"} {formatCurrency(plano.totalFinanceiro)} e reabrir o saldo.{Math.abs(plano.variacaoBonus) > 0.005 && ` Ajuste na carteira: ${formatCurrency(plano.variacaoBonus)}.`}</span></label>}

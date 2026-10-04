@@ -28,6 +28,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const [formaPagamento, setFormaPagamento] = useState("pix");
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
+  const [bonus, setBonus] = useState("");
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [observacao, setObservacao] = useState("");
   const [erro, setErro] = useState("");
@@ -43,9 +44,11 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const valorBase = parseBrazilianNumber(valor);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
   const valorInformado = pagamentoTitulo ? totalTitulos : valorBase;
+  const bonusUsado = formaPagamento === "bonus" ? valorInformado : parseBrazilianNumber(bonus);
+  const valorTotal = formaPagamento === "bonus" ? valorInformado : valorInformado + bonusUsado;
   const credito = distribuirCentavos(valorBase, parcelasCartao);
   const alocacoes = useMemo(() => {
-    let restante = Math.max(0, valorInformado);
+    let restante = Math.max(0, valorTotal);
     return [...vales]
       .sort((a, b) => a.data.localeCompare(b.data) || Number(a.numeroSequencial) - Number(b.numeroSequencial))
       .flatMap((vale) => {
@@ -54,16 +57,16 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         restante = Math.round(Math.max(0, restante - aplicado) * 100) / 100;
         return aplicado > 0.005 ? [{ vendaId: vale.id, numero: vale.numeroSequencial, valor: aplicado }] : [];
       });
-  }, [vales, valorInformado]);
+  }, [vales, valorTotal]);
   const totalAplicado = alocacoes.reduce((total, item) => total + item.valor, 0);
-  const bonusGerado = formaPagamento === "bonus" ? 0 : Math.max(0, valorInformado - totalAplicado);
+  const bonusGerado = formaPagamento === "bonus" ? 0 : Math.max(0, valorTotal - totalAplicado);
 
   const registrar = async (event: React.FormEvent) => {
     event.preventDefault();
     if (vales.length !== 1) return setErro("Para pagar vários vales, gere uma ordem de cobrança.");
-    if (valorInformado <= 0) return setErro("Informe um valor maior que zero.");
-    if (formaPagamento === "bonus" && valorInformado > saldoBonus + 0.005) return setErro("O valor ultrapassa o bônus disponível do cliente.");
-    if (formaPagamento === "bonus" && valorInformado > totalDivida + 0.005) return setErro("O bônus aplicado não pode ultrapassar a dívida selecionada.");
+    if (!Number.isFinite(valorTotal) || valorTotal <= 0 || valorInformado < 0 || bonusUsado < 0) return setErro("Informe um valor maior que zero.");
+    if (bonusUsado > saldoBonus + 0.005) return setErro("O valor ultrapassa o bônus disponível do cliente.");
+    if (bonusUsado > totalDivida + 0.005) return setErro("O bônus aplicado não pode ultrapassar a dívida selecionada.");
     setSalvando(true);
     setErro("");
     setFeedback("");
@@ -71,7 +74,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       const resultado = await api.createRecebimentoCliente(clienteId, {
         data,
         valorRecebido: formaPagamento === "bonus" ? 0 : valorInformado,
-        bonusUtilizado: formaPagamento === "bonus" ? valorInformado : 0,
+        bonusUtilizado: bonusUsado,
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
         valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
@@ -80,6 +83,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         alocacoes: alocacoes.map(({ vendaId, valor: valorAlocado }) => ({ vendaId, valor: valorAlocado })),
       });
       setValor("0,00");
+      setBonus("");
       setObservacao("");
       setFeedback(`Pagamento registrado: ${formatCurrency(resultado.valorAplicado)} abatido` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
       setComprovante(await api.getComprovanteRecebimento(resultado.id));
@@ -99,6 +103,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Pagamento individual de vale</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · {vales.length} vale(s) · dívida {formatCurrency(totalDivida)}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor de referência selecionado" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Referência dos vales selecionados. O total recebido é informado nos títulos.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
+        {formaPagamento !== "bonus" && <label className="block rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-bold">Bônus a utilizar · disponível {formatCurrency(saldoBonus)}<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonus} onChange={e => { if (!pagamentoTitulo) setValor(Math.max(0, valorBase + parseBrazilianNumber(bonus) - parseBrazilianNumber(e.target.value)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} className="ml-3 rounded-lg border p-2"/><span className="ml-3">Pagamento + bônus: {formatCurrency(valorTotal)}</span></label>}
         {formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase}/>}
         {formaPagamento === "bonus" && <div className="rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(saldoBonus)}</div>}
         <TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
@@ -107,7 +112,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-black text-emerald-800"><CheckCircle2 size={16}/>{feedback}</div>}
         {erro && <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800">{erro}</div>}
       </div>
-      <footer className="flex justify-end gap-2 border-t border-slate-300 bg-white p-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-black uppercase">Voltar</button><button type="submit" disabled={salvando || valorInformado <= 0} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40">{salvando ? <Loader2 className="animate-spin" size={16}/> : bonusGerado > 0.005 ? <CheckCircle2 size={16}/> : <Coins size={16}/>}Registrar pagamento</button></footer>
+      <footer className="flex justify-end gap-2 border-t border-slate-300 bg-white p-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-black uppercase">Voltar</button><button type="submit" disabled={salvando || valorTotal <= 0} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40">{salvando ? <Loader2 className="animate-spin" size={16}/> : bonusGerado > 0.005 ? <CheckCircle2 size={16}/> : <Coins size={16}/>}Registrar pagamento</button></footer>
     </form>
   </div>;
 }

@@ -3290,7 +3290,10 @@ app.post("/api/vendas", (req, res) => {
       const descGeral = totais.desconto;
       const totalLiquido = totais.totalLiquido;
       validarTotalEsperado(req.body?.totalEsperado, totalLiquido);
-      const vPago = Number(valorPago || 0);
+      const bonusInicial = Math.round(Number(req.body.bonusUtilizado ?? (formaPagamento === 'bonus' ? valorPago : 0)) * 100) / 100;
+      const recebidoInicial = formaPagamento === 'bonus' ? 0 : Number(valorPago || 0);
+      const vPago = Math.round((recebidoInicial + bonusInicial) * 100) / 100;
+      if (![bonusInicial,recebidoInicial].every(Number.isFinite) || bonusInicial<0 || recebidoInicial<0) throw erroHttp('Valor recebido e bônus devem ser válidos e não negativos.',400);
       const saldoRestante = totalLiquido - vPago;
       const usandoCreditoCarteira = formaPagamento === "bonus";
       const parcelasCartaoResolvidas = normalizarParcelasCartao(String(formaPagamento || ""), parcelasCartao);
@@ -3313,7 +3316,7 @@ app.post("/api/vendas", (req, res) => {
           numeroCheque: numeroDocumento,
         });
         if (!emitente) throw erroHttp("Não foi possível identificar o emitente do cheque.", 400);
-        if (vPago <= 0) {
+        if (recebidoInicial <= 0) {
           throw erroHttp("Cheque ou duplicata exige um valor recebido maior que zero.", 400);
         }
       }
@@ -3324,7 +3327,7 @@ app.post("/api/vendas", (req, res) => {
       if (!Number.isFinite(vPago) || vPago < 0 || vPago > totalLiquido + 0.005) {
         throw erroHttp("O valor recebido deve estar entre zero e o total da venda.", 400);
       }
-      if (usandoCreditoCarteira) {
+      if (bonusInicial>0 || usandoCreditoCarteira) {
         const saldoBonus = queryOne<{ saldo: number }>(
           `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) as saldo
            FROM cliente_bonus_movimentos
@@ -3334,7 +3337,7 @@ app.post("/api/vendas", (req, res) => {
         if (vPago <= 0) {
           throw erroHttp("Este cliente não possui crédito disponível para aplicar.", 400);
         }
-        if (vPago > saldoBonus + 0.005) {
+        if (bonusInicial > saldoBonus + 0.005) {
           throw erroHttp("O crédito informado é maior que o saldo disponível na carteira.", 409);
         }
       }
@@ -3394,7 +3397,7 @@ app.post("/api/vendas", (req, res) => {
       }
 
       // Se houver pagamento inicial, registrar
-      if (vPago > 0 && !usandoCreditoCarteira) {
+      if (vPago > 0 && bonusInicial === 0) {
         const pagId = "pag_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
         execute(
           `INSERT INTO pagamentos (id, clienteId, vendaId, data, valor, formaPagamento, parcelasCartao, observacao)
@@ -3402,23 +3405,27 @@ app.post("/api/vendas", (req, res) => {
           [pagId, clienteId, vendaId, data, vPago, formaPagamento || "pix", parcelasCartaoResolvidas, "Pagamento inicial da venda #" + nextSeq]
         );
       }
-      if (vPago > 0 && usandoCreditoCarteira) {
-        execute(
-          `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
-           VALUES (?, ?, NULL, ?, ?, 'debito', ?, ?)`,
-          [
-            "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16),
-            clienteId,
-            vendaId,
-            data,
-            vPago,
-            "Crédito aplicado na venda #" + nextSeq
-          ]
-        );
+      if (bonusInicial > 0) {
+        const recebimentoId = 'rec_'+crypto.randomUUID();
+        const pagamentoId = 'pag_'+crypto.randomUUID();
+        const formaInicial = formaPagamento === 'vale' || recebidoInicial === 0 ? 'bonus' : formaPagamento;
+        execute(`INSERT INTO pagamentos (id,clienteId,vendaId,data,valor,formaPagamento,parcelasCartao,recebimentoId,observacao)
+          VALUES (?,?,?,?,?,?,?,?,?)`,[pagamentoId,clienteId,vendaId,data,recebidoInicial,formaInicial,parcelasCartaoResolvidas,recebimentoId,'Pagamento inicial com bônus']);
+        execute(`INSERT INTO recebimentos_cliente (id,clienteId,data,valorRecebido,valorAplicado,bonusUtilizado,bonusGerado,formaPagamento,parcelasCartao,pagamentoId)
+          VALUES (?,?,?,?,?,?,0,?,?,?)`,[recebimentoId,clienteId,data,recebidoInicial,vPago,bonusInicial,formaInicial,parcelasCartaoResolvidas,pagamentoId]);
+        execute(`INSERT INTO recebimento_alocacoes (id,recebimentoId,vendaId,valor,saldoAntes,saldoDepois) VALUES (?,?,?,?,?,?)`,
+          ['alo_'+crypto.randomUUID(),recebimentoId,vendaId,vPago,totalLiquido,saldoRestante]);
+        execute(`INSERT INTO cliente_bonus_movimentos (id,clienteId,recebimentoId,vendaId,data,tipo,valor,observacao)
+          VALUES (?,?,?,NULL,?,'debito',?,'Bônus no pagamento inicial da venda')`,['bon_'+crypto.randomUUID(),clienteId,recebimentoId,data,bonusInicial]);
+        if (exigeInstrumento) inserirTitulosRecebimento(recebimentoId,clienteId,normalizarTitulosPagamento(formaInicial,undefined,
+          {...instrumentoRecebimento,numeroCheque:instrumentoRecebimento.numeroDocumento},
+          queryOne<any>('SELECT nome,documento FROM clientes WHERE id=?',[clienteId]),recebidoInicial));
+        registrarAuditoria(usuarioDaRequisicao(req)?.id || null,'registrar_recebimento','recebimento_cliente',recebimentoId,
+          {vendaId,recebido:recebidoInicial,bonusUtilizado:bonusInicial,totalAplicado:vPago});
       }
 
 
-      if (exigeInstrumento) {
+      if (exigeInstrumento && bonusInicial === 0) {
         execute(
           `INSERT INTO instrumentos_recebimento
              (id, vendaId, clienteId, tipo, emitente, numeroDocumento, cpfTitular, cpfTerceiro, banco, valor, vencimento, status, observacao)
@@ -3776,6 +3783,8 @@ app.put("/api/vendas/:id", (req, res) => {
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       if (transferidoVale(venda.id) > 0 && novoTotal < pagoAnterior + transferidoVale(venda.id) - 0.005) throw erroHttp("O novo total é inferior ao valor pago e transferido. Use a devolução para gerar crédito ao cliente, ou corrija o recebimento antes de reduzir o total. A transferência histórica é preservada.", 409);
+      if (novoTotal < pagoAnterior - 0.005 && queryOne(`SELECT a.id FROM recebimento_alocacoes a JOIN recebimentos_cliente r ON r.id=a.recebimentoId
+        WHERE a.vendaId=? AND a.deletedAt IS NULL AND r.status='ativo' AND r.deletedAt IS NULL LIMIT 1`,[vendaId])) throw erroHttp('Corrija ou estorne os pagamentos antes de reduzir o total abaixo do valor já aplicado.',409);
       const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
       const novoSaldo = Math.round(saldoVale(venda.id, novoTotal, novoPago) * 100) / 100;
       const bonusGerado = Math.round(Math.max(0, pagoAnterior - novoTotal) * 100) / 100;
@@ -3953,6 +3962,11 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
         throw erroHttp("Este vale possui devoluções registradas. Corrija os créditos do cliente antes de cancelar o vale.", 409);
       }
 
+      if (queryOne('SELECT id FROM recebimento_alocacoes WHERE vendaId=? AND deletedAt IS NULL LIMIT 1',[id])) {
+        const plano = reabertura.preparar('vale',id);
+        reabertura.executar('vale',id,plano.revisao,administrador.id,'Cancelamento do vale');
+        venda.valorPago=0;
+      }
       protegerCompraDevolvida(id);
       ajustarCreditoLinhas(id,venda.clienteId,0);
       execute("UPDATE vendas SET status = 'cancelada', saldoRestante = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [id]);
@@ -4010,7 +4024,8 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
         [id]
       );
       if (Number(alocacaoAtiva?.quantidade || 0) > 0) {
-        throw erroHttp("Esta venda possui recebimentos na Carteira do Cliente. Estorne primeiro esses recebimentos para cancelar a venda.", 409);
+        const plano = reabertura.preparar('vale',id);
+        reabertura.executar('vale',id,plano.revisao,administrador.id,'Cancelamento da venda');
       }
       const devolucaoAtiva = queryOne<{ quantidade: number }>(
         "SELECT COUNT(*) AS quantidade FROM devolucoes_venda WHERE vendaId = ?",
@@ -5007,7 +5022,9 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
       const pagamento = queryOne(`SELECT r.id FROM recebimentos_cliente r JOIN recebimento_alocacoes a ON a.recebimentoId=r.id
         WHERE a.vendaId=? AND a.deletedAt IS NULL AND a.valor>0 AND r.deletedAt IS NULL AND r.status='ativo'
         UNION SELECT p.id FROM pagamentos p WHERE p.vendaId=? AND p.deletedAt IS NULL AND p.valor>0
-        AND p.recebimentoId IS NULL AND NOT EXISTS (SELECT 1 FROM recebimentos_cliente r WHERE r.pagamentoId=p.id)`, [vale.id, vale.id]);
+        AND p.recebimentoId IS NULL AND NOT EXISTS (SELECT 1 FROM recebimentos_cliente r WHERE r.pagamentoId=p.id)
+        UNION SELECT b.id FROM cliente_bonus_movimentos b WHERE b.vendaId=? AND b.recebimentoId IS NULL
+        AND b.deletedAt IS NULL AND b.tipo='debito' AND b.valor>0 AND b.observacao LIKE 'Crédito aplicado na venda #%'`, [vale.id, vale.id, vale.id]);
       if (!pagamento) throw erroHttp("Adicione um pagamento válido antes de finalizar o vale.", 409);
       const bonusDebitoIds: string[] = [];
       const restante = Math.max(0, Math.round(Number(vale.saldoRestante || 0) * 100) / 100);
@@ -5178,7 +5195,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     if (forma === "bonus" && recebido > 0.005) {
       throw erroHttp("Na forma Bônus, informe o valor somente como bônus utilizado.", 400);
     }
-    if (recebido < 0 || bonusUtilizado < 0) {
+    if (![recebido,bonusUtilizado,totalAplicado].every(Number.isFinite) || recebido < 0 || bonusUtilizado < 0) {
       throw erroHttp("Os valores do recebimento e do bônus não podem ser negativos.", 400);
     }
     if (totalAplicado > arredondar(recebido + bonusUtilizado) + 0.005) {
@@ -5317,7 +5334,7 @@ function carregarRecebimentoGerenciavel(recebimentoId: string) {
   const tituloPrincipal = titulos[0];
   const statusPagamento = titulos.length
     ? (titulos.every((titulo: any) => titulo.status === "recusado")
-      ? "recusado"
+      ? (recebimento.status === "ativo" && Number(recebimento.bonusUtilizado) > 0 ? "compensado" : "recusado")
       : titulos.some((titulo: any) => titulo.status === "aguardando") ? "aguardando" : "compensado")
     : (recebimento.status === "recusado" ? "recusado" : "compensado");
   const alocacoes = queryAll<any>(
@@ -5449,7 +5466,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
   const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
   return runInTransaction(() => {
     const titulo = queryOne<any>(
-      `SELECT rt.*, rc.pagamentoId, rc.data AS dataRecebimento, rc.clienteId, rc.status AS recebimentoStatus
+      `SELECT rt.*, rc.pagamentoId, rc.bonusUtilizado, rc.data AS dataRecebimento, rc.clienteId, rc.status AS recebimentoStatus
        FROM recebimento_titulos rt
        JOIN recebimentos_cliente rc ON rc.id = rt.recebimentoId
        WHERE rt.id = ? AND rt.deletedAt IS NULL AND rc.deletedAt IS NULL`,
@@ -5486,8 +5503,9 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
       [titulo.recebimentoId]
     )?.total || 0);
     const totalAplicadoAnterior = arredondar(alocacoesAtuais.reduce((total, item) => total + Number(item.valor), 0));
-    const valorAplicado = arredondar(Math.min(valorRecebido, totalAplicadoAnterior));
-    const bonusGerado = arredondar(Math.max(0, valorRecebido - valorAplicado));
+    const bonusUtilizado = Number(titulo.bonusUtilizado || 0);
+    const valorAplicado = arredondar(Math.min(valorRecebido + bonusUtilizado, totalAplicadoAnterior));
+    const bonusGerado = arredondar(Math.max(0, valorRecebido + bonusUtilizado - valorAplicado));
 
     for (const alocacao of alocacoesAtuais) {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
@@ -5529,6 +5547,8 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
       restante = arredondar(restante - aplicar);
     }
 
+    if (bonusUtilizado>0) execute(`INSERT INTO cliente_bonus_movimentos (id,clienteId,recebimentoId,data,tipo,valor,observacao)
+      VALUES (?,?,?,?,'debito',?,'Bônus preservado após recusa de título')`, ['bon_'+crypto.randomUUID(),titulo.clienteId,titulo.recebimentoId,titulo.dataRecebimento,bonusUtilizado]);
     if (bonusGerado > 0.005) {
       execute(
         `INSERT INTO cliente_bonus_movimentos (id, clienteId, recebimentoId, vendaId, data, tipo, valor, observacao)
@@ -5538,7 +5558,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
     }
     if (novasAlocacoes.length) aplicarRecebimentoEmOrdens(titulo.recebimentoId, novasAlocacoes, parcelaPreferida);
 
-    const recebimentoAtivo = valorRecebido > 0.005;
+    const recebimentoAtivo = valorRecebido + bonusUtilizado > 0.005;
     execute(
       `UPDATE recebimentos_cliente
        SET valorRecebido = ?, valorAplicado = ?, bonusGerado = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
@@ -5551,6 +5571,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
         [valorRecebido, recebimentoAtivo ? null : agora, titulo.pagamentoId]
       );
     }
+    if (Number(queryOne<any>("SELECT COALESCE(SUM(CASE WHEN tipo='credito' THEN valor ELSE -valor END),0) saldo FROM cliente_bonus_movimentos WHERE clienteId=? AND deletedAt IS NULL",[titulo.clienteId])?.saldo || 0)<-0.005) throw erroHttp('O excedente já foi utilizado. Estorne seu uso antes de recusar o título.',409);
     registrarMovimentacaoFinanceira(titulo.recebimentoId, "titulo_recusado", -Number(titulo.valor), { motivo, tituloId: titulo.id }, administradorId, titulo.id);
     registrarAuditoria(administradorId, "titulo_recusado", "recebimento_cliente", titulo.recebimentoId, {
       tituloId: titulo.id,
@@ -5691,11 +5712,14 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
     const motivoStatus = String(req.body?.motivoStatus || "").trim().slice(0, 300);
     const dataCompensacaoInformada = String(req.body?.dataCompensacao || "");
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
-    const valorInformado = arredondar(req.body?.valorRecebido);
+    const entradaRecebido = arredondar(req.body?.valorRecebido);
     if (!FORMAS_PAGAMENTO_CLIENTE.has(forma)) throw erroHttp("Informe uma forma de pagamento válida para edição.", 400);
     const usandoBonus = forma === "bonus";
-    const valorRecebido = usandoBonus ? 0 : valorInformado;
-    const bonusUtilizado = usandoBonus ? valorInformado : 0;
+    const bonusAnterior = Number(queryOne<any>('SELECT bonusUtilizado FROM recebimentos_cliente WHERE id=?',[recebimentoId])?.bonusUtilizado || 0);
+    const bonusUtilizado = arredondar(req.body?.bonusUtilizado ?? (usandoBonus ? entradaRecebido : bonusAnterior));
+    const valorRecebido = usandoBonus ? 0 : entradaRecebido;
+    const valorInformado = arredondar(valorRecebido + bonusUtilizado);
+    if (![valorRecebido,bonusUtilizado].every(Number.isFinite) || valorRecebido<0 || bonusUtilizado<0) throw erroHttp('Valores do pagamento e bônus inválidos.',400);
     const formaTitulo = ehTituloPagamento(forma);
     if (!formaTitulo) status = "compensado";
     if (!["aguardando", "compensado", "recusado"].includes(status)) throw erroHttp("Informe uma situação válida para o pagamento.", 400);
@@ -5721,6 +5745,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
     if (formaTitulo) {
       status = titulos.every((titulo) => (titulo.status || status) === "recusado") ? "recusado"
         : titulos.some((titulo) => (titulo.status || status) === "aguardando") ? "aguardando" : "compensado";
+      if (status === "recusado" && bonusUtilizado>0) status="compensado";
     }
     const agrupadas = new Map<string, number>();
     for (const item of Array.isArray(req.body?.alocacoes) ? req.body.alocacoes : []) {
@@ -5808,7 +5833,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
       }
       const totalAplicado = arredondar(novasAlocacoes.reduce((total, item) => total + item.valor, 0));
       if (totalAplicado <= 0 && status !== "recusado") throw erroHttp("Não há saldo disponível nos vales informados para aplicar este pagamento.", 400);
-      if (usandoBonus && Math.abs(totalAplicado - valorInformado) > 0.005) throw erroHttp("Pagamentos em bônus devem ser totalmente aplicados nos vales.", 400);
+      if (bonusUtilizado > totalAplicado + 0.005) throw erroHttp("Pagamentos em bônus devem ser totalmente aplicados nos vales.", 400);
       if (parcelaOrdemExclusiva && status !== "recusado") {
         validarPagamentoExclusivoParcela(
           atual.clienteId,
@@ -5828,7 +5853,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
       const financeiroFicaraAtivo = status !== "recusado";
       const financeiroMudou = financeiroEstavaAtivo !== financeiroFicaraAtivo
         || Math.abs(Number(atual.valorRecebido || 0) + Number(atual.bonusUtilizado || 0) - valorInformado) > 0.005
-        || (Number(atual.bonusUtilizado || 0) > 0.005) !== usandoBonus
+        || Math.abs(Number(atual.bonusUtilizado || 0) - bonusUtilizado) > 0.005
         || distribuicaoMudou;
       const agora = new Date().toISOString();
       const dataCompensacao = status === "compensado"
@@ -5853,9 +5878,9 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
 
       let bonusGerado = Number(atual.bonusGerado || 0);
       if (financeiroMudou) {
-        bonusGerado = financeiroFicaraAtivo && !usandoBonus ? arredondar(Math.max(0, valorRecebido - totalAplicado)) : 0;
+        bonusGerado = financeiroFicaraAtivo && !usandoBonus ? arredondar(Math.max(0, valorInformado - totalAplicado)) : 0;
         if (financeiroFicaraAtivo) {
-          if (usandoBonus) {
+          if (bonusUtilizado > 0) {
             const saldoBonus = Number(queryOne<any>(
               `SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
                FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`,
@@ -5905,13 +5930,13 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
       const saldoBonusFinal = Number(queryOne<any>(`SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
         FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`, [atual.clienteId])?.saldo || 0);
       if (saldoBonusFinal < -0.005) throw erroHttp("O bônus deste pagamento já foi utilizado. Estorne primeiro o uso desse bônus antes de reduzir ou recusar o pagamento.", 409);
-      const valoresCredito = validarValoresCredito(forma, parcelasCartao, valorInformado, req.body?.valoresParcelasCartao);
+      const valoresCredito = validarValoresCredito(forma, parcelasCartao, valorRecebido, req.body?.valoresParcelasCartao);
       execute('UPDATE recebimentos_cliente SET valoresParcelasCartao = ? WHERE id = ?', [valoresCredito, recebimentoId]);
       execute('UPDATE pagamentos SET valoresParcelasCartao = ? WHERE recebimentoId = ? AND deletedAt IS NULL', [valoresCredito, recebimentoId]);
       registrarMovimentacaoFinanceira(recebimentoId, "pagamento_alterado", valorRecebido, { antes: atual.valorRecebido, depois: valorRecebido, status }, administrador.id);
       registrarAuditoria(administrador.id, "pagamento_alterado", "recebimento_cliente", recebimentoId, {
-        antes: { status: titulosAtuais[0]?.status || "compensado", data: atual.data, valorRecebido: Number(atual.valorRecebido || 0) + Number(atual.bonusUtilizado || 0), formaPagamento: atual.formaPagamento, parcelasCartao: atual.parcelasCartao, titulos: titulosAtuais },
-        depois: { status, data, valorRecebido: valorInformado, formaPagamento: forma, parcelasCartao, totalAplicado, motivoStatus, titulos },
+        antes: { status: titulosAtuais[0]?.status || "compensado", bonusUtilizado: atual.bonusUtilizado, data: atual.data, valorRecebido: Number(atual.valorRecebido || 0) + Number(atual.bonusUtilizado || 0), formaPagamento: atual.formaPagamento, parcelasCartao: atual.parcelasCartao, titulos: titulosAtuais },
+        depois: { status, data, valorRecebido, bonusUtilizado, valorTotal: valorInformado, formaPagamento: forma, parcelasCartao, totalAplicado, motivoStatus, titulos },
       });
       return carregarRecebimentoGerenciavel(recebimentoId);
     });
@@ -5968,15 +5993,17 @@ app.put("/api/ordens-cobranca/:id/projecoes/:projecaoId", exigirGerente, (req, r
       if (!ordem || !p || crypto.createHash("sha256").update(p.dados).digest("hex") !== req.body.revisao) throw erroHttp("A previsão mudou. Atualize a ordem.", 409);
       const dados = JSON.parse(p.dados);
       const forma = String(req.body.formaPagamento || "");
-      const valor = Math.round(Number(req.body.valorRecebido) * 100) / 100;
-      if (!FORMAS_PAGAMENTO_CLIENTE.has(forma) || !ehDataIsoValida(req.body.data) || !Number.isFinite(valor) || valor <= 0) throw erroHttp("Informe data, forma e valor válidos.", 400);
+      const entrada = Math.round(Number(req.body.valorRecebido) * 100) / 100;
+      const bonus = Math.round(Number(req.body.bonusUtilizado ?? (forma === 'bonus' ? entrada : dados.bonusUtilizado || 0)) * 100) / 100;
+      const valor = forma === 'bonus' ? 0 : entrada;
+      if (!FORMAS_PAGAMENTO_CLIENTE.has(forma) || !ehDataIsoValida(req.body.data) || !Number.isFinite(valor) || !Number.isFinite(bonus) || valor < 0 || bonus < 0 || valor + bonus <= 0) throw erroHttp("Informe data, forma e valor válidos.", 400);
       const cliente = queryOne<any>("SELECT * FROM clientes WHERE id = ?", [ordem.clienteId]);
       const titulos = normalizarTitulosPagamento(forma, (req.body.titulos || []).map((t: any) => ({ ...t, status: 'aguardando' })), null, cliente, valor)
         .map(t => ({ ...t, status: 'aguardando', dataCompensacao: null, compensacaoAutomatica: programacaoDoTitulo({ ...t, status: 'aguardando' }, dados.titulos.find((a: any) => a.id === t.id)) }));
       const parcelasCartao = normalizarParcelasCartao(forma, req.body.parcelasCartao);
       const valores = validarValoresCredito(forma, parcelasCartao, valor, req.body.valoresParcelasCartao);
       const depois = { ...dados, data: req.body.data, formaPagamento: forma, valorRecebido: forma === 'bonus' ? 0 : valor,
-        bonusUtilizado: forma === 'bonus' ? valor : 0, titulos, parcelasCartao, valoresParcelasCartao: valores ? JSON.parse(valores) : undefined };
+        bonusUtilizado: bonus, titulos, parcelasCartao, valoresParcelasCartao: valores ? JSON.parse(valores) : undefined };
       execute("UPDATE ordem_pagamentos_projetados SET dados = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [JSON.stringify(depois), p.id]);
       registrarAuditoria(gerente.id, "projecao_alterada", "ordem_cobranca", ordem.id, { projecaoId: p.id, antes: dados, depois });
     });

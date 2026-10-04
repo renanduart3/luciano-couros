@@ -153,6 +153,7 @@ export interface DevolucaoVenda {
 }
 
 export interface Venda {
+  bonusLegado?: number;
   creditoLinhaDevolucao?: number;
   valorTransferido?: number;
   financeiro?: import("./lib/financeiro").PosicaoFinanceira;

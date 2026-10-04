@@ -18,8 +18,10 @@ export function anexarFinanceiroVales(vendas: any[]) {
     if (!porVale.has(a.vendaId)) porVale.set(a.vendaId,new Set());
     porVale.get(a.vendaId)!.add(a.recebimentoId);
   }
+  const bonusLegado = new Map(queryAll<any>("SELECT vendaId,SUM(valor) total FROM cliente_bonus_movimentos WHERE vendaId IS NOT NULL AND recebimentoId IS NULL AND tipo='debito' AND deletedAt IS NULL AND observacao LIKE 'Crédito aplicado na venda #%' GROUP BY vendaId").map(b=>[b.vendaId,Number(b.total)]));
   const transferencias = new Map(queryAll<any>("SELECT vendaOrigemId, SUM(valorTransferido) total FROM vale_residual_origens GROUP BY vendaOrigemId").map(t => [t.vendaOrigemId, Number(t.total)]));
   for (const venda of vendas) {
+    venda.bonusLegado = bonusLegado.get(venda.id) || 0;
     venda.valorTransferido = transferencias.get(venda.id) || 0;
     venda.instrumentoRecebimento ??= instrumentoPorVale.get(venda.id);
     const pagamentos = [...(porVale.get(venda.id)||[])].map(id=>porRecebimento.get(id)).filter(Boolean);

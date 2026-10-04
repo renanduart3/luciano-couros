@@ -2,7 +2,7 @@ import type { OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 export interface PosicaoFinanceira {
   negociado: number;
   transferido?: number;
-  /** Dinheiro/títulos já compensados. */
+  /** Dinheiro/títulos já compensados e crédito utilizado, discriminado em creditoUtilizado. */
   recebido: number;
   /** Cheques e boletos entregues, mas ainda não compensados. */
   aguardando: number;
@@ -64,8 +64,10 @@ export function calcularFinanceiroVale(v: Venda): PosicaoFinanceira {
     aplicado += (p.alocacoes || []).filter(a=>!a.deletedAt && a.vendaId===v.id).reduce((s,a)=>s+cents(a.valor),0);
   }
   const legado = Math.max(0,cents(v.valorPago)-aplicado);
+  const creditoLegado = Math.min(legado,cents(v.bonusLegado));
+  credito += creditoLegado;
   const instrumento = v.instrumentoRecebimento;
-  const valorInstrumento = instrumento ? Math.min(legado,cents(instrumento.valor)) : 0;
+  const valorInstrumento = instrumento ? Math.min(legado-creditoLegado,cents(instrumento.valor)) : 0;
   recebido += legado - valorInstrumento;
   if (instrumento && ["aguardando","em_carteira"].includes(instrumento.status)) aguardando += valorInstrumento;
   else if (!instrumento || instrumento.status !== "recusado") recebido += valorInstrumento;

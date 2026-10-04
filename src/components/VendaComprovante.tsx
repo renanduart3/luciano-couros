@@ -49,7 +49,8 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const ehVale = Boolean(venda.vencimento);
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
   const parcelasCartao = normalizarQuantidadeParcelas(venda.parcelasCartao);
-  const valorRecebido = financeiroVale(venda).recebido;
+  const financeiro = financeiroVale(venda);
+  const valorRecebido = Math.max(0, financeiro.recebido - financeiro.creditoUtilizado);
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
   const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
   const titulo = residual ? "VALE DE SALDO DEVEDOR" : instrumento?.tipo?.startsWith("cheque")
@@ -106,6 +107,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       {Number(venda.valorTransferido || 0) > 0 && <div className="receipt-payment-line"><span>TRANSFERIDO PARA OUTRO VALE: {formatCurrency(venda.valorTransferido!)}</span></div>}
       <div className="receipt-payment-line">
         <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
+        {financeiro.creditoUtilizado > 0 && <span className="receipt-payment-value"><b>BÔNUS UTILIZADO:</b> {formatCurrency(financeiro.creditoUtilizado)}</span>}
         <span className="receipt-payment-value"><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
         <span className="receipt-payment-observation"><b>OBSERVAÇÃO:</b> <span title={observacaoComprovante}>{observacaoComprovante || "—"}</span></span>
       </div>

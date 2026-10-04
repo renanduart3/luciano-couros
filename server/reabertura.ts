@@ -17,6 +17,7 @@ export function criarGerenciadorReabertura(deps: {
     let alvo: any;
     let recebimentos: any[];
     let legados: any[] = [];
+    let bonusLegados: any[] = [];
     if (tipo === "ordem") {
       alvo = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND deletedAt IS NULL AND status IN ('aberta','quitada')", [id]);
       if (!alvo) falha("A ordem já foi cancelada ou não está disponível.");
@@ -47,7 +48,8 @@ export function criarGerenciadorReabertura(deps: {
       if (!alvo) falha("Pagamento já estornado ou indisponível. Atualize a tela.");
       recebimentos = [alvo];
     }
-    if (tipo !== "ordem" && !recebimentos.length && !legados.length) falha("Não há pagamentos ativos para estornar neste registro.");
+    if (tipo === 'vale') bonusLegados = queryAll<any>("SELECT * FROM cliente_bonus_movimentos WHERE vendaId=? AND recebimentoId IS NULL AND tipo='debito' AND deletedAt IS NULL AND observacao LIKE 'Crédito aplicado na venda #%' ORDER BY id",[id]);
+    if (tipo !== "ordem" && !recebimentos.length && !legados.length && !bonusLegados.length) falha("Não há pagamentos ativos para estornar neste registro.");
     if (recebimentos.some(r => r.clienteId !== alvo.clienteId)) falha("Há um recebimento de outro cliente vinculado a este registro. Revise os vínculos antes de estornar.");
     const alocacoes = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM recebimento_alocacoes WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
     const titulos = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM recebimento_titulos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
@@ -55,7 +57,7 @@ export function criarGerenciadorReabertura(deps: {
       FROM ordem_cobranca_parcela_recebimentos pr JOIN ordem_cobranca_parcelas p ON p.id = pr.parcelaId
       JOIN ordens_cobranca oc ON oc.id = pr.ordemId WHERE pr.recebimentoId = ? AND pr.deletedAt IS NULL ORDER BY pr.id`, [r.id]));
     const valoresPorVale = new Map<string, number>();
-    for (const item of [...alocacoes, ...legados]) valoresPorVale.set(item.vendaId, dinheiro((valoresPorVale.get(item.vendaId) || 0) + Number(item.valor)));
+    for (const item of [...alocacoes, ...legados, ...bonusLegados]) valoresPorVale.set(item.vendaId, dinheiro((valoresPorVale.get(item.vendaId) || 0) + Number(item.valor)));
     const vales = [...valoresPorVale].map(([vendaId, valor]) => {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status != 'cancelada'", [vendaId]);
       if (!venda) falha("Um vale deste pagamento foi cancelado. Revise o histórico antes de estornar.");
@@ -85,7 +87,7 @@ export function criarGerenciadorReabertura(deps: {
         WHERE original.ordemId = ? AND original.removidoAt IS NULL LIMIT 1`, [parcela.ordemId]);
       if (conflito) falha(`Um vale já está na ordem aberta #${conflito.numeroSequencial}. Revise essa negociação antes de reabrir a anterior.`);
     }
-    const movimentos = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM cliente_bonus_movimentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
+    const movimentos = bonusLegados.concat(recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM cliente_bonus_movimentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id])));
     const saldoBonus = Number(queryOne<any>(`SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
       FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`, [alvo.clienteId])?.saldo || 0);
     const variacaoBonus = dinheiro(movimentos.reduce((total, m) => total + (m.tipo === "credito" ? -Number(m.valor) : Number(m.valor)), 0));
@@ -101,7 +103,7 @@ export function criarGerenciadorReabertura(deps: {
     const vinculosRecebimentos = recebimentos.flatMap(r => queryAll<any>("SELECT * FROM ordem_cobranca_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
     const parcelasVales = vales.flatMap(v => queryAll<any>("SELECT * FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY id", [v.id]));
     const projecoes = tipo === "ordem" ? queryAll<any>("SELECT * FROM ordem_pagamentos_projetados WHERE ordemId = ? AND estado = 'pendente' ORDER BY id", [id]) : [];
-    const snapshot = { tipo, id, alvo, recebimentos, legados, alocacoes, titulos, instrumentos, instrumentosLegados, parcelas, parcelasVales, ordens, vinculos, vinculosRecebimentos, projecoes, vales, movimentos, saldoBonus, lancamentos };
+    const snapshot = { tipo, id, alvo, recebimentos, legados, bonusLegados, alocacoes, titulos, instrumentos, instrumentosLegados, parcelas, parcelasVales, ordens, vinculos, vinculosRecebimentos, projecoes, vales, movimentos, saldoBonus, lancamentos };
     const revisao = crypto.createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
     const totalFinanceiro = dinheiro([...lancamentos, ...legados].reduce((total, p) => total + Number(p.valor), 0));
     const resumo = {
@@ -110,7 +112,7 @@ export function criarGerenciadorReabertura(deps: {
       totalFinanceiro,
       totalEstornado: dinheiro(vales.reduce((total, v) => total + v.valorEstornado, 0)),
       variacaoBonus,
-      quantidadePagamentos: recebimentos.length + legados.length,
+      quantidadePagamentos: recebimentos.length + legados.length + bonusLegados.length,
       compartilhado: tipo === "vale" ? vales.some((v) => v.id !== id) : tipo === "parcela" ? parcelas.some((p) => p.parcelaId !== id) : vales.length > 1 || new Set(parcelas.map((p) => p.parcelaId)).size > 1,
       vales: vales.map((v) => ({ numero: v.numeroSequencial, valor: v.valorEstornado })),
       ordens: ordens.map(o => ({ numero: o.numeroSequencial, status: o.status })),
@@ -141,6 +143,7 @@ export function criarGerenciadorReabertura(deps: {
         registrarMovimentacaoFinanceira(recebimento.id, "estorno", -Number(recebimento.valorRecebido), { motivo, alvo: { tipo, id }, valores: plano.resumo }, usuarioId);
         deps.auditar(usuarioId, "estornar_recebimento", "recebimento_cliente", recebimento.id, { clienteId: recebimento.clienteId, motivo, alvo: { tipo, id }, valorRecebido: recebimento.valorRecebido });
       }
+      for (const bonus of plano.bonusLegados) execute("UPDATE cliente_bonus_movimentos SET deletedAt=? WHERE id=?",[agora,bonus.id]);
       for (const pagamento of plano.legados) {
         execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, pagamento.id]);
         deps.auditar(usuarioId, "estornar_pagamento", "pagamento", pagamento.id, { motivo, alvo: { tipo, id }, valor: pagamento.valor });

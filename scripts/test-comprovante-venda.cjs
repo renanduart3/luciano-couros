@@ -58,3 +58,9 @@ assert.equal((html.match(/-R\$\s?24,00/g)||[]).length,2);
 assert.ok(html.includes('CRÉDITO NA CARTEIRA'));
 assert.ok(!html.includes('DESCONTOS / AJUSTES'));
 console.log('OK: linha negativa e crédito excedente no comprovante, sem desconto fictício.');
+
+html = render({ ...venda, totalLiquido: 100, valorPago: 100, bonusLegado: 20 });
+assert.equal((html.match(/BÔNUS UTILIZADO:/g) || []).length, 2);
+assert.equal((html.match(/VALOR RECEBIDO:<\/b> R\$\s?80,00/g) || []).length, 2);
+assert.equal((html.match(/BÔNUS UTILIZADO:<\/b> R\$\s?20,00/g) || []).length, 2);
+console.log('OK: comprovante distingue dinheiro de bônus sem somar o crédito duas vezes.');

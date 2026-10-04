@@ -365,6 +365,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
     }).then(r => handleResponse<OrdemCobranca>(r)),
+  previaReabrirFinalizacao: (tipo: 'ordem' | 'vale', id: string) =>
+    fetch(`${API_BASE}/finalizacoes/${tipo}/${id}/reabertura`).then(r => handleResponse<{
+      revisao: string; numero: number; vales: number[]; residual: { numero: number; valor: number } | null; bonusRestituido: number;
+    }>(r)),
+  reabrirFinalizacao: (tipo: 'ordem' | 'vale', id: string, dados: { pin: string; motivo: string; revisao: string }) =>
+    fetch(`${API_BASE}/finalizacoes/${tipo}/${id}/reabertura`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }).then(r => handleResponse<{ success: boolean }>(r)),
   finalizarOrdemCobranca: (id: string, dados: { pin: string; destinoRestante: "novo_vale" | "zerar"; zerarExcedente: boolean; motivo?: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/finalizar`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)

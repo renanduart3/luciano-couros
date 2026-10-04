@@ -22,11 +22,11 @@ const mod = new Module(path.join(raiz, 'scripts/finalizacao-runtime.cjs'));
 mod.filename = mod.id; mod.paths = module.paths; mod._compile(compiled.outputFiles[0].text, mod.filename);
 const { app, db, fecharPosicao, descreverParcelamentoCartao } = mod.exports;
 
-function chamar(rota, params, body) {
+function chamar(rota, params, body, esperado = 200) {
   const camada = app._router.stack.find(item => item.route?.path === rota && item.route.methods.post);
   let resposta, status = 200;
   camada.route.stack[0].handle({ params, body }, { status(codigo) { status = codigo; return this; }, json(valor) { resposta = valor; } });
-  assert.equal(status, 200, JSON.stringify(resposta));
+  assert.equal(status, esperado, JSON.stringify(resposta));
   return resposta;
 }
 
@@ -46,6 +46,12 @@ try {
   db.prepare("INSERT INTO ordem_cobranca_vales(id,ordemId,vendaId,valorVinculado,valorPago,saldo,ativo) VALUES ('ov1','o1','v1',100,40,60,1)").run();
   db.prepare("INSERT INTO ordem_cobranca_parcelas(id,ordemId,numero,vencimento,valor,valorPago,saldo,status) VALUES ('op1','o1',1,'2026-10-01',100,40,60,'pendente')").run();
 
+  chamar('/api/ordens-cobranca/:id/finalizar', { id: 'o1' }, { pin: '1234', destinoRestante: 'novo_vale', zerarExcedente: false }, 409);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM vendas').get().n, 1);
+  assert.equal(db.prepare("SELECT finalizadoAt FROM ordens_cobranca WHERE id='o1'").get().finalizadoAt, null);
+  db.prepare("INSERT INTO recebimentos_cliente (id,clienteId,data,valorRecebido,valorAplicado,formaPagamento,ordemCobrancaId) VALUES ('r1','c','2026-09-24',40,40,'pix','o1')").run();
+  db.prepare("INSERT INTO recebimento_alocacoes (id,recebimentoId,vendaId,valor) VALUES ('a1','r1','v1',40)").run();
+  db.prepare("INSERT INTO ordem_cobranca_recebimentos (id,ordemId,recebimentoId,vendaId,valor) VALUES ('ocr1','o1','r1','v1',40)").run();
   const resultado = chamar('/api/ordens-cobranca/:id/finalizar', { id: 'o1' }, { pin: '1234', destinoRestante: 'novo_vale', zerarExcedente: false });
   assert.equal(resultado.ordem.finalizadoAt != null, true);
   assert.equal(resultado.valeResidual.numeroSequencial, 2);

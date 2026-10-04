@@ -17,6 +17,7 @@ import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 import { OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
+import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination } from "./Pagination";
 import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
 
@@ -149,6 +150,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [encerramento, setEncerramento] = useState(false);
   const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
+  const [reabrirFinalizacao, setReabrirFinalizacao] = useState(false);
   const [pinEncerramento, setPinEncerramento] = useState("");
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
@@ -165,7 +167,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   });
   const abrirAcao = (pedido: { acao: "estornar" | "excluir"; itens: ItemAcaoPagamentoOrdem[] }) => { if (edicoes.size) { setError("Salve ou cancele a edição antes desta ação."); return; } setError(""); setAcao(pedido); };
   const alternar = (item: ItemAcaoPagamentoOrdem) => setSelecionados(atual => atual.some(i => i.id === item.id) ? atual.filter(i => i.id !== item.id) : [...atual, item]);
-  const podeGerenciar = gerente && ["aberta", "quitada"].includes(ordem.status);
+  const podeGerenciar = gerente && !ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status);
   const aplicarAtualizacao = (atualizada: OrdemCobranca) => { setSelecionados([]); setAcao(null); setEdicoes(new Set()); onChanged(atualizada); };
   const atualizarPagamentos = async (resultado?: { estornado: boolean; ordem?: OrdemCobranca }) => {
     const atualizada = resultado?.ordem || (await api.getOrdensCobranca(ordem.clienteId)).find((item) => item.id === ordem.id);
@@ -230,11 +232,12 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
 
   if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
+  {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)} onSaved={async () => { await atualizarPagamentos(); setFeedback("Ordem reaberta para edição. Pagamentos preservados."); }}/>}
   {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
     const resultado = await api.finalizarOrdemCobranca(ordem.id, dados);
     onChanged(resultado.ordem);
     return { mensagem: resultado.valeResidual ? `Ordem finalizada. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Ordem finalizada e saldos encerrados." };
-  }}/>} {recebimentoAberto && <RecebimentoDetalhesModal ordemContextoId={ordem.id} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
+  }}/>} {recebimentoAberto && <RecebimentoDetalhesModal somenteLeitura={Boolean(ordem.finalizadoAt)} ordemContextoId={ordem.id} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
   {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => setDemonstrativoAberto(false)} onClose={() => setDemonstrativoAberto(false)} />}
   {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
@@ -312,7 +315,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}
       </div>
-      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button disabled={saving} type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{podeGerenciar && !ordem.finalizadoAt && <button disabled={saving} type="button" onClick={abrirEncerramento} className="rounded-lg border border-slate-400 px-3 py-2 text-xs font-black uppercase text-slate-700">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
+      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{gerente && ordem.finalizadoAt && <button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white">Reabrir para editar</button>}{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button title="É necessário um pagamento registrado; títulos aguardando compensação são aceitos." disabled={saving || !(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicado > 0)} type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{podeGerenciar && !ordem.finalizadoAt && <button disabled={saving} type="button" onClick={abrirEncerramento} className="rounded-lg border border-slate-400 px-3 py-2 text-xs font-black uppercase text-slate-700">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
     </div>
   </div></>;
 }

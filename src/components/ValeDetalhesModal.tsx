@@ -11,6 +11,7 @@ import { financeiroVale } from "../lib/financeiro";
 import { resumoRecebimentos } from "../lib/resumoRecebimentos";
 import { LinhaPagamento } from "./LinhaPagamento";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
+import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination, paginate } from "./Pagination";
 import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
 
@@ -25,13 +26,14 @@ interface ValeDetalhesModalProps {
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
   const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
   const gerente = useEhGerente();
-  const bloqueado = ordemCobranca?.status === "aberta";
+  const bloqueado = ordemCobranca?.status === "aberta" || Boolean(vale.finalizadoAt);
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
   const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); setPaginaPagamentos(1); };
   const [aba, setAba] = useState<"itens" | "comprovante">("itens");
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
+  const [reabrirFinalizacao, setReabrirFinalizacao] = useState(false);
   const [pin, setPin] = useState("");
   const [motivo, setMotivo] = useState("");
   const [dataDevolucao, setDataDevolucao] = useState(todayLocalIso());
@@ -152,6 +154,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>
           </div>
         </header>
+        {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="vale" id={vale.id} onClose={() => setReabrirFinalizacao(false)} onSaved={atualizarPagamentos}/>}
+        {gerente && vale.finalizadoAt && onUpdated && <div className="p-3 print:hidden"><button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-bold text-white">Reabrir para editar</button></div>}
         <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)}/>
 
         {aba === "itens" ? (

@@ -454,6 +454,7 @@ export const api = {
     totalEsperado?: number;
     items: Array<{
       produtoId: string;
+      itemOrigemId?: string | null;
       fornecedorId?: string | null;
       fornecedorReferencia?: string | null;
       descricao: string;
@@ -509,6 +510,7 @@ export const api = {
     items: Array<{
       id: string;
       produtoId: string;
+      itemOrigemId?: string | null;
       fornecedorId?: string | null;
       fornecedorReferencia?: string | null;
       quantidade: number;

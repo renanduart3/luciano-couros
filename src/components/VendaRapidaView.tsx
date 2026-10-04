@@ -1,3 +1,4 @@
+import { SelecionarDevolucao } from "./SelecionarDevolucao";
 import { arredondarDinheiro } from "../lib/totaisVenda";
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -31,6 +32,7 @@ interface VendaRapidaViewProps {
 }
 
 interface ItemRascunho {
+  itemOrigemId?: string | null;
   id?: string;
   produtoId: string;
   fornecedorId?: string | null;
@@ -219,13 +221,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   useEffect(() => {
     if (!vendaEmEdicao || produtos.length === 0) return;
-    const percentualDesconto = Number(vendaEmEdicao.subtotal) > 0
-      ? (Number(vendaEmEdicao.desconto || 0) / Number(vendaEmEdicao.subtotal)) * 100
+    const baseDesconto = (vendaEmEdicao.items || []).filter(i=>i.quantidade>0).reduce((s,i)=>s+Number(i.total),0);
+    const percentualDesconto = baseDesconto > 0
+      ? (Number(vendaEmEdicao.desconto || 0) / baseDesconto) * 100
       : 0;
     setItensVenda((vendaEmEdicao.items || []).map((item) => {
       const produto = produtos.find((registro) => registro.id === item.produtoId);
       return {
         id: item.id,
+        itemOrigemId: item.itemOrigemId,
         produtoId: item.produtoId,
         fornecedorId: item.fornecedorId,
         fornecedorReferencia: item.fornecedorReferencia,
@@ -473,13 +477,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     const desc = parseBrazilianNumber(item.desconto);
     return acc + arredondarDinheiro((qty * preco) - desc);
   }, 0);
-  const quantidadeItensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0).length;
+  const quantidadeItensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) !== 0).length;
 
+  const subtotalPositivo = itensVenda.filter(i=>parseBrazilianNumber(i.quantidade)>0).reduce((s,i)=>s+arredondarDinheiro(parseBrazilianNumber(i.quantidade)*parseBrazilianNumber(i.precoUnitario)-parseBrazilianNumber(i.desconto)),0);
   const descGeralPercent = parseBrazilianNumber(descontoGeral);
-  const descGeral = arredondarDinheiro(subtotalItens * (descGeralPercent / 100));
+  const descGeral = arredondarDinheiro(subtotalPositivo * (descGeralPercent / 100));
   const creditoDevolucoes = (vendaEmEdicao?.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito || 0), 0);
   const totalLiquido = arredondarDinheiro(Math.max(0, subtotalItens - descGeral - creditoDevolucoes));
-  const fatorPrecoEfetivo = subtotalItens > 0 ? totalLiquido / subtotalItens : 1;
+  const fatorPrecoEfetivo = subtotalPositivo > 0 ? (subtotalPositivo-descGeral)/subtotalPositivo : 1;
   const itensQueExigemAutorizacao = itensVenda.filter((item) => {
     if (parseBrazilianNumber(item.quantidade) <= 0) return false;
     const pisoPermitido = item.precoAutorizado ?? item.precoPadrao;
@@ -521,8 +526,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       const precoUnitario = parseBrazilianNumber(item.precoUnitario);
       const descontoItem = parseBrazilianNumber(item.desconto);
       const produto = produtos.find((prod) => prod.id === item.produtoId);
-      const valorAntesDescontoGeral = Math.max(0, (quantidade * precoUnitario) - descontoItem);
-      const valorVenda = valorAntesDescontoGeral * fatorPrecoEfetivo;
+      const valorAntesDescontoGeral = quantidade<0 ? quantidade*precoUnitario : Math.max(0, (quantidade * precoUnitario) - descontoItem);
+      const valorVenda = valorAntesDescontoGeral * (quantidade<0 ? 1 : fatorPrecoEfetivo);
       const custoUnitario = Number(
         produto?.fornecedores?.find((fornecedor) => fornecedor.fornecedorId === item.fornecedorId)?.custoFornecedor
         ?? produto?.custoPadrao
@@ -543,7 +548,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         fornecedor: produto?.ultimoFornecedorNome || "Sem compra registrada",
       };
     })
-    .filter((item) => item.quantidade > 0);
+    .filter((item) => item.quantidade !== 0);
 
   const quantidadeTotalAnalise = analiseLinhas.reduce((total, item) => total + item.quantidade, 0);
   const precoMedioAnalise = quantidadeTotalAnalise > 0 ? totalLiquido / quantidadeTotalAnalise : 0;
@@ -741,7 +746,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       const habitualVazioIndex = prev.findIndex((item) =>
         chaveVarianteProduto(item.produtoId, item.fornecedorId)
           === chaveVarianteProduto(novoItem.produtoId, novoItem.fornecedorId)
-        && parseBrazilianNumber(item.quantidade) <= 0
+        && !item.itemOrigemId && parseBrazilianNumber(item.quantidade) <= 0
       );
 
       if (habitualVazioIndex >= 0) {
@@ -896,9 +901,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
   const executarSalvamentoVenda = async (autorizacaoPreco?: { pin: string }) => {
     if (!clienteSelecionado) return;
-    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
+    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) !== 0);
 
-    if (!Number.isFinite(descGeralPercent) || descGeralPercent < 0 || descGeralPercent > 100 || creditoDevolucoes > subtotalItens - descGeral + 0.005) {
+    if (!Number.isFinite(descGeralPercent) || descGeralPercent < 0 || descGeralPercent > 100 || (creditoDevolucoes > 0 && creditoDevolucoes > subtotalItens - descGeral + 0.005)) {
       setFeedbackMsg({ type: "error", text: "Revise o desconto e as devoluções: o total da venda é inválido." });
       return;
     }
@@ -915,7 +920,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           totalEsperado: totalLiquido,
           observacoes: observacoes || undefined,
           items: itensPreenchidos.map((item) => ({
-            id: item.id || `novo_${item.produtoId}`,
+            id: item.id || `novo_${item.itemOrigemId || item.produtoId}`,
+            itemOrigemId: item.itemOrigemId,
             produtoId: item.produtoId,
             fornecedorId: item.fornecedorId,
             fornecedorReferencia: item.fornecedorReferencia,
@@ -936,6 +942,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         descontoGeral: descGeral,
         totalEsperado: totalLiquido,
         items: itensPreenchidos.map(it => ({
+          itemOrigemId: it.itemOrigemId,
           produtoId: it.produtoId,
           fornecedorId: it.fornecedorId,
           fornecedorReferencia: it.fornecedorReferencia,
@@ -1017,7 +1024,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
 
-    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) > 0);
+    const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) !== 0);
 
     if (itensPreenchidos.length === 0) {
       setFeedbackMsg({ type: "error", text: "Preencha a quantidade de pelo menos um item da venda." });
@@ -1048,7 +1055,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
 
-    if (itensQueExigemAutorizacao.length > 0) {
+    if (itensQueExigemAutorizacao.length > 0 || itensPreenchidos.some(i=>i.itemOrigemId)) {
       setAdminPin("");
       setAutorizacaoErro("");
       setShowAutorizacaoPreco(true);
@@ -1178,8 +1185,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   <KeyRound size={20} />
                 </span>
                 <div>
-                  <h3 id="autorizar-preco-titulo" className="font-extrabold text-slate-950">Autorizar preço especial</h3>
-                  <p className="mt-0.5 text-xs text-amber-800">{itensQueExigemAutorizacao.length} {itensQueExigemAutorizacao.length === 1 ? "item está" : "itens estão"} abaixo do preço permitido.</p>
+                  <h3 id="autorizar-preco-titulo" className="font-extrabold text-slate-950">Autorizar operação</h3>
+                  <p className="mt-0.5 text-xs text-amber-800">{itensVenda.some(i=>i.itemOrigemId) ? "Esta operação inclui devolução. " : ""}{itensQueExigemAutorizacao.length > 0 ? `${itensQueExigemAutorizacao.length} item(ns) abaixo do preço permitido.` : "Confirme com a senha do gerente."}</p>
                 </div>
               </div>
               <button
@@ -1496,7 +1503,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
             <table className="w-full min-w-[1080px] border-collapse text-left text-xs">
               <thead><tr className="border-b border-slate-300 bg-white font-black uppercase text-slate-500"><th className="border-r border-slate-200 p-3">Data</th><th className="border-r border-slate-200 p-3">Cliente</th><th className="border-r border-slate-200 p-3 text-right">Qtd.</th><th className="border-r border-slate-200 p-3">Unid.</th><th className="border-r border-slate-200 p-3">Artigo / material</th><th className="border-r border-slate-200 p-3 text-right">V. unitário</th><th className="border-r border-slate-200 p-3 text-right">V. venda</th><th className="border-r border-slate-200 bg-slate-100 p-3 text-right">Custo</th><th className="border-r border-slate-200 bg-slate-100 p-3 text-right">Lucro</th><th className="border-r border-slate-200 bg-slate-100 p-3">Fornecedor</th><th className="bg-slate-100 p-3 text-right">Margem</th></tr></thead>
               <tbody className="divide-y divide-slate-200">
-                {analiseLinhas.length === 0 ? <tr><td colSpan={11} className="p-8 text-center font-bold text-slate-400">Selecione o cliente e preencha a quantidade dos materiais para formar a análise.</td></tr> : analiseLinhas.map((item, index) => <tr key={`analise-${item.produtoId}-${index}`} className="bg-amber-50/55 text-slate-800"><td className="border-r border-slate-200 p-3 font-mono">{formatDate(new Date().toISOString().slice(0, 10))}</td><td className="border-r border-slate-200 p-3 font-bold">{clienteSelecionado?.nome || "—"}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatDecimal(item.quantidade)}</td><td className="border-r border-slate-200 p-3 font-bold">{item.unidade}</td><td className="border-r border-slate-200 p-3 font-extrabold">{item.nome}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-bold">{formatCurrency(item.precoUnitario)}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatCurrency(item.valorVenda)}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-bold">{dadosAdmVisiveis ? formatCurrency(item.custoTotal) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? formatCurrency(item.lucro) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 font-bold">{dadosAdmVisiveis ? item.fornecedor : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> Protegido</span>}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? `${item.margem.toFixed(1)}%` : "••••"}</td></tr>)}
+                {analiseLinhas.length === 0 ? <tr><td colSpan={11} className="p-8 text-center font-bold text-slate-400">Selecione o cliente e preencha a quantidade dos materiais para formar a análise.</td></tr> : analiseLinhas.map((item, index) => <tr key={`analise-${item.produtoId}-${index}`} className={item.quantidade<0 ? "bg-red-100 text-red-800" : "bg-amber-50/55 text-slate-800"}><td className="border-r border-slate-200 p-3 font-mono">{formatDate(new Date().toISOString().slice(0, 10))}</td><td className="border-r border-slate-200 p-3 font-bold">{clienteSelecionado?.nome || "—"}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatDecimal(item.quantidade)}</td><td className="border-r border-slate-200 p-3 font-bold">{item.unidade}</td><td className="border-r border-slate-200 p-3 font-extrabold">{item.nome}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-bold">{formatCurrency(item.precoUnitario)}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatCurrency(item.valorVenda)}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-bold">{dadosAdmVisiveis ? formatCurrency(item.custoTotal) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? formatCurrency(item.lucro) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 font-bold">{dadosAdmVisiveis ? item.fornecedor : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> Protegido</span>}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? `${item.margem.toFixed(1)}%` : "••••"}</td></tr>)}
               </tbody>
               {analiseLinhas.length > 0 && <tfoot><tr className="border-t-2 border-slate-400 bg-slate-100 font-black text-slate-900"><td className="p-3" colSpan={2}>TOTAL DA VENDA</td><td className="border-l border-slate-300 p-3 text-right font-mono">{formatDecimal(quantidadeTotalAnalise)}</td><td className="p-3"></td><td className="p-3 text-right text-slate-500">Média {formatCurrency(precoMedioAnalise)}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{formatCurrency(totalLiquido)}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(totalCustoItens) : "••••"}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(lucroEstimado) : "••••"}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? `${margemEstimada.toFixed(1)}%` : "••••"}</td></tr></tfoot>}
             </table>
@@ -1688,6 +1695,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           </div>
 
           <div className={compact ? "" : "pt-3 border-t border-slate-100"}>
+            {clienteSelecionado && <SelecionarDevolucao clienteId={clienteSelecionado.id} vendaId={vendaEmEdicao?.id} onAdd={i=>{
+              if(itensVenda.some(r=>r.itemOrigemId===i.id)) {setFeedbackMsg({type:'error',text:'Esta compra já está na lista. Ajuste sua quantidade.'});return;}
+              setItensVenda(atuais=>[...atuais,{itemOrigemId:i.id,produtoId:i.produtoId,fornecedorId:i.fornecedorId,fornecedorReferencia:i.fornecedorReferencia,
+                nome:i.descricao,quantidade:String(-Math.min(1,i.disponivel)).replace('.',','),unidade:i.unidade,precoUnitario:i.preco.toFixed(2).replace('.',','),precoPadrao:i.preco,desconto:''}]);
+            }}/>}
+            {subtotalItens-descGeral<0 && <p className="mb-2 font-bold text-violet-800">Crédito de devolução para a carteira: {formatCurrency(-(subtotalItens-descGeral))}</p>}
             {vendaEmEdicao && <div className="mb-2 flex flex-col gap-2 sm:flex-row"><input type="password" autoComplete="off" value={pinEdicao} onChange={(event) => { setPinEdicao(event.target.value.slice(0, 64)); setFeedbackMsg(null); }} placeholder="Senha do gerente para salvar" className="min-h-10 flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 text-center text-xs font-black tracking-widest outline-none focus:border-blue-600" /><button type="button" onClick={onCancelarEdicao} className="min-h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700">Cancelar edição</button></div>}
             <button 
               ref={salvarBtnRef}
@@ -1782,10 +1795,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   const exigeAutorizacao = qty > 0 && (price * fatorPrecoEfetivo) < pisoPermitido - 0.005;
 
                   return (
-                    <tr key={`${it.produtoId}-${idx}`} className={`${exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} hover:bg-slate-50/70 text-slate-700 transition-colors`}>
+                    <tr key={`${it.produtoId}-${idx}`} className={`${it.itemOrigemId ? "bg-red-100 text-red-800" : exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} hover:bg-slate-50/70 text-slate-700 transition-colors`}>
                       <td className="px-2 py-2 font-mono text-[11px] text-slate-400 font-bold">{it.codigo || "-"}</td>
                       <td className="px-2 py-2 text-xs font-bold text-slate-900">
-                        {it.nome}
+                        {it.itemOrigemId ? "DEVOLUÇÃO: " : ""}{it.nome}
                         {it.fornecedorReferencia && <span className="mt-0.5 block font-mono text-[9px] font-black text-emerald-700">REF. FORNECEDOR: {it.fornecedorReferencia}</span>}
                       </td>
                       <td className="p-2 text-center font-extrabold">
@@ -1802,6 +1815,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                       <td className="p-2 text-center">
                         <select
                           value={it.unidade}
+                          disabled={Boolean(it.itemOrigemId)}
                           onChange={(event) => handleUpdateItem(idx, { unidade: event.target.value })}
                           aria-label={`Unidade de ${it.nome}`}
                           className="w-full min-w-0 rounded-md border border-slate-300 bg-slate-100 px-1 py-1.5 text-[11px] font-bold text-slate-800 outline-none focus:border-emerald-600 focus:bg-white"
@@ -1812,7 +1826,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                         </select>
                       </td>
                       <td className="p-2 text-right font-mono font-bold text-slate-600">
-                        {clienteSelecionado ? <PrecoAutorizadoInput
+                        {it.itemOrigemId ? <span>{formatCurrency(price)}</span> : clienteSelecionado ? <PrecoAutorizadoInput
                           clienteId={clienteSelecionado.id}
                           produtoId={it.produtoId}
                           fornecedorId={it.fornecedorId}

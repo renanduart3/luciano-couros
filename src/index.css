@@ -405,6 +405,7 @@ textarea {
 }
 
 .receipt-items-table .receipt-return-row td {
+  background: #fee2e2 !important;
   color: #b91c1c !important;
   font-weight: 800;
   -webkit-print-color-adjust: exact;

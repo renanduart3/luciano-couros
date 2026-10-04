@@ -44,7 +44,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const bonusDevolucao = (venda.devolucoes || []).reduce((soma, devolucao) => soma + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0);
   const subtotalAtual = residual ? Number(venda.totalLiquido) : (venda.items || []).reduce((soma, item) => soma + Number(item.total), 0)
     - (venda.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito), 0);
-  const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalMercadoriasAposDevolucoes ?? venda.totalLiquido)) * 100) / 100;
+  const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalMercadoriasAposDevolucoes ?? venda.totalLiquido) + Number(venda.creditoLinhaDevolucao || 0)) * 100) / 100;
   const instrumento = venda.instrumentoRecebimento;
   const ehVale = Boolean(venda.vencimento);
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
@@ -110,6 +110,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         <span className="receipt-payment-observation"><b>OBSERVAÇÃO:</b> <span title={observacaoComprovante}>{observacaoComprovante || "—"}</span></span>
       </div>
 
+      {Number(venda.creditoLinhaDevolucao || 0)>0 && <div className="receipt-payment-line"><b>CRÉDITO NA CARTEIRA: {formatCurrency(venda.creditoLinhaDevolucao!)}</b></div>}
       <footer className="receipt-footer">
         <div className="receipt-counts">{residual ? <><span>SALDO ATUAL: <b>{formatCurrency(financeiroVale(venda).restantePresumido)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></> : <><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></>}</div>
         <div className="receipt-total"><span>{residual ? "VALOR DO VALE" : "VALOR TOTAL"}</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
@@ -156,7 +157,7 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
         });
       }
     }
-    const itensOriginais = venda.items || [];
+    const itensOriginais = (venda.items || []).map(i=>({...i, linhaDevolucao: Number(i.quantidade)<0}));
     const linhasDevolvidas = itensOriginais.flatMap((item) => {
       const devolvido = devolvidos.get(item.id);
       if (!devolvido || devolvido.quantidade <= 0.005) return [];

@@ -848,6 +848,11 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE pagamentos ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN contabilizaReceita INTEGER NOT NULL DEFAULT 1`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN valeOrigemIds TEXT`).run(); } catch (e) {}
+  try { db.prepare('ALTER TABLE itens_devolucao ADD COLUMN itemPrecoOrigemId TEXT').run(); } catch (e) {}
+  try { db.prepare('ALTER TABLE itens_venda ADD COLUMN itemOrigemId TEXT').run(); } catch (e) {}
+  try { db.prepare('ALTER TABLE itens_venda ADD COLUMN itemPrecoOrigemId TEXT').run(); } catch (e) {}
+  try { db.prepare('ALTER TABLE vendas ADD COLUMN creditoLinhaDevolucao REAL DEFAULT 0').run(); } catch (e) {}
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_item_devolucao_origem ON itens_venda(itemOrigemId)').run();
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN valeResidualId TEXT`).run(); } catch (e) {}
@@ -1380,7 +1385,7 @@ export function rebuildClienteProdutosHabituais(clienteId: string) {
     JOIN vendas v ON v.id = iv.vendaId
     WHERE v.clienteId = ?
       AND v.deletedAt IS NULL
-      AND v.status <> 'cancelada'
+      AND v.status <> 'cancelada' AND iv.quantidade>0
     ORDER BY v.data ASC, v.numeroSequencial ASC, iv.id ASC
   `).all(clienteId) as Array<{
     vendaId: string;

@@ -1,3 +1,4 @@
+import { ultimoPrecoDevolucao, itensElegiveisDevolucao, resolverLinhaDevolucao, devolvidoEmOutraVendaSql, ajustarCreditoLinhas, protegerCompraDevolvida } from "./server/devolucoesItens.js";
 import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
 import { totalItemVenda, totaisVenda, validarTotalEsperado } from "./src/lib/totaisVenda.js";
 import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
@@ -2859,7 +2860,7 @@ function bonusGeradoPorVenda(ids: string[]): Map<string, number> {
        SELECT bm.vendaId, bm.valor
        FROM cliente_bonus_movimentos bm
        WHERE bm.tipo = 'credito' AND bm.deletedAt IS NULL
-         AND bm.observacao LIKE 'Crédito excedente da devolução%'
+         AND (bm.observacao LIKE 'Crédito excedente da devolução%' OR bm.id='credito_devolucao_' || bm.vendaId)
          AND bm.vendaId IN (${marcadores})
        UNION ALL
        SELECT a.vendaId, bm.valor
@@ -2881,7 +2882,7 @@ function bonusGeradoPorVenda(ids: string[]): Map<string, number> {
 }
 
 const valorDevolvidoEmBonusSql = (alias: string) =>
-  `COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0)`;
+  `(COALESCE(${alias}.creditoLinhaDevolucao,0) + COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0))`;
 
 function carregarDetalhesVenda(venda: any) {
   venda.origemSaldo = carregarOrigemSaldo(venda);
@@ -2898,8 +2899,8 @@ function carregarDetalhesVenda(venda: any) {
                WHERE fpu.produtoId = iv.produtoId AND fpu.ativo = 1
                  AND fu.ativo = 1 AND fu.deletedAt IS NULL)
             ) as fornecedorReferenciaResolvida,
-            COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
-            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
+            (COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) + ${devolvidoEmOutraVendaSql("iv")}) as quantidadeDevolvida,
+            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) - ${devolvidoEmOutraVendaSql("iv")} as quantidadeDisponivel
      FROM itens_venda iv
      LEFT JOIN produtos p ON p.id = iv.produtoId
      LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
@@ -2994,8 +2995,8 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
                WHERE fpu.produtoId = iv.produtoId AND fpu.ativo = 1
                  AND fu.ativo = 1 AND fu.deletedAt IS NULL)
             ) as fornecedorReferenciaResolvida,
-            COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida,
-            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDisponivel
+            (COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) + ${devolvidoEmOutraVendaSql("iv")}) as quantidadeDevolvida,
+            iv.quantidade - COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) - ${devolvidoEmOutraVendaSql("iv")} as quantidadeDisponivel
      FROM itens_venda iv
      LEFT JOIN produtos p ON p.id = iv.produtoId
      LEFT JOIN fornecedores f ON f.id = iv.fornecedorId
@@ -3184,7 +3185,7 @@ app.post("/api/vendas", (req, res) => {
     }
     const variantesDaVenda = items.map((item: any) => ({
       produtoId: String(item?.produtoId || ""),
-      chave: `${String(item?.produtoId || "")}::${String(item?.fornecedorId || "")}`
+      chave: `${String(item?.produtoId || "")}::${String(item?.fornecedorId || "")}::${String(item?.itemOrigemId || "")}`
     }));
     if (variantesDaVenda.some((item: any) => !item.produtoId) || new Set(variantesDaVenda.map((item: any) => item.chave)).size !== variantesDaVenda.length) {
       throw erroHttpDetalhado(
@@ -3217,7 +3218,9 @@ app.post("/api/vendas", (req, res) => {
       let lucroBrutoAcumulado = 0;
 
       // Prepare item insertions
+      const origensDevolucao = new Set<string>();
       const resolvedItems = items.map((it: any, itemIndex: number) => {
+        if (Number(it.quantidade)<0 || it.itemOrigemId) return resolverLinhaDevolucao(it,clienteId,vendaId,origensDevolucao);
         const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
         if (!prod || prod.deletedAt || Number(prod.ativo) !== 1) {
           const motivo = !prod ? "nao_encontrado" : prod.deletedAt ? "excluido" : "inativo";
@@ -3338,13 +3341,14 @@ app.post("/api/vendas", (req, res) => {
 
       // O desconto geral também reduz o preço real dos produtos e não pode ser
       // usado para contornar a autorização administrativa.
-      const fatorPrecoEfetivo = subtotal > 0 ? totalLiquido / subtotal : 1;
-      const itensQueExigemAutorizacao = resolvedItems
+      const subtotalPositivo = resolvedItems.filter(i=>i.quantidade>0).reduce((s,i)=>s+i.total,0);
+      const fatorPrecoEfetivo = subtotalPositivo > 0 ? (subtotalPositivo-descGeral)/subtotalPositivo : 1;
+      const itensQueExigemAutorizacao = resolvedItems.filter(i=>i.quantidade>0)
         .map((item) => ({ ...item, precoEfetivo: item.precoUnitario * fatorPrecoEfetivo }))
         .filter((item) => Math.abs(item.precoEfetivo - item.precoMinimoSemPin) > 0.005);
       let administradorAutorizador: UsuarioAdministrador | null = null;
 
-      if (itensQueExigemAutorizacao.length > 0) {
+      if (itensQueExigemAutorizacao.length > 0 || origensDevolucao.size > 0) {
         const administrador = getUsuarioAdministrador();
         if (!administrador?.pinHash) {
           throw erroHttp("Configure o PIN administrativo em Ajustes & Backups antes de alterar preços.", 428);
@@ -3352,7 +3356,7 @@ app.post("/api/vendas", (req, res) => {
 
         administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
         if (!administradorAutorizador) {
-          throw erroHttp("Autorize o novo preço no campo do item antes de registrar a venda.", 403);
+          throw erroHttp("Informe a senha do gerente para autorizar os preços ou a devolução antes de registrar a venda.", 403);
         }
       }
 
@@ -3378,6 +3382,7 @@ app.post("/api/vendas", (req, res) => {
         recalcularParcelasVale(vendaId);
       }
 
+      ajustarCreditoLinhas(vendaId,clienteId,totais.creditoLinhaDevolucao);
       // Insert Itens Venda
       for (const it of resolvedItems) {
         execute(
@@ -3385,6 +3390,7 @@ app.post("/api/vendas", (req, res) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [it.id, vendaId, it.produtoId, it.fornecedorId, it.fornecedorReferencia, it.descricao, it.quantidade, it.unidade, it.precoUnitario, it.custoUnitario, it.desconto, it.total, it.custoTotal, it.lucroBruto]
         );
+        if ('itemOrigemId' in it && it.itemOrigemId) execute('UPDATE itens_venda SET itemOrigemId=?,itemPrecoOrigemId=? WHERE id=?',[it.itemOrigemId,it.itemPrecoOrigemId,it.id]);
       }
 
       // Se houver pagamento inicial, registrar
@@ -3434,11 +3440,13 @@ app.post("/api/vendas", (req, res) => {
         );
       }
 
+      if (origensDevolucao.size) registrarAuditoria(administradorAutorizador?.id || null,'devolucao_na_venda','venda',vendaId,
+        { itens: resolvedItems.filter(i=>i.quantidade<0), creditoLinhaDevolucao: totais.creditoLinhaDevolucao });
       rebuildClienteProdutosHabituais(clienteId);
 
       // O preço do cliente é sempre incremental: cada venda passa a ser a
       // referência atual, enquanto o preço praticado permanece preservado no item.
-      for (const item of resolvedItems) {
+      for (const item of resolvedItems.filter(i=>i.quantidade>0)) {
         const precoEfetivo = item.precoUnitario * fatorPrecoEfetivo;
         salvarPrecoAutorizadoCliente(clienteId, item.produtoId, precoEfetivo, item.fornecedorId);
       }
@@ -3490,6 +3498,11 @@ app.post("/api/vendas", (req, res) => {
   }
 });
 
+app.get("/api/clientes/:id/itens-devolucao", (req, res) => {
+  try { res.json(itensElegiveisDevolucao(req.params.id, String(req.query.excluirVenda || ''))); }
+  catch (error: any) { res.status(error.statusCode || 500).json({error: error.message}); }
+});
+
 app.post("/api/vendas/:id/devolucoes", (req, res) => {
   try {
     exigirValeSemOrdemAberta(req.params.id);
@@ -3518,7 +3531,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const resolvidos = items.map((entrada: any) => {
         const item = queryOne<any>(
           `SELECT iv.*,
-                  COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) as quantidadeDevolvida
+                  (COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) + ${devolvidoEmOutraVendaSql("iv")}) as quantidadeDevolvida
            FROM itens_venda iv
            WHERE iv.id = ? AND iv.vendaId = ?`,
           [entrada.itemVendaId, vendaId]
@@ -3529,14 +3542,13 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
         if (!Number.isFinite(quantidade) || quantidade <= 0 || quantidade > disponivel + 0.000001) {
           throw erroHttp(`Quantidade inválida para ${item.descricao}. Disponível: ${disponivel}.`, 400);
         }
-        const descontoProporcional = Number(venda.subtotal) > 0
-          ? Number(venda.desconto || 0) * (Number(item.total) / Number(venda.subtotal))
-          : 0;
-        const valorUnitarioCredito = (Number(item.total) - descontoProporcional) / Number(item.quantidade);
+        const precoHistorico = ultimoPrecoDevolucao(venda.clienteId, item.produtoId, item.unidade);
+        const valorUnitarioCredito = precoHistorico.preco;
         return {
           ...item,
           quantidade,
           valorUnitarioCredito,
+          itemPrecoOrigemId: precoHistorico.itemId,
           totalCredito: Math.round(quantidade * valorUnitarioCredito * 100) / 100
         };
       });
@@ -3565,6 +3577,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
           ]
         );
       }
+      for (const item of resolvidos) execute('UPDATE itens_devolucao SET itemPrecoOrigemId=? WHERE devolucaoId=? AND itemVendaId=?',[item.itemPrecoOrigemId,devolucaoId,item.id]);
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       const saldoAnterior = Number(venda.saldoRestante);
@@ -3674,7 +3687,7 @@ app.put("/api/vendas/:id", (req, res) => {
 
       const itensAtuais = queryAll<any>(
         `SELECT iv.*,
-                COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) AS quantidadeDevolvida
+                (COALESCE((SELECT SUM(idv.quantidade) FROM itens_devolucao idv WHERE idv.itemVendaId = iv.id), 0) + ${devolvidoEmOutraVendaSql("iv")}) AS quantidadeDevolvida
          FROM itens_venda iv WHERE iv.vendaId = ?`,
         [vendaId]
       );
@@ -3682,6 +3695,7 @@ app.put("/api/vendas/:id", (req, res) => {
       const idsInformados = new Set<string>();
       const chavesInformadas = new Set<string>();
       const variantesInformadas = new Set<string>();
+      const origensDevolucao = new Set<string>();
       const resolvidos = itensInformados.map((entrada: any) => {
         const chave = String(entrada.id || "");
         if (!chave || chavesInformadas.has(chave)) {
@@ -3689,6 +3703,12 @@ app.put("/api/vendas/:id", (req, res) => {
         }
         chavesInformadas.add(chave);
         let atual = atuaisPorId.get(chave) as any;
+        if (Number(entrada.quantidade)<0 || entrada.itemOrigemId) {
+          if (atual && !atual.itemOrigemId) throw erroHttp('Adicione a devolução como uma nova linha vinculada à compra.',409);
+          if (atual) idsInformados.add(atual.id);
+          return resolverLinhaDevolucao(entrada,venda.clienteId,vendaId,origensDevolucao,atual);
+        }
+        if (atual?.itemOrigemId) throw erroHttp('Uma devolução deve manter quantidade negativa.',409);
         const itemNovo = !atual
           || (entrada.produtoId && entrada.produtoId !== atual.produtoId)
           || (entrada.fornecedorId !== undefined && (entrada.fornecedorId || null) !== (atual.fornecedorId || null));
@@ -3749,7 +3769,7 @@ app.put("/api/vendas/:id", (req, res) => {
       const creditoDevolucoes = queryOne<{ total: number }>(
         "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ? AND modalidade <> 'bonus_integral'", [vendaId]
       )?.total || 0;
-      const { subtotal, desconto, totalLiquido: novoTotal } = totaisVenda(
+      const { subtotal, desconto, totalLiquido: novoTotal, creditoLinhaDevolucao } = totaisVenda(
         resolvidos, Number(req.body?.desconto || 0), creditoDevolucoes
       );
       validarTotalEsperado(req.body?.totalEsperado, novoTotal);
@@ -3761,6 +3781,7 @@ app.put("/api/vendas/:id", (req, res) => {
       const bonusGerado = Math.round(Math.max(0, pagoAnterior - novoTotal) * 100) / 100;
       const diferencaTotal = Math.round((novoTotal - totalAnterior) * 100) / 100;
 
+      ajustarCreditoLinhas(vendaId,venda.clienteId,creditoLinhaDevolucao);
       for (const item of resolvidos) {
         if (item.itemNovo) {
           execute(
@@ -3776,7 +3797,8 @@ app.put("/api/vendas/:id", (req, res) => {
             [item.quantidade, item.precoUnitario, item.desconto, item.total, item.custoTotal, item.lucroBruto, item.id]
           );
         }
-        salvarPrecoAutorizadoCliente(venda.clienteId, item.produtoId, item.precoUnitario, item.fornecedorId);
+        execute('UPDATE itens_venda SET itemOrigemId=?,itemPrecoOrigemId=? WHERE id=?',[item.itemOrigemId || null,item.itemPrecoOrigemId || null,item.id]);
+        if (item.quantidade>0) salvarPrecoAutorizadoCliente(venda.clienteId, item.produtoId, item.precoUnitario, item.fornecedorId);
       }
       for (const atual of itensAtuais) {
         if (!idsInformados.has(atual.id)) execute("DELETE FROM itens_venda WHERE id = ?", [atual.id]);
@@ -3931,6 +3953,8 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
         throw erroHttp("Este vale possui devoluções registradas. Corrija os créditos do cliente antes de cancelar o vale.", 409);
       }
 
+      protegerCompraDevolvida(id);
+      ajustarCreditoLinhas(id,venda.clienteId,0);
       execute("UPDATE vendas SET status = 'cancelada', saldoRestante = 0, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [id]);
       execute("UPDATE vale_parcelas SET status = 'cancelada', saldo = 0, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
       execute("UPDATE instrumentos_recebimento SET status = 'cancelado', deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [id]);
@@ -3996,6 +4020,8 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
         throw erroHttp("Esta venda possui devoluções registradas. Ela não pode ser cancelada porque já gerou crédito para o cliente.", 409);
       }
 
+      protegerCompraDevolvida(id);
+      ajustarCreditoLinhas(id,venda.clienteId,0);
       // Marcar venda como cancelada e excluída logicamente
       execute(
         "UPDATE vendas SET deletedAt = ?, status = 'cancelada', updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
@@ -6229,7 +6255,7 @@ app.get("/api/relatorios/materiais-clientes", (req, res) => {
         LEFT JOIN fornecedores fv ON fv.id = iv.fornecedorId
         LEFT JOIN devolucoes dev ON dev.itemVendaId = iv.id
         WHERE ${filtros.join(" AND ")}
-          AND (iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005
+          AND ABS(iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005
       )`;
 
     const ctePeriodo = montarCte(filtrosPeriodo);
@@ -6420,7 +6446,7 @@ app.get("/api/relatorios", (req, res) => {
     let itemFilters = [
       "v.deletedAt IS NULL",
       "v.status <> 'cancelada'",
-      `(iv.quantidade - ${quantidadeDevolvidaSql}) > 0.005`
+      `ABS(iv.quantidade - ${quantidadeDevolvidaSql}) > 0.005`
     ];
     let itemParams: any[] = [];
     if (startDate) { itemFilters.push("v.data >= ?"); itemParams.push(startDate); }
@@ -6468,8 +6494,8 @@ app.get("/api/relatorios", (req, res) => {
       itemParams
     ).map((item) => {
       const quantidadeOriginal = Number(item.quantidade || 0);
-      const quantidade = Math.max(0, quantidadeOriginal - Number(item.quantidadeDevolvida || 0));
-      const proporcao = quantidadeOriginal > 0 ? quantidade / quantidadeOriginal : 0;
+      const quantidade = quantidadeOriginal < 0 ? quantidadeOriginal : Math.max(0, quantidadeOriginal - Number(item.quantidadeDevolvida || 0));
+      const proporcao = quantidadeOriginal !== 0 ? quantidade / quantidadeOriginal : 0;
       const custoUnitario = Number(item.custoUnitario) > 0
         ? Number(item.custoUnitario)
         : Number(item.custoAtualProduto || 0);
@@ -6522,7 +6548,7 @@ app.get("/api/relatorios", (req, res) => {
        WHERE v.clienteId = ?
          AND v.deletedAt IS NULL
          AND v.status <> 'cancelada'
-         AND (iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005`,
+         AND ABS(iv.quantidade - COALESCE(dev.quantidade, 0)) > 0.005`,
       [clienteId, clienteId]
     ) : null;
 

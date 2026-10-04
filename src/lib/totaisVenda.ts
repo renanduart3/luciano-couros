@@ -17,12 +17,12 @@ export function totalItemVenda(quantidade: number, preco: number, desconto = 0) 
 
 export function totaisVenda(itens: Array<{ total: number }>, desconto: number, creditoDevolucoes = 0) {
   const subtotal = arredondarDinheiro(itens.reduce((soma, item) => soma + item.total, 0));
-  if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal || !Number.isFinite(creditoDevolucoes) || creditoDevolucoes < 0) {
+  if (!Number.isFinite(desconto) || desconto < 0 || desconto > itens.filter(i => i.total > 0).reduce((s,i) => s+i.total,0) || !Number.isFinite(creditoDevolucoes) || creditoDevolucoes < 0) {
     throw erroCalculo('O desconto geral deve estar entre zero e o subtotal.');
   }
   desconto = arredondarDinheiro(desconto);
-  if (creditoDevolucoes > subtotal - desconto + 0.005) {
+  if (creditoDevolucoes > 0 && creditoDevolucoes > subtotal - desconto + 0.005) {
     throw erroCalculo('O total da venda não pode ser inferior ao crédito das devoluções já registradas.');
   }
-  return { subtotal, desconto, totalLiquido: arredondarDinheiro(Math.max(0, subtotal - desconto - creditoDevolucoes)) };
+  return { subtotal, desconto, creditoLinhaDevolucao: arredondarDinheiro(Math.max(0, -subtotal + desconto)), totalLiquido: arredondarDinheiro(Math.max(0, subtotal - desconto - creditoDevolucoes)) };
 }

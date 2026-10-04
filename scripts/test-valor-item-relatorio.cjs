@@ -7,10 +7,10 @@ const mod = new Module(__filename);
 mod._compile(result.outputFiles[0].text, __filename);
 const { valorItemRelatorioSql } = mod.exports;
 const db = new Database(':memory:');
-db.exec(`CREATE TABLE vendas(id TEXT, subtotal REAL, desconto REAL, totalLiquido REAL);
+db.exec(`CREATE TABLE vendas(id TEXT, subtotal REAL, desconto REAL, totalLiquido REAL, creditoLinhaDevolucao REAL DEFAULT 0);
 CREATE TABLE itens_venda(id TEXT, vendaId TEXT, quantidade REAL, total REAL);
 CREATE TABLE itens_devolucao(itemVendaId TEXT, quantidade REAL);
-INSERT INTO vendas VALUES ('487', 1304.03, 1302.726, 1304.03);
+INSERT INTO vendas(id,subtotal,desconto,totalLiquido) VALUES ('487', 1304.03, 1302.726, 1304.03);
 INSERT INTO itens_venda VALUES ('madeira', '487', 11.47, 778.813), ('coral', '487', 2.3, 167.67), ('terra', '487', 5.27, 357.833);`);
 const consultar = (filtro = '') => db.prepare(`SELECT iv.id,
   (${valorItemRelatorioSql}) * (iv.quantidade - COALESCE((SELECT SUM(quantidade) FROM itens_devolucao WHERE itemVendaId = iv.id), 0)) / iv.quantidade AS valor
@@ -35,5 +35,14 @@ db.exec('UPDATE vendas SET totalLiquido = 0');
 assert.ok(consultar().every(i => i.valor === 0));
 db.exec("INSERT INTO itens_devolucao VALUES ('madeira', 11.47), ('terra', 5.27)");
 assert.ok(consultar().every(i => i.valor === 0));
-db.close();
+
 console.log('OK: rateio, filtros, descontos, devoluções e valor líquido zero.');
+
+db.exec("INSERT INTO vendas VALUES ('troca',38,10,28,0); INSERT INTO itens_venda VALUES ('novo','troca',1,50),('retorno','troca',-1,-12)");
+perto(consultar("WHERE iv.id='novo'")[0].valor,40);
+perto(consultar("WHERE iv.id='retorno'")[0].valor,-12);
+db.exec("INSERT INTO vendas VALUES ('devolucao',-24,0,0,24); INSERT INTO itens_venda VALUES ('so-retorno','devolucao',-2,-24)");
+perto(consultar("WHERE iv.id='so-retorno'")[0].valor,-24);
+console.log('OK: desconto somente na compra e devolução negativa integral no relatório.');
+
+db.close();

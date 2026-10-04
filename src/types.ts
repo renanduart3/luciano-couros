@@ -105,6 +105,8 @@ export interface OrcamentoPadraoClienteItem {
 }
 
 export interface ItemVenda {
+  itemOrigemId?: string | null;
+  itemPrecoOrigemId?: string | null;
   id: string;
   vendaId: string;
   produtoId: string;
@@ -151,6 +153,7 @@ export interface DevolucaoVenda {
 }
 
 export interface Venda {
+  creditoLinhaDevolucao?: number;
   valorTransferido?: number;
   financeiro?: import("./lib/financeiro").PosicaoFinanceira;
   id: string;

@@ -50,3 +50,11 @@ assert.ok(!html.includes('DESCONTOS / AJUSTES'));
 assert.ok(!html.includes('Nº ITENS'));
 assert.equal((html.match(/data-receipt-page=/g) || []).length, 2);
 console.log('OK: residual com valor, saldo e todas as referências, sem itens ou descontos fictícios.');
+
+html = render({ ...venda, totalLiquido: 0, creditoLinhaDevolucao: 24, items: [{...venda.items[0],quantidade:-2,precoUnitario:12,total:-24,itemOrigemId:'compra'}] });
+assert.equal((html.match(/receipt-return-row/g)||[]).length,2);
+assert.equal((html.match(/DEVOLVIDO: ESTF COROLA/g)||[]).length,2);
+assert.equal((html.match(/-R\$\s?24,00/g)||[]).length,2);
+assert.ok(html.includes('CRÉDITO NA CARTEIRA'));
+assert.ok(!html.includes('DESCONTOS / AJUSTES'));
+console.log('OK: linha negativa e crédito excedente no comprovante, sem desconto fictício.');

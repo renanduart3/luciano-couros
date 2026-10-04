@@ -233,9 +233,9 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {itens.map((item) => (
-                    <tr key={item.id} className="hover:bg-amber-50/50">
+                    <tr key={item.id} className={item.quantidade<0 ? "bg-red-100 text-red-800" : "hover:bg-amber-50/50"}>
                       <td className="p-3 font-mono text-xs font-bold text-slate-500">{item.referencia || "—"}</td>
-                      <td className="p-3 font-black text-slate-950">{item.descricao}</td>
+                      <td className="p-3 font-black text-slate-950">{item.quantidade<0 ? "DEVOLUÇÃO: " : ""}{item.descricao}</td>
                       <td className="p-3 text-right font-mono font-black">{formatDecimal(item.quantidadeDisponivel ?? item.quantidade)}{Number(item.quantidadeDevolvida || 0) > 0 && <span className="block text-[9px] text-violet-700">devolvido: {formatDecimal(item.quantidadeDevolvida!)}</span>}</td>
                       <td className="p-3 font-bold text-slate-600">{item.unidade}</td>
                       <td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>
@@ -248,7 +248,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
             <div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-300 bg-white md:hidden">
               {itens.map((item) => (
-                <article key={item.id} className="space-y-2 p-3">
+                <article key={item.id} className={`space-y-2 p-3 ${item.quantidade<0 ? "bg-red-100 text-red-800" : ""}`}>
                   <div className="flex items-start justify-between gap-3"><strong className="text-sm text-slate-950">{item.descricao}</strong><strong className="shrink-0 font-mono text-sm">{formatCurrency(item.total)}</strong></div>
                   <div className="flex flex-wrap justify-between gap-2 text-xs font-bold text-slate-500"><span>{item.referencia || "Sem referência"}</span><span>{formatDecimal(item.quantidade)} {item.unidade} × {formatCurrency(item.precoUnitario)}</span></div>
                 </article>

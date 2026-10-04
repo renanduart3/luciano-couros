@@ -837,8 +837,10 @@ function validarPagamentoExclusivoParcela(
 
 function estornarRecebimentoEmOrdens(recebimentoId: string) {
   const ordens = queryAll<{ ordemId: string }>(
-    "SELECT DISTINCT ordemId FROM ordem_cobranca_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL",
-    [recebimentoId]
+    `SELECT ordemId FROM ordem_cobranca_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL
+     UNION SELECT ordemId FROM ordem_cobranca_parcela_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL
+     UNION SELECT ordemCobrancaId AS ordemId FROM recebimentos_cliente WHERE id = ? AND ordemCobrancaId IS NOT NULL`,
+    [recebimentoId, recebimentoId, recebimentoId]
   );
   const agora = new Date().toISOString();
   execute("UPDATE ordem_cobranca_recebimentos SET deletedAt = ? WHERE recebimentoId = ? AND deletedAt IS NULL", [agora, recebimentoId]);
@@ -4779,24 +4781,37 @@ app.put("/api/ordens-cobranca/:id/parcelas", (req, res) => {
   }
 });
 
-app.post("/api/ordens-cobranca/:id/encerrar", (req, res) => {
+app.get("/api/ordens-cobranca/:id/cancelamento/previa", exigirGerente, (req, res) => {
+  try { res.json(reabertura.preparar("ordem", req.params.id)); }
+  catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
+app.post("/api/ordens-cobranca/:id/encerrar", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) return res.status(403).json({ error: "PIN do administrador inválido." });
-    const status = req.body?.status === "cancelada" ? "cancelada" : "renegociada";
+    if (!["cancelada", "renegociada"].includes(req.body?.status)) throw erroHttp("Informe um encerramento válido.", 400);
+    const status = req.body.status;
     const motivo = String(req.body?.motivo || "").trim();
-    const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status = 'aberta' AND deletedAt IS NULL", [req.params.id]);
-    if (!ordem) throw erroHttp("A ordem não está aberta ou não foi encontrada.", 404);
     runInTransaction(() => {
+      const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status IN ('aberta','quitada') AND deletedAt IS NULL", [req.params.id]);
+      if (!ordem) throw erroHttp("A ordem já foi encerrada ou não foi encontrada.", 409);
+      if (status === "cancelada") {
+        reabertura.executar("ordem", ordem.id, String(req.body?.revisao || ""), administrador.id, motivo || "Cancelamento da ordem");
+        execute("UPDATE ordem_pagamentos_projetados SET estado = 'excluida', updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND estado = 'pendente'", [ordem.id]);
+      } else if (ordem.status !== "aberta" || ordem.finalizadoAt) {
+        throw erroHttp("Somente uma ordem aberta pode ser encerrada para renegociação.", 409);
+      }
       execute(
         "UPDATE ordens_cobranca SET status = ?, motivoEncerramento = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [status, motivo || null, ordem.id]
       );
       execute("UPDATE ordem_cobranca_vales SET ativo = 0, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ?", [ordem.id]);
       execute("UPDATE ordem_cobranca_parcelas SET status = ?, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND deletedAt IS NULL AND status = 'pendente'", [status, ordem.id]);
+      if (status === "cancelada") recalcularOrdemCobranca(ordem.id);
       registrarAuditoria(administrador.id, "ordem_cobranca_encerrada", "ordem_cobranca", ordem.id, { status, motivo });
     });
-    res.json(listarOrdensCobranca("AND oc.id = ?", [ordem.id])[0]);
+    res.json(listarOrdensCobranca("AND oc.id = ?", [req.params.id])[0]);
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -5870,6 +5885,7 @@ app.get("/api/reabertura-pagamentos/:tipo/:id", exigirGerente, (req, res) => {
 
 app.post("/api/reabertura-pagamentos/:tipo/:id", exigirGerente, (req, res) => {
   try {
+    if (!["vale", "parcela", "recebimento"].includes(req.params.tipo)) throw erroHttp("Tipo de reabertura inválido.", 400);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) return res.status(403).json({ error: "Senha do gerente inválida." });
     if (req.params.tipo === "vale") exigirValeSemOrdemAberta(req.params.id);
@@ -5989,83 +6005,40 @@ app.post("/api/pagamentos", (req, res) => {
   }
 });
 
-app.post("/api/pagamentos/:id/cancelar", (req, res) => {
+app.post("/api/pagamentos/:id/cancelar", exigirGerente, (req, res) => {
   try {
-    const { id } = req.params;
-    const nowStr = new Date().toISOString();
-
     runInTransaction(() => {
-      const pag = queryOne<any>("SELECT * FROM pagamentos WHERE id = ? AND deletedAt IS NULL", [id]);
-      if (!pag) {
-        throw new Error("Pagamento não encontrado ou já cancelado.");
-      }
-      if (pag.recebimentoId) {
+      const pag = queryOne<any>("SELECT * FROM pagamentos WHERE id = ? AND deletedAt IS NULL", [req.params.id]);
+      if (!pag) throw erroHttp("Pagamento não encontrado ou já cancelado.", 409);
+      if (pag.recebimentoId || queryOne("SELECT id FROM recebimentos_cliente WHERE pagamentoId = ?", [pag.id])) {
         throw erroHttp("Este lançamento pertence à Carteira do Cliente. Faça o estorno pelo recebimento da carteira.", 409);
       }
-
-      if (pag.vendaId) exigirValeSemOrdemAberta(pag.vendaId);
-
-      // Soft delete do pagamento
-      execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [nowStr, id]);
-
-      // Desfazer o impacto do pagamento nas vendas
-      if (pag.vendaId) {
-        const v = queryOne<any>("SELECT * FROM vendas WHERE id = ?", [pag.vendaId]);
-        if (v) {
-          const nPago = Math.max(0, v.valorPago - pag.valor);
-          const nSaldo = v.totalLiquido - nPago;
-          const nStatus = nSaldo <= 0 ? "paga" : "pendente";
-
-          execute(
-            "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-            [nPago, nSaldo, nStatus, v.id]
-          );
-          recalcularParcelasVale(v.id);
-        }
-      } else {
-        // Se foi um pagamento avulso que amortizou múltiplas contas, precisamos recalcular
-        // do cliente. Para simplificar e garantir 100% de consistência sem complicar:
-        // Buscamos todas as vendas ativas do cliente e todos os pagamentos ativos e recalculamos o saldoRestante das vendas.
-        const clienteId = pag.clienteId;
-        
-        // Obter todas as vendas ativas do cliente em ordem cronológica
-        const vendas = queryAll<any>(
-          "SELECT * FROM vendas WHERE clienteId = ? AND deletedAt IS NULL ORDER BY data ASC, numeroSequencial ASC",
-          [clienteId]
-        );
-        
-        // Obter soma de todos os pagamentos ativos do cliente
-        const somaPagamentosRow = queryOne<{ total: number }>(
-          "SELECT COALESCE(SUM(valor), 0) as total FROM pagamentos WHERE clienteId = ? AND deletedAt IS NULL",
-          [clienteId]
-        );
-        let saldoDisponivel = somaPagamentosRow ? somaPagamentosRow.total : 0;
-
-        // Redistribuir todo o saldo pago entre as faturas
-        for (const v of vendas) {
-          const totalLiquido = v.totalLiquido;
-          const amortizar = Math.min(saldoDisponivel, totalLiquido);
-          const nPago = amortizar;
-          const nSaldo = totalLiquido - nPago;
-          const nStatus = nSaldo <= 0 ? "paga" : "pendente";
-
-          execute(
-            "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-            [nPago, nSaldo, nStatus, v.id]
-          );
-          recalcularParcelasVale(v.id);
-
-          saldoDisponivel -= amortizar;
-        }
+      // Sem alocações não há como reconstruir com segurança quais dívidas foram pagas.
+      if (!pag.vendaId) throw erroHttp("Este pagamento antigo não possui alocações por vale. Concilie os vínculos antes de estornar; nenhum saldo foi alterado.", 409);
+      exigirValeSemOrdemAberta(pag.vendaId);
+      const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status <> 'cancelada'", [pag.vendaId]);
+      if (!venda || venda.finalizadoAt || Number(pag.valor) > Number(venda.valorPago) + 0.005) {
+        throw erroHttp("O pagamento exige conciliação com a venda ou sua finalização antes do estorno.", 409);
       }
+      if (queryOne("SELECT id FROM cliente_bonus_movimentos WHERE vendaId = ? AND recebimentoId IS NULL AND deletedAt IS NULL", [venda.id])) {
+        throw erroHttp("Este pagamento antigo possui bônus vinculado à venda. Concilie o crédito antes de estornar.", 409);
+      }
+      const instrumentos = queryAll<any>("SELECT id FROM instrumentos_recebimento WHERE vendaId = ? AND deletedAt IS NULL", [venda.id]);
+      if (instrumentos.length && Math.abs(Number(venda.valorPago) - Number(pag.valor)) > 0.005) {
+        throw erroHttp("O título antigo é compartilhado com outros pagamentos. Reabra o vale para estornar o conjunto.", 409);
+      }
+      const agora = new Date().toISOString();
+      const pago = Math.round((Number(venda.valorPago) - Number(pag.valor)) * 100) / 100;
+      const saldo = Math.round(Math.max(0, Number(venda.totalLiquido) - pago) * 100) / 100;
+      execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, pag.id]);
+      execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = ? WHERE id = ?", [pago, saldo, saldo > 0.005 ? 'pendente' : 'paga', agora, venda.id]);
+      execute("UPDATE instrumentos_recebimento SET deletedAt = ?, status = 'cancelado', updatedAt = ? WHERE vendaId = ? AND deletedAt IS NULL", [agora, agora, venda.id]);
+      recalcularParcelasVale(venda.id);
+      registrarAuditoria(obterSessao(req)!.usuario.id, "estornar_pagamento", "pagamento", pag.id, { vendaId: venda.id, valor: pag.valor });
     });
-
-    res.json({ success: true, message: "Pagamento cancelado com sucesso e saldos das vendas reajustados." });
-  } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message });
-  }
+    res.json({ success: true, message: "Pagamento estornado e saldos atualizados." });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
-
 
 // 9. RELATÓRIOS GERENCIAIS
 const ORDENACOES_CONSUMO_MATERIAIS: Record<string, string> = {

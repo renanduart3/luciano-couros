@@ -61,7 +61,8 @@ async function main() {
     await request('PUT', `/vales/${a.id}`, {pin},409);
     const c = await criar();
     await pagar([{ vendaId:c.id, valor:10 }], {ordemCobrancaId:ordem.id},409);
-    await request('POST', `/ordens-cobranca/${ordem.id}/encerrar`, {pin,status:'cancelada',motivo:'Teste de liberação'});
+    const cancelamento = await request('GET', `/ordens-cobranca/${ordem.id}/cancelamento/previa`);
+    await request('POST', `/ordens-cobranca/${ordem.id}/encerrar`, {pin,status:'cancelada',motivo:'Teste de liberação',revisao:cancelamento.revisao});
     await pagar([{vendaId:b.id,valor:10}]);
     const d = await criar(), e = await criar();
     const quitada = await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:'2026-09-16',vendaIds:[d.id,e.id]});

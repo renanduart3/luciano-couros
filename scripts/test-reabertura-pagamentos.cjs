@@ -421,6 +421,125 @@ async function main() {
     await reabrir('recebimento', gasto.id);
     console.log('OK: falha no segundo item reverte estorno, carteira, histórico e projeção do primeiro');
 
+    // Cancelamento total, incluindo recebimento histórico compartilhado entre ordens.
+    const ca = await criarVale(60), cb = await criarVale(40);
+    const co = await criarOrdem([ca, cb], []);
+    const cr = await pagar([{ vendaId: ca.id, valor: 60 }, { vendaId: cb.id, valor: 40 }], {
+      ordemCobrancaId: co.id, formaPagamento: 'duplicata_emitente',
+      titulos: [{ ...titulo, tipo: 'duplicata_emitente', valor: 100, vencimento: '2099-12-20' }]
+    });
+    const outraId = 'ordem_compartilhada_cancelamento';
+    const outroNumero = db.prepare('SELECT MAX(numeroSequencial)+1 n FROM ordens_cobranca').get().n;
+    db.prepare("INSERT INTO ordens_cobranca (id,numeroSequencial,clienteId,dataEmissao,totalOriginal,valorPago,saldo,status) VALUES (?,?,?,'2026-09-08',40,40,0,'aberta')").run(outraId, outroNumero, cliente.id);
+    db.prepare('UPDATE ordem_cobranca_vales SET ordemId=? WHERE ordemId=? AND vendaId=?').run(outraId, co.id, cb.id);
+    db.prepare('UPDATE ordem_cobranca_recebimentos SET ordemId=? WHERE ordemId=? AND vendaId=?').run(outraId, co.id, cb.id);
+    db.prepare('UPDATE ordens_cobranca SET totalOriginal=60,valorPago=60,saldo=0 WHERE id=?').run(co.id);
+    const prevCancelar = id => request('GET', `/ordens-cobranca/${id}/cancelamento/previa`);
+    const cancelar = (id, revisao, senha = pin, expected) => request('POST', `/ordens-cobranca/${id}/encerrar`, { status: 'cancelada', pin: senha, revisao, motivo: 'Teste cancelamento integral' }, expected);
+    const pc = await prevCancelar(co.id);
+    assert.equal(pc.quantidadePagamentos, 1); assert.equal(pc.totalEstornado, 100);
+    assert.equal(pc.vales.length, 2); assert.equal(pc.ordens.length, 2);
+    await cancelar(co.id, pc.revisao, 'errada', 403);
+    await cancelar(co.id, undefined, pin, 409);
+    db.prepare('UPDATE recebimento_titulos SET observacao=? WHERE recebimentoId=?').run('Mudança concorrente', cr.id);
+    await cancelar(co.id, pc.revisao, pin, 409);
+    await conferirVale(ca.id, 60, 0); await conferirVale(cb.id, 40, 0);
+    const pc2 = await prevCancelar(co.id);
+    const cancelada = await cancelar(co.id, pc2.revisao);
+    assert.equal(cancelada.status, 'cancelada'); assert.equal(cancelada.valorPago, 0);
+    conferirEstorno(cr.id);
+    assert.equal(db.prepare('SELECT compensacaoAutomatica FROM recebimento_titulos WHERE recebimentoId=?').get(cr.id).compensacaoAutomatica, 0);
+    await conferirVale(ca.id, 0, 60); await conferirVale(cb.id, 0, 40);
+    const outra = await getOrdem(outraId);
+    assert.equal(outra.status, 'aberta'); assert.equal(outra.saldo, 40); assert.equal(outra.valorPago, 0);
+    await cancelar(co.id, pc2.revisao, pin, 409);
+    console.log('OK: cancelamento integral compartilhado entre ordens, senha, revisão, títulos e repetição');
+
+    // Falha posterior ao estorno deve desfazer também auditoria, bônus, títulos e projeções.
+    const rv = await criarVale(100), ro = await criarOrdem([rv], []);
+    const rr = await pagar([{ vendaId: rv.id, valor: 40 }], { ordemCobrancaId: ro.id });
+    const rp = await prevCancelar(ro.id);
+    db.exec(`CREATE TRIGGER falha_cancelamento BEFORE UPDATE OF status ON ordens_cobranca
+      WHEN NEW.id='${ro.id}' AND NEW.status='cancelada' BEGIN SELECT RAISE(ABORT,'Falha simulada'); END`);
+    await cancelar(ro.id, rp.revisao, pin, 500);
+    await conferirVale(rv.id, 40, 60);
+    assert.equal((await getOrdem(ro.id)).status, 'aberta');
+    assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(rr.id).status, 'ativo');
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM movimentacoes_financeiras WHERE recebimentoId=? AND tipo='estorno'").get(rr.id).n, 0);
+    db.exec('DROP TRIGGER falha_cancelamento');
+    await cancelar(ro.id, (await prevCancelar(ro.id)).revisao);
+    console.log('OK: falha no encerramento reverte todo o estorno e permite nova tentativa');
+
+    // Recusa já removeu o efeito financeiro: exclusão só limpa os vínculos restantes.
+    const recusadoVale = await criarVale(100), recusadaOrdem = await criarOrdem([recusadoVale], []);
+    const recusadoRec = await pagar([{ vendaId: recusadoVale.id, valor: 100 }], {
+      ordemCobrancaId: recusadaOrdem.id, formaPagamento: 'cheque_emitente',
+      titulos: [{ ...titulo, valor: 100, vencimento: '2099-12-21' }]
+    });
+    const recGer = await request('GET', `/recebimentos-cliente/${recusadoRec.id}/gerenciar`);
+    await request('PUT', `/recebimento-titulos/${recGer.titulos[0].id}/status`, { pin, status: 'recusado', motivo: 'Sem fundos' });
+    await conferirVale(recusadoVale.id, 0, 100);
+    const recItens = [{ tipo: 'recebimento', id: recusadoRec.id }];
+    const recPrev = await request('POST', `/ordens-cobranca/${recusadaOrdem.id}/pagamentos/previa`, { acao: 'excluir', itens: recItens });
+    await request('POST', `/ordens-cobranca/${recusadaOrdem.id}/pagamentos/acoes`, { acao: 'excluir', itens: recItens, revisao: recPrev.revisao, pin });
+    conferirEstorno(recusadoRec.id); await conferirVale(recusadoVale.id, 0, 100);
+    console.log('OK: exclusão de cheque recusado limpa vínculos sem estornar o valor duas vezes');
+
+    // Encerramento para renegociação conserva pagamentos: não é cancelamento.
+    const nv = await criarVale(100), no = await criarOrdem([nv], []);
+    const nr = await pagar([{ vendaId: nv.id, valor: 30 }], { ordemCobrancaId: no.id });
+    await request('POST', `/ordens-cobranca/${no.id}/encerrar`, { pin, status: 'renegociada' });
+    await conferirVale(nv.id, 30, 70);
+    assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(nr.id).status, 'ativo');
+    await reabrir('recebimento', nr.id);
+    assert.equal((await getOrdem(no.id)).status, 'renegociada'); await conferirVale(nv.id, 0, 100);
+    console.log('OK: renegociação preserva recebimento e estorno posterior mantém ordem encerrada');
+
+    const vazioVale = await criarVale(10), vazia = await criarOrdem([vazioVale], []);
+    assert.equal((await prevCancelar(vazia.id)).quantidadePagamentos, 0);
+    await cancelar(vazia.id, (await prevCancelar(vazia.id)).revisao);
+    await conferirVale(vazioVale.id, 0, 10);
+    console.log('OK: ordem sem recebimentos pode ser cancelada sem criar movimentação');
+
+    for (const forma of ['avista_dinheiro', 'avista_debito', 'pix', 'cartao_credito', 'cheque_emitente', 'duplicata_emitente', 'bonus']) {
+      const mv = await criarVale(100), mo = await criarOrdem([mv], []);
+      if (forma === 'bonus') db.prepare("INSERT INTO cliente_bonus_movimentos(id,clienteId,data,tipo,valor,observacao) VALUES ('credito_cancelamento_teste',?,'2026-09-08','credito',100,'Fixture')").run(cliente.id);
+      const saldoCarteiraAntes = db.prepare("SELECT COALESCE(SUM(CASE WHEN tipo='credito' THEN valor ELSE -valor END),0) n FROM cliente_bonus_movimentos WHERE clienteId=? AND deletedAt IS NULL").get(cliente.id).n;
+      const extras = forma.includes('emitente') ? { titulos: [{ ...titulo, tipo: forma, valor: 100, vencimento: '2099-12-22' }] }
+        : forma === 'cartao_credito' ? { parcelasCartao: 2, valoresParcelasCartao: [40, 60] }
+        : forma === 'bonus' ? { valorRecebido: 0, bonusUtilizado: 100 } : {};
+      const mr = await pagar([{ vendaId: mv.id, valor: 100 }], { ordemCobrancaId: mo.id, formaPagamento: forma, ...extras });
+      await cancelar(mo.id, (await prevCancelar(mo.id)).revisao);
+      conferirEstorno(mr.id); await conferirVale(mv.id, 0, 100);
+      assert.equal(db.prepare("SELECT COALESCE(SUM(CASE WHEN tipo='credito' THEN valor ELSE -valor END),0) n FROM cliente_bonus_movimentos WHERE clienteId=? AND deletedAt IS NULL").get(cliente.id).n, saldoCarteiraAntes);
+    }
+    console.log('OK: cancelamento de dinheiro, Pix, cartão parcelado, cheque, duplicata e bônus');
+
+    const antigo = await criarVale(100);
+    const antigoPagamento = await request('POST', '/pagamentos', { clienteId: cliente.id, vendaId: antigo.id, data: '2026-09-08', valor: 100, formaPagamento: 'cheque_emitente' });
+    db.prepare("INSERT INTO instrumentos_recebimento (id,vendaId,clienteId,tipo,emitente,numeroDocumento,valor,vencimento) VALUES ('instrumento_antigo_teste',?,?,'cheque_emitente','Fixture','LEGADO',100,'2099-12-23')").run(antigo.id, cliente.id);
+    await request('POST', `/pagamentos/${antigoPagamento.id}/cancelar`, {});
+    await conferirVale(antigo.id, 0, 100);
+    assert.equal(db.prepare("SELECT status FROM instrumentos_recebimento WHERE id='instrumento_antigo_teste'").get().status, 'cancelado');
+    await request('POST', `/pagamentos/${antigoPagamento.id}/cancelar`, {}, 409);
+    db.prepare("INSERT INTO pagamentos (id,clienteId,data,valor,formaPagamento) VALUES ('avulso_sem_vinculo',?,'2026-09-08',10,'pix')").run(cliente.id);
+    await request('POST', '/pagamentos/avulso_sem_vinculo/cancelar', {}, 409);
+    assert.equal(db.prepare("SELECT deletedAt FROM pagamentos WHERE id='avulso_sem_vinculo'").get().deletedAt, null);
+    await conferirVale(antigo.id, 0, 100);
+    console.log('OK: pagamento legado cancela seu cheque; lançamento sem alocações não redistribui dívidas');
+
+    // Finalização não pode esconder saldo restaurado nem duplicar o residual nesta etapa.
+    const fv = await criarVale(100), fo = await criarOrdem([fv], []);
+    const fr = await pagar([{ vendaId: fv.id, valor: 40 }], { ordemCobrancaId: fo.id });
+    const antesFinalizar = await previa('recebimento', fr.id);
+    const ff = await request('POST', `/ordens-cobranca/${fo.id}/finalizar`, { pin, destinoRestante: 'novo_vale', zerarExcedente: false });
+    await request('POST', `/reabertura-pagamentos/recebimento/${fr.id}`, { pin, revisao: antesFinalizar.revisao }, 409);
+    await request('GET', `/ordens-cobranca/${fo.id}/cancelamento/previa`, undefined, 409);
+    assert.equal((await getOrdem(fo.id)).saldo, 0);
+    assert.equal((await request('GET', `/vendas/${ff.valeResidual.id}`)).saldoRestante, 60);
+    assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(fr.id).status, 'ativo');
+    console.log('OK: estorno com finalização/residual bloqueado sem qualquer mutação até a conciliação das partes 3/4');
+
     await request('DELETE', `/produtos/${produto.id}`, {}, 403);
     await request('DELETE', `/produtos/${produto.id}`, { pin: 'errada' }, 403);
     assert.equal(db.prepare('SELECT ativo FROM produtos WHERE id = ?').get(produto.id).ativo, 1);

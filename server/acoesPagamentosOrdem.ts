@@ -32,8 +32,7 @@ export function criarAcoesPagamentosOrdem(deps: {
       if (!pertence) falha("Um pagamento não pertence a esta ordem.");
       const pagamento = deps.carregar(item.id);
       if (!pagamento) falha("Pagamento indisponível. Atualize a ordem.");
-      const plano = pagamento.status === "ativo" ? deps.preparar("recebimento", item.id) : null;
-      if (!plano && pagamento.status !== "recusado") falha("Pagamento já estornado.");
+      const plano = deps.preparar("recebimento", item.id);
       return { ...item, pagamento, plano, projecao: null };
     });
     const revisao = crypto.createHash("sha256").update(JSON.stringify({ ordem, acao, itens })).digest("hex");
@@ -52,9 +51,6 @@ export function criarAcoesPagamentosOrdem(deps: {
             // Reconfere cada item após o anterior; qualquer falha reverte o lote inteiro.
             const atual = deps.preparar("recebimento", item.id);
             deps.estornar("recebimento", item.id, atual.revisao, usuario, acao === "excluir" ? "Exclusão do pagamento na ordem" : "Estorno do pagamento na ordem");
-          } else {
-            execute("UPDATE recebimentos_cliente SET status = 'cancelado', deletedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [item.id]);
-            execute("UPDATE recebimento_titulos SET deletedAt = CURRENT_TIMESTAMP, compensacaoAutomatica = 0 WHERE recebimentoId = ? AND deletedAt IS NULL", [item.id]);
           }
           if (acao === "estornar") {
             const dados = { ...item.pagamento, bonusGerado: 0, valorAplicado: 0, statusPagamento: "aguardando",
@@ -75,7 +71,9 @@ export function criarAcoesPagamentosOrdem(deps: {
   return {
     preparar: (ordemId: string, acao: Acao, itens: Item[]) => {
       const p = preparar(ordemId, acao, itens);
-      return { revisao: p.revisao, totalFinanceiro: p.totalFinanceiro, quantidade: p.quantidade };
+      return { revisao: p.revisao, totalFinanceiro: p.totalFinanceiro, quantidade: p.quantidade,
+        vales: [...new Set(p.itens.flatMap(i => (i.plano?.vales || []).map((v: any) => v.numero)))],
+        ordens: [...new Set(p.itens.flatMap(i => (i.plano?.ordens || []).map((o: any) => o.numero)))] };
     },
     executar,
   };

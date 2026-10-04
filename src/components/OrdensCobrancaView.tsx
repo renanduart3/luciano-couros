@@ -147,6 +147,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [feedback, setFeedback] = useState("");
   const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico">("parcelas");
   const [encerramento, setEncerramento] = useState(false);
+  const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
   const [pinEncerramento, setPinEncerramento] = useState("");
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
@@ -184,16 +185,20 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
     return alocacoes;
   };
 
-  const abrirEncerramento = () => {
+  const abrirEncerramento = async () => {
+    if (edicoes.size) return setError("Salve ou cancele a edição antes desta ação.");
     setError("");
     setPinEncerramento("");
     setMotivoEncerramento("");
     setEncerramento(true);
+    setPlanoCancelamento(null);
+    try { setPlanoCancelamento(await api.previaCancelamentoOrdem(ordem.id)); }
+    catch (err: any) { setError(err.message || "Não foi possível conferir o cancelamento."); }
   };
 
   const encerrar = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!encerramento) return;
+    if (!encerramento || !planoCancelamento || saving) return;
     if (pinEncerramento.length < 4) return setError("Informe a senha do gerente para continuar.");
     setSaving(true);
     setError("");
@@ -202,10 +207,11 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         pin: pinEncerramento,
         status: "cancelada",
         motivo: motivoEncerramento,
+        revisao: planoCancelamento.revisao,
       });
       setEncerramento(false);
       onChanged(atualizada);
-      setFeedback("Ordem cancelada. O saldo ainda devido voltou a ficar disponível nos vales.");
+      setFeedback("Ordem cancelada. Os recebimentos foram estornados integralmente e os saldos dos vales foram atualizados.");
     } catch (err: any) {
       setError(err.message || "Não foi possível encerrar a ordem.");
     } finally {
@@ -239,13 +245,20 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
       </header>
       <div className="space-y-4 p-5">
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-bold leading-5 text-blue-950">
-          Os vales continuarão disponíveis para cobrança.
+          Os recebimentos serão estornados integralmente, inclusive os valores compartilhados com outros vales e ordens. Os títulos serão retirados do financeiro e o histórico será preservado.
         </div>
+        {planoCancelamento ? <div className="space-y-1 text-xs font-bold text-slate-700">
+          <p>{planoCancelamento.quantidadePagamentos} recebimento(s) · estorno financeiro: {formatCurrency(planoCancelamento.totalFinanceiro)}</p>
+          <p>Saldo a restaurar nos vales: {formatCurrency(planoCancelamento.totalEstornado)}</p>
+          <p>Variação do bônus: {formatCurrency(planoCancelamento.variacaoBonus)}</p>
+          <p>Vales afetados: {planoCancelamento.vales.map(v => `#${v.numero} (${formatCurrency(v.valor)})`).join(", ") || "Nenhum pagamento vinculado"}</p>
+          <p>Ordens dos recebimentos: {planoCancelamento.ordens.map(o => `#${o.numero}`).join(", ") || "Nenhuma"}</p>
+        </div> : !error && <p className="text-xs">Conferindo valores…</p>}
         <label className="block text-[10px] font-black uppercase text-slate-600">Senha do gerente<input autoFocus type="password" autoComplete="off" value={pinEncerramento} onChange={(event) => { setPinEncerramento(event.target.value.slice(0, 64)); setError(""); }} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /></label>
         <label className="block text-[10px] font-black uppercase text-slate-600">Motivo (opcional)<textarea rows={2} value={motivoEncerramento} onChange={(event) => setMotivoEncerramento(event.target.value.slice(0, 300))} placeholder="Ex.: cliente solicitou novas datas" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm font-bold" /></label>
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800"><AlertCircle size={16}/>{error}</div>}
       </div>
-      <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4"><button type="button" disabled={saving} onClick={() => { setEncerramento(false); setError(""); }} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black uppercase text-slate-700">Voltar</button><button type="submit" disabled={saving || pinEncerramento.length < 4} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-40"><ShieldCheck size={16}/>{saving ? "Confirmando..." : "Cancelar ordem"}</button></footer>
+      <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4"><button type="button" disabled={saving} onClick={() => { setEncerramento(false); setError(""); }} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black uppercase text-slate-700">Voltar</button><button type="submit" disabled={saving || !planoCancelamento || pinEncerramento.length < 4} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-40"><ShieldCheck size={16}/>{saving ? "Confirmando..." : "Cancelar ordem"}</button></footer>
     </form>
   </div>}
   <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-[10vw] py-[5vh] backdrop-blur-sm">
@@ -299,7 +312,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}
       </div>
-      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button disabled={saving} type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{ordem.status === "aberta" && <button disabled={saving} type="button" onClick={abrirEncerramento} className="rounded-lg border border-slate-400 px-3 py-2 text-xs font-black uppercase text-slate-700">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
+      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button disabled={saving} type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{podeGerenciar && !ordem.finalizadoAt && <button disabled={saving} type="button" onClick={abrirEncerramento} className="rounded-lg border border-slate-400 px-3 py-2 text-xs font-black uppercase text-slate-700">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
     </div>
   </div></>;
 }

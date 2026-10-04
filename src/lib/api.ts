@@ -315,7 +315,7 @@ export const api = {
 
   previaAcaoPagamentosOrdem: (id: string, acao: "estornar" | "excluir", itens: import("../types").ItemAcaoPagamentoOrdem[]) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/pagamentos/previa`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao, itens }) })
-      .then(r => handleResponse<{ revisao: string; totalFinanceiro: number; quantidade: number }>(r)),
+      .then(r => handleResponse<{ revisao: string; totalFinanceiro: number; quantidade: number; vales: number[]; ordens: number[] }>(r)),
   acaoPagamentosOrdem: (id: string, dados: { acao: "estornar" | "excluir"; itens: import("../types").ItemAcaoPagamentoOrdem[]; revisao: string; pin: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/pagamentos/acoes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<OrdemCobranca>(r)),
@@ -354,7 +354,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ updatedAt, parcelas })
     }).then(r => handleResponse<OrdemCobranca>(r)),
-  encerrarOrdemCobranca: (id: string, dados: { pin: string; status: "renegociada" | "cancelada"; motivo?: string }) =>
+  previaCancelamentoOrdem: (id: string) =>
+    fetch(`${API_BASE}/ordens-cobranca/${id}/cancelamento/previa`).then(r => handleResponse<{
+      revisao: string; totalFinanceiro: number; totalEstornado: number; quantidadePagamentos: number;
+      variacaoBonus: number; vales: Array<{ numero: number; valor: number }>; ordens: Array<{ numero: number; status: string }>;
+    }>(r)),
+  encerrarOrdemCobranca: (id: string, dados: { pin: string; status: "renegociada" | "cancelada"; motivo?: string; revisao?: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/encerrar`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

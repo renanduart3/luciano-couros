@@ -31,7 +31,7 @@ export function ReabrirFinalizacaoModal({ tipo, id, onClose, onSaved }: {
       <p className="text-sm">Os pagamentos serão preservados. A finalização será desfeita e os saldos serão recalculados para permitir as correções.</p>
       {plano ? <div className="space-y-2 rounded-lg bg-amber-50 p-3 text-sm">
         <p>Vales: {plano.vales.map(n => `#${n}`).join(', ')}</p>
-        {plano.residual && <p>O vale residual #{plano.residual.numero}, de {formatCurrency(plano.residual.valor)}, será cancelado e o saldo voltará à origem.</p>}
+        {plano.residual && <p>O vale residual #{plano.residual.numero}, de {formatCurrency(plano.residual.valor)}, permanecerá independente. O valor já transferido será descontado da origem, sem alterar negociações ou pagamentos desse vale.</p>}
         {plano.bonusRestituido > 0 && <p>Bônus restituído: {formatCurrency(plano.bonusRestituido)}.</p>}
       </div> : !erro && <p>Conferindo a finalização…</p>}
       <label className="block text-sm font-bold">Motivo<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={300} className="mt-1 w-full rounded border p-2" /></label>

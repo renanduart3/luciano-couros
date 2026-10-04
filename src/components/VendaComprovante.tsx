@@ -29,9 +29,10 @@ const LOJA_PADRAO: LojaComprovante = {
 // Versão de avaliação com mais respiro. Voltar para 18 reativa
 // automaticamente as medidas compactas preservadas no CSS.
 const ITENS_POR_FOLHA = 15;
-type ItemComprovante = ItemVenda & { linhaDevolucao?: boolean };
+type ItemComprovante = ItemVenda & { linhaDevolucao?: boolean; linhaSaldo?: boolean };
 
 function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: ItemComprovante[] }) {
+  const residual = Number(venda.contabilizaReceita ?? 1) === 0;
   const layoutRespirado = ITENS_POR_FOLHA === 15;
   const todosItens = (venda.items || itens)
     .map((item) => ({ ...item, quantidade: Number(item.quantidadeDisponivel ?? item.quantidade) }))
@@ -41,7 +42,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
     .reduce((total, item) => total + Number(item.quantidade), 0);
   const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - (itens?.length || 0)) });
   const bonusDevolucao = (venda.devolucoes || []).reduce((soma, devolucao) => soma + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0);
-  const subtotalAtual = (venda.items || []).reduce((soma, item) => soma + Number(item.total), 0)
+  const subtotalAtual = residual ? Number(venda.totalLiquido) : (venda.items || []).reduce((soma, item) => soma + Number(item.total), 0)
     - (venda.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito), 0);
   const abatimentoAtual = Math.round((subtotalAtual - Number(venda.totalMercadoriasAposDevolucoes ?? venda.totalLiquido)) * 100) / 100;
   const instrumento = venda.instrumentoRecebimento;
@@ -51,7 +52,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
   const valorRecebido = financeiroVale(venda).recebido;
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
   const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
-  const titulo = instrumento?.tipo?.startsWith("cheque")
+  const titulo = residual ? "VALE DE SALDO DEVEDOR" : instrumento?.tipo?.startsWith("cheque")
     ? "VENDA / CHEQUE"
     : ehVale
       ? "VENDA / VALE"
@@ -88,10 +89,10 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
             <tr key={item.id || index} className={item.linhaDevolucao ? "receipt-return-row" : undefined}>
               <td className="receipt-product-code">{String(item.referencia || "").slice(0, 4)}</td>
               <td className="receipt-supplier-code">{String(item.fornecedorReferencia || "").slice(0, 4)}</td>
-              <td className="receipt-number">{formatDecimal(item.quantidade)}</td>
+              <td className="receipt-number">{item.linhaSaldo ? "" : formatDecimal(item.quantidade)}</td>
               <td>{item.linhaDevolucao ? `DEVOLVIDO: ${item.descricao}` : item.descricao}</td>
-              <td className="receipt-number">{formatCurrency(item.precoUnitario)}</td>
-              <td className="receipt-number">{formatCurrency(item.total)}</td>
+              <td className="receipt-number">{item.linhaSaldo ? "" : formatCurrency(item.precoUnitario)}</td>
+              <td className="receipt-number">{item.linhaSaldo ? "" : formatCurrency(item.total)}</td>
             </tr>
           ))}
           {linhasVazias.map((_, index) => <tr key={`empty-${index}`} aria-hidden="true"><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td></tr>)}
@@ -102,6 +103,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
         <span><b>{bonusDevolucao >= 0.01 ? "BÔNUS DEV. (DÍVIDA MANTIDA):" : "DESCONTOS / AJUSTES DE DEVOLUÇÃO:"}</b> {formatCurrency(bonusDevolucao >= 0.01 ? bonusDevolucao : abatimentoAtual)}</span>
       </div>}
+      {Number(venda.valorTransferido || 0) > 0 && <div className="receipt-payment-line"><span>TRANSFERIDO PARA OUTRO VALE: {formatCurrency(venda.valorTransferido!)}</span></div>}
       <div className="receipt-payment-line">
         <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
         <span className="receipt-payment-value"><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
@@ -109,8 +111,8 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       </div>
 
       <footer className="receipt-footer">
-        <div className="receipt-counts"><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></div>
-        <div className="receipt-total"><span>VALOR TOTAL</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
+        <div className="receipt-counts">{residual ? <><span>SALDO ATUAL: <b>{formatCurrency(financeiroVale(venda).restantePresumido)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></> : <><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></>}</div>
+        <div className="receipt-total"><span>{residual ? "VALOR DO VALE" : "VALOR TOTAL"}</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
       </footer>
     </section>
   );
@@ -136,6 +138,14 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
 
   const chave = useMemo(() => `${venda.id}-${venda.updatedAt || venda.data}`, [venda]);
   const itensAtuais = useMemo(() => {
+    if (Number(venda.contabilizaReceita ?? 1) === 0) {
+      const origem = venda.origemSaldo;
+      const descricoes = origem?.vales.length
+        ? origem.vales.map(v => `Saldo devedor do vale #${v.numero}${origem.ordem ? ` / ordem #${origem.ordem.numero}` : ''}`)
+        : [origem?.descricao || venda.observacoes || 'Saldo devedor transferido'];
+      return descricoes.map((descricao, i): ItemComprovante => ({ id: `origem-${i}`, vendaId: venda.id, produtoId: '', descricao,
+        quantidade: 0, unidade: '', precoUnitario: 0, custoUnitario: 0, desconto: 0, total: 0, custoTotal: 0, lucroBruto: 0, linhaSaldo: true }));
+    }
     const devolvidos = new Map<string, { quantidade: number; credito: number }>();
     for (const devolucao of venda.devolucoes || []) {
       for (const item of devolucao.items || []) {
@@ -160,7 +170,7 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
       }];
     });
     return [...itensOriginais, ...linhasDevolvidas];
-  }, [venda.items, venda.devolucoes]);
+  }, [venda]);
   const paginas = useMemo(() => {
     const itens = itensAtuais;
     if (itens.length === 0) return [[]];

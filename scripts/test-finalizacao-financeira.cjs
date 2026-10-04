@@ -59,6 +59,6 @@ try {
   const residual = db.prepare("SELECT totalLiquido,saldoRestante,contabilizaReceita,valeOrigemIds,observacoes FROM vendas WHERE id=?").get(resultado.valeResidual.id);
   assert.deepEqual({ status: origem.status, saldo: origem.saldoRestante, finalizado: Boolean(origem.finalizadoAt) }, { status: 'paga', saldo: 0, finalizado: true });
   assert.equal(residual.totalLiquido, 60); assert.equal(residual.saldoRestante, 60); assert.equal(residual.contabilizaReceita, 0);
-  assert.deepEqual(JSON.parse(residual.valeOrigemIds), [1]); assert.match(residual.observacoes, /Restante dos vales #1/);
+  assert.deepEqual(JSON.parse(residual.valeOrigemIds), [1]); assert.match(residual.observacoes, /Saldo devedor da ordem #1 — vales #1/);
   console.log('OK: lucro presumido, 4x iguais e finalização com vale residual rastreável sem duplicar receita.');
 } finally { db.close(); }

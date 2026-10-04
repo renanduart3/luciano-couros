@@ -160,6 +160,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
+            {vale.origemSaldo && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
+              <h3 className="font-black">Origem deste vale</h3><p className="text-sm">{vale.origemSaldo.descricao}</p>
+              <p className="mt-2 text-sm">Valor do vale: <b>{formatCurrency(vale.totalLiquido)}</b> · Saldo atual: <b>{formatCurrency(financeiro.restantePresumido)}</b></p>
+              <p className="mt-1 text-xs">Este vale possui pagamentos e negociações próprios. A origem permanece como referência histórica.</p>
+            </div>}
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
@@ -250,7 +255,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               ))}
             </div>
 
-            {itens.length === 0 && <p className="rounded-xl border border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">Nenhum item encontrado para esta venda.</p>}
+            {itens.length === 0 && !vale.origemSaldo && <p className="rounded-xl border border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">Nenhum item encontrado para esta venda.</p>}
 
             <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-3 py-2">

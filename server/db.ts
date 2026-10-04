@@ -851,6 +851,17 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN valeResidualId TEXT`).run(); } catch (e) {}
+  db.prepare(`CREATE TABLE IF NOT EXISTS vale_residual_origens (
+    valeResidualId TEXT NOT NULL, vendaOrigemId TEXT NOT NULL, ordemOrigemId TEXT,
+    numeroValeOrigem INTEGER NOT NULL, numeroOrdemOrigem INTEGER, valorTransferido REAL NOT NULL,
+    createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (valeResidualId, vendaOrigemId),
+    FOREIGN KEY (valeResidualId) REFERENCES vendas(id),
+    FOREIGN KEY (vendaOrigemId) REFERENCES vendas(id),
+    FOREIGN KEY (ordemOrigemId) REFERENCES ordens_cobranca(id)
+  )`).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_venda_origem ON vale_residual_origens(vendaOrigemId)').run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_ordem_origem ON vale_residual_origens(ordemOrigemId,vendaOrigemId)').run();
   try { db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}

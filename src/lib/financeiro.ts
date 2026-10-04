@@ -1,6 +1,7 @@
 import type { OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 export interface PosicaoFinanceira {
   negociado: number;
+  transferido?: number;
   /** Dinheiro/títulos já compensados. */
   recebido: number;
   /** Cheques e boletos entregues, mas ainda não compensados. */
@@ -14,11 +15,12 @@ export interface PosicaoFinanceira {
   creditoUtilizado: number;
 }
 const cents = (v: unknown) => Math.round(Number(v || 0) * 100);
-export function fecharPosicao(negociado: number, recebido: number, aguardando = 0, creditoUtilizado = 0): PosicaoFinanceira {
+export function fecharPosicao(negociado: number, recebido: number, aguardando = 0, creditoUtilizado = 0, transferido = 0): PosicaoFinanceira {
   const n = cents(negociado), r = Math.max(0, cents(recebido)), a = Math.max(0, cents(aguardando));
   const presumido = r + a;
-  return { negociado: n / 100, recebido: r / 100, restante: Math.max(0, n - r) / 100,
-    aguardando: a / 100, presumido: presumido / 100, restantePresumido: Math.max(0, n - presumido) / 100,
+  const t = Math.max(0, cents(transferido));
+  return { negociado: n / 100, transferido: t / 100, recebido: r / 100, restante: Math.max(0, n - r - t) / 100,
+    aguardando: a / 100, presumido: presumido / 100, restantePresumido: Math.max(0, n - presumido - t) / 100,
     bonus: Math.max(0, r - n) / 100, excedentePresumido: Math.max(0, presumido - n) / 100, creditoUtilizado };
 }
 export function valoresConfirmados(p: PagamentoGerenciavel) {
@@ -67,7 +69,7 @@ export function calcularFinanceiroVale(v: Venda): PosicaoFinanceira {
   recebido += legado - valorInstrumento;
   if (instrumento && ["aguardando","em_carteira"].includes(instrumento.status)) aguardando += valorInstrumento;
   else if (!instrumento || instrumento.status !== "recusado") recebido += valorInstrumento;
-  const posicao = fecharPosicao(v.totalLiquido,recebido/100,aguardando/100,credito/100);
+  const posicao = fecharPosicao(v.totalLiquido,recebido/100,aguardando/100,credito/100,v.valorTransferido);
   return v.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;
 }
 export const financeiroVale = (v: Venda) => v.financeiro || calcularFinanceiroVale(v);
@@ -81,6 +83,6 @@ export function financeiroOrdem(o: OrdemCobranca): PosicaoFinanceira {
     aguardando += Math.round(cents(v.aguardando)*fator);
     credito += Math.round(cents(v.credito)*fator);
   }
-  const posicao = fecharPosicao(o.totalOriginal,recebido/100,aguardando/100,credito/100);
+  const posicao = fecharPosicao(o.totalOriginal,recebido/100,aguardando/100,credito/100,o.valorTransferido);
   return o.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;
 }

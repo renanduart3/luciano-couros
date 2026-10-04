@@ -95,29 +95,38 @@ async function main() {
     assert.equal(db.prepare('SELECT status FROM recebimento_titulos WHERE recebimentoId=?').get(r.id).status, 'compensado');
     assert.equal(db.prepare("SELECT COUNT(*) n FROM movimentacoes_financeiras WHERE recebimentoId=? AND tipo='compensacao_automatica'").get(r.id).n, 1);
     assert.ok((await getOrdem(o.id)).finalizadoAt);
-    // Alteração concorrente do saldo residual invalida a prévia sem mudar a origem.
-    db.prepare('UPDATE vendas SET observacoes=? WHERE id=?').run('Conferência concorrente', f.valeResidual.id);
-    await executarFinal('ordem', o.id, pr.revisao, pin, 409);
+    // O residual já negociado não bloqueia nem é alterado pela reabertura da origem.
+    const posterior = await criarOrdem([{ id: f.valeResidual.id }], []);
+    await pagar([{ vendaId: f.valeResidual.id, valor: 20 }], { ordemCobrancaId: posterior.id });
+    const posteriorFinal = await finalizar('ordem', posterior.id);
+    assert.equal(posteriorFinal.valeResidual.valor, 40);
+    const residualAntes = db.prepare('SELECT * FROM vendas WHERE id=?').get(f.valeResidual.id);
+    const posteriorAntes = db.prepare('SELECT * FROM ordens_cobranca WHERE id=?').get(posterior.id);
     await reabrirFinal('ordem', o.id);
+    assert.deepEqual(db.prepare('SELECT * FROM vendas WHERE id=?').get(f.valeResidual.id), residualAntes);
+    assert.deepEqual(db.prepare('SELECT * FROM ordens_cobranca WHERE id=?').get(posterior.id), posteriorAntes);
+    const origem = (await request('GET', `/vendas/${f.valeResidual.id}`)).origemSaldo;
+    assert.equal(origem.ordem.id, o.id); assert.equal(origem.vales[0].id, v.id); assert.equal(origem.vales[0].valor, 60);
     const aberta = await getOrdem(o.id);
-    assert.equal(aberta.finalizadoAt, null); assert.equal(aberta.saldo, 60); assert.equal(aberta.valorPago, 40);
+    assert.equal(aberta.finalizadoAt, null); assert.equal(aberta.saldo, 0); assert.equal(aberta.valorPago, 40);
     assert.ok(aberta.eventos.some(e => e.texto.includes('reaberta para edição')));
-    assert.ok(db.prepare('SELECT deletedAt FROM vendas WHERE id=?').get(f.valeResidual.id).deletedAt);
+    assert.equal(db.prepare('SELECT deletedAt FROM vendas WHERE id=?').get(f.valeResidual.id).deletedAt, null);
     assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(r.id).status, 'ativo');
     await executarFinal('ordem', o.id, pr.revisao, pin, 409);
     await request('PUT', `/recebimentos-cliente/${r.id}`, { pin, status: 'compensado', formaPagamento: 'pix', data: '2026-09-08', valorRecebido: 30, distribuicaoAutomatica: true, alocacoes: [] });
-    assert.equal((await getOrdem(o.id)).saldo, 70);
+    assert.equal((await getOrdem(o.id)).saldo, 10);
     const f2 = await finalizar('ordem', o.id);
-    assert.equal(f2.valeResidual.valor, 70);
+    assert.equal(f2.valeResidual.valor, 10);
     assert.notEqual(f2.valeResidual.id, f.valeResidual.id);
     console.log('OK: sem pagamento rejeitado; título futuro finaliza, compensa uma vez; reabertura com senha e revisão, edição e nova finalização');
 
-    // Residual movimentado é dependência da parte 4: nenhuma mutação parcial.
-    await pagar([{ vendaId: f2.valeResidual.id, valor: 20 }]);
-    await previaFinal('ordem', o.id, 409);
-    assert.ok((await getOrdem(o.id)).finalizadoAt);
-    assert.equal((await request('GET', `/vendas/${f2.valeResidual.id}`)).saldoRestante, 50);
-    console.log('OK: residual pago exige conciliação, preservando ambas as dívidas');
+    await pagar([{ vendaId: f2.valeResidual.id, valor: 5 }]);
+    await reabrirFinal('ordem', o.id);
+    assert.equal((await getOrdem(o.id)).saldo, 0);
+    assert.equal((await request('GET', `/vendas/${f2.valeResidual.id}`)).saldoRestante, 5);
+    assert.equal((await request('GET', `/vendas/${v.id}`)).financeiro.restantePresumido, 0);
+    assert.equal((await request('GET', `/vendas/${v.id}`)).valorTransferido, 70);
+    console.log('OK: residual independente em outra ordem; reabertura e repetição sem duplicar dívida');
 
     const vc = await criarVale(100), oc = await criarOrdem([vc], []);
     const rc = await pagar([{ vendaId: vc.id, valor: 100 }], { ordemCobrancaId: oc.id, formaPagamento: 'cheque_emitente',
@@ -140,11 +149,11 @@ async function main() {
     const ri = await pagar([{ vendaId: vi.id, valor: 30 }]);
     const fi = await finalizar('vale', vi.id);
     await reabrirFinal('vale', vi.id);
-    await conferirVale(vi.id, 30, 70);
-    assert.ok(db.prepare('SELECT deletedAt FROM vendas WHERE id=?').get(fi.valeResidual.id).deletedAt);
+    await conferirVale(vi.id, 30, 0);
+    assert.equal(db.prepare('SELECT deletedAt FROM vendas WHERE id=?').get(fi.valeResidual.id).deletedAt, null);
     const iv = (await request('GET', `/vendas/${vi.id}`)).items[0];
     await request('PUT', `/vendas/${vi.id}`, { pin, observacoes: 'Vale corrigido', descontoGeral: 0, items: [{ id: iv.id, produtoId: produto.id, quantidade: 120, unidade: 'metro', precoUnitario: 1, desconto: 0 }] });
-    await conferirVale(vi.id, 30, 90);
+    await conferirVale(vi.id, 30, 20);
     assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(ri.id).status, 'ativo');
     console.log('OK: vale finalizado reabre, preserva recebimento e permite editar mercadorias');
 
@@ -165,7 +174,7 @@ async function main() {
     assert.equal((await getOrdem(ob.id)).valorPago, 100);
     console.log('OK: reabertura restaura saldo perdoado e bônus zerado, mantendo pagamentos');
 
-    // Falha durante reabertura reverte também cancelamento do residual.
+    // Falha durante reabertura reverte a origem e preserva o residual.
     const vr = await criarVale(100), or = await criarOrdem([vr], []);
     await pagar([{ vendaId: vr.id, valor: 40 }], { ordemCobrancaId: or.id });
     const rf = await finalizar('ordem', or.id);
@@ -179,6 +188,24 @@ async function main() {
     db.exec('DROP TRIGGER falha_reabertura');
     await reabrirFinal('ordem', or.id);
     console.log('OK: rollback atômico de reabertura, residual e auditoria');
+    // Compatibilidade: referência antiga lida sem escrita, adotada apenas ao reabrir.
+    const legado = await criarVale(100), ol = await criarOrdem([legado], [100]);
+    const rl = await pagar([{ vendaId: legado.id, valor: 25 }], { parcelaOrdemId: ol.parcelas[0].id });
+    const fl = await finalizar('ordem', ol.id);
+    db.prepare('DELETE FROM vale_residual_origens WHERE valeResidualId=?').run(fl.valeResidual.id);
+    await pagar([{ vendaId: fl.valeResidual.id, valor: 5 }]);
+    const detalhesLegado = await request('GET', `/vendas/${fl.valeResidual.id}`);
+    assert.equal(detalhesLegado.origemSaldo.ordem.id, ol.id);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM vale_residual_origens WHERE valeResidualId=?').get(fl.valeResidual.id).n, 0);
+    await reabrirFinal('ordem', ol.id);
+    assert.equal((await getOrdem(ol.id)).saldo, 0);
+    assert.equal((await getOrdem(ol.id)).parcelas[0].saldo, 0);
+    await reabrir('recebimento', rl.id);
+    await conferirVale(legado.id, 0, 25);
+    assert.equal((await getOrdem(ol.id)).saldo, 25);
+    assert.equal((await request('GET', `/vendas/${fl.valeResidual.id}`)).saldoRestante, 70);
+    assert.equal((await getOrdem(ol.id)).parcelas[0].saldo, 25);
+    console.log('OK: referência legada, adoção transacional e estorno sem ressuscitar saldo transferido');
     console.log(`Todos os cenários de finalização passaram. Base isolada: ${temp}`);
   } catch (error) { console.error(logs.slice(-4000)); throw error; }
   finally { db?.close(); child.kill(); }

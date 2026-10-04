@@ -7,6 +7,7 @@ export function ResumoFinanceiroFixo({ negociado, financeiro, rotuloTotal = "Neg
     <Item rotulo={rotuloTotal} valor={negociado}/>
     <Item rotulo="Pago" valor={financeiro.presumido} cor="text-emerald-800"/>
     <Item rotulo="Restante" valor={financeiro.restantePresumido} cor="text-amber-800"/>
+    {Number(financeiro.transferido || 0) > 0 && <Item rotulo="Transferido para outro vale" valor={financeiro.transferido!}/>}
     {bonusGerado !== undefined && <Item rotulo="Bônus deste vale" valor={bonusGerado} cor="text-violet-800"/>}
   </div>;
 }

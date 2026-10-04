@@ -151,6 +151,7 @@ export interface DevolucaoVenda {
 }
 
 export interface Venda {
+  valorTransferido?: number;
   financeiro?: import("./lib/financeiro").PosicaoFinanceira;
   id: string;
   numeroSequencial: number;
@@ -172,6 +173,7 @@ export interface Venda {
   saldoRestante: number;
   contabilizaReceita?: number;
   valeOrigemIds?: string;
+  origemSaldo?: { ordem: { id: string; numero: number } | null; vales: Array<{ id?: string; numero: number; valor: number | null }>; descricao: string; valorTransferido: number };
   finalizadoAt?: string;
   status: "paga" | "pendente" | "cancelada";
   vencimento?: string; // YYYY-MM-DD
@@ -534,6 +536,7 @@ export interface OrdemCobrancaVale {
 export interface ProjecaoPagamentoOrdem { id: string; revisao: string; dados: PagamentoGerenciavel; }
 export type ItemAcaoPagamentoOrdem = { tipo: "recebimento" | "projecao"; id: string };
 export interface OrdemCobranca {
+  valorTransferido?: number;
   projecoes?: ProjecaoPagamentoOrdem[];
   pagamentos: PagamentoGerenciavel[];
   id: string;

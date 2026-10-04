@@ -5,7 +5,7 @@ export function textoHistoricoOrdem(acao: string, d: any): string | null {
   const status = (v: string) => ({ compensado: 'pago', aguardando: 'aguardando compensação', recusado: 'recusado' }[v] || v);
   const data = (v: any) => String(v || '').split('-').reverse().join('/');
   switch (acao) {
-    case 'finalizacao_reaberta': return `Finalização reaberta para edição. Pagamentos preservados${d.residualCancelado ? '; vale residual cancelado e saldo devolvido à origem' : ''}.${d.motivo ? ` Motivo: ${d.motivo}` : ''}`;
+    case 'finalizacao_reaberta': return `Finalização reaberta para edição. Pagamentos preservados${d.residualPreservado ? '; vale residual preservado como dívida independente' : ''}${d.residualCancelado ? '; vale residual cancelado e saldo devolvido à origem' : ''}.${d.motivo ? ` Motivo: ${d.motivo}` : ''}`;
     case 'pagamentos_ordem_estornar': return `${d.quantidade} pagamento(s) estornado(s): ${moeda(d.totalFinanceiro)}. Previsões mantidas pendentes.`;
     case 'pagamentos_ordem_excluir': return `${d.quantidade} lançamento(s) excluído(s). Estornado: ${moeda(d.totalFinanceiro)}.`;
     case 'projecao_alterada': return 'Previsão de pagamento alterada, sem movimentar saldo.';

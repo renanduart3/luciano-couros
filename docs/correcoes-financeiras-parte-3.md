@@ -1,5 +1,7 @@
 # Parte 3 — finalização e reabertura para edição
 
+> Atualização: a parte 4 substitui as regras de cancelamento e bloqueio do residual abaixo. Consulte [Parte 4](correcoes-financeiras-parte-4.md).
+
 Implementação em main, 04/10/2026. Sem migração de esquema, reparo de registros existentes ou publicação.
 
 ## Comportamento entregue

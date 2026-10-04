@@ -1,3 +1,4 @@
+import { saldoVale } from "./origemSaldo.js";
 import crypto from "node:crypto";
 import { registrarMovimentacaoFinanceira } from "./programacaoPagamentos.js";
 import { execute, queryAll, queryOne, runInTransaction } from "./db.js";
@@ -125,7 +126,7 @@ export function criarGerenciadorReabertura(deps: {
       const agora = new Date().toISOString();
       for (const vale of plano.vales) {
         const pago = dinheiro(Math.max(0, Number(vale.valorPago) - vale.valorEstornado));
-        const saldo = dinheiro(Math.max(0, Number(vale.totalLiquido) - pago));
+        const saldo = dinheiro(saldoVale(vale.id, Number(vale.totalLiquido), pago));
         execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = ? WHERE id = ?", [pago, saldo, saldo > 0.005 ? "pendente" : "paga", agora, vale.id]);
         deps.recalcularVale(vale.id);
       }

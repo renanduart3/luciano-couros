@@ -40,3 +40,13 @@ html = render({ ...venda, items: [venda.items[0]], devolucoes: [{ ...devolucao, 
 assert.equal((html.match(/DEVOLVIDO: ESTF COROLA/g) || []).length, 2);
 assert.equal((html.match(/VALOR TOTAL/g) || []).length, 2);
 console.log('OK: duas vias, devoluções parcial e integral, paginação de 15 linhas e valores.');
+
+html = render({ ...venda, contabilizaReceita: 0, items: [], totalLiquido: 60, valorPago: 20, saldoRestante: 40,
+  origemSaldo: { ordem: { id: 'o', numero: 12 }, vales: Array.from({length: 20}, (_, i) => ({ id: `v${i}`, numero: 100+i, valor: 3 })) } });
+assert.ok(html.includes('VALE DE SALDO DEVEDOR'));
+assert.ok(html.includes('Saldo devedor do vale #119 / ordem #12'));
+assert.ok(html.includes('40,00'));
+assert.ok(!html.includes('DESCONTOS / AJUSTES'));
+assert.ok(!html.includes('Nº ITENS'));
+assert.equal((html.match(/data-receipt-page=/g) || []).length, 2);
+console.log('OK: residual com valor, saldo e todas as referências, sem itens ou descontos fictícios.');

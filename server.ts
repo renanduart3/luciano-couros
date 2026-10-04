@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { criarAcoesPagamentosOrdem } from "./server/acoesPagamentosOrdem.js";
 import { criarGerenciadorReabertura } from "./server/reabertura.js";
 import { criarReaberturaFinalizacao } from "./server/reabrirFinalizacao.js";
+import { carregarOrigemSaldo, transferidoVale, transferidoOrdem, saldoVale } from "./server/origemSaldo.js";
 import { compensarPagamentosProgramados, programacaoDoTitulo, dataFinanceiraValida, registrarMovimentacaoFinanceira } from "./server/programacaoPagamentos.js";
 import { textoHistoricoOrdem } from "./server/historicoOrdem.js";
 import { createServer as createViteServer } from "vite";
@@ -380,10 +381,13 @@ function recalcularParcelasVale(vendaId: string) {
     [vendaId]
   );
   let pagoDisponivel = Math.max(0, Number(venda.valorPago || 0));
+  let transferidoDisponivel = transferidoVale(vendaId);
   for (const parcela of parcelas) {
     const valor = Number(parcela.valor);
     const pago = Math.round(Math.min(valor, pagoDisponivel) * 100) / 100;
-    const saldo = Math.round(Math.max(0, valor - pago) * 100) / 100;
+    const transferido = Math.min(Math.max(0, valor - pago), transferidoDisponivel);
+    transferidoDisponivel -= transferido;
+    const saldo = Math.round(Math.max(0, valor - pago - transferido) * 100) / 100;
     pagoDisponivel = Math.max(0, pagoDisponivel - pago);
     execute(
       `UPDATE vale_parcelas
@@ -684,7 +688,7 @@ function recalcularOrdemCobranca(ordemId: string) {
       [ordemId, vinculo.vendaId]
     );
     const valorPago = Math.round(Math.min(Number(vinculo.valorVinculado), Number(recebido?.total || 0)) * 100) / 100;
-    const saldo = Math.round(Math.max(0, Number(vinculo.valorVinculado) - valorPago) * 100) / 100;
+    const saldo = Math.round(Math.max(0, Number(vinculo.valorVinculado) - valorPago - transferidoOrdem(ordemId, vinculo.vendaId)) * 100) / 100;
     execute(
       `UPDATE ordem_cobranca_vales
        SET valorPago = ?, saldo = ?, ativo = ?, updatedAt = CURRENT_TIMESTAMP
@@ -694,6 +698,7 @@ function recalcularOrdemCobranca(ordemId: string) {
   }
 
   const parcelas = queryAll<any>("SELECT * FROM ordem_cobranca_parcelas WHERE ordemId = ? AND deletedAt IS NULL", [ordemId]);
+  let transferidoParcelas = transferidoOrdem(ordemId);
   for (const parcela of parcelas) {
     const recebido = queryOne<{ total: number }>(
       `SELECT COALESCE(SUM(valor), 0) AS total
@@ -702,7 +707,9 @@ function recalcularOrdemCobranca(ordemId: string) {
       [parcela.id]
     );
     const valorPago = Math.round(Math.min(Number(parcela.valor), Number(recebido?.total || 0)) * 100) / 100;
-    const saldo = Math.round(Math.max(0, Number(parcela.valor) - Number(parcela.valorRenegociado || 0) - valorPago) * 100) / 100;
+    const transferido = Math.min(transferidoParcelas, Math.max(0, Number(parcela.valor) - Number(parcela.valorRenegociado || 0) - valorPago));
+    transferidoParcelas -= transferido;
+    const saldo = Math.round(Math.max(0, Number(parcela.valor) - Number(parcela.valorRenegociado || 0) - valorPago - transferido) * 100) / 100;
     execute(
       `UPDATE ordem_cobranca_parcelas
        SET valorPago = ?, saldo = ?, status = ?, updatedAt = CURRENT_TIMESTAMP
@@ -716,7 +723,7 @@ function recalcularOrdemCobranca(ordemId: string) {
     [ordemId]
   );
   const totalPago = Math.round(Math.min(Number(ordem.totalOriginal), Number(totalPagoRow?.total || 0)) * 100) / 100;
-  const saldoCalculado = Math.round(Math.max(0, Number(ordem.totalOriginal) - totalPago) * 100) / 100;
+  const saldoCalculado = Math.round(Math.max(0, Number(ordem.totalOriginal) - totalPago - transferidoOrdem(ordemId)) * 100) / 100;
   const saldo = ordem.finalizadoAt ? 0 : saldoCalculado;
   const aguardando = queryOne<any>(`SELECT 1 FROM recebimento_titulos t
     JOIN recebimentos_cliente r ON r.id = t.recebimentoId AND r.deletedAt IS NULL AND r.status = 'ativo'
@@ -2877,6 +2884,7 @@ const valorDevolvidoEmBonusSql = (alias: string) =>
   `COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0)`;
 
 function carregarDetalhesVenda(venda: any) {
+  venda.origemSaldo = carregarOrigemSaldo(venda);
   venda.bonusGeradoVenda = bonusGeradoPorVenda([venda.id]).get(venda.id) || 0;
   venda.items = queryAll<any>(
     `SELECT iv.*,
@@ -2940,7 +2948,7 @@ function carregarDetalhesVenda(venda: any) {
   if (venda.parcelas.length === 0 && venda.vencimento) {
     const total = Number(venda.totalLiquido || 0);
     const pago = Math.min(total, Math.max(0, Number(venda.valorPago || 0)));
-    const saldo = Math.max(0, total - pago);
+    const saldo = saldoVale(venda.id, total, pago);
     venda.parcelas = [{
       id: `parcela_legada_${venda.id}`,
       vendaId: venda.id,
@@ -3029,6 +3037,7 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
   ), "vendaId");
 
   vendas.forEach((venda) => {
+    venda.origemSaldo = carregarOrigemSaldo(venda);
     venda.bonusGeradoVenda = bonusPorVenda.get(venda.id) || 0;
     venda.items = itensPorVenda.get(venda.id) || [];
     venda.devolucoes = devolucoesPorVenda.get(venda.id) || [];
@@ -3038,7 +3047,7 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
     if (venda.parcelas.length === 0 && venda.vencimento) {
       const total = Number(venda.totalLiquido || 0);
       const pago = Math.min(total, Math.max(0, Number(venda.valorPago || 0)));
-      const saldo = Math.max(0, total - pago);
+      const saldo = saldoVale(venda.id, total, pago);
       venda.parcelas = [{
         id: `parcela_legada_${venda.id}`, vendaId: venda.id, numero: 1, vencimento: venda.vencimento,
         valor: total, valorPago: pago, saldo,
@@ -3561,7 +3570,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const saldoAnterior = Number(venda.saldoRestante);
       const novoTotal = bonusIntegral ? totalAnterior : Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
       const novoPago = bonusIntegral ? pagoAnterior : Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
-      const novoSaldo = bonusIntegral ? saldoAnterior : Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const novoSaldo = bonusIntegral ? saldoAnterior : Math.round(saldoVale(venda.id, novoTotal, novoPago) * 100) / 100;
       const abatimentoVale = bonusIntegral ? 0 : Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
       const bonusGerado = bonusIntegral ? valorCredito : Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
       const primeiroVencimento = bonusIntegral ? venda.vencimento : reduzirParcelasValePorDevolucao(vendaId, valorCredito);
@@ -3746,8 +3755,9 @@ app.put("/api/vendas/:id", (req, res) => {
       validarTotalEsperado(req.body?.totalEsperado, novoTotal);
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
+      if (transferidoVale(venda.id) > 0 && novoTotal < pagoAnterior + transferidoVale(venda.id) - 0.005) throw erroHttp("O novo total é inferior ao valor pago e transferido. Use a devolução para gerar crédito ao cliente, ou corrija o recebimento antes de reduzir o total. A transferência histórica é preservada.", 409);
       const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
-      const novoSaldo = Math.round(Math.max(0, novoTotal - novoPago) * 100) / 100;
+      const novoSaldo = Math.round(saldoVale(venda.id, novoTotal, novoPago) * 100) / 100;
       const bonusGerado = Math.round(Math.max(0, pagoAnterior - novoTotal) * 100) / 100;
       const diferencaTotal = Math.round((novoTotal - totalAnterior) * 100) / 100;
 
@@ -4491,6 +4501,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
     eventos.sort((a, b) => String(a.data).localeCompare(String(b.data)));
     return {
       ...ordem,
+      valorTransferido: transferidoOrdem(ordem.id),
       projecoes: queryAll<any>("SELECT * FROM ordem_pagamentos_projetados WHERE ordemId = ? AND estado = 'pendente' ORDER BY createdAt DESC, rowid DESC", [ordem.id])
         .map(p => ({ id: p.id, dados: JSON.parse(p.dados), revisao: crypto.createHash("sha256").update(p.dados).digest("hex") })),
       vales: queryAll<any>(
@@ -4674,7 +4685,7 @@ app.put("/api/ordens-cobranca/:id/vales", (req, res) => {
         if (anterior) {
           execute(
             "UPDATE ordem_cobranca_vales SET valorVinculado = ?, valorPago = 0, saldo = ?, ativo = 1, removidoAt = NULL, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
-            [saldo, saldo, anterior.id]
+            [Math.round((saldo + transferidoOrdem(ordem.id, venda.id)) * 100) / 100, saldo, anterior.id]
           );
         } else {
           execute(
@@ -4862,15 +4873,15 @@ app.post("/api/ordens-cobranca/:id/encerrar", exigirGerente, (req, res) => {
   }
 });
 
-function criarValeResidual(clienteId: string, valor: number, numerosOrigem: number[], observacaoExtra = "") {
+function criarValeResidual(clienteId: string, valor: number, valesOrigem: Array<{ id: string; numeroSequencial: number; saldoRestante: number; saldoTransferivel?: number }>, observacaoExtra = "", ordemOrigem?: { id: string; numeroSequencial: number }) {
   const centavos = Math.max(0, Math.round(Number(valor || 0) * 100));
   if (centavos <= 0) return null;
   const total = centavos / 100;
   const id = "venda_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
   const numero = Number(queryOne<{ numero: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM vendas")?.numero || 1);
   const data = dataHojeLocal();
-  const origens = [...new Set(numerosOrigem.map(Number))].sort((a, b) => a - b);
-  const descricao = `Restante dos vales ${origens.map(item => `#${item}`).join(", ")}${observacaoExtra ? `. ${observacaoExtra}` : ""}`;
+  const origens = [...new Set(valesOrigem.map(v => Number(v.numeroSequencial)))].sort((a, b) => a - b);
+  const descricao = `Saldo devedor${ordemOrigem ? ` da ordem #${ordemOrigem.numeroSequencial}` : ''} — vales ${origens.map(item => `#${item}`).join(", ")}${observacaoExtra ? `. ${observacaoExtra}` : ""}`;
   execute(
     `INSERT INTO vendas
       (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante,
@@ -4883,6 +4894,14 @@ function criarValeResidual(clienteId: string, valor: number, numerosOrigem: numb
      VALUES (?, ?, 1, ?, ?, 0, ?, 'pendente')`,
     ["vpar_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), id, data, total, total]
   );
+  let distribuir = centavos;
+  for (const origem of [...valesOrigem].sort((a,b) => a.numeroSequencial-b.numeroSequencial)) {
+    const parte = Math.min(distribuir, Math.max(0, Math.round(Number(origem.saldoTransferivel ?? origem.saldoRestante) * 100)));
+    execute(`INSERT INTO vale_residual_origens (valeResidualId,vendaOrigemId,ordemOrigemId,numeroValeOrigem,numeroOrdemOrigem,valorTransferido)
+      VALUES (?,?,?,?,?,?)`, [id, origem.id, ordemOrigem?.id || null, origem.numeroSequencial, ordemOrigem?.numeroSequencial || null, parte / 100]);
+    distribuir -= parte;
+  }
+  if (distribuir !== 0) throw erroHttp('O saldo residual diverge dos vales de origem. Atualize a ordem antes de finalizar.', 409);
   return { id, numeroSequencial: numero, valor: total };
 }
 
@@ -4921,12 +4940,12 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       recalcularOrdemCobranca(ordem.id);
       ordem.saldo = queryOne<any>('SELECT saldo FROM ordens_cobranca WHERE id=?', [ordem.id]).saldo;
       const bonusDebitoIds: string[] = [];
-      const vales = queryAll<any>(`SELECT v.id, v.numeroSequencial, v.saldoRestante
+      const vales = queryAll<any>(`SELECT v.id, v.numeroSequencial, v.saldoRestante, ocv.saldo AS saldoTransferivel
         FROM ordem_cobranca_vales ocv JOIN vendas v ON v.id = ocv.vendaId
         WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL`, [ordem.id]);
       const restante = Math.max(0, Math.round(Number(ordem.saldo || 0) * 100) / 100);
       if (restante > 0.005 && destinoRestante === "novo_vale") {
-        residual = criarValeResidual(ordem.clienteId, restante, vales.map(v => v.numeroSequencial), `Gerado ao finalizar a ordem #${ordem.numeroSequencial}.`);
+        residual = criarValeResidual(ordem.clienteId, restante, vales, '', ordem);
       }
       if (req.body?.zerarExcedente) {
         const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total
@@ -4966,7 +4985,7 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
       if (!pagamento) throw erroHttp("Adicione um pagamento válido antes de finalizar o vale.", 409);
       const bonusDebitoIds: string[] = [];
       const restante = Math.max(0, Math.round(Number(vale.saldoRestante || 0) * 100) / 100);
-      if (restante > 0.005 && destinoRestante === "novo_vale") residual = criarValeResidual(vale.clienteId, restante, [vale.numeroSequencial], `Gerado ao finalizar o vale #${vale.numeroSequencial}.`);
+      if (restante > 0.005 && destinoRestante === "novo_vale") residual = criarValeResidual(vale.clienteId, restante, [vale]);
       if (req.body?.zerarExcedente) {
         const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total FROM recebimentos_cliente rc
           WHERE rc.deletedAt IS NULL AND rc.status = 'ativo' AND EXISTS
@@ -5223,7 +5242,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       for (const item of listaAlocacoes) {
         const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ?", [item.vendaId])!;
         const novoPago = arredondar(Number(venda.valorPago) + item.valor);
-        const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+        const novoSaldo = arredondar(saldoVale(venda.id, Number(venda.totalLiquido), novoPago));
         execute(
           `UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
           [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", item.vendaId]
@@ -5448,7 +5467,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
       if (!venda) throw erroHttp("Não foi possível restaurar um vale vinculado ao título.", 409);
       const novoPago = arredondar(Math.max(0, Number(venda.valorPago) - Number(alocacao.valor)));
-      const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+      const novoSaldo = arredondar(saldoVale(venda.id, Number(venda.totalLiquido), novoPago));
       execute(
         "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]
@@ -5469,7 +5488,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
       if (!venda || aplicar > Number(venda.saldoRestante) + 0.005) throw erroHttp("Não foi possível recalcular o vale vinculado ao título.", 409);
       const saldoAntes = arredondar(venda.saldoRestante);
       const novoPago = arredondar(Number(venda.valorPago) + aplicar);
-      const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+      const novoSaldo = arredondar(saldoVale(venda.id, Number(venda.totalLiquido), novoPago));
       execute(
         "UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]
@@ -5797,7 +5816,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
           const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
           if (!venda) throw erroHttp("Não foi possível restaurar um vale vinculado ao título.", 409);
           const novoPago = arredondar(Math.max(0, Number(venda.valorPago) - Number(alocacao.valor)));
-          const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+          const novoSaldo = arredondar(saldoVale(venda.id, Number(venda.totalLiquido), novoPago));
           execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]);
           recalcularParcelasVale(venda.id);
         }
@@ -5824,7 +5843,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
             if (item.valor > Number(venda.saldoRestante) + 0.005) throw erroHttp(`O valor aplicado no vale #${venda.numeroSequencial} ultrapassa o saldo disponível.`, 409);
             const saldoAntes = arredondar(Number(venda.saldoRestante));
             const novoPago = arredondar(Number(venda.valorPago) + item.valor);
-            const novoSaldo = arredondar(Math.max(0, Number(venda.totalLiquido) - novoPago));
+            const novoSaldo = arredondar(saldoVale(venda.id, Number(venda.totalLiquido), novoPago));
             execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", venda.id]);
             recalcularParcelasVale(venda.id);
             const existente = queryOne<any>("SELECT id FROM recebimento_alocacoes WHERE recebimentoId = ? AND vendaId = ? ORDER BY createdAt DESC LIMIT 1", [recebimentoId, item.vendaId]);
@@ -6007,7 +6026,7 @@ app.post("/api/pagamentos", (req, res) => {
         }
 
         const novoValorPago = venda.valorPago + vValor;
-        const novoSaldo = Math.max(0, venda.totalLiquido - novoValorPago);
+        const novoSaldo = saldoVale(venda.id, Number(venda.totalLiquido), novoValorPago);
         const novoStatus = novoSaldo <= 0 ? "paga" : "pendente";
 
         // Update venda
@@ -6090,7 +6109,7 @@ app.post("/api/pagamentos/:id/cancelar", exigirGerente, (req, res) => {
       }
       const agora = new Date().toISOString();
       const pago = Math.round((Number(venda.valorPago) - Number(pag.valor)) * 100) / 100;
-      const saldo = Math.round(Math.max(0, Number(venda.totalLiquido) - pago) * 100) / 100;
+      const saldo = Math.round(saldoVale(venda.id, Number(venda.totalLiquido), pago) * 100) / 100;
       execute("UPDATE pagamentos SET deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, pag.id]);
       execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = ? WHERE id = ?", [pago, saldo, saldo > 0.005 ? 'pendente' : 'paga', agora, venda.id]);
       execute("UPDATE instrumentos_recebimento SET deletedAt = ?, status = 'cancelado', updatedAt = ? WHERE vendaId = ? AND deletedAt IS NULL", [agora, agora, venda.id]);

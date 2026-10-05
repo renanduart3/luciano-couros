@@ -11,8 +11,8 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'luciano-finalizacao-'));
 process.env.DATA_DIR = temp;
 let source = fs.readFileSync('server.ts', 'utf8')
   .replace('startServer();', 'export { app, db };')
-  .replace('runAutoBackup();', '')
-  .replace('setInterval(runAutoBackup, 12 * 60 * 60 * 1000);', '')
+  .replace('void runAutoBackup();', '')
+  .replace('setInterval(() => void runAutoBackup(), 60 * 60 * 1000);', '')
   .replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();', '')
   .replace('setTimeout(executarProgramacaoFinanceira, 0).unref();', '');
 source += '\nexport { fecharPosicao } from "./src/lib/financeiro"; export { descreverParcelamentoCartao } from "./src/components/ParcelamentoCartaoSelect";';

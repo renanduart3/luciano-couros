@@ -1,6 +1,6 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart")]
+    [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart", "MigrateData")]
     [string]$Action
 )
 

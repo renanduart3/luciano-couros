@@ -48,8 +48,6 @@ function New-StatusIcon([System.Drawing.Color]$Color) {
 }
 
 function Test-SystemHealthy {
-    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($null -eq $service -or $service.Status -ne "Running") { return $false }
     try {
         $response = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 1
         return $response.StatusCode -eq 200
@@ -149,6 +147,28 @@ $exitItem.Add_Click({
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 3000
 $timer.Add_Tick({
+    # UI is opened by this interactive tray, never by the Windows service in session 0.
+    $runtime = Join-Path $ProjectRoot '.runtime'
+    $requestFile = Join-Path $runtime 'folder-picker-request.json'
+    $responseFile = Join-Path $runtime 'folder-picker-response.json'
+    try {
+        [System.IO.Directory]::CreateDirectory($runtime) | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $runtime 'tray-heartbeat'), 'ready')
+        if (Test-Path -LiteralPath $requestFile) {
+            $request = Get-Content -LiteralPath $requestFile -Raw | ConvertFrom-Json
+            $epoch = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            if ($request.id -match '^[a-f0-9-]{36}$' -and $request.expiresAt -gt $epoch) {
+                Remove-Item -LiteralPath $requestFile
+                $folder = $null
+                $pickerError = $null
+                try { $folder = & (Join-Path $PSScriptRoot 'SelecionarPasta.ps1') }
+                catch { $pickerError = 'Nao foi possivel abrir o seletor de pastas.' }
+                $result = @{ id = $request.id; folder = $folder; error = $pickerError } | ConvertTo-Json -Compress
+                [System.IO.File]::WriteAllText($responseFile, $result, (New-Object System.Text.UTF8Encoding($false)))
+            }
+        }
+    } catch { }
+
     # Quando o Explorer do Windows reinicia, a area de notificacao e recriada.
     # Registrar novamente o NotifyIcon faz o controle reaparecer sem reiniciar
     # o servico ou criar outra instancia do tray.
@@ -162,13 +182,8 @@ $timer.Add_Tick({
     }
 
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($null -eq $service) {
-        $notifyIcon.Visible = $false
-        [System.Windows.Forms.Application]::Exit()
-        return
-    }
-    $serviceRunning = $service.Status -eq "Running"
-    $healthy = $serviceRunning -and (Test-SystemHealthy)
+    $healthy = Test-SystemHealthy
+    $serviceRunning = ($null -ne $service -and $service.Status -eq "Running") -or $healthy
     if ($healthy) {
         $notifyIcon.Icon = $greenIcon
         $notifyIcon.Text = "Central de Tecidos - rodando"

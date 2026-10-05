@@ -16,6 +16,10 @@ coverage/
 *.log
 .env*
 !.env.example
+installation-paths.json
+installation-paths.json.tmp
+tmp/
+output/
 tabela-preco.xlsx
 
 # Dados do cliente e resultados locais de auditoria

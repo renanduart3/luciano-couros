@@ -13,7 +13,11 @@ import { carregarOrigemSaldo, transferidoVale, transferidoOrdem, saldoVale } fro
 import { compensarPagamentosProgramados, programacaoDoTitulo, dataFinanceiraValida, registrarMovimentacaoFinanceira } from "./server/programacaoPagamentos.js";
 import { textoHistoricoOrdem } from "./server/historicoOrdem.js";
 import { createServer as createViteServer } from "vite";
-import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP_DIR, LIVE_DB_FILE, rebuildClienteProdutosHabituais } from "./server/db.js";
+import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP_DIR, getActiveDbFile, isMockModeEnabled, rebuildClienteProdutosHabituais } from "./server/db.js";
+
+import backupFiles from "./scripts/backup-files.cjs";
+import backupScheduler from "./scripts/backup-scheduler.cjs";
+import folderPicker from "./scripts/folder-picker.cjs";
 
 // Initialize express app
 const app = express();
@@ -437,69 +441,95 @@ function reduzirParcelasValePorDevolucao(vendaId: string, valorCredito: number) 
 }
 
 // --- BACKUP & RESTORATION UTILITIES ---
-if (!fs.existsSync(BACKUP_DIR)) {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+let backupBusy = false;
+let restoringBackup = false;
+app.use("/api", (_req, res, next) => {
+  if (restoringBackup) return res.status(503).json({ error: "Restauracao em andamento. Aguarde o reinicio do sistema." });
+  next();
+});
+function getBackupSettings() {
+  const folder = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_pasta'")?.valor || BACKUP_DIR;
+  const time = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_horario'")?.valor || "18:00";
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Horario de backup invalido.");
+  return { folder, time };
 }
-
-// Function to create a backup
-function createBackupFile(type: "manual" | "auto" = "manual"): string {
-  const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  const timeStr = new Date().toTimeString().split(" ")[0].replace(/:/g, "-"); // HH-MM-SS
-  const filename = `${type}_${dateStr}_${timeStr}.db`;
-  const backupPath = path.join(BACKUP_DIR, filename);
-  
-  // Close the database connection briefly to ensure consistency, or use online backup mechanism
-  // better-sqlite3 offers an elegant backup() method that doesn't block!
-  db.backup(backupPath)
-    .then(() => {
-      console.log(`Backup (${type}) created successfully at: ${backupPath}`);
-    })
-    .catch((err) => {
-      console.error("Failed to create database backup:", err);
-    });
-
-  return filename;
-}
-
-// Daily automatic backup runner
-function runAutoBackup() {
-  try {
-    const todayStr = new Date().toISOString().split("T")[0];
-    const files = fs.readdirSync(BACKUP_DIR);
-    const hasTodayAuto = files.some(f => f.startsWith(`auto_${todayStr}`));
-    
-    if (!hasTodayAuto) {
-      console.log("No automatic backup found for today. Creating one...");
-      createBackupFile("auto");
-    }
-
-    // Retenção configurável
-    const retentionRow = queryOne<{ valor: string }>(
-      "SELECT valor FROM configuracoes WHERE chave = ?",
-      ["retencao_backups_dias"]
-    );
-    const retentionDays = retentionRow ? parseInt(retentionRow.valor, 10) : 30;
-    
-    const now = Date.now();
-    for (const file of files) {
-      const filePath = path.join(BACKUP_DIR, file);
-      const stat = fs.statSync(filePath);
-      const diffDays = (now - stat.mtimeMs) / (1000 * 60 * 60 * 24);
-      
-      if (diffDays > retentionDays) {
-        console.log(`Deleting old backup file: ${file} (older than ${retentionDays} days)`);
-        fs.unlinkSync(filePath);
-      }
-    }
-  } catch (err) {
-    console.error("Error during automatic backup routine:", err);
+function validateBackupFolder(folder: string) {
+  if (!path.isAbsolute(folder)) throw new Error("Informe o caminho absoluto da pasta no computador do servidor.");
+  const resolvedFolder = fs.existsSync(folder) ? fs.realpathSync(folder) : path.resolve(folder);
+  const projectRelative = path.relative(fs.realpathSync(process.cwd()), resolvedFolder);
+  if (!projectRelative || (projectRelative !== ".." && !projectRelative.startsWith(".." + path.sep) && !path.isAbsolute(projectRelative))) throw new Error("Escolha uma pasta de backups fora da instalacao do sistema.");
+  const relative = path.relative(resolvedFolder, fs.realpathSync(path.dirname(getActiveDbFile())));
+  if (!relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))) {
+    throw new Error("Escolha uma pasta separada dos bancos ativos.");
   }
 }
-
-// Run auto backup on boot, and then every 12 hours
-runAutoBackup();
-setInterval(runAutoBackup, 12 * 60 * 60 * 1000);
-
+function backupDirectory() {
+  const { folder } = getBackupSettings();
+  if (folder !== BACKUP_DIR) validateBackupFolder(folder);
+  if (folder !== BACKUP_DIR && !fs.statSync(folder).isDirectory()) throw new Error("Pasta de backup indisponivel.");
+  return folder;
+}
+function getBackupState(): any {
+  const raw = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_estado'")?.valor;
+  try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+function saveBackupState(state: any) {
+  execute("INSERT INTO configuracoes (chave, valor) VALUES ('backup_estado', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor", [JSON.stringify(state)]);
+}
+function backupStatus() {
+  const state = getBackupState();
+  return { ...getBackupSettings(), failures: state.failures || 0, alert: (state.failures || 0) >= 3,
+    lastSuccess: state.lastSuccess || null, lastError: state.lastError || null,
+    nextRetry: state.nextRetry ? new Date(state.nextRetry).toISOString() : null };
+}
+async function createBackupFile(type: "manual" | "auto" = "manual"): Promise<string> {
+  if (backupBusy || restoringBackup) throw new Error("Ja existe uma operacao de backup em andamento.");
+  backupBusy = true;
+  try {
+    const filename = await backupFiles.createSnapshot(db, backupDirectory(), type, isMockModeEnabled() ? "mock" : "live");
+    if (type === "manual") saveBackupState(backupScheduler.succeeded(getBackupState(), new Date()));
+    return filename;
+  } catch (error) {
+    if (type === "manual") saveBackupState(backupScheduler.failed(getBackupState(), new Date(), error));
+    throw error;
+  } finally { backupBusy = false; }
+}
+let autoBackupRunning = false;
+async function runAutoBackup() {
+  if (backupBusy || restoringBackup || autoBackupRunning) return;
+  autoBackupRunning = true;
+  try {
+    const now = new Date();
+    const state = getBackupState();
+    if (state.nextRetry && now.getTime() < state.nextRetry) return;
+    const { time } = getBackupSettings();
+    if (!backupScheduler.pending(state, now, time)) return;
+    const due = backupScheduler.dueSlot(now, time);
+    const folder = backupDirectory();
+    fs.mkdirSync(folder, { recursive: true });
+    const mode = isMockModeEnabled() ? "mock" : "live";
+    // Reconcile a completed file after a crash between publication and saving state.
+    const alreadyCompleted = fs.readdirSync(folder).some(name => {
+      const info = backupFiles.backupInfo(name);
+      if (!info || info.type !== "auto" || info.mode !== mode || info.date < due || info.date > now) return false;
+      try { backupFiles.checkDatabase(backupFiles.safeBackupPath(folder, name)); return true; } catch { return false; }
+    });
+    if (!alreadyCompleted) await createBackupFile("auto");
+    saveBackupState(backupScheduler.succeeded(state, new Date(), backupScheduler.slotKey(due)));
+    // Retention runs only after a successful backup, never on every timer tick.
+    try {
+      const row = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = ?", ["retencao_backups_dias"]);
+      const days = Number(row?.valor || 30);
+      backupFiles.pruneBackups(folder, Number.isInteger(days) && days > 0 && days <= 3650 ? days : 30);
+    } catch (error) { console.error("Falha na limpeza de backups:", error); }
+  } catch (error) {
+    saveBackupState(backupScheduler.failed(getBackupState(), new Date(), error));
+    console.error("Falha na rotina de backup:", error);
+  } finally { autoBackupRunning = false; }
+}
+// One catch-up snapshot covers missed days. No queue of redundant historical copies.
+void runAutoBackup();
+setInterval(() => void runAutoBackup(), 60 * 1000);
 
 // --- API ROUTES ---
 
@@ -1164,6 +1194,7 @@ app.get("/api/config", (req, res) => {
 app.put("/api/config", exigirGerente, (req, res) => {
   try {
     const updates = req.body; // { chave: valor, ... }
+    if ("backup_pasta" in updates || "backup_horario" in updates || "backup_estado" in updates) return res.status(400).json({ error: "Use a configuracao de backup diario para alterar pasta e horario." });
     db.transaction(() => {
       for (const [chave, valor] of Object.entries(updates)) {
         execute(
@@ -6776,13 +6807,53 @@ app.get("/api/relatorios", (req, res) => {
 
 
 // 10. BACKUP E RESTAURAÇÃO
+app.get("/api/backups/status", (_req, res) => {
+  try { res.json(backupStatus()); } catch (error: any) { res.status(500).json({ error: error.message }); }
+});
+app.post("/api/backups/selecionar-pasta", async (req, res) => {
+  if (!origemEhServidor(req)) return res.status(403).json({ error: "Selecione a pasta usando o navegador neste computador servidor." });
+  try { res.json({ folder: await folderPicker.selectFolder(process.cwd(), IS_PRODUCTION) }); }
+  catch (error: any) { res.status(400).json({ error: error.message }); }
+});
+app.get("/api/backups/config", (_req, res) => {
+  try { res.json(getBackupSettings()); }
+  catch (error: any) { res.status(400).json({ error: error.message }); }
+});
+app.put("/api/backups/config", (req, res) => {
+  if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde o backup atual." });
+  try {
+    const folder = typeof req.body.folder === "string" ? req.body.folder.trim() : "";
+    const time = req.body.time;
+    validateBackupFolder(folder);
+    if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Horario invalido.");
+    // Require an existing folder so a disconnected disk cannot silently redirect backups.
+    if (!fs.statSync(folder).isDirectory()) throw new Error("O destino deve ser uma pasta existente.");
+    const probe = path.join(folder, `.backup-write-test-${crypto.randomUUID()}`);
+    fs.writeFileSync(probe, "", { flag: "wx" });
+    fs.unlinkSync(probe);
+    runInTransaction(() => {
+      for (const [key, value] of [["backup_pasta", path.resolve(folder)], ["backup_horario", time]]) {
+        execute("INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor", [key, value]);
+      }
+    });
+    const previous = getBackupState();
+    saveBackupState({ ...previous, completedSlot: undefined, nextRetry: 0 });
+    res.json(getBackupSettings());
+    void runAutoBackup();
+  } catch (error: any) { res.status(400).json({ error: error.message }); }
+});
+
 app.get("/api/backups", (req, res) => {
   try {
-    const files = fs.readdirSync(BACKUP_DIR);
+    fs.mkdirSync(backupDirectory(), { recursive: true });
+    const files = fs.readdirSync(backupDirectory());
     const backups = files
-      .filter((file) => file.endsWith(".db"))
+      .filter((file) => {
+        const info = backupFiles.backupInfo(file);
+        return info && info.type !== "update" && info.mode === (isMockModeEnabled() ? "mock" : "live");
+      })
       .map((file) => {
-        const filePath = path.join(BACKUP_DIR, file);
+        const filePath = backupFiles.safeBackupPath(backupDirectory(), file);
         const stat = fs.statSync(filePath);
         return {
           filename: file,
@@ -6797,68 +6868,59 @@ app.get("/api/backups", (req, res) => {
   }
 });
 
-app.post("/api/backups", (req, res) => {
+app.post("/api/backups", async (req, res) => {
   try {
-    const filename = createBackupFile("manual");
+    const filename = await createBackupFile("manual");
     res.json({ success: true, message: "Backup criado com sucesso!", filename });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.post("/api/backups/restaurar", (req, res) => {
+app.post("/api/backups/restaurar", async (req, res) => {
+  if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde a operacao de backup atual." });
+  let closed = false;
+  let staged = "";
   try {
     const { filename } = req.body;
-    if (!filename) {
-      return res.status(400).json({ error: "Nome do arquivo de backup não informado." });
+    const info = backupFiles.backupInfo(typeof filename === "string" ? filename : "");
+    if (!info || info.mode !== (isMockModeEnabled() ? "mock" : "live")) {
+      return res.status(400).json({ error: "Backup de outro ambiente ou legado. Solicite revisao tecnica para restaurar arquivos antigos." });
     }
-
-    const backupPath = path.join(BACKUP_DIR, filename);
-    if (!fs.existsSync(backupPath)) {
-      return res.status(404).json({ error: "Arquivo de backup não encontrado." });
-    }
-
-    // Close the database connection to release lock
+    const source = backupFiles.safeBackupPath(backupDirectory(), filename);
+    backupFiles.checkDatabase(source);
+    // Keep a recovery copy before replacing the active database.
+    restoringBackup = true;
+    await backupFiles.createSnapshot(db, backupDirectory(), "manual", isMockModeEnabled() ? "mock" : "live");
+    const target = getActiveDbFile();
+    staged = `${target}.restore-tmp`;
+    fs.copyFileSync(source, staged);
+    backupFiles.configureRecoveryDestination(staged, backupDirectory(), getBackupSettings().time);
+    backupFiles.checkDatabase(staged);
+    db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
-
-    // Copy backup over main database
-    fs.copyFileSync(backupPath, LIVE_DB_FILE);
-
-    // Re-initialize database
-    // We import it on demand or since db was exported from ./server/db.ts,
-    // we can re-open it. Since better-sqlite3 instance is cached, we need to restart or re-instantiate.
-    // In node, to safely reload, restarting the dev server is cleanest.
-    // Exit with a non-zero code so the Windows service (or another supervisor)
-    // recognizes this as a restart request and starts a fresh process.
-    // This is the absolute SAFEST way to prevent corrupt in-memory SQLite handles after a restore.
-    res.json({ 
-      success: true, 
-      message: "Backup restaurado com sucesso! O servidor está reiniciando para carregar os dados novos." 
-    });
-
-    setTimeout(() => {
-      console.log("Exiting to trigger container / tsx restart for database refresh...");
-      process.exit(1);
-    }, 1000);
-
+    closed = true;
+    for (const suffix of ["-wal", "-shm"]) {
+      if (fs.existsSync(target + suffix)) fs.unlinkSync(target + suffix);
+    }
+    fs.renameSync(staged, target);
+    res.json({ success: true, message: "Backup restaurado. O servico sera reiniciado; sem servico instalado, inicie o sistema novamente." });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    res.status(400).json({ error: error.message });
+  } finally {
+    if (staged && fs.existsSync(staged)) fs.unlinkSync(staged);
+    if (closed) setTimeout(() => process.exit(1), 500);
+    else restoringBackup = false;
   }
 });
 
 app.delete("/api/backups/:filename", (req, res) => {
+  if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde a operacao de backup atual." });
   try {
-    const { filename } = req.params;
-    const backupPath = path.join(BACKUP_DIR, filename);
-    if (fs.existsSync(backupPath)) {
-      fs.unlinkSync(backupPath);
-      res.json({ success: true, message: "Backup excluído." });
-    } else {
-      res.status(404).json({ error: "Arquivo não encontrado." });
-    }
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
+    const backupPath = backupFiles.safeBackupPath(backupDirectory(), req.params.filename);
+    fs.unlinkSync(backupPath);
+    res.json({ success: true, message: "Backup excluido." });
+  } catch (error: any) { res.status(400).json({ error: error.message }); }
 });
 
 app.use("/api", (_req, res) => {

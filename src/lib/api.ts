@@ -699,6 +699,12 @@ export const api = {
   },
 
   // BACKUPS
+  getBackupStatus: () => fetch(`${API_BASE}/backups/status`).then(r => handleResponse<{ alert: boolean; failures: number; lastError: string | null; lastSuccess: string | null; nextRetry: string | null }>(r)),
+  selectBackupFolder: () => fetch(`${API_BASE}/backups/selecionar-pasta`, { method: "POST" }).then(r => handleResponse<{ folder: string | null }>(r)),
+  getBackupSettings: () => fetch(`${API_BASE}/backups/config`).then(r => handleResponse<{ folder: string; time: string }>(r)),
+  saveBackupSettings: (settings: { folder: string; time: string }) => fetch(`${API_BASE}/backups/config`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings)
+  }).then(r => handleResponse<{ folder: string; time: string }>(r)),
   getBackups: () => fetch(`${API_BASE}/backups`).then(r => handleResponse<any[]>(r)),
   createBackup: () => fetch(`${API_BASE}/backups`, { method: "POST" }).then(r => handleResponse<{ success: boolean; filename: string }>(r)),
   restoreBackup: (filename: string) => 

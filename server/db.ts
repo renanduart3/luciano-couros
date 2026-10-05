@@ -2,36 +2,20 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 
-// Customer data lives outside the application files replaced during updates.
-export const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), "data"));
+import dataPaths from "../scripts/data-paths.cjs";
+
+const paths = dataPaths.resolveDataPaths();
+export const DATA_DIR = paths.dataDir;
 export const LIVE_DB_FILE = path.join(DATA_DIR, "database.db");
 export const MOCK_DB_FILE = path.join(DATA_DIR, "database_mock.db");
-export const BACKUP_DIR = path.join(DATA_DIR, "backups");
+export const BACKUP_DIR = paths.backupDir;
 const CONFIG_PATH = path.join(DATA_DIR, "mock_config.json");
-
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 
-// One-time, non-destructive migration for installations that stored data in the project root.
-const legacyFiles: Array<[string, string]> = [
-  ["database.db", "database.db"],
-  ["database.db-shm", "database.db-shm"],
-  ["database.db-wal", "database.db-wal"],
-  ["database_mock.db", "database_mock.db"],
-  ["database_mock.db-shm", "database_mock.db-shm"],
-  ["database_mock.db-wal", "database_mock.db-wal"],
-  ["database_mock_sqlite.db", "database_mock_sqlite.db"],
-  ["database_mock_sqlite.db-shm", "database_mock_sqlite.db-shm"],
-  ["database_mock_sqlite.db-wal", "database_mock_sqlite.db-wal"],
-  ["mock_config.json", "mock_config.json"],
-];
-
-for (const [legacyName, dataName] of legacyFiles) {
-  const legacyPath = path.join(process.cwd(), legacyName);
-  const dataPath = path.join(DATA_DIR, dataName);
-  if (fs.existsSync(legacyPath) && !fs.existsSync(dataPath)) {
-    fs.copyFileSync(legacyPath, dataPath);
-    console.log(`[Database] Migrated local data to: ${dataPath}`);
-  }
+// Legacy installations must be migrated while stopped, not by copying live WAL files.
+if (!paths.external && !process.env.DATA_DIR && !fs.existsSync(LIVE_DB_FILE)
+    && fs.existsSync(path.join(process.cwd(), "database.db"))) {
+  throw new Error("Banco legado encontrado na raiz. Execute MIGRAR DADOS PARA FORA DO SISTEMA.cmd antes de iniciar.");
 }
 
 export function isMockModeEnabled(): boolean {
@@ -46,7 +30,7 @@ export function isMockModeEnabled(): boolean {
   return false;
 }
 
-function getActiveDbFile(): string {
+export function getActiveDbFile(): string {
   const enabled = isMockModeEnabled();
   console.log(`[Database] Mock mode status: ${enabled ? "ON" : "OFF"}`);
   return enabled ? MOCK_DB_FILE : LIVE_DB_FILE;

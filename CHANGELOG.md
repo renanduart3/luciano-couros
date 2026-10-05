@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## Em desenvolvimento — backups externos
+
+- Assistente Windows para migrar bancos e backups para uma pasta externa, com validação SQLite, apontamento persistente e preservação dos originais.
+- Backups concluídos e validados antes da confirmação, nomes separados por ambiente e retenção de 30 dias corrigida para arquivos e diretórios de atualização.
+- Restauração com validação de nomes, integridade, cópia preventiva e proteção contra mistura de produção e demonstração.
+- Atualizador usa o mesmo apontamento; documentação para sincronizar somente backups pelo Google Drive.
+- Testes de migração com WAL, retenção e restauração real em bancos isolados.
+
 ## 1.37.0 — 2026-10-05
 
 - Devoluções durante a venda com seleção de produtos já comprados, quantidade livre, valores negativos e crédito do excedente na carteira.

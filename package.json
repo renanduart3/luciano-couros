@@ -9,6 +9,8 @@
     "start": "node dist/server.cjs",
     "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','server.js']) fs.rmSync(path,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
+    "test:financeiro": "node scripts/verificar-financeiro.cjs",
+    "conciliar:financeiro": "node scripts/conciliar-financeiro.cjs",
     "version:patch": "npm version patch --no-git-tag-version",
     "version:minor": "npm version minor --no-git-tag-version",
     "version:major": "npm version major --no-git-tag-version"

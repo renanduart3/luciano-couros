@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.38.1 — 2026-10-05
+
+- Grid de vendas vazio mais compacto, com campos próximos ao cabeçalho das colunas.
+- Removido o texto explicativo sobre quantidade livre e bônus da linha de devolução.
+- Validação da devolução com mensagens curtas para seleção do produto e quantidade maior que zero.
+
 ## 1.38.0 — 2026-10-05
 
 - Assistente Windows para migrar bancos e backups para uma pasta externa, com validação SQLite, apontamento persistente e preservação dos originais.

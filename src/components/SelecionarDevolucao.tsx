@@ -26,7 +26,8 @@ export function SelecionarDevolucao({ clienteId, vendaId, onAdd }: { clienteId: 
   const item = itens?.find(i => i.id === selecionado);
   const qtd = Math.abs(parseBrazilianNumber(quantidade));
   const adicionar = () => {
-    if (!item || !Number.isFinite(qtd) || qtd <= 0) { setErro('Selecione um produto e informe uma quantidade maior que zero.'); return; }
+    if (!item) { setErro('Selecione um produto.'); return; }
+    if (!Number.isFinite(qtd) || qtd <= 0) { setErro('informe a quantidade maior que zero'); return; }
     if (onAdd(item, qtd)) { setSelecionado(''); setQuantidade(''); setErro(''); }
   };
   return <tr className="bg-red-50 text-red-800">
@@ -34,7 +35,7 @@ export function SelecionarDevolucao({ clienteId, vendaId, onAdd }: { clienteId: 
     <td className="px-2 py-2"><select aria-label="Produto para devolução" value={selecionado} onChange={e => { setSelecionado(e.target.value); setErro(''); }} className="w-full rounded-md border border-red-200 bg-white px-2 py-1.5 text-xs font-bold">
       <option value="">{!itens ? 'Carregando compras…' : itens.length ? 'Selecione um produto já comprado…' : 'Cliente sem produtos comprados'}</option>
       {itens?.map(i => <option key={i.id} value={i.id}>{i.referencia ? `${i.referencia} · ` : ''}{i.descricao}{i.fornecedorReferencia ? ` · ${i.fornecedorReferencia}` : ''} · {i.unidade}</option>)}
-    </select>{erro && <p role="alert" className="mt-1 text-xs">{erro}</p>}<p className="mt-1 text-[10px]">Quantidade livre. O excedente em valor vira bônus na carteira.</p></td>
+    </select>{erro && <p role="alert" className="mt-1 text-xs">{erro}</p>}</td>
     <td className="px-2 py-2"><input aria-label="Quantidade a devolver" inputMode="decimal" value={quantidade} onChange={e => setQuantidade(e.target.value.replace(/-/g, ''))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); adicionar(); } }} placeholder="0" className="w-full rounded-md border border-red-200 bg-white px-2 py-1.5 text-right font-bold" /></td>
     <td className="px-2 py-2 text-center">{item?.unidade || '—'}</td>
     <td className="px-2 py-2 text-right font-mono">{formatCurrency(item?.preco || 0)}</td>

@@ -1753,8 +1753,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </div>
 
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
-        <div className={`max-h-[72vh] overflow-auto rounded-xl border border-slate-200 shadow-sm ${itensVenda.length === 0 ? "min-h-[420px]" : "min-h-[260px]"}`}>
-          <table className={`${itensVenda.length === 0 ? "min-h-[418px]" : ""} ${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
+        <div className="max-h-[72vh] min-h-[260px] overflow-auto rounded-xl border border-slate-200 shadow-sm">
+          <table className={`${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
             <colgroup>
               <col className="w-[8%]" /><col className="w-[28%]" /><col className="w-[10%]" />
               <col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[10%]" />

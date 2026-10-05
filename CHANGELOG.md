@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.38.2 — 2026-10-05
+
+- Uso do bônus na venda controlado por toggle, inicialmente desligado; saldo e campo de valor aparecem somente após ativar.
+- Resumo exibe o valor abatido pelo bônus, separado do valor recebido. Desativar o uso ou trocar de cliente limpa o crédito aplicado.
+
 ## 1.38.1 — 2026-10-05
 
 - Grid de vendas vazio mais compacto, com campos próximos ao cabeçalho das colunas.

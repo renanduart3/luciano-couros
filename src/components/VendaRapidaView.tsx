@@ -158,9 +158,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   // Checkout Fields
   const [descontoGeral, setDescontoGeral] = useState("");
   const [bonusAplicado, setBonusAplicado] = useState("");
-  useEffect(() => { setBonusAplicado(""); }, [clienteSelecionado?.id]);
+  const [bonusAtivo, setBonusAtivo] = useState(false);
   const [valorPago, setValorPago] = useState("");
   const [formaPagamento, setFormaPagamento] = useState("vale");
+  useEffect(() => {
+    setBonusAplicado("");
+    setBonusAtivo(false);
+    setFormaPagamento(atual => atual === "bonus" ? "vale" : atual);
+  }, [clienteSelecionado?.id]);
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [vencimento, setVencimento] = useState("");
   const [parcelasVale, setParcelasVale] = useState<ParcelaValeRascunho[]>([]);
@@ -502,7 +507,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     : formaPagamento === "vale";
   const vendaComCredito = formaPagamento === "bonus";
   const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
-  const bonusSelecionado = vendaComCredito ? Math.min(totalLiquido, saldoCreditoCarteira) : parseBrazilianNumber(bonusAplicado);
+  const bonusSelecionado = bonusAtivo && !vendaEmEdicao ? parseBrazilianNumber(bonusAplicado) : 0;
   const recebidoInicial = vendaNoVale || vendaComCredito ? 0 : valorPago === "" ? Math.max(0, totalLiquido - bonusSelecionado) : parseBrazilianNumber(valorPago);
   const vPago = vendaEmEdicao ? Math.min(totalLiquido, Number(vendaEmEdicao.valorPago || 0)) : recebidoInicial + bonusSelecionado;
   const saldoRestante = Math.max(0, totalLiquido - vPago);
@@ -1121,6 +1126,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     setDescontoGeral("");
     setValorPago("");
     setBonusAplicado("");
+    setBonusAtivo(false);
     setVencimento("");
     setParcelasVale([]);
     setObservacoes("");
@@ -1572,6 +1578,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <span className="text-base font-extrabold text-slate-950">{formatCurrency(totalLiquido)}</span>
               </div>
 
+              {bonusAtivo && !vendaEmEdicao && (
+                <div className="flex justify-between gap-3 font-semibold text-violet-700">
+                  <span>Valor abatido (bônus):</span>
+                  <span className="font-bold">{formatCurrency(-bonusSelecionado)}</span>
+                </div>
+              )}
+
               {/* Valor Pago Input */}
               <div className="flex items-center justify-between gap-4 py-0.5">
                 <span className="text-slate-500 font-bold">{vendaNoVale ? "Valor recebido agora:" : "Valor Recebido (R$):"}</span>
@@ -1608,6 +1621,10 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   onChange={(e) => {
                     const novaForma = e.target.value;
                     setFormaPagamento(novaForma);
+                    if (novaForma === "bonus") {
+                      setBonusAtivo(true);
+                      setBonusAplicado(Math.min(totalLiquido, saldoCreditoCarteira).toFixed(2).replace(".", ","));
+                    }
                     if (novaForma === "vale") setValorPago("");
                     else if (formaPagamento === "vale") setValorPago("");
                     if (!FORMAS_COM_INSTRUMENTO.has(novaForma)) {
@@ -1635,15 +1652,27 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
 
               {vendaEmEdicao && <p className="rounded-lg border border-slate-200 bg-slate-50 p-2 text-[10px] font-bold text-slate-600">Forma de pagamento e recebimentos preservados nesta edição.</p>}
 
-              {!vendaEmEdicao && !vendaComCredito && <label className="block rounded-lg border border-violet-200 bg-violet-50 p-3 text-xs font-bold">Bônus a utilizar · disponível {formatCurrency(saldoCreditoCarteira)}<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonusAplicado} onChange={e => setBonusAplicado(e.target.value)} className="ml-3 w-32 rounded border p-2"/><span className="ml-3">Abatimento total: {formatCurrency(vPago)}</span></label>}
-              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={recebidoInicial} className="ml-auto max-w-xs" />}
-
-              {vendaComCredito && (
-                <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-xs text-violet-900">
-                  <div className="flex justify-between gap-3"><span className="font-bold">Crédito disponível</span><strong>{formatCurrency(saldoCreditoCarteira)}</strong></div>
-                  <div className="mt-1 flex justify-between gap-3"><span>Aplicado nesta venda</span><strong>{formatCurrency(vPago)}</strong></div>
+              {!vendaEmEdicao && clienteSelecionado && (
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-700">Bônus</span>
+                    <button type="button" role="switch" aria-label="Ativar bônus do cliente" aria-checked={bonusAtivo} onClick={() => {
+                      setBonusAtivo(!bonusAtivo);
+                      setBonusAplicado("");
+                      if (bonusAtivo && vendaComCredito) setFormaPagamento("vale");
+                    }} className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 ${bonusAtivo ? "bg-violet-600" : "bg-slate-300"}`}>
+                      <span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${bonusAtivo ? "translate-x-4" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+                  {bonusAtivo && (
+                    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 p-2 text-violet-900">
+                      <span className="font-bold">Bônus: {formatCurrency(saldoCreditoCarteira)}</span>
+                      <input aria-label="Bônus a utilizar" inputMode="decimal" value={bonusAplicado} onChange={e => setBonusAplicado(e.target.value)} placeholder="0,00" className="ml-auto w-28 rounded-lg border border-violet-200 bg-white px-2 py-1.5 text-right font-bold outline-none focus:border-violet-500" />
+                    </div>
+                  )}
                 </div>
               )}
+              {!vendaEmEdicao && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={recebidoInicial} className="ml-auto max-w-xs" />}
 
               {!vendaEmEdicao && formaExigeInstrumento && (
                 <div className="grid grid-cols-1 gap-3 rounded-xl border border-sky-200 bg-sky-50 p-3 sm:grid-cols-2 xl:grid-cols-6">

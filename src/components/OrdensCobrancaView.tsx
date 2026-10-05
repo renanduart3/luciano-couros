@@ -1,3 +1,4 @@
+import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, FileText, History, ListChecks, MessageCircle, Plus, RefreshCw, Save, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
 import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
@@ -19,7 +20,6 @@ import { OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoMod
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination } from "./Pagination";
-import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
 
 interface Props {
   refreshKey?: number;
@@ -104,29 +104,11 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
   </div>;
 }
 
-function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale, onOpenPagamento }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void; onOpenPagamento: (id: string) => void }) {
-  const financeiro = financeiroOrdem(ordem);
-  return <section aria-label="Resumo da ordem para compartilhamento" className="overflow-hidden rounded-2xl border-2 border-slate-400 bg-white shadow-sm">
-    <div className="border-b border-slate-300 bg-gradient-to-r from-slate-950 via-slate-900 to-blue-950 p-4 text-white">
-      <div className="min-w-0"><p className="text-[10px] font-black uppercase tracking-wider text-slate-400">Status da ordem #{ordem.numeroSequencial}</p><h3 className="truncate text-lg font-black uppercase" title={ordem.clienteNome}>{ordem.clienteNome}</h3><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"} · Emissão: {formatDate(ordem.dataEmissao)}</p></div>
-    </div>
-    <div className="grid xl:grid-cols-[0.85fr_1.35fr]">
-      <div className="border-b border-slate-300 xl:border-b-0 xl:border-r">
-        <div className="flex min-h-11 items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-3"><div><p className="text-[11px] font-black uppercase text-slate-800">Vales vinculados</p><p className="text-[9px] font-bold text-slate-500">{ordem.vales.length} documento(s)</p></div>{ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="inline-flex min-h-7 items-center gap-1 rounded-lg border border-blue-300 bg-white px-2 text-[9px] font-black uppercase text-blue-800"><Edit3 size={12}/> Alterar</button>}</div>
-        <div className="divide-y divide-slate-100">{ordem.vales.map((vale) => <div key={vale.id} className="grid grid-cols-[0.65fr_0.9fr_1fr] items-center gap-2 px-3 py-2 text-[11px]"><button type="button" onClick={() => onOpenVale(vale.vendaId)} className="text-left font-mono font-bold text-blue-700 underline">Vale #{vale.numeroSequencial}</button><span className="font-bold text-slate-600">{formatDate(vale.data)}</span><span className="text-right font-mono font-black">{formatCurrency(vale.valorVinculado)}</span></div>)}</div>
-        <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total dos vales</strong><strong className="font-mono">{formatCurrency(ordem.vales.reduce((total, vale) => total + Number(vale.valorVinculado), 0))}</strong></div>
-      </div>
-      <div className="divide-y divide-slate-200">
-        <p className="bg-slate-50 px-3 py-2 text-xs font-bold">Pagamentos</p>
-        {(ordem.pagamentos || []).map(p => <div key={p.id} className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-x-3 gap-y-1 px-3 py-2 text-xs sm:grid-cols-[minmax(0,1fr)_7rem_9rem]">
-          <button type="button" onClick={() => onOpenPagamento(p.id)} className="text-left text-blue-700 underline">{formatDate(p.data)} · {FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento}{p.formaPagamento === 'cartao_credito' && ` · ${p.parcelasCartao}x`}</button>
-          <strong className="whitespace-nowrap text-right font-mono tabular-nums">{formatCurrency(p.valorRecebido + p.bonusUtilizado)}</strong>
-          <span className={`col-span-2 text-left sm:col-span-1 ${p.statusPagamento === 'compensado' ? 'text-emerald-800' : 'text-amber-800'}`}>{p.statusPagamento === 'compensado' ? 'Confirmado' : p.statusPagamento === 'recusado' ? 'Recusado' : 'Aguardando'}</span>
-        </div>)}
-        {!ordem.pagamentos?.length && <p className="px-3 py-2 text-xs text-slate-500">Nenhum pagamento registrado.</p>}
-        <div className="grid grid-cols-[1fr_auto] border-t-2 border-slate-800 bg-slate-100 px-3 py-2 text-xs"><strong className="uppercase">Total pago</strong><strong className="font-mono text-emerald-800">{formatCurrency(financeiro.presumido)}</strong></div>
-      </div>
-    </div>
+function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void }) {
+  return <section aria-label="Vales da ordem" className="overflow-hidden rounded-xl border border-slate-300 bg-white">
+    <div className="flex items-center justify-between bg-slate-50 px-3 py-2"><h3 className="text-xs font-bold">Vales vinculados</h3>{!ordem.finalizadoAt && ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="rounded border px-2 py-1 text-xs font-bold text-blue-800">Alterar vales</button>}</div>
+    {ordem.vales.map(v => <div key={v.id} className="grid grid-cols-3 border-t px-3 py-2 text-xs"><button type="button" onClick={() => onOpenVale(v.vendaId)} className="text-left font-bold text-blue-800 underline">Vale #{v.numeroSequencial}</button><span>{formatDate(v.data)}</span><strong className="text-right font-mono">{formatCurrency(v.valorVinculado)}</strong></div>)}
+    <div className="flex justify-between border-t-2 bg-slate-100 p-3 text-xs font-bold"><span>Total dos vales</span><span>{formatCurrency(demonstrativoOrdem(ordem).totalVales)}</span></div>
   </section>;
 }
 
@@ -266,12 +248,11 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   </div>}
   <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-[10vw] py-[5vh] backdrop-blur-sm">
     <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><p className="text-xs font-black text-slate-400">ORDEM DE COBRANÇA</p><h2 className="text-xl font-black">#{ordem.numeroSequencial} · {ordem.clienteNome}</h2><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><div className="mt-2 flex flex-wrap gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black">EMITIDA EM {formatDate(ordem.dataEmissao)}</span>{Number(ordem.saldoBonus) > 0.005 && <span className="inline-flex items-center gap-1 rounded-lg bg-violet-500 px-2 py-1 text-[10px] font-black text-white"><WalletCards size={13}/> BÔNUS {formatCurrency(ordem.saldoBonus)}</span>}</div></div><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-black uppercase text-slate-950"><FileText size={15}/> Demonstrativo</button>{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-[10px] font-black uppercase text-white"><MessageCircle size={15}/> WhatsApp</a>}<button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></div></header>
-      <ResumoFinanceiroFixo negociado={ordem.totalOriginal} financeiro={financeiroAtual} rotuloTotal="Negociado"/>
+      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><p className="text-xs font-black text-slate-400">ORDEM DE COBRANÇA</p><h2 className="text-xl font-black">#{ordem.numeroSequencial} · {ordem.clienteNome}</h2><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><div className="mt-2 flex flex-wrap gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black">EMITIDA EM {formatDate(ordem.dataEmissao)}</span></div></div><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-black uppercase text-slate-950"><FileText size={15}/> Demonstrativo</button>{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-[10px] font-black uppercase text-white"><MessageCircle size={15}/> WhatsApp</a>}<button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></div></header>
       <div className="min-h-0 space-y-4 overflow-y-auto bg-slate-100 p-4">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
-          <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} onOpenPagamento={setRecebimentoAberto} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
+          <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
         <div className="flex gap-2">
@@ -311,6 +292,13 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
           {ordem.parcelas.length > 0 && <details className="px-3 py-2 text-xs"><summary className="cursor-pointer font-bold">Parcelamento anterior (somente consulta)</summary>{ordem.parcelas.map(p => <p key={p.id} className="mt-1">Parcela {p.numero} · {formatDate(p.vencimento)} · {formatCurrency(p.valor)}</p>)}</details>}
           {(ordem.eventos || []).map((evento) => <div key={evento.id} className="flex gap-3 px-3 py-2 text-[11px] leading-5"><span className="shrink-0 font-mono text-slate-500">{formatDate(evento.data)}</span><p className={evento.tipo === "estorno" ? "text-red-700" : "text-slate-700"}>{evento.texto}</p></div>)}
         </div>}
+        <div className="rounded-xl border border-slate-300 bg-white p-3 text-xs">
+          <div className="flex justify-between"><span>Total de cheques / boletos válidos</span><strong>{formatCurrency(demonstrativoOrdem(ordem).totalTitulos)}</strong></div>
+          <div className="mt-2 flex justify-between"><span>Total dos pagamentos + bônus</span><strong>{formatCurrency(financeiroAtual.presumido)}</strong></div>
+          {financeiroAtual.aguardando > 0 && <p className="mt-1 text-amber-800">Inclui {formatCurrency(financeiroAtual.aguardando)} aguardando compensação.</p>}
+          {financeiroAtual.creditoUtilizado > 0 && <p className="mt-1 text-violet-800">Inclui {formatCurrency(financeiroAtual.creditoUtilizado)} de bônus utilizado.</p>}
+          <div className="mt-2 flex justify-between border-t pt-2 font-bold"><span>Restante após pagamentos registrados</span><span>{formatCurrency(financeiroAtual.restantePresumido)}</span></div>
+        </div>
         {ordem.observacao && <div className="rounded-xl border border-slate-300 bg-white p-3 text-sm font-bold text-slate-700"><span className="block text-[10px] font-black uppercase text-slate-500">Observação</span>{ordem.observacao}</div>}
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}

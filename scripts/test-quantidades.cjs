@@ -1,0 +1,11 @@
+const assert = require('node:assert/strict');
+const {buildSync} = require('esbuild');
+const Module = require('node:module');
+const m=new Module(__filename); m.filename=__filename; m.paths=module.paths;
+m._compile(buildSync({entryPoints:['src/lib/quantidades.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text,__filename);
+const {formatarQuantidades,quantidadesPorUnidade}=m.exports;
+assert.equal(formatarQuantidades([{quantidade:5.52,unidade:'metro'},{quantidade:2,unidade:'unidade'}]),'5,52 m e 2 un');
+assert.equal(formatarQuantidades([{quantidade:0.1,unidade:'m'},{quantidade:0.2,unidade:'metros'},{quantidade:-0.1,unidade:'mt'},{quantidade:2,unidade:'UN'},{quantidade:1,unidade:'kg'}]),'0,2 m e 2 un e 1 kg');
+assert.deepEqual(quantidadesPorUnidade([{quantidade:2,unidade:'m²'},{quantidade:3,unidade:'m'}]),[{quantidade:2,unidade:'m²'},{quantidade:3,unidade:'m'}]);
+assert.equal(formatarQuantidades([{quantidade:-1,unidade:'metro'}]),'-1 m');
+console.log('OK: unidades equivalentes, separação de medidas, centésimos e devoluções.');

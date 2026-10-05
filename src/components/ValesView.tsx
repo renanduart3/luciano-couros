@@ -39,6 +39,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
   const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedbackPagamento, setFeedbackPagamento] = useState("");
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
   const [numeroVale, setNumeroVale] = useState("");
   const [clienteId, setClienteId] = useState("");
@@ -76,6 +77,8 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
     try {
       const [vendas, listaOrdens] = await Promise.all([api.getVendas(), api.getOrdensCobranca()]);
       if (versao !== versaoCarga.current) return;
+      const cobertos = vendas.filter(v => v.status !== "cancelada" && !estaEmAberto(v) && vales.some(antes => antes.id === v.id && estaEmAberto(antes)));
+      if (cobertos.length && ["abertos", "vencidos", "a_vencer"].includes(status)) setFeedbackPagamento(`Pagamento atualizado. Vales ${cobertos.map(v => `#${v.numeroSequencial}`).join(", ")} estão cobertos e saíram do filtro de abertos. Use Todos para consultar seus comprovantes.`);
       setVales(vendas.filter(venda => Boolean(venda.vencimento)));
       setOrdens(listaOrdens);
       setValeDetalhado(atual => atual ? vendas.find(venda => venda.id === atual.id) || null : null);
@@ -209,7 +212,8 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
 
   return (
     <section id="vales-view" className="space-y-5">
-      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendas, listaOrdens]) => { setVales(vendas.filter((venda) => Boolean(venda.vencimento))); setOrdens(listaOrdens); setOrdensRefreshKey((atual) => atual + 1); }).catch((erro) => setError(erro.message)); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
+      {feedbackPagamento && <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950">{feedbackPagamento}<button type="button" onClick={() => { setStatus("todos"); setFeedbackPagamento(""); }} className="ml-3 font-bold underline">Mostrar todos</button></div>}
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { if (atualizado.status !== "cancelada" && !estaEmAberto(atualizado) && ["abertos", "vencidos", "a_vencer"].includes(status)) setFeedbackPagamento(`O vale #${atualizado.numeroSequencial} está coberto pelos pagamentos e saiu do filtro de abertos. Continua disponível em Quitados ou Todos, com seus comprovantes.`); setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendas, listaOrdens]) => { setVales(vendas.filter((venda) => Boolean(venda.vencimento))); setOrdens(listaOrdens); setOrdensRefreshKey((atual) => atual + 1); }).catch((erro) => setError(erro.message)); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
       {ordemDetalhada && (
         <OrdemCobrancaDetalhesModal
           ordem={ordemDetalhada}

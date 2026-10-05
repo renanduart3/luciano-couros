@@ -1,3 +1,4 @@
+import { formatarQuantidades, quantidadesPorUnidade } from "../lib/quantidades";
 import { SelecionarDevolucao } from "./SelecionarDevolucao";
 import { arredondarDinheiro } from "../lib/totaisVenda";
 import React, { useState, useEffect, useRef } from "react";
@@ -552,7 +553,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     })
     .filter((item) => item.quantidade !== 0);
 
-  const quantidadeTotalAnalise = analiseLinhas.reduce((total, item) => total + item.quantidade, 0);
+  const totaisQuantidade = quantidadesPorUnidade(analiseLinhas);
+  const quantidadeTotalAnalise = totaisQuantidade.length === 1 ? totaisQuantidade[0].quantidade : 0;
   const precoMedioAnalise = quantidadeTotalAnalise > 0 ? totalLiquido / quantidadeTotalAnalise : 0;
 
   // BI calculations
@@ -1513,7 +1515,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               <tbody className="divide-y divide-slate-200">
                 {analiseLinhas.length === 0 ? <tr><td colSpan={11} className="p-8 text-center font-bold text-slate-400">Selecione o cliente e preencha a quantidade dos materiais para formar a análise.</td></tr> : analiseLinhas.map((item, index) => <tr key={`analise-${item.produtoId}-${index}`} className={item.quantidade<0 ? "bg-red-100 text-red-800" : "bg-amber-50/55 text-slate-800"}><td className="border-r border-slate-200 p-3 font-mono">{formatDate(new Date().toISOString().slice(0, 10))}</td><td className="border-r border-slate-200 p-3 font-bold">{clienteSelecionado?.nome || "—"}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatDecimal(item.quantidade)}</td><td className="border-r border-slate-200 p-3 font-bold">{item.unidade}</td><td className="border-r border-slate-200 p-3 font-extrabold">{item.nome}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-bold">{formatCurrency(item.precoUnitario)}</td><td className="border-r border-slate-200 p-3 text-right font-mono font-black">{formatCurrency(item.valorVenda)}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-bold">{dadosAdmVisiveis ? formatCurrency(item.custoTotal) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? formatCurrency(item.lucro) : "••••"}</td><td className="border-r border-slate-200 bg-slate-50 p-3 font-bold">{dadosAdmVisiveis ? item.fornecedor : <span className="inline-flex items-center gap-1 text-slate-400"><Lock size={12} /> Protegido</span>}</td><td className="bg-slate-50 p-3 text-right font-mono font-black">{dadosAdmVisiveis ? `${item.margem.toFixed(1)}%` : "••••"}</td></tr>)}
               </tbody>
-              {analiseLinhas.length > 0 && <tfoot><tr className="border-t-2 border-slate-400 bg-slate-100 font-black text-slate-900"><td className="p-3" colSpan={2}>TOTAL DA VENDA</td><td className="border-l border-slate-300 p-3 text-right font-mono">{formatDecimal(quantidadeTotalAnalise)}</td><td className="p-3"></td><td className="p-3 text-right text-slate-500">Média {formatCurrency(precoMedioAnalise)}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{formatCurrency(totalLiquido)}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(totalCustoItens) : "••••"}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(lucroEstimado) : "••••"}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? `${margemEstimada.toFixed(1)}%` : "••••"}</td></tr></tfoot>}
+              {analiseLinhas.length > 0 && <tfoot><tr className="border-t-2 border-slate-400 bg-slate-100 font-black text-slate-900"><td className="p-3" colSpan={2}>TOTAL DA VENDA</td><td className="border-l border-slate-300 p-3 text-right font-mono">{formatarQuantidades(analiseLinhas)}</td><td className="p-3"></td><td className="p-3 text-right text-slate-500">{totaisQuantidade.length === 1 ? `Média ${formatCurrency(precoMedioAnalise)}/${totaisQuantidade[0].unidade}` : "—"}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{formatCurrency(totalLiquido)}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(totalCustoItens) : "••••"}</td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? formatCurrency(lucroEstimado) : "••••"}</td><td className="p-3"></td><td className="p-3 text-right font-mono">{dadosAdmVisiveis ? `${margemEstimada.toFixed(1)}%` : "••••"}</td></tr></tfoot>}
             </table>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3 text-[11px]"><span className="font-bold text-slate-500">Vendedor: dados da venda • Administrador: custo, lucro, fornecedor e margem</span>{dadosAdmVisiveis && <span className={`rounded-lg px-2 py-1 font-extrabold ${margemEstimada >= 15 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{margemEstimada >= 15 ? "Margem saudável" : "Revisar margem"} • desconto seguro {maxSafeDiscountPct.toFixed(1)}%</span>}</div>
@@ -1733,7 +1735,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
           <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
             <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
-            ITENS DA VENDA
+            ITENS DA VENDA · Quantidade: {formatarQuantidades(analiseLinhas)}
           </label>
           <div className="flex flex-wrap items-center gap-2">
             {!vendaEmEdicao && orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase text-blue-900 hover:bg-blue-100"><FileText size={13} /> CARREGAR ORÇAMENTO ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}

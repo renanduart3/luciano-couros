@@ -42,3 +42,16 @@ assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, valorAplicado
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [] }).restante, 5000);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...cheque, titulos: cheque.titulos.map(t => ({ ...t, status: 'recusado' })) }] }).pago, 0);
 console.log('OK: títulos em linhas únicas; compensação parcial, estorno, recusados, bônus e recebimento compartilhado.');
+
+r = demonstrativoOrdem({...ordem, vales:[{valorVinculado:60},{valorVinculado:40}], pagamentos:[{...cheque,valorRecebido:80,bonusUtilizado:20,valorAplicado:100,valorAplicadoOrdem:50,titulos:[{...cheque.titulos[0],valor:30},{...cheque.titulos[1],valor:50}]}]});
+assert.deepEqual(r.linhas.map(l=>l.valor),[15,25,10]);
+assert.equal(r.totalVales,100); assert.equal(r.totalTitulos,40);
+assert.equal(r.recebido,15); assert.equal(r.aguardando,25); assert.equal(r.bonus,10); assert.equal(r.pago,50);
+assert.equal(r.linhas.reduce((s,l)=>s+l.valor,0),r.pago);
+r=demonstrativoOrdem({...ordem,pagamentos:[{...pix,valorRecebido:0,bonusUtilizado:20,formaPagamento:'bonus'}]});
+assert.equal(r.linhas.length,1); assert.equal(r.linhas[0].forma,'Bônus utilizado');
+console.log('OK: totais de vales/títulos, rateio e bônus em linha própria sem duplicar pagamento.');
+
+r=demonstrativoOrdem({...ordem,pagamentos:[{...pix,valorRecebido:0.01,bonusUtilizado:0.01,valorAplicado:0.02,valorAplicadoOrdem:0.01}]});
+assert.equal(r.linhas.reduce((s,l)=>s+Math.round(l.valor*100),0),Math.round(r.pago*100));
+console.log('OK: rateio conserva o centavo entre dinheiro e bônus.');

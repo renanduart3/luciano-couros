@@ -35,23 +35,6 @@
   transition: background-color 150ms, color 150ms, box-shadow 150ms;
 }
 
-@media print {
-  body:has(#comprovante-recebimento) * {
-    visibility: hidden !important;
-  }
-
-  #comprovante-recebimento,
-  #comprovante-recebimento * {
-    visibility: visible !important;
-  }
-
-  #comprovante-recebimento {
-    position: absolute !important;
-    inset: 0 auto auto 0 !important;
-    width: 100% !important;
-  }
-}
-
 /* Densidade operacional: usa primeiro a largura disponível e reduz a soma de
    paddings repetidos sem comprometer os alvos de toque no celular. */
 @media screen {
@@ -794,11 +777,11 @@ body main .payment-compact button {
   }
 
   /* Print only the active receipt; the screen behind the modal must not create extra pages. */
-  body:has(> #print-receipt) > *:not(#print-receipt) {
+  body:not(:has(> #print-payment-receipt)):has(> #print-receipt) > *:not(#print-receipt) {
     display: none !important;
   }
 
-  body:has(> #print-cobranca-vales) > *:not(#print-cobranca-vales) {
+  body:not(:has(> #print-payment-receipt)):has(> #print-cobranca-vales) > *:not(#print-cobranca-vales) {
     display: none !important;
   }
 
@@ -1013,3 +996,55 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
   .vale-tabs { gap: 16px; }
   body .vale-icon-button { width: 44px; height: 44px; }
 }
+
+/* O recibo fica diretamente no body, fora de ancestrais print:hidden e dos modais de origem. */
+@media print {
+  body:has(> #print-payment-receipt) > *:not(#print-payment-receipt) { display: none !important; }
+  #print-payment-receipt {
+    position: static !important;
+    display: block !important;
+    width: 210mm !important;
+    height: auto !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+  #print-cobranca-vales { padding: 10mm !important; }
+  #print-cobranca-vales table { table-layout: auto; }
+  #print-cobranca-vales tr, #print-cobranca-vales footer,
+  .payment-receipt-header, .payment-receipt-client, .payment-receipt-footer,
+  .payment-receipt-bonus { break-inside: avoid; }
+  #print-cobranca-vales tfoot, .payment-receipt-section tfoot { display: table-row-group; }
+  .payment-receipt-paper { min-height: 0 !important; }
+  .payment-receipt-section td { overflow-wrap: anywhere; }
+  .receipt-copy, .payment-receipt-paper, #print-cobranca-vales {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+@media print {
+  @page pagamento { size: A4 portrait; margin: 14mm; }
+  @page cobranca { size: A4 portrait; margin: 10mm; }
+  body:has(> #print-payment-receipt), body:has(> #print-cobranca-vales) { width: auto !important; }
+  #print-payment-receipt { page: pagamento; width: 182mm !important; }
+  #print-payment-receipt #comprovante-recebimento,
+  #print-payment-receipt .payment-receipt-paper { width: 100% !important; padding: 0 !important; }
+  #print-cobranca-vales { page: cobranca; padding: 0 !important; }
+}
+
+@media print {
+  .payment-receipt-section td { padding: 1mm 2mm; }
+  .payment-receipt-footer { margin-top: 6mm; }
+  .payment-receipt-footer > p { margin-bottom: 8mm; }
+  .payment-receipt-footer > small { margin-top: 5mm; }
+}
+
+.payment-receipt-section .number { white-space: nowrap; }
+.payment-receipt-methods th:first-child { width: 30%; }
+.payment-receipt-methods th:nth-child(2) { width: 15%; }
+.payment-receipt-methods th:nth-child(3) { width: 17%; }
+.payment-receipt-methods th:nth-child(4) { width: 18%; }
+.payment-receipt-methods th:last-child { width: 20%; }
+.payment-receipt-methods td:nth-child(4) { font-size: 7.5pt; }

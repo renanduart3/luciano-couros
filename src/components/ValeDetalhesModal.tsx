@@ -1,3 +1,4 @@
+import { formatarQuantidades } from "../lib/quantidades";
 import React, { useState } from "react";
 import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
@@ -45,8 +46,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const itens = vale.items || [];
   const legado: PagamentoGerenciavel | undefined = !vale.recebimentos?.length && Number(vale.valorPago) > 0.005 ? {
     id: vale.id, recebimentoId: vale.id, clienteId: vale.clienteId, clienteNome: vale.clienteNome || "Cliente",
-    data: vale.ultimoPagamentoData || vale.data, valorRecebido: Number(vale.valorPago), valorAplicado: Number(vale.valorPago),
-    bonusUtilizado: 0, bonusGerado: 0, formaPagamento: vale.formaPagamento || "Pagamento antigo", status: "ativo", statusPagamento: "compensado",
+    data: vale.ultimoPagamentoData || vale.data, valorRecebido: Math.max(0, Number(vale.valorPago) - Number(vale.bonusLegado || 0)), valorAplicado: Number(vale.valorPago),
+    bonusUtilizado: Number(vale.bonusLegado || 0), bonusGerado: 0, formaPagamento: vale.formaPagamento || "Pagamento antigo", status: "ativo", statusPagamento: "compensado",
     titulos: [], alocacoes: [], historico: [], createdAt: vale.data, updatedAt: vale.data,
   } : undefined;
   const financeiro = financeiroVale(vale);
@@ -254,6 +255,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                 </article>
               ))}
             </div>
+
+            {itens.length > 0 && <p className="rounded-lg border bg-white p-3 text-xs font-bold">Quantidade: {formatarQuantidades(itens.map(i => ({ ...i, quantidade: Number(i.quantidadeDisponivel ?? i.quantidade) })))}</p>}
 
             {itens.length === 0 && !vale.origemSaldo && <p className="rounded-xl border border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">Nenhum item encontrado para esta venda.</p>}
 

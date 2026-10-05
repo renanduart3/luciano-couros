@@ -1,3 +1,4 @@
+import { formatarQuantidades, unidadeResumida } from "../lib/quantidades";
 import { financeiroVale } from "../lib/financeiro";
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
@@ -31,16 +32,10 @@ const LOJA_PADRAO: LojaComprovante = {
 const ITENS_POR_FOLHA = 15;
 type ItemComprovante = ItemVenda & { linhaDevolucao?: boolean; linhaSaldo?: boolean };
 
-function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaComprovante; via: string; itens: ItemComprovante[] }) {
+function ViaComprovante({ venda, loja, via, itens, todosItens, ultimaPagina, limiteItens }: { venda: Venda; loja: LojaComprovante; via: string; itens: ItemComprovante[]; todosItens: ItemComprovante[]; ultimaPagina: boolean; limiteItens: number }) {
   const residual = Number(venda.contabilizaReceita ?? 1) === 0;
   const layoutRespirado = ITENS_POR_FOLHA === 15;
-  const todosItens = (venda.items || itens)
-    .map((item) => ({ ...item, quantidade: Number(item.quantidadeDisponivel ?? item.quantidade) }))
-    .filter((item) => item.quantidade > 0.005);
-  const quantidadeMetros = todosItens
-    .filter((item) => item.unidade.toLowerCase().includes("metro"))
-    .reduce((total, item) => total + Number(item.quantidade), 0);
-  const linhasVazias = Array.from({ length: Math.max(0, ITENS_POR_FOLHA - (itens?.length || 0)) });
+  const linhasVazias = Array.from({ length: Math.max(0, limiteItens - (itens?.length || 0)) });
   const bonusDevolucao = (venda.devolucoes || []).reduce((soma, devolucao) => soma + (devolucao.modalidade === "bonus_integral" ? Number(devolucao.valorCredito) : 0), 0);
   const subtotalAtual = residual ? Number(venda.totalLiquido) : (venda.items || []).reduce((soma, item) => soma + Number(item.total), 0)
     - (venda.devolucoes || []).reduce((soma, devolucao) => soma + Number(devolucao.valorCredito), 0);
@@ -58,7 +53,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
     : ehVale
       ? "VENDA / VALE"
       : "VENDA";
-  const viaCurta = via.startsWith("1ª") ? "1ª VIA" : "2ª VIA";
+  const viaCurta = via.replace(" — CLIENTE", "").replace(" — LOJA", "");
 
   return (
     <section className="receipt-copy">
@@ -90,7 +85,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
             <tr key={item.id || index} className={item.linhaDevolucao ? "receipt-return-row" : undefined}>
               <td className="receipt-product-code">{String(item.referencia || "").slice(0, 4)}</td>
               <td className="receipt-supplier-code">{String(item.fornecedorReferencia || "").slice(0, 4)}</td>
-              <td className="receipt-number">{item.linhaSaldo ? "" : formatDecimal(item.quantidade)}</td>
+              <td className="receipt-number">{item.linhaSaldo ? "" : `${formatDecimal(item.quantidade)} ${unidadeResumida(item.unidade)}`}</td>
               <td>{item.linhaDevolucao ? `DEVOLVIDO: ${item.descricao}` : item.descricao}</td>
               <td className="receipt-number">{item.linhaSaldo ? "" : formatCurrency(item.precoUnitario)}</td>
               <td className="receipt-number">{item.linhaSaldo ? "" : formatCurrency(item.total)}</td>
@@ -100,6 +95,7 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
         </tbody>
       </table>
 
+      {ultimaPagina && <>
       {(Math.abs(abatimentoAtual) >= 0.01 || bonusDevolucao >= 0.01) && <div className="receipt-payment-line">
         <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
         <span><b>{bonusDevolucao >= 0.01 ? "BÔNUS DEV. (DÍVIDA MANTIDA):" : "DESCONTOS / AJUSTES DE DEVOLUÇÃO:"}</b> {formatCurrency(bonusDevolucao >= 0.01 ? bonusDevolucao : abatimentoAtual)}</span>
@@ -113,10 +109,11 @@ function ViaComprovante({ venda, loja, via, itens }: { venda: Venda; loja: LojaC
       </div>
 
       {Number(venda.creditoLinhaDevolucao || 0)>0 && <div className="receipt-payment-line"><b>CRÉDITO NA CARTEIRA: {formatCurrency(venda.creditoLinhaDevolucao!)}</b></div>}
-      <footer className="receipt-footer">
-        <div className="receipt-counts">{residual ? <><span>SALDO ATUAL: <b>{formatCurrency(financeiroVale(venda).restantePresumido)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></> : <><span>Nº ITENS: <b>{todosItens.length}</b></span><span>TOTAL METROS: <b>{formatDecimal(quantidadeMetros)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></>}</div>
+      </>}
+      {ultimaPagina ? <footer className="receipt-footer">
+        <div className="receipt-counts">{residual ? <><span>SALDO ATUAL: <b>{formatCurrency(financeiroVale(venda).restantePresumido)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></> : <><span>QUANTIDADE: <b>{formatarQuantidades(todosItens)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></>}</div>
         <div className="receipt-total"><span>{residual ? "VALOR DO VALE" : "VALOR TOTAL"}</span><strong>{formatCurrency(venda.totalLiquido)}</strong></div>
-      </footer>
+      </footer> : <div className="receipt-payment-line">CONTINUA NA PRÓXIMA FOLHA · TOTAIS NA ÚLTIMA FOLHA</div>}
     </section>
   );
 }
@@ -174,15 +171,21 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
     });
     return [...itensOriginais, ...linhasDevolvidas];
   }, [venda]);
+  // Cada faixa financeira ocupa aproximadamente três linhas da tabela.
+  const faixasExtras = Number(Boolean(venda.desconto || venda.devolucoes?.length || venda.items?.some(i => i.quantidade < 0)))
+    + Number(Number(venda.valorTransferido || 0) > 0)
+    + Number(Number(venda.creditoLinhaDevolucao || 0) > 0)
+    + Number(financeiroVale(venda).creditoUtilizado > 0);
+  const limiteItens = Math.max(3, ITENS_POR_FOLHA - faixasExtras * 3);
   const paginas = useMemo(() => {
     const itens = itensAtuais;
     if (itens.length === 0) return [[]];
     const resultado: ItemComprovante[][] = [];
-    for (let inicio = 0; inicio < itens.length; inicio += ITENS_POR_FOLHA) {
-      resultado.push(itens.slice(inicio, inicio + ITENS_POR_FOLHA));
+    for (let inicio = 0; inicio < itens.length; inicio += limiteItens) {
+      resultado.push(itens.slice(inicio, inicio + limiteItens));
     }
     return resultado;
-  }, [itensAtuais]);
+  }, [itensAtuais, limiteItens]);
 
   return (
     <div className="receipt-pages" data-receipt={chave} data-items-per-sheet={ITENS_POR_FOLHA}>
@@ -190,9 +193,9 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
         const complemento = paginas.length > 1 ? ` • FOLHA ${pagina + 1}/${paginas.length}` : "";
         return (
           <div className="receipt-sheet-a4" data-receipt-page={pagina + 1} key={`${chave}-${pagina}`}>
-            <ViaComprovante venda={venda} loja={loja} itens={itens} via={`1ª VIA — CLIENTE${complemento}`} />
+            <ViaComprovante venda={venda} loja={loja} itens={itens} todosItens={itensAtuais} limiteItens={limiteItens} ultimaPagina={pagina === paginas.length - 1} via={`1ª VIA — CLIENTE${complemento}`} />
             <div className="receipt-cut"><span>✂ corte aqui</span></div>
-            <ViaComprovante venda={venda} loja={loja} itens={itens} via={`2ª VIA — LOJA${complemento}`} />
+            <ViaComprovante venda={venda} loja={loja} itens={itens} todosItens={itensAtuais} limiteItens={limiteItens} ultimaPagina={pagina === paginas.length - 1} via={`2ª VIA — LOJA${complemento}`} />
           </div>
         );
       })}

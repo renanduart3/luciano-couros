@@ -1,8 +1,8 @@
 import React from "react";
 import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
 import { createPortal } from "react-dom";
-import { CalendarDays, MessageCircle, Printer, WalletCards, X } from "lucide-react";
-import { OrdemCobranca, OrdemCobrancaParcela } from "../types";
+import { Printer, WalletCards, X } from "lucide-react";
+import { OrdemCobranca } from "../types";
 import { formatCurrency, formatDate, whatsappUrl } from "../lib/utils";
 
 interface Props {
@@ -10,22 +10,6 @@ interface Props {
   onOpenOrdem: () => void;
   onClose: () => void;
 }
-
-const situacaoParcela = (parcela: OrdemCobrancaParcela) => {
-  if (parcela.status === "paga" || (Number(parcela.saldo) <= 0.005 && parcela.status !== "renegociada" && parcela.status !== "cancelada")) {
-    return { texto: "QUITADA", classe: "bg-emerald-100 text-emerald-900", linha: "bg-emerald-50/60" };
-  }
-  if (parcela.status === "cancelada") {
-    return { texto: "CANCELADA", classe: "bg-slate-200 text-slate-700", linha: "bg-slate-50" };
-  }
-  if (parcela.status === "renegociada") {
-    return { texto: "RENEGOCIADA", classe: "bg-blue-100 text-blue-900", linha: "bg-blue-50/60" };
-  }
-  if (Number(parcela.valorPago) > 0.005) {
-    return { texto: "PARCIAL", classe: "bg-blue-100 text-blue-900", linha: "bg-blue-50/60" };
-  }
-  return { texto: "EM ABERTO", classe: "bg-amber-100 text-amber-900", linha: "bg-amber-50/40" };
-};
 
 export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }: Props) {
   const resumo = demonstrativoOrdem(ordem);
@@ -70,29 +54,38 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
               <table className="w-full min-w-[620px] text-xs print:min-w-0">
                 <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Nº</th><th className="p-2 text-left">Descrição</th><th className="p-2 text-right">Negociado</th><th className="p-2 text-left">Emissão</th></tr></thead>
                 <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2">VALE</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td><td className="p-2">{formatDate(v.data)}</td></tr>)}</tbody>
+                <tfoot className="border-t-2 border-slate-900 bg-slate-100 font-bold"><tr><td colSpan={2} className="p-2">TOTAL DOS VALES</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.totalVales)}</td><td/></tr></tfoot>
               </table>
             </div>
 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
               <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
-                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
+                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
                 <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
                   <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
                   <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}</td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
                   <td className={`p-2 ${l.status === 'compensado' ? 'text-emerald-800' : 'text-amber-900'}`}>{l.status === 'compensado' ? 'Pago' : l.status === 'recusado' ? 'Recusado' : 'Aguardando'}</td>
                 </tr>)}</tbody>
+                <tfoot className="border-t-2 border-slate-900 bg-slate-100 font-bold">
+                  <tr><td colSpan={2} className="p-2">TOTAL DE CHEQUES / BOLETOS VÁLIDOS</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.totalTitulos)}</td><td/></tr>
+                  <tr><td colSpan={2} className="p-2">TOTAL DOS PAGAMENTOS + BÔNUS</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.pago)}</td><td/></tr>
+                </tfoot>
               </table></div>
               {!ordem.pagamentos?.length && <p className="text-xs text-slate-500">Nenhum pagamento registrado.</p>}
             </div>
 
             {ordem.observacao && <div className="border-t border-slate-300 bg-slate-50 px-4 py-3 text-xs"><strong className="block text-[10px] uppercase text-slate-500">Observação da negociação</strong><span className="font-bold text-slate-800">{ordem.observacao}</span></div>}
 
-            <footer className="grid grid-cols-3 border-t-2 border-slate-900 bg-emerald-100 text-right">
-              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Negociado</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(ordem.totalOriginal)}</strong></div>
-              <div className="border-r border-emerald-300 px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Recebido</span><strong className="font-mono text-base text-emerald-950">{formatCurrency(resumo.pago)}</strong></div>
-              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
+            <footer className="grid grid-cols-2 border-t-2 border-slate-900 bg-emerald-100 text-right">
+              <div className="px-4 py-3 text-xs text-emerald-950">
+                <p>Dinheiro / títulos compensados: <b>{formatCurrency(resumo.recebido)}</b></p>
+                <p>Aguardando compensação: <b>{formatCurrency(resumo.aguardando)}</b></p>
+                {resumo.bonus > 0 && <p>Bônus utilizado: <b>{formatCurrency(resumo.bonus)}</b></p>}
+                {resumo.transferido > 0 && <p>Transferido para outro vale: <b>{formatCurrency(resumo.transferido)}</b></p>}
+              </div>
+              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante após pagamentos registrados</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
             </footer>
           </section>
         </div>

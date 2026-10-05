@@ -30,7 +30,7 @@ html = render({ ...venda, items: itens, devolucoes, totalLiquido: 260 });
 assert.equal((html.match(/data-receipt-page=/g) || []).length, 2);
 assert.equal((html.match(/receipt-return-row/g) || []).length, 4);
 for (const via of html.matchAll(/<tbody>(.*?)<\/tbody>/g)) {
-  assert.equal((via[1].match(/<tr/g) || []).length, 15);
+  assert.equal((via[1].match(/<tr/g) || []).length, 12);
 }
 assert.ok(html.indexOf('PRODUTO 13') < html.indexOf('DEVOLVIDO: PRODUTO 0'));
 html = render({ ...venda, devolucoes: [{ ...devolucao, modalidade: 'bonus_integral', valorCredito: 94.9 }], totalMercadoriasAposDevolucoes: 141.4 });
@@ -64,3 +64,14 @@ assert.equal((html.match(/BÔNUS UTILIZADO:/g) || []).length, 2);
 assert.equal((html.match(/VALOR RECEBIDO:<\/b> R\$\s?80,00/g) || []).length, 2);
 assert.equal((html.match(/BÔNUS UTILIZADO:<\/b> R\$\s?20,00/g) || []).length, 2);
 console.log('OK: comprovante distingue dinheiro de bônus sem somar o crédito duas vezes.');
+
+const mistos = [{...venda.items[0],quantidade:5.52,unidade:'metro'}, {...venda.items[0],id:'cola',quantidade:2,unidade:'unidade'}];
+html = render({...venda,items:mistos});
+assert.equal((html.match(/5,52 m e 2 un/g)||[]).length,2);
+html = render({...venda,items:[...mistos,{...mistos[0],id:'retorno',quantidade:-0.52}]});
+assert.equal((html.match(/5 m e 2 un/g)||[]).length,2);
+html = render({...venda,items:itens,devolucoes,totalLiquido:260});
+assert.equal((html.match(/QUANTIDADE:/g)||[]).length,2);
+assert.equal((html.match(/VALOR TOTAL/g)||[]).length,2);
+assert.equal((html.match(/26 m/g)||[]).length,2);
+console.log('OK: unidades separadas, devolução subtraída uma vez e totais somente na última folha de cada via.');

@@ -1071,6 +1071,10 @@ export function initDatabase() {
   // Seed initial demo data if database is empty
   seedDemoData();
 
+  // Apply the seven-day policy to existing databases as well as new installations.
+  db.prepare(`INSERT INTO configuracoes (chave, valor) VALUES ('retencao_backups_dias', '7')
+    ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor`).run();
+
   // Backfill existing installations once. Afterwards each sale keeps the projection current.
   const habitualCount = db.prepare("SELECT COUNT(*) as count FROM cliente_produtos_habituais").get() as { count: number };
   if (habitualCount.count === 0) {
@@ -1149,7 +1153,7 @@ function seedDemoData() {
     }
 
     // Configurações
-    db.prepare("INSERT INTO configuracoes (chave, valor) VALUES (?, ?)").run("retencao_backups_dias", "30");
+    db.prepare("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)").run("retencao_backups_dias", "7");
     db.prepare("INSERT INTO configuracoes (chave, valor) VALUES (?, ?)").run("nome_loja", "Central dos Tecidos e Aviamentos");
 
     // Histórico de Compras (da Loja com seus Fornecedores)
@@ -1645,7 +1649,7 @@ function seedFromMockJson() {
       }
 
       // 9. Configurações padrão
-      currentDb.prepare("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)").run("retencao_backups_dias", "30");
+      currentDb.prepare("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)").run("retencao_backups_dias", "7");
       currentDb.prepare("INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)").run("nome_loja", "Central de Tecidos (MOCK)");
     })();
 

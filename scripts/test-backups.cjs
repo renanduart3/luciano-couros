@@ -24,7 +24,7 @@ async function main() {
     // Live WAL contents must have been included without copying raw sidecars.
     const copied = new Database(path.join(destination, 'database.db'));
     assert.equal(copied.prepare('SELECT value FROM marker').get().value, 'committed in WAL');
-    assert.equal(copied.prepare("SELECT valor FROM configuracoes WHERE chave='retencao_backups_dias'").get().valor, '30');
+    assert.equal(copied.prepare("SELECT valor FROM configuracoes WHERE chave='retencao_backups_dias'").get().valor, '7');
     copied.close();
     assert.equal(original.prepare("SELECT valor FROM configuracoes WHERE chave='retencao_backups_dias'").get().valor, '90');
     original.close();
@@ -40,8 +40,8 @@ async function main() {
     copy('auto_live_2026-08-01_12-00-00.db');
     copy('auto_live_2026-09-17_12-00-00.db');
     copy('auto_mock_2026-08-01_12-00-00.db'); // last valid mock stays
-    copy('manual_live_2026-08-18_12-00-00.db'); // exactly 30 days stays
-    copy('manual_live_2026-08-17_12-00-00.db');
+    copy('manual_live_2026-09-10_12-00-00.db'); // exactly 7 days stays
+    copy('manual_live_2026-09-09_12-00-00.db');
     copy('manual_live_2026-08-02_12-00-00.db');
     fs.writeFileSync(path.join(dir, 'manual_live_2026-08-02_12-00-00.db.protected'), '');
     fs.writeFileSync(path.join(dir, 'notes.txt'), 'do not delete');
@@ -50,8 +50,8 @@ async function main() {
     fs.mkdirSync(oldUpdate); fs.writeFileSync(path.join(oldUpdate, 'database.db'), 'old');
     const protectedUpdate = path.join(dir, 'antes-da-atualizacao_2026-08-02_12-00-00');
     fs.mkdirSync(protectedUpdate); fs.writeFileSync(path.join(protectedUpdate, '.protected'), '');
-    const removed = pruneBackups(dir, 30, new Date('2026-09-17T12:00:00'));
-    assert.deepEqual(removed.sort(), ['auto_live_2026-08-01_12-00-00.db', 'manual_live_2026-08-17_12-00-00.db', path.basename(oldUpdate)].sort());
+    const removed = pruneBackups(dir, undefined, new Date('2026-09-17T12:00:00'));
+    assert.deepEqual(removed.sort(), ['auto_live_2026-08-01_12-00-00.db', 'manual_live_2026-09-09_12-00-00.db', path.basename(oldUpdate)].sort());
     assert.ok(fs.existsSync(path.join(dir, 'notes.txt')));
     assert.equal(backupInfo('auto_2026-02-31_12-00-00.db'), null);
     assert.throws(() => safeBackupPath(dir, '../database.db'));
@@ -81,7 +81,9 @@ async function main() {
     // Start the actual bundled application using ONLY the persisted external pointer.
     const httpRoot = path.join(fixture, 'http'); fs.mkdirSync(httpRoot);
     const httpData = path.join(fixture, 'http-data'); fs.mkdirSync(httpData);
-    new Database(path.join(httpData, 'database.db')).close();
+    const existingSettings = new Database(path.join(httpData, 'database.db'));
+    existingSettings.exec("CREATE TABLE configuracoes (chave TEXT PRIMARY KEY, valor TEXT); INSERT INTO configuracoes VALUES ('retencao_backups_dias', '30');");
+    existingSettings.close();
     fs.writeFileSync(path.join(httpRoot, 'installation-paths.json'), JSON.stringify({ dataDir: httpData }));
     const probe = net.createServer();
     await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
@@ -103,6 +105,9 @@ async function main() {
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     assert.ok(ready, logs);
+    const retentionCheck = new Database(path.join(httpData, 'database.db'), { readonly: true });
+    assert.equal(retentionCheck.prepare("SELECT valor FROM configuracoes WHERE chave='retencao_backups_dias'").get().valor, '7', 'Existing 30-day settings must migrate on startup');
+    retentionCheck.close();
     assert.equal((await request('POST', '/auth/configurar-gerente', { nome: 'Teste', senha: 'BackupTeste123' })).status, 201);
     assert.equal((await request('POST', '/auth/login', { login: 'gerente', senha: 'BackupTeste123' })).status, 200);
     const customBackup = path.join(fixture, 'drive-backups');
@@ -190,7 +195,7 @@ async function main() {
     recovered.close();
     assert.ok(!fs.existsSync(path.join(recoveryRoot, 'data')));
     console.log('OK: clean-computer disaster recovery, external installation, unified update destination');
-    console.log('OK: migration with WAL, external paths, 30-day retention, protected files, failed backup, HTTP backup and real restoration.');
+    console.log('OK: migration with WAL, external paths, 7-day retention, protected files, failed backup, HTTP backup and real restoration.');
   } finally {
     if (child && child.exitCode === null) { child.kill(); await new Promise(resolve => child.once('exit', resolve)); }
     const resolved = fs.realpathSync(fixture);

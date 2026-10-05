@@ -4,12 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
-## Em desenvolvimento — backups externos
+## 1.38.0 — 2026-10-05
 
 - Assistente Windows para migrar bancos e backups para uma pasta externa, com validação SQLite, apontamento persistente e preservação dos originais.
-- Backups concluídos e validados antes da confirmação, nomes separados por ambiente e retenção de 30 dias corrigida para arquivos e diretórios de atualização.
+- Backups concluídos e validados antes da confirmação, nomes separados por ambiente e retenção de 7 dias corrigida para arquivos e diretórios de atualização.
 - Restauração com validação de nomes, integridade, cópia preventiva e proteção contra mistura de produção e demonstração.
 - Atualizador usa o mesmo apontamento; documentação para sincronizar somente backups pelo Google Drive.
+- Agenda diária configurável pela plataforma, seleção de pasta, recuperação de horários perdidos e alertas após falhas consecutivas.
+- Retenção de 7 dias aplicada também às configurações antigas; a última cópia válida e cópias protegidas continuam preservadas.
 - Testes de migração com WAL, retenção e restauração real em bancos isolados.
 
 ## 1.37.0 — 2026-10-05

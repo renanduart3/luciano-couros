@@ -1,11 +1,11 @@
-# Dados externos e backups de 30 dias
+# Dados externos e backups de 7 dias
 
 ## Preparacao no computador do cliente
 
 1. Entregue o pacote de atualizacao sem bancos, `installation-paths.json`, `.runtime`, `node_modules`, `.git` ou dados desta maquina de desenvolvimento. Aplique a nova versao pelo atualizador habitual.
 2. Feche o sistema nos navegadores para evitar lancamentos durante a manutencao.
 3. Execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd** e aceite a elevacao do Windows. O assistente pergunta o destino; Enter usa `C:\ProgramData\LucianoCouros\data`. Escolha uma pasta nova, local, fora do projeto e fora de uma pasta sincronizada.
-4. O assistente para o servico, compila, copia os bancos pela API do SQLite (incluindo transacoes no WAL), verifica a integridade e copia os backups existentes. Define a retencao em 30 dias e grava o apontamento em `installation-paths.json` na instalacao.
+4. O assistente para o servico, compila, copia os bancos pela API do SQLite (incluindo transacoes no WAL), verifica a integridade e copia os backups existentes. Define a retencao em 7 dias e grava o apontamento em `installation-paths.json` na instalacao.
 5. O sistema reinicia usando os dados externos. Confira clientes, vendas e saldos. A migracao preserva o modo real/demonstracao: no cliente deve estar selecionado o banco real.
 6. Crie um backup manual pela interface. Confirme sua presenca na pasta externa. Teste a restauracao numa instalacao separada antes de descartar os originais.
 
@@ -27,9 +27,9 @@ As exclusoes locais sincronizam para a nuvem. A lixeira e o armazenamento compar
 
 - Verificacao na inicializacao e a cada minuto, usando a hora local do servidor. Horarios perdidos sao cobertos por uma unica copia atual; a agenda normal continua depois disso.
 - Copia temporaria na pasta irma `.backup-staging`, verificacao `integrity_check` e renomeacao para o destino definitivo. A interface aguarda a conclusao.
-- Retencao de 30 dias para automaticos, manuais e diretorios `antes-da-atualizacao_*`, usando a data do nome. A configuracao existente continua disponivel para uso tecnico; a migracao aplica 30 dias aos bancos existentes.
+- Retencao de 7 dias para automaticos, manuais e diretorios `antes-da-atualizacao_*`, usando a data do nome. A inicializacao e a migracao aplicam 7 dias tambem aos bancos existentes.
 - Limpeza somente de nomes reconhecidos; desconhecidos, links e arquivos incompletos nao sao apagados automaticamente. Uma falha de remocao nao interrompe a limpeza dos demais.
-- A ultima copia valida de cada ambiente, dos arquivos legados e dos snapshots de atualizacao e preservada mesmo vencida. Marcadores `arquivo.db.protected` ou `.protected` dentro do diretorio de atualizacao impedem a limpeza. Essas excecoes podem permanecer mais de 30 dias.
+- A ultima copia valida de cada ambiente, dos arquivos legados e dos snapshots de atualizacao e preservada mesmo vencida. Marcadores `arquivo.db.protected` ou `.protected` dentro do diretorio de atualizacao impedem a limpeza. Essas excecoes podem permanecer mais de 7 dias.
 - Novos arquivos usam `auto_live_*`, `manual_live_*`, `auto_mock_*` e `manual_mock_*`. A interface mostra o ambiente atual. Arquivos antigos sem identificacao ficam no disco para revisao tecnica, sujeitos a retencao; a restauracao automatica deles e bloqueada para nao confundir demonstracao com producao.
 - Restauracao valida o arquivo, cria uma copia de seguranca do estado atual, bloqueia novas requisicoes durante a troca e solicita reinicio do servico. Sem servico instalado, reinicie manualmente.
 - Arquivos temporarios de uma interrupcao permanecem em `.backup-staging` para revisao com o servico parado. Nao sao apresentados como backups validos.

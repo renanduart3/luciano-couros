@@ -64,7 +64,7 @@ function safeTree(dir) {
     return !entry.isDirectory() || safeTree(path.join(dir, entry.name));
   });
 }
-function pruneBackups(dir, days = 30, now = new Date()) {
+function pruneBackups(dir, days = 7, now = new Date()) {
   if (!Number.isInteger(days) || days < 1 || days > 3650) throw new Error('Retencao invalida.');
   const root = fs.realpathSync(dir);
   const cutoff = new Date(now);

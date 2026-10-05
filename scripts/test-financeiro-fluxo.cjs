@@ -8,7 +8,7 @@ const raiz = process.cwd();
 const temp = fs.mkdtempSync(path.join(os.tmpdir(),'luciano-fluxo-'));
 process.env.DATA_DIR = temp;
 let source = fs.readFileSync('server.ts','utf8').replace('startServer();','export { app, db, carregarRecebimentoGerenciavel, carregarDetalhesVenda, listarOrdensCobranca, compensarPagamentosProgramados };');
-source = source.replace('void runAutoBackup();','').replace('setInterval(() => void runAutoBackup(), 60 * 60 * 1000);','').replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();','').replace('setTimeout(executarProgramacaoFinanceira, 0).unref();','');
+source = source.replace('void runAutoBackup();','').replace('setInterval(() => void runAutoBackup(), 60 * 1000);','').replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();','').replace('setTimeout(executarProgramacaoFinanceira, 0).unref();','');
 source += '\nexport { financeiroOrdem } from "./src/lib/financeiro";';
 const build = buildSync({stdin:{contents:source,resolveDir:raiz,loader:'ts'},bundle:true,platform:'node',format:'cjs',packages:'external',write:false});
 process.chdir(temp);

@@ -132,7 +132,7 @@ A instalação pelo comando de instalar serviço prepara os dados fora do projet
 
 O apontamento fica em `installation-paths.json`, protegido pelo atualizador e excluído do Git. Sem esse arquivo, instalações existentes continuam usando `data`. Se houver somente um banco legado na raiz, execute o assistente antes de iniciar.
 
-Na pasta externa ficam `database.db`, `database_mock.db`, `mock_config.json` e `backups`. Sincronize **somente `backups`** com o Google Drive para computador, nunca os bancos ativos. A retenção é de **30 dias**, com preservação da última cópia válida em caso de falha prolongada.
+Na pasta externa ficam `database.db`, `database_mock.db`, `mock_config.json` e `backups`. Sincronize **somente `backups`** com o Google Drive para computador, nunca os bancos ativos. A retenção é de **7 dias**, com preservação da última cópia válida em caso de falha prolongada.
 
 Consulte [o procedimento de migração, recuperação e configuração do Drive](docs/BACKUPS-E-MIGRACAO.md).
 

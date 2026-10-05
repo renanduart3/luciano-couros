@@ -68,7 +68,7 @@ async function migrate(root, destination) {
     const database = new Database(file);
     try {
       if (database.prepare("SELECT 1 FROM sqlite_master WHERE name='configuracoes'").get()) {
-        database.prepare("INSERT OR REPLACE INTO configuracoes (chave, valor) VALUES ('retencao_backups_dias', '30')").run();
+        database.prepare("INSERT OR REPLACE INTO configuracoes (chave, valor) VALUES ('retencao_backups_dias', '7')").run();
       }
     } finally { database.close(); }
     checkDatabase(file);
@@ -126,7 +126,7 @@ if (require.main === module) {
     else if (action === 'migrate') await migrate(process.cwd(), destination || '');
     else if (action === 'prepare-install') await prepareInstallation(process.cwd(), destination || '');
     else if (action === 'snapshot') await preUpdate(process.cwd());
-    else if (action === 'prune') pruneBackups(maintenanceBackupDir(resolveDataPaths()), 30);
+    else if (action === 'prune') pruneBackups(maintenanceBackupDir(resolveDataPaths()), 7);
     else throw new Error('Comando de dados desconhecido.');
   })().catch(error => { console.error(error.message); process.exitCode = 1; });
 }

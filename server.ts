@@ -519,8 +519,8 @@ async function runAutoBackup() {
     // Retention runs only after a successful backup, never on every timer tick.
     try {
       const row = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = ?", ["retencao_backups_dias"]);
-      const days = Number(row?.valor || 30);
-      backupFiles.pruneBackups(folder, Number.isInteger(days) && days > 0 && days <= 3650 ? days : 30);
+      const days = Number(row?.valor || 7);
+      backupFiles.pruneBackups(folder, Number.isInteger(days) && days > 0 && days <= 3650 ? Math.min(days, 7) : 7);
     } catch (error) { console.error("Falha na limpeza de backups:", error); }
   } catch (error) {
     saveBackupState(backupScheduler.failed(getBackupState(), new Date(), error));

@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.38.3 — 2026-10-05
+
+- Removida a opção Bônus das formas de pagamento de novas vendas. O toggle controla exclusivamente o crédito abatido; o restante pode ser recebido por outra forma ou ficar no vale.
+- Preservada a identificação de pagamentos históricos com bônus durante a edição.
+
 ## 1.38.2 — 2026-10-05
 
 - Uso do bônus na venda controlado por toggle, inicialmente desligado; saldo e campo de valor aparecem somente após ativar.

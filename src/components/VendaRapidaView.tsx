@@ -74,7 +74,7 @@ const getUnidadeVendaPrincipal = (produto: ProdutoComUnidades) => produto.unidad
 const getUnidadesVendaPermitidas = (produto: ProdutoComUnidades) => [produto.unidade];
 
 const FORMAS_RECEBIMENTO = [
-  ...FORMAS_PAGAMENTO,
+  ...FORMAS_PAGAMENTO.filter(forma => forma.value !== "bonus"),
   { value: "vale", label: "Vale — pagar depois" },
 ] as const;
 
@@ -505,10 +505,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const vendaNoVale = vendaEmEdicao
     ? (vendaEmEdicao.parcelas || []).length > 0 || vendaEmEdicao.formaPagamento === "vale"
     : formaPagamento === "vale";
-  const vendaComCredito = formaPagamento === "bonus";
   const formaExigeInstrumento = FORMAS_COM_INSTRUMENTO.has(formaPagamento);
   const bonusSelecionado = bonusAtivo && !vendaEmEdicao ? parseBrazilianNumber(bonusAplicado) : 0;
-  const recebidoInicial = vendaNoVale || vendaComCredito ? 0 : valorPago === "" ? Math.max(0, totalLiquido - bonusSelecionado) : parseBrazilianNumber(valorPago);
+  const recebidoInicial = vendaNoVale ? 0 : valorPago === "" ? Math.max(0, totalLiquido - bonusSelecionado) : parseBrazilianNumber(valorPago);
   const vPago = vendaEmEdicao ? Math.min(totalLiquido, Number(vendaEmEdicao.valorPago || 0)) : recebidoInicial + bonusSelecionado;
   const saldoRestante = Math.max(0, totalLiquido - vPago);
 
@@ -1070,10 +1069,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       setFeedbackMsg({ type: "error", text: "Confira o pagamento e o bônus: respeite o crédito disponível e o total da venda." });
       return;
     }
-    if (vendaComCredito && saldoCreditoCarteira <= 0) {
-      setFeedbackMsg({ type: "error", text: "Este cliente não possui crédito disponível na carteira." });
-      return;
-    }
 
     if (itensQueExigemAutorizacao.length > 0 || itensPreenchidos.some(i=>i.itemOrigemId)) {
       setAdminPin("");
@@ -1591,11 +1586,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <input 
                   ref={valorPagoRef}
                   type="text" 
-                  value={vendaNoVale ? "" : vendaComCredito ? vPago.toFixed(2).replace(".", ",") : valorPago}
+                  value={vendaNoVale ? "" : valorPago}
                   onChange={(e) => setValorPago(e.target.value)}
                   onKeyDown={(e) => handleKeyDown(e, formaPagamentoRef)}
                   placeholder={vendaNoVale ? "0,00" : recebidoInicial.toFixed(2).replace(".", ",")}
-                  disabled={Boolean(vendaEmEdicao) || vendaNoVale || vendaComCredito}
+                  disabled={Boolean(vendaEmEdicao) || vendaNoVale}
                   className="w-28 text-right bg-slate-50 border border-slate-200 text-xs font-extrabold px-2.5 py-1 rounded-lg text-emerald-700 focus:border-emerald-500 outline-none disabled:bg-slate-200 disabled:text-slate-600"
                 />
               </div>
@@ -1621,10 +1616,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   onChange={(e) => {
                     const novaForma = e.target.value;
                     setFormaPagamento(novaForma);
-                    if (novaForma === "bonus") {
-                      setBonusAtivo(true);
-                      setBonusAplicado(Math.min(totalLiquido, saldoCreditoCarteira).toFixed(2).replace(".", ","));
-                    }
                     if (novaForma === "vale") setValorPago("");
                     else if (formaPagamento === "vale") setValorPago("");
                     if (!FORMAS_COM_INSTRUMENTO.has(novaForma)) {
@@ -1647,6 +1638,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   className="min-w-0 flex-1 bg-slate-50 border border-slate-200 text-xs px-3 py-2 rounded-lg font-bold text-slate-700 outline-none disabled:bg-slate-200 disabled:text-slate-500 sm:max-w-xs"
                 >
                   {FORMAS_RECEBIMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}
+                  {vendaEmEdicao?.formaPagamento === "bonus" && <option value="bonus">BÔNUS (HISTÓRICO)</option>}
                 </select>
               </div>
 
@@ -1659,7 +1651,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                     <button type="button" role="switch" aria-label="Ativar bônus do cliente" aria-checked={bonusAtivo} onClick={() => {
                       setBonusAtivo(!bonusAtivo);
                       setBonusAplicado("");
-                      if (bonusAtivo && vendaComCredito) setFormaPagamento("vale");
                     }} className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 ${bonusAtivo ? "bg-violet-600" : "bg-slate-300"}`}>
                       <span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${bonusAtivo ? "translate-x-4" : "translate-x-0"}`} />
                     </button>

@@ -4,6 +4,16 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.37.0 — 2026-10-05
+
+- Devoluções durante a venda com seleção de produtos já comprados, quantidade livre, valores negativos e crédito do excedente na carteira.
+- Alternância adição/devolução abaixo do resumo dos itens; quantidade em metros considera somente os itens vendidos.
+- Estorno, exclusão, reabertura e edição financeira preservam vínculos, pagamentos compartilhados, bônus e vales residuais, com validação transacional.
+- Comprovantes de saldo usam a descrição compacta da ordem de origem; detalhes permitem consultar os vales e materiais da cadeia.
+- Correções de digitação de números e datas, demonstrativos, impressão e conciliação financeira offline.
+- Seleção de vales oferece geração de ordem; removida a ação redundante de registrar pagamento.
+- Regressões financeiras e testes em cópias isoladas da base real do cliente.
+
 ## 1.36.0 — 2026-09-30
 
 - Bônus gerado por vale ou venda aparece somente nos respectivos detalhes, não nas listagens. O detalhe do vale exibe o bônus próprio ao lado de Devedor, Pago e Restante, sem duplicar o saldo geral do cliente.

@@ -1,3 +1,4 @@
+import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
 import { formatarQuantidades } from "../lib/quantidades";
 import React, { useState } from "react";
 import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
@@ -165,6 +166,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               <h3 className="font-black">Origem deste vale</h3><p className="text-sm">{vale.origemSaldo.descricao}</p>
               <p className="mt-2 text-sm">Valor do vale: <b>{formatCurrency(vale.totalLiquido)}</b> · Saldo atual: <b>{formatCurrency(financeiro.restantePresumido)}</b></p>
               <p className="mt-1 text-xs">Este vale possui pagamentos e negociações próprios. A origem permanece como referência histórica.</p>
+              <HistoricoOrigemVale vale={vale} />
             </div>}
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 

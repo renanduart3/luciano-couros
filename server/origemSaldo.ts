@@ -24,7 +24,7 @@ export function carregarOrigemSaldo(venda: any) {
   }
   const ordem = linhas.find(l => l.ordemOrigemId);
   const vales = linhas.map(l => ({ id: l.vendaOrigemId, numero: l.numeroValeOrigem, valor: l.valorTransferido }));
-  const descricao = `Saldo devedor${ordem ? ` da ordem #${ordem.numeroOrdemOrigem}` : ''}${vales.length ? ` — vales ${vales.map(v => `#${v.numero}`).join(', ')}` : ''}`;
+  const descricao = ordem ? `Devedor da ordem #${ordem.numeroOrdemOrigem}` : `Devedor dos vales ${vales.map(v => `#${v.numero}`).join(', ')}`;
   return { ordem: ordem ? { id: ordem.ordemOrigemId, numero: ordem.numeroOrdemOrigem } : null,
     vales, descricao: vales.length ? descricao : String(venda.observacoes || descricao), valorTransferido: linhas.length && linhas.every(l => l.valorTransferido !== null) ? Math.round(linhas.reduce((s,l) => s + Number(l.valorTransferido), 0) * 100) / 100 : valorOriginal };
 }

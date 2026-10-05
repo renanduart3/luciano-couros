@@ -344,7 +344,7 @@ function normalizarParcelasVale(parcelas: unknown, totalEsperado: number): Parce
     valor: Math.round(Number(item?.valor) * 100) / 100,
   }));
   for (const parcela of normalizadas) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0) {
+    if (!dataFinanceiraValida(parcela.vencimento) || !Number.isFinite(parcela.valor) || parcela.valor <= 0) {
       throw erroHttp("Todas as parcelas precisam de uma data e um valor maior que zero.", 400);
     }
   }
@@ -627,14 +627,7 @@ function dataHojeLocal() {
 }
 
 function ehDataIsoValida(valor: unknown) {
-  const texto = String(valor || "");
-  const correspondencia = /^(\d{4})-(\d{2})-(\d{2})$/.exec(texto);
-  if (!correspondencia) return false;
-  const ano = Number(correspondencia[1]);
-  const mes = Number(correspondencia[2]);
-  const dia = Number(correspondencia[3]);
-  const data = new Date(Date.UTC(ano, mes - 1, dia));
-  return data.getUTCFullYear() === ano && data.getUTCMonth() === mes - 1 && data.getUTCDate() === dia;
+  return dataFinanceiraValida(String(valor || ""));
 }
 
 // Títulos vencidos continuam aguardando até confirmação explícita do usuário.
@@ -650,7 +643,7 @@ function validarDadosCheque(formaPagamento: string, entrada: any) {
     banco: "",
     numeroCheque: String(entrada?.numeroCheque || "").trim(),
   };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dados.vencimento) || !dados.cpfTitular || !dados.numeroCheque) {
+  if (!dataFinanceiraValida(dados.vencimento) || !dados.cpfTitular || !dados.numeroCheque) {
     throw erroHttp("Informe vencimento, CPF/CNPJ do titular e número do cheque.", 400);
   }
   if (formaPagamento === "cheque_terceiro" && !dados.cpfTerceiro) {
@@ -3174,6 +3167,7 @@ app.post("/api/vendas", (req, res) => {
         quantidadeItens: Array.isArray(items) ? items.length : null,
       });
     }
+    if (!dataFinanceiraValida(String(data))) throw erroHttp("Informe uma data válida para a venda (ano com quatro dígitos, a partir de 1900).", 400);
     const observacoesVenda = String(observacoes || "").trim();
     if (observacoesVenda.length > 100) {
       throw erroHttpDetalhado(
@@ -3519,7 +3513,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
     if (!administrador) {
       return res.status(403).json({ error: "PIN administrativo inválido." });
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || "")) || !Array.isArray(items) || items.length === 0) {
+    if (!dataFinanceiraValida(String(data || "")) || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Informe a data e ao menos um item para devolução." });
     }
 
@@ -3671,6 +3665,7 @@ app.put("/api/vendas/:id", (req, res) => {
     if (!administrador) {
       return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi alterada." });
     }
+    if (req.body?.data !== undefined && !dataFinanceiraValida(String(req.body.data))) throw erroHttp("Informe uma data válida para a venda.", 400);
     const vendaId = req.params.id;
     const observacoesVenda = String(req.body?.observacoes || "").trim();
     if (observacoesVenda.length > 100) {
@@ -3834,7 +3829,7 @@ app.put("/api/vendas/:id", (req, res) => {
            saldoRestante = ?, status = ?, vencimento = ?, observacoes = ?, updatedAt = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [
-          /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.data || "")) ? req.body.data : venda.data,
+          dataFinanceiraValida(String(req.body?.data || "")) ? req.body.data : venda.data,
           subtotal,
           desconto,
           novoTotal,
@@ -4218,7 +4213,7 @@ app.get("/api/orcamentos-compra", (_req, res) => {
 app.post("/api/orcamentos-compra", (req, res) => {
   try {
     const { fornecedorId, data, validade, observacao } = req.body;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    if (!dataFinanceiraValida(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
     const resolvidos = resolverItensCompraFornecedor(String(fornecedorId || ""), req.body.items, "custoEstimado");
     const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
     const desconto = arredondarCompra(Number(req.body.desconto || 0));
@@ -4270,7 +4265,7 @@ app.get("/api/compras", (_req, res) => {
 app.post("/api/compras", (req, res) => {
   try {
     const { fornecedorId, data, observacao } = req.body;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    if (!dataFinanceiraValida(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
     const resolvidos = resolverItensCompraFornecedor(String(fornecedorId || ""), req.body.items, "custoUnitario");
     const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
     const desconto = arredondarCompra(Number(req.body.desconto || 0));
@@ -4282,7 +4277,7 @@ app.post("/api/compras", (req, res) => {
     if (!Number.isFinite(desconto) || desconto < 0 || total < 0) return res.status(400).json({ error: "Desconto inválido." });
     if (!Number.isFinite(valorPago) || valorPago < 0 || valorPago > total) return res.status(400).json({ error: "O valor pago deve estar entre zero e o total da compra." });
     if (formaPagamento === "vale" && valorPago >= total - 0.005) throw erroHttp("O Vale deve possuir saldo pendente. Para uma compra totalmente paga, selecione outra forma.", 400);
-    if (valorPago < total - 0.005 && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.vencimento || ""))) throw erroHttp("Informe o vencimento do saldo pendente.", 400);
+    if (valorPago < total - 0.005 && !dataFinanceiraValida(String(req.body.vencimento || ""))) throw erroHttp("Informe o vencimento do saldo pendente.", 400);
     const compraId = "comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
     runInTransaction(() => {
       const orcamentoId = req.body.orcamentoCompraId ? String(req.body.orcamentoCompraId) : null;
@@ -4327,7 +4322,7 @@ app.put("/api/compras/:id", (req, res) => {
   try {
     const id = String(req.params.id);
     const { data, observacao } = req.body;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
+    if (!dataFinanceiraValida(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
     runInTransaction(() => {
       const compra = queryOne<any>("SELECT * FROM compras WHERE id = ? AND deletedAt IS NULL", [id]);
       if (!compra) throw erroHttp("Compra não encontrada.", 404);
@@ -4553,7 +4548,12 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
        WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL
        ORDER BY v.numeroSequencial ASC`,
       [ordem.id]
-      ),
+      ).map(vinculo => {
+        const vale = queryOne<any>('SELECT * FROM vendas WHERE id=?', [vinculo.vendaId]);
+        const origemSaldo = carregarOrigemSaldo(vale);
+        const itens = queryAll<any>('SELECT descricao,quantidade,unidade FROM itens_venda WHERE vendaId=? ORDER BY rowid', [vale.id]);
+        return { ...vinculo, origemSaldo, descricao: origemSaldo?.descricao || itens.map(i => `${Number(i.quantidade).toLocaleString('pt-BR')} ${i.unidade} de ${i.descricao}`).join('; ') || 'Vale' };
+      }),
       pagamentos: queryAll<{ id: string }>(`SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
         WHERE rc.deletedAt IS NULL AND rc.status IN ('ativo', 'recusado') AND
         (rc.ordemCobrancaId = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos r WHERE r.recebimentoId = rc.id AND r.ordemId = ?))
@@ -4922,7 +4922,7 @@ function criarValeResidual(clienteId: string, valor: number, valesOrigem: Array<
   const numero = Number(queryOne<{ numero: number }>("SELECT COALESCE(MAX(numeroSequencial), 0) + 1 AS numero FROM vendas")?.numero || 1);
   const data = dataHojeLocal();
   const origens = [...new Set(valesOrigem.map(v => Number(v.numeroSequencial)))].sort((a, b) => a - b);
-  const descricao = `Saldo devedor${ordemOrigem ? ` da ordem #${ordemOrigem.numeroSequencial}` : ''} — vales ${origens.map(item => `#${item}`).join(", ")}${observacaoExtra ? `. ${observacaoExtra}` : ""}`;
+  const descricao = `${ordemOrigem ? `Devedor da ordem #${ordemOrigem.numeroSequencial}` : `Devedor dos vales ${origens.map(item => `#${item}`).join(", ")}`}${observacaoExtra ? `. ${observacaoExtra}` : ""}`;
   execute(
     `INSERT INTO vendas
       (id, numeroSequencial, clienteId, data, subtotal, desconto, totalLiquido, valorPago, saldoRestante,
@@ -5166,7 +5166,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     if (ordemCobrancaId && parcelaOrdemId) throw erroHttp('Selecione a ordem ou a parcela, não ambas.', 400);
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ""))) {
+    if (!dataFinanceiraValida(String(data || ""))) {
       throw erroHttp("Informe uma data válida para o recebimento.", 400);
     }
     const forma = String(formaPagamento || "").trim();
@@ -5601,7 +5601,7 @@ app.put("/api/recebimento-titulos/:id/status", exigirGerente, (req, res) => {
       return res.json({ success: true, ...resultado });
     }
     const dataCompensacao = status === "compensado" ? String(req.body?.dataCompensacao || "") : null;
-    if (status === "compensado" && !/^\d{4}-\d{2}-\d{2}$/.test(dataCompensacao)) throw erroHttp("Informe a data da compensação.", 400);
+    if (status === "compensado" && !dataFinanceiraValida(dataCompensacao)) throw erroHttp("Informe a data da compensação.", 400);
     if (titulo.status === "recusado") {
       const recebimento = carregarRecebimentoGerenciavel(titulo.recebimentoId);
       if (!recebimento) throw erroHttp("O recebimento deste título não está disponível para reconfirmação.", 409);
@@ -5723,7 +5723,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
     const formaTitulo = ehTituloPagamento(forma);
     if (!formaTitulo) status = "compensado";
     if (!["aguardando", "compensado", "recusado"].includes(status)) throw erroHttp("Informe uma situação válida para o pagamento.", 400);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(data) || !Number.isFinite(valorInformado) || valorInformado < 0 || (!formaTitulo && valorInformado === 0)) throw erroHttp("Informe data e valor válidos.", 400);
+    if (!dataFinanceiraValida(data) || !Number.isFinite(valorInformado) || valorInformado < 0 || (!formaTitulo && valorInformado === 0)) throw erroHttp("Informe data e valor válidos.", 400);
     const clienteAtual = queryOne<any>(
       `SELECT rc.clienteId, c.nome, c.documento
        FROM recebimentos_cliente rc JOIN clientes c ON c.id = rc.clienteId
@@ -5857,7 +5857,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
         || distribuicaoMudou;
       const agora = new Date().toISOString();
       const dataCompensacao = status === "compensado"
-        ? (/^\d{4}-\d{2}-\d{2}$/.test(dataCompensacaoInformada)
+        ? (dataFinanceiraValida(dataCompensacaoInformada)
           ? dataCompensacaoInformada
           : titulosAtuais[0]?.dataCompensacao || agora.slice(0, 10))
         : null;

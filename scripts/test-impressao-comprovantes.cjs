@@ -29,6 +29,8 @@ async function main() {
   const item=(i)=>({id:'i'+i,descricao:'PRODUTO '+i,quantidade:1,unidade:'metro',precoUnitario:10,total:10});
   const venda={id:'v',numeroSequencial:42,clienteNome:'Cliente impressão',data:'2026-10-04',subtotal:160,totalLiquido:160,valorPago:0,items:Array.from({length:16},(_,i)=>item(i))};
   const fixtures=[
+    {nome:'vale-621-referencia',tipo:'venda',venda:{...venda,numeroSequencial:621,contabilizaReceita:0,totalLiquido:2029.86,subtotal:0,items:[],origemSaldo:{ordem:{id:'o29',numero:29},descricao:'Devedor da ordem #29',vales:[206,227,228,229,313].map(numero=>({numero}))}}},
+    {nome:'ordem-com-vale-residual',tipo:'ordem',origem:'ordens-view',ordem:{...ordem,vales:[{...ordem.vales[0],numeroSequencial:621,descricao:'Devedor da ordem #29'}]}},
     {nome:'recibo-ordem',tipo:'recibo',origem:'ordens-view',recibo,ordem},
     {nome:'recibo-vale',tipo:'recibo',origem:'print-vale-detail-overlay',recibo:{...recibo,formaPagamento:'cheque_emitente',valorRecebido:120,valorAplicado:140,valorDevidoAntes:140,titulos:Array.from({length:12},(_,i)=>title(i)),vales:[{numeroSequencial:42,saldoAntes:140,valorAplicado:140,saldoDepois:0}]},ordem},
     {nome:'recibo-relatorio',tipo:'recibo',origem:'relatorios-view',recibo:{...recibo,valorDevidoAntes:2500,valorAplicado:2500,valorRecebido:2480,vales:Array.from({length:50},(_,i)=>({numeroSequencial:i+1,saldoAntes:50,valorAplicado:50,saldoDepois:0}))},ordem},
@@ -61,6 +63,7 @@ async function main() {
         assert.equal(await page.locator('.receipt-total').count(),2);
         for(const copy of await page.locator('.receipt-copy').all()) assert.ok(await copy.evaluate(e=>e.scrollHeight<=e.clientHeight+1),'Conteúdo cortado em '+f.nome);
       }
+      if (f.nome==='vale-621-referencia') { assert.equal(await page.locator('.receipt-copy').filter({hasText:'Devedor da ordem #29'}).count(),2); await page.screenshot({path:path.join(out,'vale-621-referencia.png'),fullPage:true}); }
       await page.pdf({path:path.join(out,f.nome+'.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:false});
       await page.close();
       console.log('OK: impressão '+f.nome);

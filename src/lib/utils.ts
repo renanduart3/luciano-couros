@@ -62,15 +62,22 @@ export function formatDecimal(value: number | undefined | null, decimals = 2): s
  * Parses a string containing a Brazilian number (e.g. "1.250,50" or "12,5") into a JS float
  */
 export function parseBrazilianNumber(value: string): number {
-  if (!value) return 0;
-  // Remove thousands separators (dots) and replace decimal separator (comma) with dot
-  const sanitized = value
-    .replace(/\s/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
-  
-  const parsed = parseFloat(sanitized);
-  return isNaN(parsed) ? 0 : parsed;
+  const texto = String(value ?? "").trim();
+  if (!texto) return 0;
+  // Com vírgula, pontos só podem separar grupos de milhar válidos.
+  // Sem vírgula, aceitar ponto decimal (12.50) sem multiplicar por 100.
+  let normalizado: string;
+  if (texto.includes(",")) {
+    if (!/^[+-]?(?:\d+|\d{1,3}(?:\.\d{3})+),\d*$/.test(texto)) return NaN;
+    normalizado = texto.replace(/\./g, "").replace(",", ".");
+  } else if (/^[+-]?\d{1,3}(?:\.\d{3})+$/.test(texto)) {
+    normalizado = texto.replace(/\./g, "");
+  } else {
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(texto)) return NaN;
+    normalizado = texto;
+  }
+  const numero = Number(normalizado);
+  return Number.isFinite(numero) ? numero : NaN;
 }
 
 /**

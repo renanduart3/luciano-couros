@@ -140,8 +140,10 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
   const itensAtuais = useMemo(() => {
     if (Number(venda.contabilizaReceita ?? 1) === 0) {
       const origem = venda.origemSaldo;
-      const descricoes = origem?.vales.length
-        ? origem.vales.map(v => `Saldo devedor do vale #${v.numero}${origem.ordem ? ` / ordem #${origem.ordem.numero}` : ''}`)
+      const descricoes = origem?.ordem
+        ? [`Devedor da ordem #${origem.ordem.numero}`]
+        : origem?.vales.length
+        ? origem.vales.map(v => `Devedor do vale #${v.numero}`)
         : [origem?.descricao || venda.observacoes || 'Saldo devedor transferido'];
       return descricoes.map((descricao, i): ItemComprovante => ({ id: `origem-${i}`, vendaId: venda.id, produtoId: '', descricao,
         quantidade: 0, unidade: '', precoUnitario: 0, custoUnitario: 0, desconto: 0, total: 0, custoTotal: 0, lucroBruto: 0, linhaSaldo: true }));

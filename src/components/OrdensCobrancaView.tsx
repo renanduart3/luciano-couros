@@ -107,7 +107,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
 function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void }) {
   return <section aria-label="Vales da ordem" className="overflow-hidden rounded-xl border border-slate-300 bg-white">
     <div className="flex items-center justify-between bg-slate-50 px-3 py-2"><h3 className="text-xs font-bold">Vales vinculados</h3>{!ordem.finalizadoAt && ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="rounded border px-2 py-1 text-xs font-bold text-blue-800">Alterar vales</button>}</div>
-    {ordem.vales.map(v => <div key={v.id} className="grid grid-cols-3 border-t px-3 py-2 text-xs"><button type="button" onClick={() => onOpenVale(v.vendaId)} className="text-left font-bold text-blue-800 underline">Vale #{v.numeroSequencial}</button><span>{formatDate(v.data)}</span><strong className="text-right font-mono">{formatCurrency(v.valorVinculado)}</strong></div>)}
+    {ordem.vales.map(v => <div key={v.id} className="grid grid-cols-3 border-t px-3 py-2 text-xs"><button type="button" onClick={() => onOpenVale(v.vendaId)} className="text-left font-bold text-blue-800 underline">Vale #{v.numeroSequencial}{v.origemSaldo && <span className="block text-[10px]">{v.origemSaldo.descricao}</span>}</button><span>{formatDate(v.data)}</span><strong className="text-right font-mono">{formatCurrency(v.valorVinculado)}</strong></div>)}
     <div className="flex justify-between border-t-2 bg-slate-100 p-3 text-xs font-bold"><span>Total dos vales</span><span>{formatCurrency(demonstrativoOrdem(ordem).totalVales)}</span></div>
   </section>;
 }

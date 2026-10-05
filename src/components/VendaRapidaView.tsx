@@ -95,6 +95,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   const [novoCliTelefone, setNovoCliTelefone] = useState("");
   const [fastRegisterError, setFastRegisterError] = useState("");
 
+  const [modoDevolucao, setModoDevolucao] = useState(false);
+  useEffect(() => { setModoDevolucao(false); }, [clienteSelecionado?.id]);
+
   // Products state
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtoBusca, setProdutoBusca] = useState("");
@@ -553,6 +556,9 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     })
     .filter((item) => item.quantidade !== 0);
 
+  // Indicador de saída de mercadoria; a análise financeira mantém as devoluções.
+  const metrosVendidos = quantidadesPorUnidade(analiseLinhas.filter(item => !item.itemOrigemId && item.quantidade > 0))
+    .find(item => item.unidade === "m")?.quantidade ?? 0;
   const totaisQuantidade = quantidadesPorUnidade(analiseLinhas);
   const quantidadeTotalAnalise = totaisQuantidade.length === 1 ? totaisQuantidade[0].quantidade : 0;
   const precoMedioAnalise = quantidadeTotalAnalise > 0 ? totalLiquido / quantidadeTotalAnalise : 0;
@@ -707,14 +713,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
       return;
     }
 
-    if (qty <= 0) {
+    if (!Number.isFinite(qty) || qty <= 0) {
       setFeedbackMsg({ type: "error", text: "A quantidade deve ser maior que zero." });
       quantidadeRef.current?.focus();
       return;
     }
 
-    if (price < 0) {
-      setFeedbackMsg({ type: "error", text: "O preço unitário não pode ser negativo." });
+    if (!Number.isFinite(price) || price < 0) {
+      setFeedbackMsg({ type: "error", text: "Informe um preço unitário válido e não negativo." });
       precoUnitarioRef.current?.focus();
       return;
     }
@@ -907,7 +913,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     if (!clienteSelecionado) return;
     const itensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) !== 0);
 
-    if (!Number.isFinite(descGeralPercent) || descGeralPercent < 0 || descGeralPercent > 100 || (creditoDevolucoes > 0 && creditoDevolucoes > subtotalItens - descGeral + 0.005)) {
+    if (!Number.isFinite(totalLiquido) || !Number.isFinite(descGeralPercent) || descGeralPercent < 0 || descGeralPercent > 100 || (creditoDevolucoes > 0 && creditoDevolucoes > subtotalItens - descGeral + 0.005)) {
       setFeedbackMsg({ type: "error", text: "Revise o desconto e as devoluções: o total da venda é inválido." });
       return;
     }
@@ -1706,11 +1712,6 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           </div>
 
           <div className={compact ? "" : "pt-3 border-t border-slate-100"}>
-            {clienteSelecionado && <SelecionarDevolucao clienteId={clienteSelecionado.id} vendaId={vendaEmEdicao?.id} onAdd={i=>{
-              if(itensVenda.some(r=>r.itemOrigemId===i.id)) {setFeedbackMsg({type:'error',text:'Esta compra já está na lista. Ajuste sua quantidade.'});return;}
-              setItensVenda(atuais=>[...atuais,{itemOrigemId:i.id,produtoId:i.produtoId,fornecedorId:i.fornecedorId,fornecedorReferencia:i.fornecedorReferencia,
-                nome:i.descricao,quantidade:String(-Math.min(1,i.disponivel)).replace('.',','),unidade:i.unidade,precoUnitario:i.preco.toFixed(2).replace('.',','),precoPadrao:i.preco,desconto:''}]);
-            }}/>}
             {subtotalItens-descGeral<0 && <p className="mb-2 font-bold text-violet-800">Crédito de devolução para a carteira: {formatCurrency(-(subtotalItens-descGeral))}</p>}
             {vendaEmEdicao && <div className="mb-2 flex flex-col gap-2 sm:flex-row"><input type="password" autoComplete="off" value={pinEdicao} onChange={(event) => { setPinEdicao(event.target.value.slice(0, 64)); setFeedbackMsg(null); }} placeholder="Senha do gerente para salvar" className="min-h-10 flex-1 rounded-lg border border-blue-300 bg-blue-50 px-3 text-center text-xs font-black tracking-widest outline-none focus:border-blue-600" /><button type="button" onClick={onCancelarEdicao} className="min-h-10 rounded-lg border border-slate-300 bg-white px-4 text-xs font-black uppercase text-slate-700">Cancelar edição</button></div>}
             <button 
@@ -1733,10 +1734,15 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
-          <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-            <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
-            ITENS DA VENDA · Quantidade: {formatarQuantidades(analiseLinhas)}
-          </label>
+          <div className="flex flex-col items-start gap-2">
+            <label className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-1.5 h-3 bg-emerald-500 rounded-sm"></span>
+              ITENS DA VENDA · Quantidade: {formatarQuantidades([{ quantidade: metrosVendidos, unidade: "m" }])}
+            </label>
+            {clienteSelecionado && <button type="button" role="switch" aria-checked={modoDevolucao} aria-label="Modo devolução" onClick={() => { setModoDevolucao(!modoDevolucao); setShowProdutoDropdown(false); }} className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold ${modoDevolucao ? "border-red-300 bg-red-50 text-red-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>
+              Adição <span className={`flex h-5 w-9 items-center rounded-full p-0.5 ${modoDevolucao ? "bg-red-600" : "bg-emerald-600"}`}><span className={`h-4 w-4 rounded-full bg-white transition-transform ${modoDevolucao ? "translate-x-4" : ""}`} /></span> Devolução
+            </button>}
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             {!vendaEmEdicao && orcamentoCliente && <button type="button" onClick={carregarOrcamentoClienteNaVenda} className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-[10px] font-black uppercase text-blue-900 hover:bg-blue-100"><FileText size={13} /> CARREGAR ORÇAMENTO ({orcamentoCliente.items.filter((item) => Number(item.quantidade) > 0).length})</button>}
             <div className="flex items-center gap-1 text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-200/50">
@@ -1765,7 +1771,12 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              <tr className="bg-emerald-50/70">
+              {modoDevolucao && clienteSelecionado ? <SelecionarDevolucao clienteId={clienteSelecionado.id} vendaId={vendaEmEdicao?.id} onAdd={(i, quantidade) => {
+                if (itensVenda.some(r => r.itemOrigemId === i.id)) { setFeedbackMsg({ type: "error", text: "Este produto já está nas devoluções. Ajuste sua quantidade na linha vermelha." }); return false; }
+                setItensVenda(atuais => [...atuais, { itemOrigemId: i.id, produtoId: i.produtoId, fornecedorId: i.fornecedorId, fornecedorReferencia: i.fornecedorReferencia, codigo: i.referencia,
+                  nome: i.descricao, quantidade: String(-quantidade).replace('.', ','), unidade: i.unidade, precoUnitario: i.preco.toFixed(2).replace('.', ','), precoPadrao: i.preco, desconto: '' }]);
+                return true;
+              }} /> : <tr className="bg-emerald-50/70">
                 <td className="px-2 py-2 text-center"><button ref={addBtnRef} type="button" onClick={handleAddItem} title="Adicionar item à venda" aria-label="Adicionar item à venda" className="rounded-md bg-emerald-600 p-2 text-white hover:bg-emerald-700"><Plus size={14} /></button></td>
                 <td className="relative px-2 py-2">
                   <input ref={produtoInputRef} value={produtoBusca} onChange={(event) => { setProdutoBusca(event.target.value); setProdutoSelecionado(null); setFornecedorSelecionado(null); setShowProdutoDropdown(true); }} onFocus={() => setShowProdutoDropdown(true)} onKeyDown={produtoKeyboard.onKeyDown} role="combobox" aria-autocomplete="list" aria-expanded={showProdutoDropdown && Boolean(produtoBusca.trim())} aria-controls="venda-produtos" aria-activedescendant={produtoKeyboard.activeDescendant} placeholder="Digite código, referência ou material..." className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-xs font-bold outline-none focus:border-emerald-500" />
@@ -1794,8 +1805,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} fornecedorId={fornecedorSelecionado?.fornecedorId} value={itemPreco} precoAutorizado={Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
                 <td className="px-2 py-2 text-center text-slate-300">—</td>
-              </tr>
-              {itensVenda.length === 0 ? <tr><td colSpan={7} className="p-6 text-center text-xs font-semibold text-slate-400">Use a linha verde para adicionar o primeiro item.</td></tr> : (
+              </tr>}
+              {itensVenda.length === 0 ? <tr><td colSpan={7} className="p-6 text-center text-xs font-semibold text-slate-400">{modoDevolucao ? "Selecione um produto comprado pelo cliente e informe a quantidade a devolver." : "Use a linha verde para adicionar o primeiro item."}</td></tr> : (
                 itensVenda.map((it, idx) => {
                   const qty = parseBrazilianNumber(it.quantidade);
                   const price = parseBrazilianNumber(it.precoUnitario);
@@ -1806,7 +1817,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                   const exigeAutorizacao = qty > 0 && (price * fatorPrecoEfetivo) < pisoPermitido - 0.005;
 
                   return (
-                    <tr key={`${it.produtoId}-${idx}`} className={`${it.itemOrigemId ? "bg-red-100 text-red-800" : exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} hover:bg-slate-50/70 text-slate-700 transition-colors`}>
+                    <tr key={`${it.produtoId}-${idx}`} className={`${it.itemOrigemId ? "bg-red-100 text-red-800" : exigeAutorizacao ? "bg-red-50/60" : qty > 0 ? "bg-white" : "bg-amber-50/40"} transition-colors ${it.itemOrigemId ? "hover:bg-red-100" : "hover:bg-slate-50/70 text-slate-700"}`}>
                       <td className="px-2 py-2 font-mono text-[11px] text-slate-400 font-bold">{it.codigo || "-"}</td>
                       <td className="px-2 py-2 text-xs font-bold text-slate-900">
                         {it.itemOrigemId ? "DEVOLUÇÃO: " : ""}{it.nome}
@@ -1816,8 +1827,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={it.quantidade}
-                          onChange={(event) => handleUpdateItem(idx, { quantidade: event.target.value })}
+                          value={it.itemOrigemId ? it.quantidade.replace(/^-/, "") : it.quantidade}
+                          onChange={(event) => handleUpdateItem(idx, { quantidade: it.itemOrigemId ? `-${event.target.value.replace(/-/g, "")}` : event.target.value })}
                           placeholder="0"
                           aria-label={`Quantidade de ${it.nome}`}
                           className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"

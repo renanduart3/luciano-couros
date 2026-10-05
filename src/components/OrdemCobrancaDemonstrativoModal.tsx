@@ -53,7 +53,7 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
             <div className="overflow-x-auto print:overflow-visible">
               <table className="w-full min-w-[620px] text-xs print:min-w-0">
                 <thead className="bg-slate-100 text-[10px] font-black uppercase text-slate-700"><tr><th className="p-2 text-left">Nº</th><th className="p-2 text-left">Descrição</th><th className="p-2 text-right">Negociado</th><th className="p-2 text-left">Emissão</th></tr></thead>
-                <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2">VALE</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td><td className="p-2">{formatDate(v.data)}</td></tr>)}</tbody>
+                <tbody className="divide-y divide-slate-200">{ordem.vales.map(v => <tr key={v.id}><td className="p-2 font-mono font-black">#{v.numeroSequencial}</td><td className="p-2 break-words">{v.descricao || "Vale"}</td><td className="p-2 text-right font-mono">{formatCurrency(v.valorVinculado)}</td><td className="p-2">{formatDate(v.data)}</td></tr>)}</tbody>
                 <tfoot className="border-t-2 border-slate-900 bg-slate-100 font-bold"><tr><td colSpan={2} className="p-2">TOTAL DOS VALES</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.totalVales)}</td><td/></tr></tfoot>
               </table>
             </div>

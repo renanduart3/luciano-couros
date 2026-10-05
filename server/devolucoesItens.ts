@@ -23,7 +23,7 @@ export function itensElegiveisDevolucao(clienteId: string, excluirVenda = '') {
     FROM itens_venda i JOIN vendas v ON v.id=i.vendaId
     WHERE v.clienteId=? AND v.deletedAt IS NULL AND v.status<>'cancelada' AND i.quantidade>0 AND v.id<>?
     ORDER BY v.data DESC,v.numeroSequencial DESC,i.rowid DESC`, [excluirVenda,clienteId,excluirVenda])
-    .filter(i => i.disponivel > 0.000001).map(i => {
+    .map(i => {
       const chave = JSON.stringify([i.produtoId,i.unidade]);
       if (!precos.has(chave)) precos.set(chave,ultimoPrecoDevolucao(clienteId,i.produtoId,i.unidade,excluirVenda));
       return {...i,...precos.get(chave)};
@@ -35,7 +35,7 @@ export function resolverLinhaDevolucao(entrada: any, clienteId: string, vendaId:
   usadas.add(origemId);
   const origem = itensElegiveisDevolucao(clienteId,vendaId).find(i => i.id === origemId);
   const qtd = Number(entrada.quantidade);
-  if (!origem || origem.produtoId !== entrada.produtoId || !Number.isFinite(qtd) || qtd >= 0 || -qtd > origem.disponivel + 0.000001) erro('Devolução inválida: confira o cliente, a compra e a quantidade disponível.');
+  if (!origem || origem.produtoId !== entrada.produtoId || !Number.isFinite(qtd) || qtd >= 0) erro('Devolução inválida: confira o cliente, a compra e informe uma quantidade maior que zero.');
   if (entrada.unidade && entrada.unidade !== origem.unidade) erro('A unidade da devolução deve ser a mesma da compra.');
   if (Number(entrada.desconto || 0) !== 0) erro('Devolução não aceita desconto adicional.');
   const preservar = atual?.itemOrigemId === origemId && Number(atual.quantidade)<0;

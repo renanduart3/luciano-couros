@@ -61,7 +61,12 @@ async function main() {
     const negativo=mista.items.find(i=>i.quantidade<0);
     assert.equal(negativo.total,-12); assert.equal(negativo.itemPrecoOrigemId,ultima.items[0].id);
     assert.equal((await get(compra.id)).items[0].quantidadeDisponivel,1);
-    await criar([retorno(2)],{},409);
+    const livre = await criar([linha(produtoNovo,1,50),retorno(10)]);
+    assert.equal(livre.totalLiquido,0);
+    assert.equal(livre.creditoLinhaDevolucao,70);
+    assert.equal(livre.bonusGeradoVenda,70);
+    assert.ok((await request('GET',`/clientes/${cliente.id}/itens-devolucao`)).some(i=>i.id===compra.items[0].id));
+    await request('POST',`/vendas/${livre.id}/cancelar`,{pin});
     await criar([retorno(1)],{clienteId:outro.id},409);
     await criar([retorno(1)],{autorizacaoPreco:{pin:'errado'}},403);
     await request('POST',`/vendas/${compra.id}/cancelar`,{pin},409);
@@ -70,7 +75,9 @@ async function main() {
     const pura = await criar([retorno(1.5)],{formaPagamento:'pix',vencimento:null});
     assert.equal(pura.totalLiquido,0); assert.equal(pura.creditoLinhaDevolucao,18);
     assert.equal(pura.bonusGeradoVenda,18);
-    await criar([retorno(0.1)],{},409);
+    const repetida = await criar([retorno(0.1)]);
+    assert.equal(repetida.creditoLinhaDevolucao,1.2);
+    await request('POST',`/vendas/${repetida.id}/cancelar`,{pin});
     await request('POST',`/vendas/${compra.id}/devolucoes`,{pin,data:'2026-09-08',items:[{itemVendaId:compra.items[0].id,quantidade:0.1}]},400);
     await editar(pura,pura.items);
     assert.equal(db.prepare('SELECT valor FROM cliente_bonus_movimentos WHERE id=?').get('credito_devolucao_'+pura.id).valor,18);

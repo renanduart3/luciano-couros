@@ -17,3 +17,7 @@ coverage/
 .env*
 !.env.example
 tabela-preco.xlsx
+
+# Dados do cliente e resultados locais de auditoria
+bkp-test/
+output/auditoria-cliente/

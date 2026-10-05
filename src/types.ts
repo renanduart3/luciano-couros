@@ -526,6 +526,8 @@ export interface OrdemCobrancaEvento {
 }
 
 export interface OrdemCobrancaVale {
+  descricao?: string;
+  origemSaldo?: Venda["origemSaldo"];
   id: string;
   vendaId: string;
   numeroSequencial: number;

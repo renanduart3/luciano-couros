@@ -1,5 +1,4 @@
 import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
-import { formatarQuantidades } from "../lib/quantidades";
 import React, { useState } from "react";
 import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
@@ -228,39 +227,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                   referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => setNovoPagamento(false)}/>}
                 </tbody>
               </table>{pagamentosDoVale.length > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={pagamentosDoVale.length} onPageChange={setPaginaPagamentos}/>}</div>
-
-            <div className="hidden overflow-x-auto rounded-xl border border-slate-300 bg-white md:block">
-              <table className="w-full min-w-[820px] text-sm">
-                <thead className="bg-slate-100 text-xs font-black uppercase text-slate-600">
-                  <tr><th className="p-3 text-left">Ref.</th><th className="p-3 text-left">Material</th><th className="p-3 text-right">Qtd.</th><th className="p-3 text-left">Un.</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Total</th></tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {itens.map((item) => (
-                    <tr key={item.id} className={item.quantidade<0 ? "bg-red-100 text-red-800" : "hover:bg-amber-50/50"}>
-                      <td className="p-3 font-mono text-xs font-bold text-slate-500">{item.referencia || "—"}</td>
-                      <td className="p-3 font-black text-slate-950">{item.quantidade<0 ? "DEVOLUÇÃO: " : ""}{item.descricao}</td>
-                      <td className="p-3 text-right font-mono font-black">{formatDecimal(item.quantidadeDisponivel ?? item.quantidade)}{Number(item.quantidadeDevolvida || 0) > 0 && <span className="block text-[9px] text-violet-700">devolvido: {formatDecimal(item.quantidadeDevolvida!)}</span>}</td>
-                      <td className="p-3 font-bold text-slate-600">{item.unidade}</td>
-                      <td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>
-                      <td className="p-3 text-right font-mono font-black">{formatCurrency(item.total)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-300 bg-white md:hidden">
-              {itens.map((item) => (
-                <article key={item.id} className={`space-y-2 p-3 ${item.quantidade<0 ? "bg-red-100 text-red-800" : ""}`}>
-                  <div className="flex items-start justify-between gap-3"><strong className="text-sm text-slate-950">{item.descricao}</strong><strong className="shrink-0 font-mono text-sm">{formatCurrency(item.total)}</strong></div>
-                  <div className="flex flex-wrap justify-between gap-2 text-xs font-bold text-slate-500"><span>{item.referencia || "Sem referência"}</span><span>{formatDecimal(item.quantidade)} {item.unidade} × {formatCurrency(item.precoUnitario)}</span></div>
-                </article>
-              ))}
-            </div>
-
-            {itens.length > 0 && <p className="rounded-lg border bg-white p-3 text-xs font-bold">Quantidade: {formatarQuantidades(itens.map(i => ({ ...i, quantidade: Number(i.quantidadeDisponivel ?? i.quantidade) })))}</p>}
-
-            {itens.length === 0 && !vale.origemSaldo && <p className="rounded-xl border border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">Nenhum item encontrado para esta venda.</p>}
 
             <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-3 py-2">

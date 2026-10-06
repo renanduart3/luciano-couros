@@ -76,3 +76,17 @@ assert.equal((html.match(/QUANTIDADE:/g)||[]).length,2);
 assert.equal((html.match(/VALOR TOTAL/g)||[]).length,2);
 assert.equal((html.match(/26 m/g)||[]).length,2);
 console.log('OK: unidades separadas, devolução subtraída uma vez e totais somente na última folha de cada via.');
+
+const alfabeticos = ['ZEBRA', 'ÁLAMO', 'couro'].map((descricao, i) => ({...venda.items[0], id: `alpha-${i}`, descricao}));
+const negativos = ['ZULU', 'Abacate'].map((descricao, i) => ({...venda.items[0], id: `neg-${i}`, descricao, quantidade: -0.2, total: -10}));
+for (const vencimento of [undefined, '2099-10-08']) {
+  const original = [...alfabeticos, ...negativos];
+  html = render({...venda, vencimento, items: original, devolucoes: [{valorCredito: 10, items: [{itemVendaId: 'alpha-2', quantidade: 0.2, totalCredito: 10}]}]});
+  for (const via of html.matchAll(/<tbody>(.*?)<\/tbody>/g)) {
+    const texto = via[1];
+    const nomes = ['ÁLAMO', 'couro', 'ZEBRA', 'DEVOLVIDO: Abacate', 'DEVOLVIDO: couro', 'DEVOLVIDO: ZULU'];
+    for (let i = 1; i < nomes.length; i++) assert.ok(texto.indexOf(nomes[i-1]) < texto.indexOf(nomes[i]), nomes.join(' -> '));
+  }
+  assert.deepEqual(original.map(i => i.descricao), ['ZEBRA', 'ÁLAMO', 'couro', 'ZULU', 'Abacate']);
+}
+console.log('OK: ordem alfabética em vendas e vales, devoluções separadas e itens originais preservados.');

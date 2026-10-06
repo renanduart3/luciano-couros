@@ -1773,6 +1773,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         </div>
 
         {/* Added Items Grid Table - Clean, full horizontal width, high typography contrast */}
+        <p className="text-xs font-semibold text-slate-600">Quantidade aceita frações. Para materiais vendidos por metro: 0,50 = meio metro; 0,20 = 20 cm; 0,05 = 5 cm.</p>
         <div className="max-h-[72vh] min-h-[260px] overflow-auto rounded-xl border border-slate-200 shadow-sm">
           <table className={`${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
             <colgroup>
@@ -1820,7 +1821,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                     document.body
                   )}
                 </td>
-                <td className="px-2 py-2"><input ref={quantidadeRef} value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
+                <td className="px-2 py-2"><input ref={quantidadeRef} type="text" inputMode="decimal" aria-label="Quantidade do material" title="Aceita frações: 0,50 m = meio metro; 0,20 m = 20 cm" value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
                 <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} fornecedorId={fornecedorSelecionado?.fornecedorId} value={itemPreco} precoAutorizado={Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
@@ -1851,6 +1852,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           onChange={(event) => handleUpdateItem(idx, { quantidade: it.itemOrigemId ? `-${event.target.value.replace(/-/g, "")}` : event.target.value })}
                           placeholder="0"
                           aria-label={`Quantidade de ${it.nome}`}
+                          title="Aceita frações: 0,50 m = meio metro; 0,20 m = 20 cm"
                           className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
                         />
                       </td>

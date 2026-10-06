@@ -33,6 +33,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [novo, setNovo] = useState(!pagamento);
   const [data, setData] = useState(todayLocalIso());
   const [bonus, setBonus] = useState("");
+  const [bonusAtivo, setBonusAtivo] = useState(false);
   const [saldoBonus, setSaldoBonus] = useState(0);
   useEffect(() => { if (editando) api.getCarteiraResumo(clienteId).then(r => setSaldoBonus(Number(r.saldoBonus || 0))).catch(() => setSaldoBonus(0)); }, [clienteId, editando]);
   const [valor, setValor] = useState("");
@@ -53,7 +54,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
   const [concluido, setConcluido] = useState(false);
   const titulo = ehTituloPagamento(forma);
   const total = titulo ? Math.round(titulos.reduce((s, t) => s + (t.status === "recusado" ? 0 : Number(t.valor || 0)), 0) * 100) / 100 : parseBrazilianNumber(valor);
-  const bonusUsado = forma === "bonus" ? total : parseBrazilianNumber(bonus);
+  const bonusUsado = forma === "bonus" ? total : bonusAtivo ? parseBrazilianNumber(bonus) : 0;
   const totalAbatimento = forma === "bonus" ? total : total + bonusUsado;
   const recebido = pagamento ? recebidoDaLinha(pagamento, vendaIdContexto, ordemCobrancaId) : 0;
   const colunas = colunasAntes + 6;
@@ -63,6 +64,7 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
     setRevisaoEdicao(projecao?.revisao || existente?.revisao);
     setNovo(!pagamento || criar); setConcluido(false); setPlano(null); setConfirmado(false); setErro(""); setPin("");
     setBonus(String(existente?.formaPagamento === "bonus" ? 0 : existente?.bonusUtilizado || 0).replace(".", ","));
+    setBonusAtivo(Number(existente?.bonusUtilizado || 0) > 0);
     setData(existente?.data || todayLocalIso());
     setValor(Number(existente ? (existente.formaPagamento === "bonus" ? existente.bonusUtilizado : existente.valorRecebido) : saldo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const formaInicial = existente?.formaPagamento || formaPagamentoPrevista || pagamento?.formaPagamento || "pix";
@@ -128,8 +130,8 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
         {pagamento?.status === "ativo" && pagamento.bonusGerado > 0 && <span className="block text-[10px] font-sans text-violet-800">Excedente em bônus: {formatCurrency(pagamento.bonusGerado)}</span>}
       </> : "—"}</td>
       <td data-label="Recebido" className="p-2 text-right font-mono font-bold text-emerald-800">{pagamento ? formatCurrency(recebido) : "—"}</td>
-      <td data-label="Forma de pagamento" className="p-2">{editando ? <select aria-label={`Forma ${referencia}`} value={forma} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => { setForma(e.target.value); setTitulos([]); setSituacao(projecao && situacao === "em_aberto" ? "em_aberto" : ehTituloPagamento(e.target.value) ? "aguardando" : "compensado"); }} className={`${campo} min-w-32`}>{FORMAS_PAGAMENTO.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select> : <>{projecao ? FORMAS_PAGAMENTO.find(f => f.value === projecao.dados.formaPagamento)?.label : pagamento ? FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label || pagamento.formaPagamento : FORMAS_PAGAMENTO.find(f => f.value === formaPagamentoPrevista)?.label || "—"}<ResumoParcelamentoCartao formaPagamento={(pagamento || projecao?.dados)?.formaPagamento || ""} parcelasCartao={(pagamento || projecao?.dados)?.parcelasCartao} valoresParcelasCartao={(pagamento || projecao?.dados)?.valoresParcelasCartao} valorTotal={(pagamento || projecao?.dados)?.valorRecebido || 0} className="mt-1" /></>}</td>
-      <td data-label="Situação" className="p-2">{editando ? <select aria-label={`Status ${referencia}`} value={situacao} disabled={saving || revisando || concluido} onChange={e => void trocarStatus(e.target.value as Situacao)} className={`${campo} min-w-32`}>
+      <td data-label="Forma de pagamento" className="p-2">{editando ? <select aria-label={`Forma ${referencia}`} value={forma} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => { setForma(e.target.value); setTitulos([]); setSituacao(projecao && situacao === "em_aberto" ? "em_aberto" : ehTituloPagamento(e.target.value) ? "aguardando" : "compensado"); }} className={`${campo} min-w-32`}>{FORMAS_PAGAMENTO.filter(f => f.value !== "bonus" || forma === "bonus").map(f => <option key={f.value} value={f.value}>{f.label}</option>)}</select> : <>{projecao ? FORMAS_PAGAMENTO.find(f => f.value === projecao.dados.formaPagamento)?.label : pagamento ? FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label || pagamento.formaPagamento : FORMAS_PAGAMENTO.find(f => f.value === formaPagamentoPrevista)?.label || "—"}<ResumoParcelamentoCartao formaPagamento={(pagamento || projecao?.dados)?.formaPagamento || ""} parcelasCartao={(pagamento || projecao?.dados)?.parcelasCartao} valoresParcelasCartao={(pagamento || projecao?.dados)?.valoresParcelasCartao} valorTotal={(pagamento || projecao?.dados)?.valorRecebido || 0} className="mt-1" /></>}</td>
+      <td data-label="Situação" className="p-2 font-bold">{editando ? <select aria-label={`Status ${referencia}`} value={situacao} disabled={saving || revisando || concluido} onChange={e => void trocarStatus(e.target.value as Situacao)} className={`${campo} min-w-32`}>
         {!onEstornar && !novo && pagamento?.status === "ativo" && <option value="em_aberto">Em aberto</option>}
         {projecao && <option value="em_aberto">Planejado (não recebido)</option>}<option value="compensado">Confirmado</option>{titulo && <option value="aguardando">Aguardando</option>}{titulo && !novo && <option value="recusado">Recusado</option>}
       </select> : <span className={pagamento?.statusPagamento === "compensado" ? "text-emerald-800" : "text-amber-800"}>{pagamento ? nomes[pagamento.statusPagamento] : projecao ? "Planejado · não recebido" : statusSemPagamento || nomes.em_aberto}</span>}</td>
@@ -143,10 +145,16 @@ export function LinhaPagamento({ children, colunasAntes = 0, pagamento, clienteI
       </>}</div></td>
     </tr>
     {editando && <tr className="payment-editor-row payment-compact bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">
-      {(projecao || situacao !== "em_aberto") && <div className="my-2 rounded-lg border border-violet-200 bg-violet-50 p-2 text-xs">
-        <span>Bônus disponível: {formatCurrency(saldoBonus + (!novo && pagamento?.status === "ativo" ? pagamento.bonusUtilizado : 0))}</span>
-        {forma !== "bonus" && <label className="ml-3 inline-flex items-center gap-2">Bônus a utilizar<input aria-label={`Bônus ${referencia}`} inputMode="decimal" value={bonus} onChange={e => { if (!titulo) setValor(Math.max(0, parseBrazilianNumber(valor) + parseBrazilianNumber(bonus) - parseBrazilianNumber(e.target.value)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} disabled={saving || concluido} className={`${campo} max-w-32`}/></label>}
-        <span className="ml-3 font-bold">Pagamento + bônus: {formatCurrency(totalAbatimento)}</span>
+      {(projecao || situacao !== "em_aberto") && <div className="my-2 space-y-2 text-xs">
+        {forma !== "bonus" && <div className="flex items-center gap-2"><span className="font-bold text-slate-700">Bônus</span><button type="button" role="switch" aria-label={`Ativar bônus ${referencia}`} aria-checked={bonusAtivo} disabled={saving || concluido} onClick={() => {
+          if (bonusAtivo && !titulo) setValor(Math.max(0, total + bonusUsado).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+          setBonusAtivo(!bonusAtivo); setBonus("");
+        }} className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 ${bonusAtivo ? "bg-violet-600" : "bg-slate-300"}`}><span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${bonusAtivo ? "translate-x-4" : "translate-x-0"}`} /></button></div>}
+        {(bonusAtivo || forma === "bonus") && <div className="flex flex-wrap items-center gap-3 rounded-lg border border-violet-200 bg-violet-50 p-2 text-violet-900">
+          <span className="font-bold">Saldo da carteira: {formatCurrency(saldoBonus + (!novo && pagamento?.status === "ativo" ? pagamento.bonusUtilizado : 0))}</span>
+          {forma !== "bonus" && <label className="inline-flex items-center gap-2">Bônus a utilizar<input aria-label={`Bônus ${referencia}`} inputMode="decimal" value={bonus} onChange={e => { const proximo = parseBrazilianNumber(e.target.value); if (!titulo && Number.isFinite(proximo)) setValor(Math.max(0, total + bonusUsado - proximo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} disabled={saving || concluido} placeholder="0,00" className={`${campo} max-w-32`}/></label>}
+          <span className="font-bold">Pagamento + bônus: {formatCurrency(totalAbatimento)}</span>
+        </div>}
       </div>}
       {(projecao || situacao !== "em_aberto") && <><TitulosPagamentoEditor formaPagamento={forma} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={parseBrazilianNumber(valor)} titulos={titulos} onChange={itens => { const atualizados = itens.map(t => ({ ...t, status: t.status || situacao as TituloRecebimento["status"], dataCompensacao: (t.status || situacao) === "compensado" ? t.dataCompensacao || data : undefined })); setTitulos(atualizados); if (atualizados.length && !(projecao && situacao === "em_aberto")) setSituacao(atualizados.every(t => t.status === "recusado") ? "recusado" : atualizados.some(t => t.status === "aguardando") ? "aguardando" : "compensado"); }} editarStatus={!novo} referenciaPagamento={referencia} limiteLinhas={Math.max(12, pagamento?.titulos.length || 0)}/>{forma === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={forma} parcelas={cartao} onChange={setCartao} valorTotal={total} disabled={saving || concluido}/>}</>}
       {revisando && <p className="text-xs">Conferindo estorno…</p>}

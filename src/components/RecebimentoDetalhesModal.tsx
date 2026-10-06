@@ -49,7 +49,7 @@ export function RecebimentoDetalhesModal({ recebimentoId, onSaved, onClose, onCo
       <div><h2 id="recebimento-titulo" className="font-bold">Detalhes do recebimento</h2>{pagamento && <p className="mt-1">{pagamento.clienteNome}{pagamento.clienteDocumento && <span className="ml-2 text-slate-300">CPF/CNPJ: {pagamento.clienteDocumento}</span>}</p>}</div>
       <div className="flex gap-2">{pagamento && <button title="Abrir comprovante" aria-label="Abrir comprovante" disabled={saving} type="button" onClick={() => onComprovante(recebimentoId)} className="inline-flex items-center gap-1 rounded border border-slate-500 px-2 py-1 font-bold"><FileText size={16}/> Abrir comprovante</button>}<button disabled={saving} type="button" onClick={onClose} className="rounded border border-slate-500 px-2">Fechar</button></div>
     </header>
-    <div className="space-y-2 p-3">
+    <div className="space-y-2 p-3 pb-8">
       {erro && <p role="alert" className="text-red-800">{erro}</p>}
       {!pagamento && !erro && <p>Carregando recebimento…</p>}
       {pagamento && <>

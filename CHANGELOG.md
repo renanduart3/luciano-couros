@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.38.5 — 2026-10-06
+
+- Comprovantes de vendas e vales ordenam materiais por nome, mantendo as devoluções separadas e as duas vias.
+- Bônus nos pagamentos de vales passa a ser habilitado por toggle; saldo da carteira e valor aparecem após ativar, com limpeza ao desativar e preservação dos pagamentos históricos.
+- Mais espaço no rodapé dos detalhes do recebimento e status dos pagamentos em negrito.
+- Detalhes do vale sem listagem duplicada dos materiais; itens continuam na aba Comprovante.
+- Comprovante de pagamento sem endereço/telefone do cliente e linhas de data/operador; coluna Pagamento exibe a data do recebimento.
+- Campos de quantidade orientam a venda fracionada (0,50 m, 0,20 m e 0,05 m) e usam teclado decimal no celular.
+
 ## 1.38.4 — 2026-10-06
 
 - Publicação de consolidação do fluxo de bônus por toggle, dos ajustes do grid de vendas e do backup automático com retenção de 7 dias.

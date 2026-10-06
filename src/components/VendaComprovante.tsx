@@ -171,7 +171,13 @@ export function VendaComprovante({ venda }: VendaComprovanteProps) {
         linhaDevolucao: true
       }];
     });
-    return [...itensOriginais, ...linhasDevolvidas];
+    const comparar = (a: ItemComprovante, b: ItemComprovante) =>
+      a.descricao.localeCompare(b.descricao, "pt-BR", { sensitivity: "base", numeric: true });
+    const linhas = [...itensOriginais, ...linhasDevolvidas];
+    return [
+      ...linhas.filter(item => !item.linhaDevolucao).sort(comparar),
+      ...linhas.filter(item => item.linhaDevolucao).sort(comparar),
+    ];
   }, [venda]);
   // Cada faixa financeira ocupa aproximadamente três linhas da tabela.
   const faixasExtras = Number(Boolean(venda.desconto || venda.devolucoes?.length || venda.items?.some(i => i.quantidade < 0)))

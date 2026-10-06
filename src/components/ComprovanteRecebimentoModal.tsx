@@ -78,8 +78,6 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
 
         <section className="payment-receipt-client">
           <span className="wide"><b>CLIENTE:</b> {comprovante.clienteNome}</span><span><b>CPF/CNPJ:</b> {comprovante.clienteDocumento || "NÃO INFORMADO"}</span>
-          <span className="wide"><b>ENDEREÇO:</b> {comprovante.clienteEndereco || "NÃO INFORMADO"}</span><span><b>TELEFONE:</b> {comprovante.clienteTelefone || "NÃO INFORMADO"}</span>
-          <span><b>DATA DO PAGAMENTO:</b> {formatDate(comprovante.data)}</span><span><b>OPERADOR:</b> {comprovante.operadorNome || "SISTEMA"}</span>
         </section>
 
         <section className="payment-receipt-section">
@@ -93,8 +91,8 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
 
         <section className="payment-receipt-section">
           <h3>FORMA DE PAGAMENTO</h3>
-          <div className="payment-receipt-table-wrap"><table className="payment-receipt-methods"><thead><tr><th>FORMA / TITULAR</th><th>Nº CHEQUE / BOLETO</th><th>VENCIMENTO</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead><tbody>
-            {titulos.map((titulo, indice) => <tr key={titulo.id || indice} className={titulo.status === "recusado" ? "rejected" : ""}><td><b>{nomeTipo(titulo)}</b><small>{titulo.nomeTitular} · {titulo.documentoTitular || "CPF/CNPJ não informado"}</small>{titulo.observacao && <small>Obs.: {titulo.observacao}</small>}</td><td>{titulo.numeroDocumento}</td><td>{formatDate(titulo.vencimento)}</td><td>{(titulo.status || "aguardando").toUpperCase()}{titulo.dataCompensacao ? <small>em {formatDate(titulo.dataCompensacao)}</small> : null}{titulo.motivoStatus ? <small>{titulo.motivoStatus}</small> : null}</td><td className="number strong">{formatCurrency(titulo.valor)}</td></tr>)}
+          <div className="payment-receipt-table-wrap"><table className="payment-receipt-methods"><thead><tr><th>FORMA / TITULAR</th><th>Nº CHEQUE / BOLETO</th><th>PAGAMENTO</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead><tbody>
+            {titulos.map((titulo, indice) => <tr key={titulo.id || indice} className={titulo.status === "recusado" ? "rejected" : ""}><td><b>{nomeTipo(titulo)}</b><small>{titulo.nomeTitular} · {titulo.documentoTitular || "CPF/CNPJ não informado"}</small>{titulo.observacao && <small>Obs.: {titulo.observacao}</small>}</td><td>{titulo.numeroDocumento}</td><td>{formatDate(comprovante.data)}</td><td>{(titulo.status || "aguardando").toUpperCase()}{titulo.dataCompensacao ? <small>em {formatDate(titulo.dataCompensacao)}</small> : null}{titulo.motivoStatus ? <small>{titulo.motivoStatus}</small> : null}</td><td className="number strong">{formatCurrency(titulo.valor)}</td></tr>)}
             {titulos.length === 0 && comprovante.formaPagamento !== "bonus" && <tr><td><b>{forma}</b>{parcelamento && <small>{parcelamento}</small>}</td><td>—</td><td>{formatDate(comprovante.data)}</td><td>{comprovante.status === "recusado" ? "RECUSADO" : "RECEBIDO"}</td><td className="number strong">{formatCurrency(comprovante.valorRecebido)}</td></tr>}
             {bonusUtilizado > 0 && <tr><td><b>BÔNUS UTILIZADO</b></td><td>—</td><td>{formatDate(comprovante.data)}</td><td>APLICADO</td><td className="number strong">{formatCurrency(bonusUtilizado)}</td></tr>}
           </tbody><tfoot><tr><td colSpan={4}>TOTAL REGISTRADO (TÍTULOS VÁLIDOS + DINHEIRO + BÔNUS)</td><td className="number">{formatCurrency((titulos.length ? totalTitulosValidos : comprovante.valorRecebido) + bonusUtilizado)}</td></tr></tfoot></table></div>

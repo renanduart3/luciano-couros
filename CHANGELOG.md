@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.38.4 — 2026-10-06
+
+- Publicação de consolidação do fluxo de bônus por toggle, dos ajustes do grid de vendas e do backup automático com retenção de 7 dias.
+- Conferência de TypeScript, build, regressões financeiras, agendamento, restauração e recuperação de backups, além do abatimento parcial via Pix/vale no navegador.
+
 ## 1.38.3 — 2026-10-05
 
 - Removida a opção Bônus das formas de pagamento de novas vendas. O toggle controla exclusivamente o crédito abatido; o restante pode ser recebido por outra forma ou ficar no vale.

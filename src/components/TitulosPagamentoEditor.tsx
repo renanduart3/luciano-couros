@@ -19,6 +19,7 @@ interface Props {
   referenciaPagamento?: string;
   limiteLinhas?: number;
   editarStatus?: boolean;
+  mostrarObservacao?: boolean;
 }
 
 const novoTitulo = (tipo: string, nome = "", documento = ""): TituloRecebimento => ({
@@ -31,7 +32,7 @@ const novoTitulo = (tipo: string, nome = "", documento = ""): TituloRecebimento 
   numeroDocumento: "",
 });
 
-export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome, clienteDocumento, titulos, onChange, referenciaPagamento, limiteLinhas = 12, editarStatus = false }: Props) {
+export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome, clienteDocumento, titulos, onChange, referenciaPagamento, limiteLinhas = 12, editarStatus = false, mostrarObservacao = true }: Props) {
   const habilitado = ehTituloPagamento(formaPagamento);
   const terceiro = ehTituloTerceiro(formaPagamento);
   const boleto = ehDuplicata(formaPagamento);
@@ -97,7 +98,7 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
   const possuiLegadoAcimaDoLimite = titulos.length > limiteLinhas;
 
   const campo = "titulo-pagamento-input h-9 w-full min-w-0 rounded-none border-0 bg-transparent px-2 text-xs text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-600 disabled:text-red-700";
-  const cabecalhos = ["#", "Nome", "CPF/CNPJ", "Valor (R$)", "Vencimento", boleto ? "Nº boleto" : "Nº cheque", "Obs.", ...(editarStatus ? ["Situação", "Compensação"] : []), ""];
+  const cabecalhos = ["#", "Nome", "CPF/CNPJ", "Valor (R$)", "Vencimento", boleto ? "Nº boleto" : "Nº cheque", ...(mostrarObservacao ? ["Obs."] : []), ...(editarStatus ? ["Situação", "Compensação"] : []), ""];
 
   return <section className="titulos-planilha min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-sky-50 px-3 py-2">
@@ -118,7 +119,7 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
             <td className="w-24 border-r border-slate-200"><input aria-label={rotulo("Valor")} required disabled={recusado} type="number" min="0.01" step="0.01" value={titulo.valor || ""} onChange={e => atualizar(indice, { valor: Number(e.target.value) })} className={`${campo} text-right font-mono font-bold`}/>{titulo.valorOriginal !== undefined && Math.abs(titulo.valorOriginal - titulo.valor) > 0.005 && <span className="block px-2 pb-1 text-[10px] text-slate-500">Original: {formatCurrency(titulo.valorOriginal)}</span>}</td>
             <td className="w-32 border-r border-slate-200"><input aria-label={rotulo("Vencimento")} required disabled={recusado} type="date" value={titulo.vencimento} onChange={e => atualizar(indice, { vencimento: e.target.value })} className={campo}/></td>
             <td className="w-24 border-r border-slate-200"><input aria-label={rotulo(boleto ? "Número do boleto" : "Número do cheque")} required disabled={recusado} value={titulo.numeroDocumento} onChange={e => atualizar(indice, { numeroDocumento: e.target.value.slice(0, 80) })} className={campo}/></td>
-            <td className="min-w-40 border-r border-slate-200"><input aria-label={rotulo("Observação")} disabled={recusado} value={titulo.observacao || ""} onChange={e => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder="Opcional" className={campo}/></td>
+            {mostrarObservacao && <td className="min-w-40 border-r border-slate-200"><input aria-label={rotulo("Observação")} disabled={recusado} value={titulo.observacao || ""} onChange={e => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder="Opcional" className={campo}/></td>}
             {editarStatus && <><td className="w-36 border-r border-slate-200"><select aria-label={rotulo("Situação")} value={titulo.status || "aguardando"} onChange={e => atualizar(indice, { status: e.target.value as TituloRecebimento["status"], dataCompensacao: e.target.value === "compensado" ? titulo.dataCompensacao : undefined })} className={campo}><option value="aguardando">Aguardando</option><option value="compensado">Confirmado</option><option value="recusado">Recusado</option></select></td><td className="min-w-32 border-r border-slate-200">{titulo.status === "compensado" && <input aria-label={rotulo("Compensação")} type="date" value={titulo.dataCompensacao || ""} onChange={e => atualizar(indice, { dataCompensacao: e.target.value })} className={campo}/>}</td></>}
             <td className="w-10 text-center"><button type="button" disabled={titulos.length === 1 || recusado} onClick={() => publicarTitulos(titulosAtuais.current.filter((_, atual) => atual !== indice))} aria-label={`Excluir linha ${indice + 1}`} className="inline-flex h-8 w-8 items-center justify-center rounded text-red-700 hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-sky-600 disabled:invisible"><Trash2 size={14}/></button></td>
           </tr>;

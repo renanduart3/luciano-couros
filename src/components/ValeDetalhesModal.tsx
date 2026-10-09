@@ -1,5 +1,6 @@
+import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
@@ -9,7 +10,7 @@ import { useEhGerente } from "../auth/AuthContext";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
 import { financeiroVale } from "../lib/financeiro";
-import { resumoRecebimentos } from "../lib/resumoRecebimentos";
+import { PagamentoValesModal } from "./PagamentoValesModal";
 import { LinhaPagamento } from "./LinhaPagamento";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
@@ -25,13 +26,15 @@ interface ValeDetalhesModalProps {
 }
 
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
+  const [anotacao, setAnotacao] = useState(vale.observacoes || "");
+  useEffect(() => { setAnotacao(vale.observacoes || ""); }, [vale.id, vale.observacoes]);
   const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
   const gerente = useEhGerente();
   const bloqueado = ordemCobranca?.status === "aberta" || Boolean(vale.finalizadoAt);
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
   const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); setPaginaPagamentos(1); };
-  const [aba, setAba] = useState<"itens" | "comprovante">("itens");
+  const [aba, setAba] = useState<"itens" | "comprovante" | "devolucoes" | "anotacoes">("itens");
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
   const [reabrirFinalizacao, setReabrirFinalizacao] = useState(false);
@@ -53,7 +56,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const financeiro = financeiroVale(vale);
   const pagamentosDoVale = vale.recebimentos?.length ? vale.recebimentos : legado ? [legado] : [];
   const pagamentosPagina = paginate(pagamentosDoVale, paginaPagamentos, 10);
-  const resumo = resumoRecebimentos(vale.recebimentos || [], vale.id);
   const devolucoes = vale.devolucoes || [];
   const totalDevolvido = devolucoes.reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0);
   const linkWhatsApp = whatsappUrl(vale.clienteTelefone);
@@ -133,13 +135,15 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
             <span className="vale-header-symbol"><FileText size={22}/></span>
-            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>{formatDate(vale.data)}</span></div>
+            <div className="min-w-0 flex-1"><h2>Vale #{vale.numeroSequencial}</h2><p>{vale.clienteNome || "Cliente não informado"}</p><span>CPF/CNPJ: {vale.clienteDocumento || "Não informado"}</span></div>
             <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button"><X size={20}/></button>
           </div>
           <div className="vale-header-navigation">
             <nav aria-label="Navegação do vale" className="vale-tabs">
               <button type="button" aria-pressed={aba === "itens"} onClick={() => setAba("itens")}><List size={16}/> Detalhes</button>
               <button type="button" aria-pressed={aba === "comprovante"} onClick={() => setAba("comprovante")}><FileText size={16}/> Comprovante</button>
+              <button type="button" aria-pressed={aba === "devolucoes"} onClick={() => setAba("devolucoes")}><RotateCcw size={16}/> Histórico de devoluções</button>
+              <button type="button" aria-pressed={aba === "anotacoes"} onClick={() => setAba("anotacoes")}><FileText size={16}/> Anotações</button>
             </nav>
             <div className="vale-header-tools">
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
@@ -157,7 +161,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         </header>
         {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="vale" id={vale.id} onClose={() => setReabrirFinalizacao(false)} onSaved={atualizarPagamentos}/>}
         {gerente && vale.finalizadoAt && onUpdated && <div className="p-3 print:hidden"><button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-bold text-white">Reabrir para editar</button></div>}
-        <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)}/>
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
@@ -195,19 +198,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>}
 
             <p className="text-xs text-slate-600">Vencimento: {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} · {itens.length} itens{totalDevolvido > 0 && ` · Devolvido: ${formatCurrency(totalDevolvido)}`}</p>
-            {!!vale.recebimentos?.length && <div className="rounded-xl border border-slate-300 bg-white p-3">
-              <h3 className="mb-2 text-xs font-bold text-slate-700">Valores dos recebimentos vinculados</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div><p className="text-xs text-slate-600">Cheques / boletos a compensar (incluídos no pago)</p><strong className="font-mono text-lg text-amber-800">{formatCurrency(financeiro.aguardando)}</strong></div>
-                <div><p className="text-xs text-slate-600">Excedente gerado em bônus</p><strong className="font-mono text-lg text-violet-800">{formatCurrency(financeiro.bonus)}</strong></div>
-              </div>
-              {resumo.bonusUtilizado > 0 && <p className="mt-2 text-xs text-slate-600">Bônus usado: {formatCurrency(resumo.bonusUtilizado)}.</p>}
-            </div>}
-
             {bloqueado && <p className="text-xs font-bold text-blue-900">Pagamentos gerenciados pela ordem.</p>}
             {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
-            <div className="overflow-x-auto rounded-xl border border-slate-300 bg-white">
+            <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
+              <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>
+            <div className="min-w-0 overflow-x-auto rounded-xl border border-slate-300 bg-white">
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
               <table className="payments-table w-full min-w-[720px] text-xs">
                 <thead className="bg-slate-50 text-left"><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Situação", "Ações"].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
@@ -221,13 +217,16 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
                     onDetalhes={legado ? undefined : setRecebimentoAberto}
                     onComprovante={legado ? undefined : id => void abrirComprovanteRecebimento(id)}
                     editavel={!bloqueado && Boolean(onUpdated) && vale.status !== "cancelada" && gerente}/>
-                )}{!bloqueado && novoPagamento && <LinhaPagamento key="novo" iniciarEditando clienteId={vale.clienteId}
-                  clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
-                  saldo={Number(vale.saldoRestante)} alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
-                  referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => setNovoPagamento(false)}/>}
+                )}
                 </tbody>
               </table>{pagamentosDoVale.length > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={pagamentosDoVale.length} onPageChange={setPaginaPagamentos}/>}</div>
+            </div>
 
+          </div>
+        ) : aba === "anotacoes" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden"><AnotacoesDocumento valor={anotacao} onSave={async (texto, anterior) => { const atualizado = await api.saveAnotacaoVale(vale.id, texto, anterior); setAnotacao(atualizado.observacoes || ""); onUpdated?.(atualizado); }}/></div>
+        ) : aba === "devolucoes" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden">
             <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-3 py-2">
                 <h3 className="flex items-center gap-2 text-xs font-black uppercase text-violet-950"><RotateCcw size={15} /> Histórico de devoluções</h3>
@@ -257,7 +256,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               )}
             </div>
 
-            {vale.observacoes && <div className="rounded-xl border border-slate-300 bg-white p-3"><span className="text-[10px] font-black uppercase text-slate-500">Observações</span><p className="mt-1 text-sm font-bold text-slate-800">{vale.observacoes}</p></div>}
           </div>
         ) : (
           <div className="min-h-0 flex-1 max-w-full overflow-auto p-2 sm:p-4 print:overflow-visible print:p-0">
@@ -265,6 +263,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
           </div>
         )}
       </div>
+      {novoPagamento && !bloqueado && <PagamentoValesModal clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} vales={[vale]} onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos} fecharAoSalvar/>}
     </div>
   );
 }

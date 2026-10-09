@@ -17,6 +17,7 @@ import { initDatabase, queryAll, queryOne, execute, runInTransaction, db, BACKUP
 
 import backupFiles from "./scripts/backup-files.cjs";
 import backupScheduler from "./scripts/backup-scheduler.cjs";
+import backupReplication from "./scripts/backup-replication.cjs";
 import folderPicker from "./scripts/folder-picker.cjs";
 
 // Initialize express app
@@ -448,14 +449,23 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 function getBackupSettings() {
-  const folder = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_pasta'")?.valor || BACKUP_DIR;
+  const configured = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_pasta'")?.valor || "";
+  // Legacy settings pointing at the default local folder do not enable a second destination.
+  const folder = configured && path.resolve(configured) !== path.resolve(BACKUP_DIR) ? configured : "";
   const time = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_horario'")?.valor || "18:00";
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Horario de backup invalido.");
-  return { folder, time };
+  return { folder, time, localFolder: BACKUP_DIR };
 }
 function validateBackupFolder(folder: string) {
   if (!path.isAbsolute(folder)) throw new Error("Informe o caminho absoluto da pasta no computador do servidor.");
   const resolvedFolder = fs.existsSync(folder) ? fs.realpathSync(folder) : path.resolve(folder);
+  const localFolder = fs.existsSync(BACKUP_DIR) ? fs.realpathSync(BACKUP_DIR) : path.resolve(BACKUP_DIR);
+  for (const [parent, child] of [[localFolder, resolvedFolder], [resolvedFolder, localFolder]]) {
+    const relative = path.relative(parent, child);
+    if (!relative || (relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative))) {
+      throw new Error("Escolha uma pasta do Drive separada da pasta de backups locais.");
+    }
+  }
   const projectRelative = path.relative(fs.realpathSync(process.cwd()), resolvedFolder);
   if (!projectRelative || (projectRelative !== ".." && !projectRelative.startsWith(".." + path.sep) && !path.isAbsolute(projectRelative))) throw new Error("Escolha uma pasta de backups fora da instalacao do sistema.");
   const relative = path.relative(resolvedFolder, fs.realpathSync(path.dirname(getActiveDbFile())));
@@ -464,10 +474,20 @@ function validateBackupFolder(folder: string) {
   }
 }
 function backupDirectory() {
+  return BACKUP_DIR;
+}
+function cloudBackupDirectory() {
   const { folder } = getBackupSettings();
-  if (folder !== BACKUP_DIR) validateBackupFolder(folder);
-  if (folder !== BACKUP_DIR && !fs.statSync(folder).isDirectory()) throw new Error("Pasta de backup indisponivel.");
+  if (!folder) return "";
+  validateBackupFolder(folder);
+  if (!fs.statSync(folder).isDirectory()) throw new Error("Pasta do Drive indisponivel.");
   return folder;
+}
+function backupSource(filename: string) {
+  if (fs.existsSync(path.join(backupDirectory(), path.basename(filename)))) return backupFiles.safeBackupPath(backupDirectory(), filename);
+  const cloud = cloudBackupDirectory();
+  if (!cloud) throw new Error("Backup nao encontrado.");
+  return backupFiles.safeBackupPath(cloud, filename);
 }
 function getBackupState(): any {
   const raw = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = 'backup_estado'")?.valor;
@@ -476,18 +496,67 @@ function getBackupState(): any {
 function saveBackupState(state: any) {
   execute("INSERT INTO configuracoes (chave, valor) VALUES ('backup_estado', ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor", [JSON.stringify(state)]);
 }
+function initializeBackupStrategy() {
+  const state = getBackupState();
+  if (state.strategy === "local-and-drive-v1") return;
+  // Old success/slot may describe a file saved only in Drive. Establish a local copy now.
+  saveBackupState({ strategy: "local-and-drive-v1", failures: 0, nextRetry: 0,
+    cloud: getBackupSettings().folder && state.lastSuccess ? { lastSuccess: state.lastSuccess } : {} });
+}
 function backupStatus() {
   const state = getBackupState();
-  return { ...getBackupSettings(), failures: state.failures || 0, alert: (state.failures || 0) >= 3,
+  const settings = getBackupSettings();
+  const cloud = settings.folder ? state.cloud || {} : {};
+  return { ...settings, failures: state.failures || 0,
+    alert: (state.failures || 0) >= 3 || Boolean(state.cleanupError) || Boolean(cloud.lastError),
     lastSuccess: state.lastSuccess || null, lastError: state.lastError || null,
-    nextRetry: state.nextRetry ? new Date(state.nextRetry).toISOString() : null };
+    cleanupError: state.cleanupError || null,
+    nextRetry: state.nextRetry ? new Date(state.nextRetry).toISOString() : null,
+    cloud: { enabled: Boolean(settings.folder), failures: cloud.failures || 0,
+      lastSuccess: cloud.lastSuccess || null, lastError: cloud.lastError || null,
+      nextRetry: cloud.nextRetry ? new Date(cloud.nextRetry).toISOString() : null } };
+}
+function pruneLocalBackups() {
+  let cleanupError = "";
+  try { backupFiles.pruneBackups(backupDirectory(), 7); }
+  catch (error: any) { cleanupError = error.message; console.error("Falha na limpeza local:", error); }
+  const state = getBackupState();
+  if ((state.cleanupError || "") !== cleanupError) saveBackupState({ ...state, cleanupError });
+}
+function copyBackupsToCloud(force = false) {
+  if (!getBackupSettings().folder) return;
+  const state = getBackupState();
+  const cloud = state.cloud || {};
+  const now = new Date();
+  let progress = cloud;
+  if (!force && cloud.nextRetry && now.getTime() < cloud.nextRetry) return;
+  try {
+    const folder = cloudBackupDirectory();
+    const errors: string[] = [];
+    try { backupFiles.pruneBackups(folder, 7, now); } catch (error: any) { errors.push(error.message); }
+    let copied = false;
+    for (const name of backupReplication.recentSnapshots(backupDirectory(), now, isMockModeEnabled() ? "mock" : "live").reverse()) {
+      try { copied = backupReplication.copySnapshot(backupDirectory(), folder, name) || copied; }
+      catch (error: any) { errors.push(`${name}: ${error.message}`); }
+    }
+    if (copied) progress = { ...cloud, lastSuccess: now.toISOString() };
+    if (errors.length) throw new Error(errors.join('; '));
+    const next = { ...progress, failures: 0, lastError: "", nextRetry: 0 };
+    if (JSON.stringify(next) !== JSON.stringify(cloud)) saveBackupState({ ...getBackupState(), cloud: next });
+  } catch (error) {
+    saveBackupState({ ...getBackupState(), cloud: backupScheduler.failed(progress, now, error) });
+    console.error("Falha na copia para a pasta do Drive:", error);
+  }
 }
 async function createBackupFile(type: "manual" | "auto" = "manual"): Promise<string> {
   if (backupBusy || restoringBackup) throw new Error("Ja existe uma operacao de backup em andamento.");
+  initializeBackupStrategy();
   backupBusy = true;
   try {
     const filename = await backupFiles.createSnapshot(db, backupDirectory(), type, isMockModeEnabled() ? "mock" : "live");
     if (type === "manual") saveBackupState(backupScheduler.succeeded(getBackupState(), new Date()));
+    pruneLocalBackups();
+    copyBackupsToCloud(true);
     return filename;
   } catch (error) {
     if (type === "manual") saveBackupState(backupScheduler.failed(getBackupState(), new Date(), error));
@@ -499,7 +568,10 @@ async function runAutoBackup() {
   if (backupBusy || restoringBackup || autoBackupRunning) return;
   autoBackupRunning = true;
   try {
+    initializeBackupStrategy();
     const now = new Date();
+    pruneLocalBackups();
+    copyBackupsToCloud();
     const state = getBackupState();
     if (state.nextRetry && now.getTime() < state.nextRetry) return;
     const { time } = getBackupSettings();
@@ -515,13 +587,7 @@ async function runAutoBackup() {
       try { backupFiles.checkDatabase(backupFiles.safeBackupPath(folder, name)); return true; } catch { return false; }
     });
     if (!alreadyCompleted) await createBackupFile("auto");
-    saveBackupState(backupScheduler.succeeded(state, new Date(), backupScheduler.slotKey(due)));
-    // Retention runs only after a successful backup, never on every timer tick.
-    try {
-      const row = queryOne<{ valor: string }>("SELECT valor FROM configuracoes WHERE chave = ?", ["retencao_backups_dias"]);
-      const days = Number(row?.valor || 7);
-      backupFiles.pruneBackups(folder, Number.isInteger(days) && days > 0 && days <= 3650 ? Math.min(days, 7) : 7);
-    } catch (error) { console.error("Falha na limpeza de backups:", error); }
+    saveBackupState(backupScheduler.succeeded(getBackupState(), new Date(), backupScheduler.slotKey(due)));
   } catch (error) {
     saveBackupState(backupScheduler.failed(getBackupState(), new Date(), error));
     console.error("Falha na rotina de backup:", error);
@@ -1050,6 +1116,7 @@ app.use("/api", exigirAutenticacao);
 // passam pela reabertura explícita, que reconcilia a dívida antes de liberar a edição.
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) return next();
+  if (req.method === 'PUT' && /^\/(vales|ordens-cobranca)\/[^/]+\/anotacao$/.test(req.path)) return next();
   try {
     const documento = req.path.match(/^\/(vendas|vales|ordens-cobranca)\/([^/]+)/);
     if (documento) exigirDocumentoNaoFinalizado(documento[1] === 'ordens-cobranca' ? 'ordem' : 'vale', decodeURIComponent(documento[2]));
@@ -3699,8 +3766,8 @@ app.put("/api/vendas/:id", (req, res) => {
     if (req.body?.data !== undefined && !dataFinanceiraValida(String(req.body.data))) throw erroHttp("Informe uma data válida para a venda.", 400);
     const vendaId = req.params.id;
     const observacoesVenda = String(req.body?.observacoes || "").trim();
-    if (observacoesVenda.length > 100) {
-      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+    if (observacoesVenda.length > 2000) {
+      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 2.000 caracteres." });
     }
     const itensInformados = Array.isArray(req.body?.items) ? req.body.items : [];
     if (itensInformados.length === 0) {
@@ -3912,6 +3979,28 @@ app.put("/api/vendas/:id", (req, res) => {
   }
 });
 
+// Notes change no balances, payments or document status; completed documents can be annotated.
+for (const tipo of ['vales', 'ordens-cobranca'] as const) {
+  app.put('/api/' + tipo + '/:id/anotacao', (req, res) => {
+    try {
+      const { texto, anterior } = req.body || {};
+      if (typeof texto !== 'string' || typeof anterior !== 'string' || texto.length > 2000) return res.status(400).json({ error: 'Informe uma anotação de até 2.000 caracteres.' });
+      const tabela = tipo === 'vales' ? 'vendas' : 'ordens_cobranca';
+      const campo = tipo === 'vales' ? 'observacoes' : 'observacao';
+      runInTransaction(() => {
+        const atual = queryOne<any>('SELECT * FROM ' + tabela + ' WHERE id = ? AND deletedAt IS NULL', [req.params.id]);
+        if (!atual) throw erroHttp('Documento não encontrado.', 404);
+        if (String(atual[campo] || '') !== anterior) throw erroHttp('Outra pessoa alterou a anotação. Reabra o documento antes de salvar.', 409);
+        execute('UPDATE ' + tabela + ' SET ' + campo + ' = ?, updatedAt = ? WHERE id = ?', [texto.trim() || null, new Date().toISOString(), req.params.id]);
+        registrarAuditoria(usuarioDaRequisicao(req)!.id, 'anotacao_alterada', tipo === 'vales' ? 'venda' : 'ordem_cobranca', req.params.id, { anterior, texto: texto.trim() });
+      });
+      if (tipo === 'ordens-cobranca') return res.json(listarOrdensCobranca('AND oc.id = ?', [req.params.id])[0]);
+      const venda = queryOne<any>('SELECT v.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?', [req.params.id]);
+      res.json(carregarDetalhesVenda(venda));
+    } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+  });
+}
+
 app.put("/api/vales/:id", (req, res) => {
   try {
     exigirValeSemOrdemAberta(req.params.id);
@@ -3929,8 +4018,8 @@ app.put("/api/vales/:id", (req, res) => {
       return res.status(409).json({ error: "Um vale cancelado não pode ser alterado." });
     }
     const observacoesVale = String(req.body?.observacoes || "").trim();
-    if (observacoesVale.length > 100) {
-      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 100 caracteres." });
+    if (observacoesVale.length > 2000) {
+      return res.status(400).json({ error: "A observação da venda deve possuir no máximo 2.000 caracteres." });
     }
 
     const parcelasAnteriores = queryAll<any>(
@@ -6824,20 +6913,23 @@ app.put("/api/backups/config", (req, res) => {
   try {
     const folder = typeof req.body.folder === "string" ? req.body.folder.trim() : "";
     const time = req.body.time;
-    validateBackupFolder(folder);
+    if (folder) validateBackupFolder(folder);
     if (typeof time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Horario invalido.");
     // Require an existing folder so a disconnected disk cannot silently redirect backups.
-    if (!fs.statSync(folder).isDirectory()) throw new Error("O destino deve ser uma pasta existente.");
-    const probe = path.join(folder, `.backup-write-test-${crypto.randomUUID()}`);
-    fs.writeFileSync(probe, "", { flag: "wx" });
-    fs.unlinkSync(probe);
+    if (folder) {
+      if (!fs.statSync(folder).isDirectory()) throw new Error("O destino deve ser uma pasta existente.");
+      backupReplication.checkFolderPermissions(folder, true);
+    }
+    backupReplication.checkFolderPermissions(backupDirectory(), true);
+    const previousSettings = getBackupSettings();
     runInTransaction(() => {
-      for (const [key, value] of [["backup_pasta", path.resolve(folder)], ["backup_horario", time]]) {
+      for (const [key, value] of [["backup_pasta", folder ? path.resolve(folder) : ""], ["backup_horario", time]]) {
         execute("INSERT INTO configuracoes (chave, valor) VALUES (?, ?) ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor", [key, value]);
       }
     });
     const previous = getBackupState();
-    saveBackupState({ ...previous, completedSlot: undefined, nextRetry: 0 });
+    saveBackupState({ ...previous, nextRetry: 0,
+      cloud: previousSettings.folder === folder ? { ...previous.cloud, nextRetry: 0 } : {} });
     res.json(getBackupSettings());
     void runAutoBackup();
   } catch (error: any) { res.status(400).json({ error: error.message }); }
@@ -6846,17 +6938,25 @@ app.put("/api/backups/config", (req, res) => {
 app.get("/api/backups", (req, res) => {
   try {
     fs.mkdirSync(backupDirectory(), { recursive: true });
-    const files = fs.readdirSync(backupDirectory());
-    const backups = files
+    const directories = [backupDirectory()];
+    try { const cloud = cloudBackupDirectory(); if (cloud) directories.push(cloud); } catch { /* Local recovery remains available offline. */ }
+    const files = new Map<string, string>();
+    for (const directory of directories) {
+      try { for (const file of fs.readdirSync(directory)) if (!files.has(file)) files.set(file, directory); }
+      catch (error) { if (directory === backupDirectory()) throw error; }
+    }
+    const backups = [...files.keys()]
       .filter((file) => {
         const info = backupFiles.backupInfo(file);
         return info && info.type !== "update" && info.mode === (isMockModeEnabled() ? "mock" : "live");
       })
       .map((file) => {
-        const filePath = backupFiles.safeBackupPath(backupDirectory(), file);
+        const directory = files.get(file)!;
+        const filePath = backupFiles.safeBackupPath(directory, file);
         const stat = fs.statSync(filePath);
         return {
           filename: file,
+          location: directory === backupDirectory() ? "local" : "drive",
           size: stat.size,
           createdAt: stat.mtime
         };
@@ -6871,7 +6971,7 @@ app.get("/api/backups", (req, res) => {
 app.post("/api/backups", async (req, res) => {
   try {
     const filename = await createBackupFile("manual");
-    res.json({ success: true, message: "Backup criado com sucesso!", filename });
+    res.json({ success: true, message: "Backup local criado com sucesso!", filename, cloud: backupStatus().cloud });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -6887,7 +6987,7 @@ app.post("/api/backups/restaurar", async (req, res) => {
     if (!info || info.mode !== (isMockModeEnabled() ? "mock" : "live")) {
       return res.status(400).json({ error: "Backup de outro ambiente ou legado. Solicite revisao tecnica para restaurar arquivos antigos." });
     }
-    const source = backupFiles.safeBackupPath(backupDirectory(), filename);
+    const source = backupSource(filename);
     backupFiles.checkDatabase(source);
     // Keep a recovery copy before replacing the active database.
     restoringBackup = true;
@@ -6895,7 +6995,7 @@ app.post("/api/backups/restaurar", async (req, res) => {
     const target = getActiveDbFile();
     staged = `${target}.restore-tmp`;
     fs.copyFileSync(source, staged);
-    backupFiles.configureRecoveryDestination(staged, backupDirectory(), getBackupSettings().time);
+    backupFiles.configureRecoveryDestination(staged, getBackupSettings().folder, getBackupSettings().time);
     backupFiles.checkDatabase(staged);
     db.pragma("wal_checkpoint(TRUNCATE)");
     db.close();
@@ -6917,8 +7017,12 @@ app.post("/api/backups/restaurar", async (req, res) => {
 app.delete("/api/backups/:filename", (req, res) => {
   if (backupBusy || restoringBackup) return res.status(409).json({ error: "Aguarde a operacao de backup atual." });
   try {
-    const backupPath = backupFiles.safeBackupPath(backupDirectory(), req.params.filename);
-    fs.unlinkSync(backupPath);
+    const filename = req.params.filename;
+    backupSource(filename); // Validate before deleting either copy.
+    const cloud = cloudBackupDirectory();
+    for (const directory of [backupDirectory(), ...(cloud ? [cloud] : [])]) {
+      if (fs.existsSync(path.join(directory, path.basename(filename)))) fs.unlinkSync(backupFiles.safeBackupPath(directory, filename));
+    }
     res.json({ success: true, message: "Backup excluido." });
   } catch (error: any) { res.status(400).json({ error: error.message }); }
 });

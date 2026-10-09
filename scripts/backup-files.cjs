@@ -55,12 +55,14 @@ async function createSnapshot(database, dir, type, mode) {
     fs.renameSync(temporary, path.join(dir, name));
     return name;
   } finally {
-    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    for (const suffix of ['', '-wal', '-shm']) {
+      if (fs.existsSync(temporary + suffix)) fs.unlinkSync(temporary + suffix);
+    }
   }
 }
 function safeTree(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).every(entry => {
-    if (entry.name === '.protected' || entry.isSymbolicLink()) return false;
+    if (entry.isSymbolicLink()) return false;
     return !entry.isDirectory() || safeTree(path.join(dir, entry.name));
   });
 }
@@ -68,41 +70,36 @@ function pruneBackups(dir, days = 7, now = new Date()) {
   if (!Number.isInteger(days) || days < 1 || days > 3650) throw new Error('Retencao invalida.');
   const root = fs.realpathSync(dir);
   const cutoff = new Date(now);
-  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setTime(cutoff.getTime() - Math.min(days, 7) * 24 * 60 * 60 * 1000);
   const entries = fs.readdirSync(root, { withFileTypes: true }).map(entry => ({ entry, info: backupInfo(entry.name) }))
     .filter(({entry, info}) => info && !entry.isSymbolicLink() && (info.type === 'update' ? entry.isDirectory() : entry.isFile()));
-  const protectedFiles = new Set();
-  // Preserve the most recent valid copy of each database, even during a prolonged outage.
-  for (const mode of ['live', 'mock', 'legacy']) {
-    for (const item of entries.filter(x => x.info.type !== 'update' && x.info.mode === mode).sort((a,b) => b.info.date - a.info.date)) {
-      try { checkDatabase(path.join(root, item.entry.name)); protectedFiles.add(item.entry.name); break; } catch { }
-    }
-  }
-  // A pre-update snapshot may be the only recovery point on an older installation.
-  for (const item of entries.filter(x => x.info.type === 'update').sort((a,b) => b.info.date - a.info.date)) {
-    try {
-      const folder = path.join(root, item.entry.name);
-      if (!safeTree(folder)) continue;
-      checkDatabase(path.join(folder, 'database.db'));
-      protectedFiles.add(item.entry.name);
-      break;
-    } catch { }
-  }
   const removed = [];
+  const failures = [];
   for (const {entry, info} of entries) {
-    if (info.date >= cutoff || protectedFiles.has(entry.name)) continue;
+    if (info.date >= cutoff) continue;
     const target = path.resolve(root, entry.name);
     if (path.dirname(target) !== root) throw new Error('Limpeza fora da pasta de backups recusada.');
     try {
-      if (fs.existsSync(`${target}.protected`)) continue;
       if (entry.isDirectory()) {
-        if (!safeTree(target)) continue;
+        if (!safeTree(target)) throw new Error('Diretorio com links recusado; revise esta copia manualmente.');
         fs.rmSync(target, { recursive: true });
-      } else { fs.unlinkSync(target); }
+      } else {
+        fs.unlinkSync(target);
+        for (const suffix of ['-wal', '-shm', '.protected']) {
+          const sidecar = target + suffix;
+          if (!fs.existsSync(sidecar)) continue;
+          const stat = fs.lstatSync(sidecar);
+          if (stat.isFile() && !stat.isSymbolicLink()) fs.unlinkSync(sidecar);
+        }
+      }
       removed.push(entry.name);
       console.log(`[Backup] Removido por retencao: ${entry.name}`);
-    } catch (error) { console.error(`[Backup] Nao foi possivel limpar ${entry.name}: ${error.message}`); }
+    } catch (error) {
+      failures.push(`${entry.name}: ${error.message}`);
+      console.error(`[Backup] Nao foi possivel limpar ${entry.name}: ${error.message}`);
+    }
   }
+  if (failures.length) throw new Error(`Nao foi possivel excluir backups com mais de 7 dias. Verifique a permissao Modificar da conta do sistema. ${failures.join('; ')}`);
   return removed;
 }
 module.exports = { configureRecoveryDestination, stamp, backupInfo, checkDatabase, safeBackupPath, createSnapshot, pruneBackups };

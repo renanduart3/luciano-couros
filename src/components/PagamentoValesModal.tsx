@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Coins, Loader2, X } from "lucide-react";
 import { ComprovanteRecebimento, TituloRecebimento, Venda } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
+import { formatCurrency, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
@@ -17,11 +17,12 @@ interface Props {
   vales: Venda[];
   onClose: () => void;
   onSaved: () => Promise<void> | void;
+  fecharAoSalvar?: boolean;
 }
 
 const hoje = todayLocalIso;
 
-export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, vales, onClose, onSaved }: Props) {
+export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, vales, onClose, onSaved, fecharAoSalvar = false }: Props) {
   const totalDivida = vales.reduce((total, vale) => total + Number(vale.saldoRestante), 0);
   const [data, setData] = useState(hoje());
   const [valor, setValor] = useState(totalDivida.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -31,7 +32,6 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const [bonus, setBonus] = useState("");
   const [bonusAtivo, setBonusAtivo] = useState(false);
   const [saldoBonus, setSaldoBonus] = useState(0);
-  const [observacao, setObservacao] = useState("");
   const [erro, setErro] = useState("");
   const [feedback, setFeedback] = useState("");
   const [salvando, setSalvando] = useState(false);
@@ -64,6 +64,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
 
   const registrar = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (salvando || feedback) return;
     if (vales.length !== 1) return setErro("Para pagar vários vales, gere uma ordem de cobrança.");
     if (!Number.isFinite(valorTotal) || valorTotal <= 0 || valorInformado < 0 || bonusUsado < 0) return setErro("Informe um valor maior que zero.");
     if (bonusUsado > saldoBonus + 0.005) return setErro("O valor ultrapassa o bônus disponível do cliente.");
@@ -71,6 +72,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
     setSalvando(true);
     setErro("");
     setFeedback("");
+    let registrado = false;
     try {
       const resultado = await api.createRecebimentoCliente(clienteId, {
         data,
@@ -79,48 +81,52 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
         valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
-        observacao: observacao || `Pagamento do vale #${vales[0]?.numeroSequencial}`,
+        observacao: `Pagamento do vale #${vales[0]?.numeroSequencial}`,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes: alocacoes.map(({ vendaId, valor: valorAlocado }) => ({ vendaId, valor: valorAlocado })),
       });
+      registrado = true;
       setValor("0,00");
       setBonus("");
       setBonusAtivo(false);
-      setObservacao("");
       setFeedback(`Pagamento registrado: ${formatCurrency(resultado.valorAplicado)} abatido` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
+      if (fecharAoSalvar) {
+        await onSaved();
+        onClose();
+        return;
+      }
+      await onSaved();
       setComprovante(await api.getComprovanteRecebimento(resultado.id));
-      void Promise.resolve(onSaved()).catch(() => {
-        setErro("Pagamento registrado. Reabra a tela para atualizar os saldos.");
-      });
+
     } catch (error: any) {
-      setErro(error.message || "Não foi possível registrar o pagamento.");
+      setErro(registrado ? "Pagamento registrado. Reabra o vale para atualizar a lista." : error.message || "Não foi possível registrar o pagamento.");
     } finally {
       setSalvando(false);
     }
   };
 
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => { setComprovante(null); onClose(); }} />;
-  return <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/75 px-[10vw] py-[5vh] backdrop-blur-sm">
-    <form onSubmit={registrar} role="dialog" aria-modal="true" aria-labelledby="pagamento-vales-titulo" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Pagamento individual de vale</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · {vales.length} vale(s) · dívida {formatCurrency(totalDivida)}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
+  return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 px-[10vw] py-[5vh] backdrop-blur-sm">
+    <form onSubmit={registrar} role="dialog" aria-modal="true" aria-labelledby="pagamento-vales-titulo" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Adicionar pagamento · Vale #{vales[0]?.numeroSequencial}</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · CPF/CNPJ: {clienteDocumento || "Não informado"}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
-        <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor de referência selecionado" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Referência dos vales selecionados. O total recebido é informado nos títulos.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.filter(forma => forma.value !== "bonus").map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
-        <div className="space-y-2 text-xs">
+        <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor dos títulos" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Informe os valores nos títulos abaixo.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.filter(forma => forma.value !== "bonus").map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
+        <div className="flex min-h-14 items-center gap-4 overflow-x-auto rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs">
           <div className="flex items-center gap-2"><span className="font-bold text-slate-700">Bônus</span><button type="button" role="switch" aria-label="Ativar bônus do cliente" aria-checked={bonusAtivo} disabled={salvando} onClick={() => {
             if (bonusAtivo && !pagamentoTitulo) setValor(Math.max(0, valorInformado + bonusUsado).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
             setBonusAtivo(!bonusAtivo); setBonus("");
           }} className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 ${bonusAtivo ? "bg-violet-600" : "bg-slate-300"}`}><span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${bonusAtivo ? "translate-x-4" : "translate-x-0"}`} /></button></div>
-          {bonusAtivo && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3 font-bold text-violet-900"><span>Saldo da carteira: {formatCurrency(saldoBonus)}</span><label className="inline-flex items-center gap-2">Bônus a utilizar<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonus} disabled={salvando} onChange={e => { const proximo = parseBrazilianNumber(e.target.value); if (!pagamentoTitulo && Number.isFinite(proximo)) setValor(Math.max(0, valorInformado + bonusUsado - proximo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} placeholder="0,00" className="w-28 rounded-lg border border-violet-200 bg-white p-2 text-right"/></label><span>Pagamento + bônus: {formatCurrency(valorTotal)}</span></div>}
+          {<div aria-hidden={!bonusAtivo} className={`flex shrink-0 items-center gap-4 whitespace-nowrap text-violet-900 ${bonusAtivo ? "visible" : "invisible"}`}><span className="sr-only">Bônus ativo</span><span>Disponível: {formatCurrency(saldoBonus)}</span><label className="inline-flex items-center gap-2">Bônus a utilizar<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonus} disabled={salvando || !bonusAtivo} tabIndex={bonusAtivo ? 0 : -1} onChange={e => { const proximo = parseBrazilianNumber(e.target.value); if (!pagamentoTitulo && Number.isFinite(proximo)) setValor(Math.max(0, valorInformado + bonusUsado - proximo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} placeholder="0,00" className="w-28 rounded-lg border border-violet-200 bg-white p-2 text-right"/></label><span>Total: {formatCurrency(valorTotal)}</span></div>}
         </div>
         {formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase}/>}
         {formaPagamento === "bonus" && <div className="rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(saldoBonus)}</div>}
-        <TitulosPagamentoEditor formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
-        <div className="overflow-hidden rounded-xl border border-slate-300 bg-white"><div className="border-b border-slate-300 bg-slate-50 p-3 text-xs font-black uppercase text-slate-700">Distribuição automática — vales mais antigos primeiro</div><table className="w-full text-sm"><thead className="bg-slate-200 text-[10px] font-black uppercase"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão</th><th className="p-2 text-right">Saldo antes</th><th className="p-2 text-right">Abatimento</th><th className="p-2 text-right">Saldo depois</th></tr></thead><tbody className="divide-y divide-slate-200">{[...vales].sort((a, b) => a.data.localeCompare(b.data)).map((vale) => { const aplicado = alocacoes.find((item) => item.vendaId === vale.id)?.valor || 0; return <tr key={vale.id}><td className="p-2 font-black">#{vale.numeroSequencial}</td><td className="p-2 font-bold">{formatDate(vale.data)}</td><td className="p-2 text-right font-mono font-bold">{formatCurrency(vale.saldoRestante)}</td><td className="p-2 text-right font-mono font-black text-emerald-800">{formatCurrency(aplicado)}</td><td className="p-2 text-right font-mono font-black">{formatCurrency(Math.max(0, Number(vale.saldoRestante) - aplicado))}</td></tr>; })}</tbody></table></div>
-        <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-xl border border-emerald-300 bg-emerald-50 p-3"><p className="text-[10px] font-black uppercase text-emerald-700">Abatido nos vales</p><p className="font-mono text-lg font-black text-emerald-900">{formatCurrency(totalAplicado)}</p></div><div className="rounded-xl border border-violet-300 bg-violet-50 p-3"><p className="text-[10px] font-black uppercase text-violet-700">Bônus gerado pelo excedente</p><p className="font-mono text-lg font-black text-violet-900">{formatCurrency(bonusGerado)}</p></div><label className="text-[10px] font-black uppercase text-slate-600">Observação<textarea rows={2} value={observacao} onChange={(event) => setObservacao(event.target.value.slice(0, 300))} className="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm font-bold" /></label></div>
+        <TitulosPagamentoEditor mostrarObservacao={false} formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={valorBase} titulos={titulos} onChange={setTitulos} />
+        <div className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">Restante após pagamento</span><strong className="font-mono">{formatCurrency(Math.max(0, totalDivida - totalAplicado))}</strong></div>
+        {bonusGerado > 0.005 && <p className="text-xs text-violet-800">Excedente em bônus: <strong>{formatCurrency(bonusGerado)}</strong></p>}
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-black text-emerald-800"><CheckCircle2 size={16}/>{feedback}</div>}
         {erro && <div className="rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800">{erro}</div>}
       </div>
-      <footer className="flex justify-end gap-2 border-t border-slate-300 bg-white p-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-black uppercase">Voltar</button><button type="submit" disabled={salvando || valorTotal <= 0} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40">{salvando ? <Loader2 className="animate-spin" size={16}/> : bonusGerado > 0.005 ? <CheckCircle2 size={16}/> : <Coins size={16}/>}Registrar pagamento</button></footer>
+      <footer className="flex justify-end gap-2 border-t border-slate-300 bg-white p-3"><button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-black uppercase">Voltar</button><button type="submit" disabled={salvando || Boolean(feedback) || valorTotal <= 0} className="inline-flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-40">{salvando ? <Loader2 className="animate-spin" size={16}/> : bonusGerado > 0.005 ? <CheckCircle2 size={16}/> : <Coins size={16}/>}Confirmar pagamento</button></footer>
     </form>
   </div>;
 }

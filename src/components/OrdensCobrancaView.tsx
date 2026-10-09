@@ -1,4 +1,5 @@
 import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
+import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckCircle2, Coins, Edit3, Eye, FileClock, FileText, History, ListChecks, MessageCircle, Plus, RefreshCw, Save, ShieldCheck, Trash2, WalletCards, X } from "lucide-react";
 import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
@@ -128,7 +129,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico">("parcelas");
+  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes">("parcelas");
   const [encerramento, setEncerramento] = useState(false);
   const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
@@ -258,8 +259,9 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         <div className="flex gap-2">
           <button type="button" onClick={() => setAbaDetalhe("parcelas")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "parcelas" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Pagamentos</button>
           <button type="button" onClick={() => setAbaDetalhe("historico")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "historico" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Histórico da ordem</button>
+          <button type="button" onClick={() => setAbaDetalhe("anotacoes")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "anotacoes" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Anotações</button>
         </div>
-        {abaDetalhe === "parcelas" ? <div className="space-y-2">
+        {abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="space-y-2">
           {acao && <ConfirmarAcaoPagamentosOrdem ordemId={ordem.id} acao={acao.acao} itens={acao.itens} onCancel={() => setAcao(null)} onSaved={aplicarAtualizacao}/>}
           <div className="flex flex-wrap justify-end gap-2">
             {podeGerenciar && <><button disabled={!!acao || edicoes.size > 0} onClick={() => setSelecionados([...(ordem.pagamentos || []).map(p => ({ tipo: "recebimento" as const, id: p.id })), ...(ordem.projecoes || []).map(p => ({ tipo: "projecao" as const, id: p.id }))])} className="rounded border px-2 py-1 text-xs">Selecionar todos</button>
@@ -299,7 +301,6 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
           {financeiroAtual.creditoUtilizado > 0 && <p className="mt-1 text-violet-800">Inclui {formatCurrency(financeiroAtual.creditoUtilizado)} de bônus utilizado.</p>}
           <div className="mt-2 flex justify-between border-t pt-2 font-bold"><span>Restante após pagamentos registrados</span><span>{formatCurrency(financeiroAtual.restantePresumido)}</span></div>
         </div>
-        {ordem.observacao && <div className="rounded-xl border border-slate-300 bg-white p-3 text-sm font-bold text-slate-700"><span className="block text-[10px] font-black uppercase text-slate-500">Observação</span>{ordem.observacao}</div>}
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}
       </div>

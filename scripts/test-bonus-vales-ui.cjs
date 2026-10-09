@@ -38,13 +38,13 @@ async function main() {
       assert.equal(await bonus.count(),0);
       assert.equal(await page.getByText('Saldo da carteira:',{exact:false}).count(),0);
       await toggle.click(); await bonus.waitFor();
-      assert.ok((await page.getByText('Saldo da carteira:',{exact:false}).textContent()).includes(tipo==='existente'?'70,00':'50,00'));
+      assert.ok((await page.getByText(tipo==='modal'?'Disponível:':'Saldo da carteira:',{exact:false}).textContent()).includes(tipo==='existente'?'70,00':'50,00'));
       await bonus.fill('20,00'); assert.equal(await cash.inputValue(),'80,00');
       await toggle.click(); assert.equal(await bonus.count(),0); assert.equal(await cash.inputValue(),'100,00');
       await toggle.click(); assert.equal(await bonus.inputValue(),'');
       await bonus.fill('20,00');
       if(tipo!=='existente') {
-        await page.getByRole('button',{name:tipo==='modal'?'Registrar pagamento':'Registrar',exact:true}).click();
+        await page.getByRole('button',{name:tipo==='modal'?'Confirmar pagamento':'Registrar',exact:true}).click();
         await page.getByText('Fim da simulação',{exact:true}).waitFor();
         assert.equal(enviado.valorRecebido,80); assert.equal(enviado.bonusUtilizado,20);
         assert.equal(enviado.alocacoes[0].valor,100);

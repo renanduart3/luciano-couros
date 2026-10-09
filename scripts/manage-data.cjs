@@ -117,6 +117,8 @@ async function preUpdate(root) {
   fs.mkdirSync(backupDir, { recursive: true });
   const target = path.join(backupDir, `antes-da-atualizacao_${stamp()}_${crypto.randomBytes(4).toString('hex')}`);
   fs.renameSync(staging, target);
+  try { pruneBackups(backupDir, 7); }
+  catch (error) { console.error(`Falha na limpeza de backups locais: ${error.message}`); }
   console.log(`Backup anterior a atualizacao: ${target}`);
 }
 if (require.main === module) {

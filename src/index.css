@@ -966,7 +966,7 @@ body .vale-header h2 { font-size: 20px; font-weight: 750; text-transform: none; 
 body .vale-header p { font-size: 14px; font-weight: 600; text-transform: none; color: #475569; margin: 0; overflow-wrap: anywhere; }
 .vale-header-identity span:not(.vale-header-symbol) { font-size: 12px; color: #64748b; }
 .vale-header-navigation { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
-.vale-tabs { display: flex; gap: 20px; align-self: stretch; }
+.vale-tabs { display: flex; flex-wrap: wrap; gap: 20px; align-self: stretch; }
 body .vale-tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 12px 0; border-bottom: 3px solid transparent; border-radius: 0; color: #64748b; font-size: 13px; font-weight: 650; text-transform: none; }
 body .vale-tabs button[aria-pressed="true"] { color: #0f172a; border-bottom-color: #0f172a; }
 .vale-header-tools { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; }

@@ -323,6 +323,8 @@ export const api = {
   updateProjecaoOrdem: (id: string, projecaoId: string, dados: { pin: string; revisao: string; data: string; formaPagamento: string; valorRecebido: number; bonusUtilizado?: number; parcelasCartao?: number; valoresParcelasCartao?: number[]; titulos?: TituloRecebimento[] }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/projecoes/${projecaoId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<OrdemCobranca>(r)),
+  saveAnotacaoVale: (id: string, texto: string, anterior: string) => fetch(API_BASE + '/vales/' + id + '/anotacao', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, anterior }) }).then(r => handleResponse<Venda>(r)),
+  saveAnotacaoOrdem: (id: string, texto: string, anterior: string) => fetch(API_BASE + '/ordens-cobranca/' + id + '/anotacao', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, anterior }) }).then(r => handleResponse<OrdemCobranca>(r)),
   // ORDENS DE COBRANÇA
   getOrdensCobranca: (clienteId?: string) => {
     const params = new URLSearchParams();
@@ -699,14 +701,14 @@ export const api = {
   },
 
   // BACKUPS
-  getBackupStatus: () => fetch(`${API_BASE}/backups/status`).then(r => handleResponse<{ alert: boolean; failures: number; lastError: string | null; lastSuccess: string | null; nextRetry: string | null }>(r)),
+  getBackupStatus: () => fetch(`${API_BASE}/backups/status`).then(r => handleResponse<{ alert: boolean; failures: number; lastError: string | null; lastSuccess: string | null; nextRetry: string | null; cleanupError: string | null; localFolder: string; cloud: { enabled: boolean; failures: number; lastSuccess: string | null; lastError: string | null; nextRetry: string | null } }>(r)),
   selectBackupFolder: () => fetch(`${API_BASE}/backups/selecionar-pasta`, { method: "POST" }).then(r => handleResponse<{ folder: string | null }>(r)),
-  getBackupSettings: () => fetch(`${API_BASE}/backups/config`).then(r => handleResponse<{ folder: string; time: string }>(r)),
+  getBackupSettings: () => fetch(`${API_BASE}/backups/config`).then(r => handleResponse<{ folder: string; time: string; localFolder: string }>(r)),
   saveBackupSettings: (settings: { folder: string; time: string }) => fetch(`${API_BASE}/backups/config`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings)
-  }).then(r => handleResponse<{ folder: string; time: string }>(r)),
+  }).then(r => handleResponse<{ folder: string; time: string; localFolder: string }>(r)),
   getBackups: () => fetch(`${API_BASE}/backups`).then(r => handleResponse<any[]>(r)),
-  createBackup: () => fetch(`${API_BASE}/backups`, { method: "POST" }).then(r => handleResponse<{ success: boolean; filename: string }>(r)),
+  createBackup: () => fetch(`${API_BASE}/backups`, { method: "POST" }).then(r => handleResponse<{ success: boolean; filename: string; cloud: { enabled: boolean; lastError: string | null } }>(r)),
   restoreBackup: (filename: string) => 
     fetch(`${API_BASE}/backups/restaurar`, {
       method: "POST",

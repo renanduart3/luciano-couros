@@ -4,6 +4,15 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.39.0 — 2026-10-09
+
+- Cabeçalho do vale exibe nome e CPF/CNPJ do cliente; valores financeiros ficam na vertical ao lado dos pagamentos.
+- Pagamentos adicionados em modal simplificada, com atualização imediata da lista, bônus na mesma linha e sem observações individuais.
+- Abas de anotações em vales e ordens, com preservação das observações existentes, auditoria e proteção contra sobrescrita concorrente.
+- Histórico de devoluções em aba própria; textos repetidos removidos dos detalhes e das configurações de backup.
+- Backup diário sempre local, com cópia verificada para a pasta do Drive e retenção de 7 dias nos dois destinos. Falhas e novas tentativas independentes.
+- Teste de permissões ao configurar backups e orientação de instalação no cliente; limpeza dos temporários SQLite.
+
 ## 1.38.5 — 2026-10-06
 
 - Comprovantes de vendas e vales ordenam materiais por nome, mantendo as devoluções separadas e as duas vias.

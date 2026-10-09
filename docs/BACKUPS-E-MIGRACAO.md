@@ -1,75 +1,90 @@
-# Dados externos e backups de 7 dias
-
-## Preparacao no computador do cliente
-
-1. Entregue o pacote de atualizacao sem bancos, `installation-paths.json`, `.runtime`, `node_modules`, `.git` ou dados desta maquina de desenvolvimento. Aplique a nova versao pelo atualizador habitual.
-2. Feche o sistema nos navegadores para evitar lancamentos durante a manutencao.
-3. Execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd** e aceite a elevacao do Windows. O assistente pergunta o destino; Enter usa `C:\ProgramData\LucianoCouros\data`. Escolha uma pasta nova, local, fora do projeto e fora de uma pasta sincronizada.
-4. O assistente para o servico, compila, copia os bancos pela API do SQLite (incluindo transacoes no WAL), verifica a integridade e copia os backups existentes. Define a retencao em 7 dias e grava o apontamento em `installation-paths.json` na instalacao.
-5. O sistema reinicia usando os dados externos. Confira clientes, vendas e saldos. A migracao preserva o modo real/demonstracao: no cliente deve estar selecionado o banco real.
-6. Crie um backup manual pela interface. Confirme sua presenca na pasta externa. Teste a restauracao numa instalacao separada antes de descartar os originais.
-
-O comando nao sobrescreve um destino existente. Em caso de falha, conserva os originais e os arquivos copiados para diagnostico. Se a inicializacao apos trocar o apontamento falhar, o assistente remove o novo apontamento e deixa o sistema parado para revisao. Nao apague o destino de uma migracao incompleta sem conferir seu conteudo.
-
-Os bancos originais dentro do projeto sao conservados como seguranca desta migracao. Apos validar os dados e a recuperacao, com o sistema parado, o tecnico pode remover os bancos e backups da antiga pasta `data`. Bancos antigos da raiz podem ser diferentes: nao os trate como duplicados sem comparacao. Nunca exclua os arquivos da pasta externa ativa.
-
-## Google Drive
-
-No **Google Drive para computador > Preferencias > Meu computador > Adicionar pasta**, selecione **somente** `C:\ProgramData\LucianoCouros\data\backups` (ou o caminho escolhido) e habilite a sincronizacao com o Google Drive.
-
-Nao selecione a pasta `data` inteira. Os bancos ativos, WAL/SHM, configuracoes e `.backup-staging` ficam fora da sincronizacao. Nao use uma unidade virtual do Drive como destino do banco.
-
-O servico cria arquivos localmente mesmo sem internet. O envio depende do Drive aberto, conectado na conta do cliente e com espaco disponivel; confirme a inicializacao automatica do Drive no usuario que utiliza o computador. Confira pelo site do Drive e baixe uma copia para testar. O sistema nao confirma upload nem monitora a conta do Google.
-
-As exclusoes locais sincronizam para a nuvem. A lixeira e o armazenamento compartilhado com Gmail/Fotos podem retardar a liberacao de espaco. Esta configuracao nao oferece imutabilidade ou protecao independente contra exclusoes/ransomware.
+# Backups locais e cópia para o Google Drive
 
 ## Funcionamento
 
-- Verificacao na inicializacao e a cada minuto, usando a hora local do servidor. Horarios perdidos sao cobertos por uma unica copia atual; a agenda normal continua depois disso.
-- Copia temporaria na pasta irma `.backup-staging`, verificacao `integrity_check` e renomeacao para o destino definitivo. A interface aguarda a conclusao.
-- Retencao de 7 dias para automaticos, manuais e diretorios `antes-da-atualizacao_*`, usando a data do nome. A inicializacao e a migracao aplicam 7 dias tambem aos bancos existentes.
-- Limpeza somente de nomes reconhecidos; desconhecidos, links e arquivos incompletos nao sao apagados automaticamente. Uma falha de remocao nao interrompe a limpeza dos demais.
-- A ultima copia valida de cada ambiente, dos arquivos legados e dos snapshots de atualizacao e preservada mesmo vencida. Marcadores `arquivo.db.protected` ou `.protected` dentro do diretorio de atualizacao impedem a limpeza. Essas excecoes podem permanecer mais de 7 dias.
-- Novos arquivos usam `auto_live_*`, `manual_live_*`, `auto_mock_*` e `manual_mock_*`. A interface mostra o ambiente atual. Arquivos antigos sem identificacao ficam no disco para revisao tecnica, sujeitos a retencao; a restauracao automatica deles e bloqueada para nao confundir demonstracao com producao.
-- Restauracao valida o arquivo, cria uma copia de seguranca do estado atual, bloqueia novas requisicoes durante a troca e solicita reinicio do servico. Sem servico instalado, reinicie manualmente.
-- Arquivos temporarios de uma interrupcao permanecem em `.backup-staging` para revisao com o servico parado. Nao sao apresentados como backups validos.
+- O banco ativo fica fora da instalação. O caminho é definido em `installation-paths.json`; o padrão da instalação é `C:\ProgramData\LucianoCouros\data`.
+- O backup diário e o manual são gerados **sempre na pasta local de backups** (`data\backups`, ou `backupDir` do apontamento). A configuração do Drive não muda esse destino.
+- O SQLite gera um arquivo temporário na pasta irmã `.backup-staging`. O sistema verifica a integridade e só então publica o `.db` local.
+- Se uma pasta do Drive estiver configurada, o sistema copia os arquivos locais válidos dos últimos 7 dias para ela. A cópia também passa por verificação de integridade e comparação SHA-256 antes de ser publicada. Não gera outro backup do banco.
+- Arquivos iguais não são duplicados. Uma réplica danificada pode ser substituída pela cópia local válida.
+- O Drive para computador faz o upload. A indicação “Última cópia para a pasta do Drive” confirma apenas a cópia no disco; confira o upload no próprio Drive.
+- Se a pasta do Drive estiver indisponível, o backup local continua. A falha é mostrada separadamente. As cópias pendentes ainda dentro dos 7 dias são tentadas novamente após 5, 15, 30 e depois 60 minutos. Um backup manual ou salvar a configuração permite uma nova tentativa imediata.
+- A agenda usa a hora local do servidor e é verificada na inicialização e a cada minuto. Horários perdidos geram uma única cópia atual, sem reconstruir os dias anteriores. O estado da agenda persiste após reinícios.
+- Na primeira execução desta versão, a agenda antiga é reinicializada para garantir uma cópia no destino local, mesmo que o backup anterior tenha sido salvo somente na pasta do Drive.
 
-## Atualizacoes e recuperacao
+## Retenção de 7 dias
 
-Servidor e atualizador leem `installation-paths.json`. O atualizador preserva esse arquivo e os dados externos. Nao envie esse arquivo de uma maquina para outra. `DATA_DIR` e `BACKUP_DIR` no ambiente tem prioridade para testes; nao os configure no cliente sem necessidade.
+O sistema exclui backups com mais de 7 × 24 horas nos dois destinos. O limite é por idade, não por quantidade: backups manuais podem aumentar o número de arquivos nesse período.
 
-Se o banco externo configurado estiver ausente, a inicializacao falha explicitamente, em vez de criar um banco vazio. Para recuperar numa nova maquina, restaure uma copia valida com o servico parado em uma pasta local, configure o apontamento e confira o modo de producao. Nao copie WAL/SHM de outro banco por cima da copia restaurada.
+A limpeza local ocorre na inicialização, a cada minuto enquanto o sistema está em execução e depois de criar um backup. A limpeza do Drive ocorre nas tentativas de cópia; uma pasta indisponível só pode ser limpa quando voltar a ficar acessível. Se o computador estiver desligado, a limpeza acontece quando o sistema voltar a executar.
 
-Para testes: `npm run lint`, `npm run build` e `node scripts/test-backups.cjs`. O teste usa bancos temporarios, simula WAL, retencao, caminho ausente, falha de copia e restauracao HTTP real, sem tocar no banco do cliente.
+São excluídos somente arquivos com nomes reconhecidos de backup e diretórios `antes-da-atualizacao_*` vencidos. A última cópia válida vencida e os antigos marcadores `.protected` não são exceções à retenção. Links, arquivos desconhecidos e cópias parciais não são apagados automaticamente. Diretórios vencidos com links precisam de revisão técnica; o sistema alerta em vez de seguir esses links.
 
-## Pasta e horario pela plataforma
+Uma falha ao excluir não impede a tentativa de limpar os demais arquivos nem a geração/cópia de um backup novo. O sistema mostra o problema de permissão; enquanto ele persistir, não consegue garantir o limite de 7 dias.
 
-Em Configuracoes & Backups > Sistema, PIN e backups, clique em Selecionar pasta para abrir o seletor nativo do Windows e escolha a pasta existente adicionada ao Google Drive para computador e o horario diario (padrao 18:00). Salve e use Criar Backup Agora para conferir o arquivo no destino e depois no site do Drive. Nao e necessario migrar o banco ativo para configurar esse destino.
+O backup anterior à atualização permanece **local**, mesmo com o Drive indisponível. Esse diretório é uma cópia técnica; os `.db` individuais diários/manuais são os arquivos restauráveis pela interface.
 
-Backups manuais, automaticos e a lista para restauracao usam a pasta escolhida. Copias anteriores permanecem na pasta antiga. O sistema verifica a agenda a cada minuto, sem varrer nem validar arquivos enquanto nao houver backup pendente. Ao iniciar depois de perder um ou mais horarios, cria uma unica copia atual, mesmo antes do horario de hoje, e retoma o agendamento normal. Uma copia de recuperacao pela manha e a copia de hoje no horario escolhido podem ocorrer no mesmo dia. O estado da agenda e persistido para evitar duplicacao apos reinicios. Nao recupera estados historicos dos dias em que esteve desligado.
+## Configuração no cliente
 
-A configuracao e armazenada no banco de cada ambiente. O destino deve ficar separado dos bancos ativos. Para recuperar apos reinstalacao, configure novamente a pasta existente e restaure a copia desejada; o GitHub nao contem os dados nem essa configuracao. A sincronizacao e as exclusoes continuam sob controle do Google Drive.
+1. Atualize a aplicação pelo procedimento habitual e reinicie o serviço. Não distribua bancos, `installation-paths.json`, `.runtime`, `.git`, `node_modules` ou dados desta máquina no pacote.
+2. Em **Configurações e Backups > Sistema**, confira o caminho local e defina o horário diário.
+3. Crie uma pasta local dedicada, por exemplo `C:\ProgramData\LucianoCouros\copia-drive\backups`. No Google Drive para computador, configure a sincronização **somente dessa pasta `backups`**.
+4. Selecione essa pasta na plataforma e salve. A pasta do Drive é opcional; desativá-la mantém o backup local.
+5. Use **Criar Backup Agora**. Confira o mesmo nome de arquivo no destino local e na pasta do Drive, sem avisos de cópia ou limpeza. Confira também o arquivo no site do Drive.
 
-O seletor deve ser acionado no navegador do proprio servidor Windows. Na instalacao como servico, o controlador da bandeja abre a janela na sessao do usuario; se estiver fechado ou desatualizado, reabra com ABRIR CONTROLE DO SISTEMA.cmd. Quando o servidor roda num terminal na sessao do usuario, abre o seletor diretamente, mesmo usando a compilacao de producao. O comando de abertura substitui uma instancia antiga do controlador quando ela nao responde ao seletor. Cancelar preserva a pasta atual.
+Não sincronize o banco ativo, a pasta `data` inteira ou `.backup-staging`. Não coloque o banco numa unidade virtual do Drive. Use uma pasta local sincronizada: uma unidade mapeada na sessão do usuário pode não estar disponível para a conta do serviço. [Referência Microsoft sobre serviços e unidades mapeadas](https://learn.microsoft.com/en-us/windows/win32/services/services-and-redirected-drives).
 
-Falhas consecutivas sao persistidas. As novas tentativas aguardam 5, 15, 30 e depois 60 minutos, inclusive apos reiniciar. A terceira falha mostra um icone/aviso clicavel ao gerente e os detalhes nas configuracoes. Um backup local concluido limpa o aviso; isso nao confirma upload do Google Drive. O sistema evita copias concorrentes, valida SQLite antes de publicar e conserva a ultima copia valida. A limpeza de retencao ocorre apos concluir um backup; falha na limpeza nao transforma um backup concluido em falha.
+A pasta selecionada deve ficar fora da instalação, não pode conter o banco ativo e não pode coincidir, conter ou ficar dentro da pasta local de backups. Pastas antigas que deixaram de ser configuradas não continuam sob limpeza automática: confira o conteúdo antes de remover arquivos remanescentes nelas.
 
-Teste adicional: `node scripts/test-backup-scheduler.cjs` cobre horarios perdidos, retomada, reinicios, intervalos de repeticao e a comunicacao com o seletor sem abrir uma janela real.
+## Permissões de criação e exclusão no Windows
 
-## Arquitetura de protecao e recuperacao em outro computador
+**Não é necessário pedir confirmação a cada exclusão.** A conta que executa o servidor precisa ter permissão **Modificar** sobre os backups, seus arquivos e subpastas. Essa permissão inclui a exclusão. A referência do Windows identifica `M` como acesso Modify: [documentação do icacls](https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/icacls).
 
-- A instalacao pelo comando de instalar servico prepara os dados em `C:\ProgramData\LucianoCouros\data`. Em instalacoes antigas, migra enquanto parado e preserva os originais; se o destino existir e houver dados locais, cancela para evitar escolher ou sobrescrever o banco errado. O tecnico deve revisar o conflito. Uma reinstalacao sem dados locais pode reconectar um banco externo existente validado.
-- Executar apenas o servidor pelo terminal continua compativel com instalacoes antigas e testes; nao migra dados automaticamente. Nelas, use MIGRAR DADOS PARA FORA DO SISTEMA.cmd para efetivar o isolamento.
-- O programa, os dados ativos e a pasta de copias sao separados. Selecione uma pasta externa dedicada aos backups no Google Drive. Nunca sincronize o banco ativo, WAL/SHM ou a pasta de dados inteira.
-- A plataforma e o atualizador agora consultam o mesmo destino escolhido no ambiente ativo. O atualizador grava uma pasta antes-da-atualizacao com os bancos e a configuracao de demonstracao. Ela e uma copia tecnica, diferente dos arquivos individuais restauraveis pela interface.
-- Dados do cliente e installation-paths.json nao fazem parte do Git nem do pacote entregue. A pasta escolhida para backups personalizados nao pode estar dentro da instalacao.
+Para conferir a conta do serviço, abra PowerShell e execute apenas esta consulta:
+
+```powershell
+Get-CimInstance Win32_Service -Filter "Name='CentralDeTecidos'" |
+    Select-Object Name, StartName, State
+```
+
+Se o serviço não estiver instalado, use a conta do usuário que inicia o servidor pelo terminal. Se `StartName` for `LocalSystem`, a conta a configurar na segurança das pastas é **SYSTEM / SISTEMA**. Se for outra conta, configure exatamente a indicada pela consulta.
+
+Para corrigir uma falha de acesso:
+
+1. Entre com uma conta administradora do Windows.
+2. No Explorador, abra **Propriedades > Segurança > Editar** das pastas de backups e conceda **Modificar** à conta identificada acima, incluindo arquivos e subpastas existentes.
+3. Faça o mesmo nas pastas irmãs `.backup-staging`. Exemplos: `C:\ProgramData\LucianoCouros\data\.backup-staging` e `C:\ProgramData\LucianoCouros\copia-drive\.backup-staging`. Se não existirem, crie-as e conceda a permissão. O servidor precisa conseguir criar e excluir os arquivos temporários nelas.
+4. A conta que executa o Google Drive também precisa de acesso à pasta sincronizada para ler os backups e acompanhar as exclusões. Configure essa conta específica, sem liberar acesso a Todos.
+5. Salve novamente a configuração na plataforma e crie um backup manual.
+
+Ao salvar, o próprio servidor testa a criação/exclusão de um arquivo e de uma subpasta, tanto no destino quanto em `.backup-staging`. Isso testa **a conta real do processo**, não apenas o acesso do usuário conectado no navegador. Arquivos antigos podem ter permissões diferentes ou estar bloqueados por outro processo; falhas futuras aparecem no aviso de limpeza.
+
+O sistema não altera permissões do Windows automaticamente. Não é necessário apagar a pasta dos dados ou a pasta dos backups para configurar o acesso: a retenção remove apenas cópias reconhecidas que venceram.
+
+## Recuperação e reinstalação
+
+A lista da plataforma prioriza o backup local e inclui arquivos existentes somente na pasta configurada do Drive, sem repetir nomes. Assim, é possível restaurar localmente com o Drive indisponível e também recuperar arquivos baixados em outro computador.
 
 Para recuperar depois da perda total do PC:
 
-1. Instale a mesma branch ou uma versao compativel em outro Windows. A instalacao cria dados locais externos novos.
-2. Configure um gerente temporario para entrar. Instale o Google Drive, acesse a conta proprietaria dos backups e baixe a copia mais recente concluida. Pastas sincronizadas do computador antigo podem estar na secao Computadores do Drive; a instalacao nova nao as descobre automaticamente.
-3. Coloque os arquivos baixados numa pasta local externa dedicada. Selecione-a na plataforma e salve. Confira o ambiente real/demonstracao e escolha o arquivo desejado na lista.
-4. Restaure e aguarde o reinicio. Os dados comerciais, usuarios e configuracoes voltam ao momento do backup. Use as credenciais do gerente que existiam nesse backup.
-5. Confira clientes, vendas, saldos e um novo backup manual. A restauracao preserva a pasta e o horario escolhidos no PC novo, em vez de reutilizar um caminho da maquina antiga. Configure a sincronizacao dessa nova pasta no Drive.
+1. Instale uma versão compatível. A instalação prepara novos dados locais externos.
+2. Configure um gerente temporário e baixe do Drive um `.db` válido do ambiente real.
+3. Coloque o arquivo numa pasta local dedicada, fora da instalação e dos bancos ativos. Selecione-a como pasta do Drive na plataforma. Alternativamente, com o sistema parado, copie o `.db` para a pasta local de backups definida no apontamento.
+4. Escolha a cópia na lista, restaure e aguarde o reinício. A restauração valida o arquivo, cria uma cópia local do estado anterior e preserva o destino do Drive e o horário escolhidos no computador novo.
+5. Entre com as credenciais existentes no backup. Confira clientes, vendas, saldos e um novo backup nos dois destinos.
 
-O teste automatizado simula uma instalacao limpa em outro diretorio, sem o banco original, com uma copia do arquivo de backup em outro caminho. Ele verifica a recuperacao dos dados e a preservacao do destino novo. O envio real e o download do Google Drive devem ser conferidos separadamente: backup local concluido nao garante que chegou a nuvem. A perda maxima de dados depende do ultimo backup efetivamente enviado; operacoes posteriores nao estao nessa copia.
+O banco restaurado retorna ao momento da cópia. Os dados posteriores não estarão nela. A existência de um arquivo na pasta do Drive não confirma que o Google o enviou.
+
+O apontamento externo é ignorado pelo Git e preservado pelo atualizador; não distribua o de uma máquina para outra. `DATA_DIR` e `BACKUP_DIR` no ambiente têm prioridade e são usados em testes. Se um banco externo configurado estiver ausente, a inicialização falha explicitamente para não criar um banco vazio.
+
+## Migração de instalações antigas
+
+Se os dados ainda estiverem dentro da instalação, feche o sistema e execute **MIGRAR DADOS PARA FORA DO SISTEMA.cmd**, aceitando a elevação do Windows. O padrão é `C:\ProgramData\LucianoCouros\data`; escolha uma pasta local nova, fora da instalação e da sincronização.
+
+O assistente para o serviço, copia os bancos via SQLite incluindo o WAL, verifica a integridade, copia os backups existentes e grava `installation-paths.json`. O destino existente não é sobrescrito. Uma reinstalação pode reconectar dados externos existentes validados. Os originais são preservados para revisão e só devem ser removidos pelo técnico depois de validar os dados e a recuperação, com o sistema parado. Nunca exclua a pasta externa ativa.
+
+## Verificação automatizada
+
+`npm run lint`, `npm run build`, `node scripts/test-backups.cjs` e `node scripts/test-backup-scheduler.cjs`.
+
+Os testes usam bancos temporários e cobrem WAL, migração, retenção nos dois destinos, falha de exclusão, cópias idênticas, réplica danificada, Drive indisponível, alertas independentes, retomada de cópias pendentes, restauração HTTP real e recuperação em computador novo. Não usam o banco do cliente. O upload real do Drive e as permissões efetivas do computador do cliente devem ser conferidos na instalação.

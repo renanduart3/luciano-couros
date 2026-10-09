@@ -146,7 +146,7 @@ export default function App() {
       {/* Main Workspace */}
       <main className="min-w-0 flex-1 flex flex-col h-full overflow-hidden">
         
-        {backupAlert && <button onClick={() => navegarParaView("config")} className="shrink-0 bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2 px-5 py-2 print:hidden" title="Três ou mais tentativas de backup falharam. Clique para conferir."><ShieldAlert size={16} />Backup precisa de atenção</button>}
+        {backupAlert && <button onClick={() => navegarParaView("config")} className="shrink-0 bg-red-50 text-red-700 text-xs font-semibold flex items-center gap-2 px-5 py-2 print:hidden" title="Falha no backup, na cópia para o Drive ou na limpeza. Clique para conferir."><ShieldAlert size={16} />Backup precisa de atenção</button>}
         {/* Top Mini Header Bar */}
         <header className="hidden shrink-0 items-center justify-between border-b border-slate-200/50 bg-white px-5 py-2 md:flex print:hidden">
           <div className="text-xs text-slate-400 font-bold font-mono">

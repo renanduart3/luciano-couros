@@ -22,6 +22,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
   const [selectingFolder, setSelectingFolder] = useState(false);
   const [backupStatus, setBackupStatus] = useState<Awaited<ReturnType<typeof api.getBackupStatus>> | null>(null);
   const [backupFolder, setBackupFolder] = useState("");
+  const [localBackupFolder, setLocalBackupFolder] = useState("");
   const [backupTime, setBackupTime] = useState("18:00");
   const [savingBackup, setSavingBackup] = useState(false);
   const [backupFeedback, setBackupFeedback] = useState("");
@@ -60,6 +61,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
       setStoreMobile(config.store_mobile || "98800-5778 e 98719-4108");
       setStoreEmail(config.store_email || "lucianocouros@hotmail.com");
       setBackupFolder(backupSettings.folder);
+      setLocalBackupFolder(backupSettings.localFolder);
       setBackupTime(backupSettings.time);
       setBackups(backupList);
       setSeguranca(segurancaStatus);
@@ -110,8 +112,8 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
   const handleManualBackup = async () => {
     setCreatingBackup(true);
     try {
-      await api.createBackup();
-      alert("Backup manual gerado com sucesso!");
+      const result = await api.createBackup();
+      alert(result.cloud.lastError ? "Backup local salvo. A cópia para o Drive precisa de atenção." : result.cloud.enabled ? "Backup local salvo e copiado para a pasta do Drive." : "Backup local salvo.");
       setBackupStatus(await api.getBackupStatus());
       const updatedList = await api.getBackups();
       setBackups(updatedList);
@@ -352,15 +354,18 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
               try {
                 const saved = await api.saveBackupSettings({ folder: backupFolder, time: backupTime });
                 setBackupFolder(saved.folder); setBackupTime(saved.time);
+                setLocalBackupFolder(saved.localFolder);
+                setBackupStatus(await api.getBackupStatus());
                 setBackups(await api.getBackups());
                 onRefreshConfig?.();
-                setBackupFeedback("Pasta e horário salvos. Use Criar Backup Agora para conferir o destino.");
+                setBackupFeedback("Configuração salva.");
               } catch (err: any) { setBackupFeedback(err.message || "Erro ao salvar backup."); }
               finally { setSavingBackup(false); }
             }}>
               <h4 className="font-bold">Backup diário</h4>
-              <label className="block text-sm">Pasta de destino no servidor
-                <input required readOnly className="block w-full border rounded-lg p-2 mt-1 bg-white" value={backupFolder} placeholder="Selecione uma pasta" />
+              <p className="text-xs text-slate-600">Local: <span className="break-all">{localBackupFolder}</span></p>
+              <label className="block text-sm">Pasta do Google Drive (opcional)
+                <input readOnly className="block w-full border rounded-lg p-2 mt-1 bg-white" value={backupFolder} placeholder="Sem cópia para o Drive" />
               </label>
               <button type="button" disabled={selectingFolder || savingBackup} className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {
                 setSelectingFolder(true); setBackupFeedback("");
@@ -368,14 +373,18 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 catch (err: any) { setBackupFeedback(err.message || "Erro ao selecionar pasta."); }
                 finally { setSelectingFolder(false); }
               }}>{selectingFolder ? "Aguardando seleção no Windows..." : "Selecionar pasta..."}</button>
-              <p className="text-xs text-slate-600">Selecione a mesma pasta existente que você adicionou no Google Drive para computador. Os backups manuais também serão salvos nela. Backups antigos permanecem na pasta anterior.</p>
-              <label className="block text-sm">Horário diário (hora local do servidor)
+              {backupFolder && <button type="button" disabled={savingBackup || selectingFolder} onClick={() => setBackupFolder("")} className="ml-2 text-xs underline">Desativar cópia para o Drive</button>}
+              <p className="text-xs text-slate-600">O backup local é copiado para esta pasta. Retenção: 7 dias nos dois destinos.</p>
+              <label className="block text-sm">Horário diário (servidor)
                 <input required type="time" className="block border rounded-lg p-2 mt-1" value={backupTime} onChange={e => setBackupTime(e.target.value)} />
               </label>
-              <p className="text-xs text-slate-600">Mantenha o computador ligado e o sistema em execução. Ao ligar após perder um ou mais horários, o sistema faz uma única cópia atual e depois retoma a rotina diária.</p>
+              <p className="text-xs text-slate-600">Deixe o computador ligado e o sistema em execução. Horários perdidos são recuperados ao iniciar.</p>
               <button disabled={savingBackup} className="bg-slate-900 text-white rounded-lg px-4 py-2">{savingBackup ? "Salvando..." : "Salvar backup diário"}</button>
-              {backupStatus?.alert && <p role="alert" className="text-sm text-red-700 flex items-start gap-2"><ShieldAlert size={18} className="shrink-0" />Backup precisa de atenção: {backupStatus.failures} falhas consecutivas. {backupStatus.lastError} Nova tentativa: {backupStatus.nextRetry ? new Date(backupStatus.nextRetry).toLocaleString("pt-BR") : "aguardando"}.</p>}
-              {backupStatus?.lastSuccess && <p className="text-xs text-slate-600">Último backup local concluído: {new Date(backupStatus.lastSuccess).toLocaleString("pt-BR")}</p>}
+              {backupStatus?.lastError && <p role="alert" className="text-xs text-red-700">Backup local: {backupStatus.lastError}</p>}
+              {backupStatus?.cleanupError && <p role="alert" className="text-xs text-red-700">Limpeza local: {backupStatus.cleanupError}</p>}
+              {backupStatus?.cloud.lastError && <p role="alert" className="text-xs text-red-700">Pasta do Drive: {backupStatus.cloud.lastError} Nova tentativa: {backupStatus.cloud.nextRetry ? new Date(backupStatus.cloud.nextRetry).toLocaleString("pt-BR") : "aguardando"}.</p>}
+              {backupStatus?.lastSuccess && <p className="text-xs text-slate-600">Última cópia local: {new Date(backupStatus.lastSuccess).toLocaleString("pt-BR")}</p>}
+              {backupStatus?.cloud.enabled && <p className="text-xs text-slate-600">Última cópia para a pasta do Drive: {backupStatus.cloud.lastSuccess ? new Date(backupStatus.cloud.lastSuccess).toLocaleString("pt-BR") : "pendente"}</p>}
               {backupFeedback && <p role="status" className="text-sm">{backupFeedback}</p>}
             </form>
 
@@ -386,13 +395,10 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 Segurança dos Dados
               </h4>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Esta aplicação funciona no modelo <strong>local-first</strong>, o que significa que todos os seus dados estão salvos com segurança no próprio disco do servidor local (banco SQLite).
+                Dados salvos neste computador. Backups mantidos por até <strong>7 dias</strong>.
               </p>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Enquanto estiver em execução, o sistema cria um <strong>backup diário automatizado</strong>, com retenção de 7 dias. A última cópia válida é preservada em caso de falha prolongada.
-              </p>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                A cópia na nuvem depende do Google Drive configurado e sincronizando a pasta de backups. Criar uma cópia local não confirma o envio à nuvem.
+                Confira a sincronização da nuvem no Google Drive.
               </p>
             </div>
 

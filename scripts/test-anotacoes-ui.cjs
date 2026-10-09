@@ -34,7 +34,7 @@ async function main() {
       await page.getByRole('button',{name:'Anotações',exact:true}).click();
       const nota=page.getByRole('textbox',{name:'Anotações',exact:true});assert.equal(await nota.inputValue(),'Nota anterior');
       await nota.fill('Combinar entrega sexta-feira.');await page.getByRole('button',{name:'Salvar anotação',exact:true}).click();await page.getByText('Anotação salva.',{exact:true}).waitFor();
-      await page.getByRole('button',{name:tipo==='vale'?'Detalhes':'Pagamentos',exact:true}).click();await page.getByRole('button',{name:'Anotações',exact:true}).click();assert.equal(await nota.inputValue(),'Combinar entrega sexta-feira.');
+      await page.getByRole('button',{name:'Detalhes',exact:true}).click();await page.getByRole('button',{name:'Anotações',exact:true}).click();assert.equal(await nota.inputValue(),'Combinar entrega sexta-feira.');
       await page.screenshot({path:path.join(output,tipo+'-anotacoes.png')});
       if(tipo==='vale') {
         assert.ok((await page.locator('header').first().innerText()).includes('123.456.789-01'));

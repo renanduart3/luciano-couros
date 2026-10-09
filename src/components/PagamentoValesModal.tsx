@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Coins, Loader2, X } from "lucide-react";
-import { ComprovanteRecebimento, TituloRecebimento, Venda } from "../types";
+import { ComprovanteRecebimento, OrdemCobranca, TituloRecebimento, Venda } from "../types";
 import { api } from "../lib/api";
 import { formatCurrency, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { ehTituloPagamento, FORMAS_PAGAMENTO } from "../lib/pagamentos";
@@ -15,6 +15,7 @@ interface Props {
   clienteNome: string;
   clienteDocumento?: string;
   vales: Venda[];
+  ordem?: OrdemCobranca;
   onClose: () => void;
   onSaved: () => Promise<void> | void;
   fecharAoSalvar?: boolean;
@@ -22,8 +23,8 @@ interface Props {
 
 const hoje = todayLocalIso;
 
-export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, vales, onClose, onSaved, fecharAoSalvar = false }: Props) {
-  const totalDivida = vales.reduce((total, vale) => total + Number(vale.saldoRestante), 0);
+export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, vales, ordem, onClose, onSaved, fecharAoSalvar = false }: Props) {
+  const totalDivida = ordem ? ordem.saldo : vales.reduce((total, vale) => total + Number(vale.saldoRestante), 0);
   const [data, setData] = useState(hoje());
   const [valor, setValor] = useState(totalDivida.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
   const [formaPagamento, setFormaPagamento] = useState("pix");
@@ -50,6 +51,11 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const credito = distribuirCentavos(valorBase, parcelasCartao);
   const alocacoes = useMemo(() => {
     let restante = Math.max(0, valorTotal);
+    if (ordem) return ordem.vales.flatMap(vale => {
+      const aplicado = Math.round(Math.max(0, Math.min(restante, Number(vale.saldo), Number(vale.saldoAtualVale))) * 100) / 100;
+      restante = Math.round(Math.max(0, restante - aplicado) * 100) / 100;
+      return aplicado > 0 ? [{ vendaId: vale.vendaId, numero: vale.numeroSequencial, valor: aplicado }] : [];
+    });
     return [...vales]
       .sort((a, b) => a.data.localeCompare(b.data) || Number(a.numeroSequencial) - Number(b.numeroSequencial))
       .flatMap((vale) => {
@@ -58,14 +64,14 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         restante = Math.round(Math.max(0, restante - aplicado) * 100) / 100;
         return aplicado > 0.005 ? [{ vendaId: vale.id, numero: vale.numeroSequencial, valor: aplicado }] : [];
       });
-  }, [vales, valorTotal]);
+  }, [vales, ordem, valorTotal]);
   const totalAplicado = alocacoes.reduce((total, item) => total + item.valor, 0);
   const bonusGerado = formaPagamento === "bonus" ? 0 : Math.max(0, valorTotal - totalAplicado);
 
   const registrar = async (event: React.FormEvent) => {
     event.preventDefault();
     if (salvando || feedback) return;
-    if (vales.length !== 1) return setErro("Para pagar vários vales, gere uma ordem de cobrança.");
+    if (!ordem && vales.length !== 1) return setErro("Para pagar vários vales, gere uma ordem de cobrança.");
     if (!Number.isFinite(valorTotal) || valorTotal <= 0 || valorInformado < 0 || bonusUsado < 0) return setErro("Informe um valor maior que zero.");
     if (bonusUsado > saldoBonus + 0.005) return setErro("O valor ultrapassa o bônus disponível do cliente.");
     if (bonusUsado > totalDivida + 0.005) return setErro("O bônus aplicado não pode ultrapassar a dívida selecionada.");
@@ -81,7 +87,8 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
         formaPagamento,
         parcelasCartao: formaPagamento === "cartao_credito" ? credito.length : undefined,
         valoresParcelasCartao: formaPagamento === "cartao_credito" ? credito : undefined,
-        observacao: `Pagamento do vale #${vales[0]?.numeroSequencial}`,
+        ordemCobrancaId: ordem?.id,
+        observacao: ordem ? `Pagamento da ordem #${ordem.numeroSequencial}` : `Pagamento do vale #${vales[0]?.numeroSequencial}`,
         titulos: ehTituloPagamento(formaPagamento) ? titulos : undefined,
         alocacoes: alocacoes.map(({ vendaId, valor: valorAlocado }) => ({ vendaId, valor: valorAlocado })),
       });
@@ -99,7 +106,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       setComprovante(await api.getComprovanteRecebimento(resultado.id));
 
     } catch (error: any) {
-      setErro(registrado ? "Pagamento registrado. Reabra o vale para atualizar a lista." : error.message || "Não foi possível registrar o pagamento.");
+      setErro(registrado ? "Pagamento registrado. Reabra o documento para atualizar a lista." : error.message || "Não foi possível registrar o pagamento.");
     } finally {
       setSalvando(false);
     }
@@ -108,7 +115,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => { setComprovante(null); onClose(); }} />;
   return <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 px-[10vw] py-[5vh] backdrop-blur-sm">
     <form onSubmit={registrar} role="dialog" aria-modal="true" aria-labelledby="pagamento-vales-titulo" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Adicionar pagamento · Vale #{vales[0]?.numeroSequencial}</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · CPF/CNPJ: {clienteDocumento || "Não informado"}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
+      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Adicionar pagamento · {ordem ? `Ordem #${ordem.numeroSequencial}` : `Vale #${vales[0]?.numeroSequencial}`}</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · CPF/CNPJ: {clienteDocumento || "Não informado"}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="space-y-4 overflow-y-auto bg-slate-100 p-4">
         <div className="grid gap-3 rounded-xl border border-slate-300 bg-white p-3 sm:grid-cols-3"><label className="text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor dos títulos" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} readOnly={pagamentoTitulo} inputMode="decimal" value={pagamentoTitulo ? totalTitulos.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} onChange={(event) => setValor(event.target.value)} className={`mt-1 w-full rounded-lg border px-3 py-2 text-right font-mono text-lg font-black ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-600" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`} />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Informe os valores nos títulos abaixo.</span>}</label><label className="text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 font-bold">{FORMAS_PAGAMENTO.filter(forma => forma.value !== "bonus").map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label></div>
         <div className="flex min-h-14 items-center gap-4 overflow-x-auto rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs">

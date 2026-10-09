@@ -12,7 +12,6 @@ interface Props {
 }
 
 export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }: Props) {
-  const resumo = demonstrativoOrdem(ordem);
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
 
   return createPortal(
@@ -32,6 +31,17 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
         </header>
 
         <div className="overflow-y-auto bg-slate-200 p-2 sm:p-4 print:overflow-visible print:bg-white print:p-0">
+          <DemonstrativoOrdemConteudo ordem={ordem}/>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) {
+  const resumo = demonstrativoOrdem(ordem);
+  return (
           <section className="mx-auto max-w-[900px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-950 shadow-sm print:max-w-none print:shadow-none">
             <header className="flex items-start justify-between gap-4 bg-slate-900 px-4 py-3 text-white">
               <div>
@@ -88,9 +98,5 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
               <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante após pagamentos registrados</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
             </footer>
           </section>
-        </div>
-      </div>
-    </div>,
-    document.body
   );
 }

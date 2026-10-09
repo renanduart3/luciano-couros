@@ -4,6 +4,13 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.39.1 — 2026-10-09
+
+- Ordem com abas no mesmo padrão dos vales: detalhes, demonstrativo, histórico e anotações.
+- Vales e totais à esquerda; pagamentos à direita, com valor abatido e confirmado por registro.
+- Inclusão de pagamento em modal, com bônus e atualização imediata da lista e dos saldos.
+- Resumo financeiro objetivo e ações em lote recolhidas para reduzir o excesso de informações.
+
 ## 1.39.0 — 2026-10-09
 
 - Cabeçalho do vale exibe nome e CPF/CNPJ do cliente; valores financeiros ficam na vertical ao lado dos pagamentos.

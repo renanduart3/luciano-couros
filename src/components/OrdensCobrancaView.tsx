@@ -1,3 +1,4 @@
+import { PagamentoValesModal } from "./PagamentoValesModal";
 import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
 import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -17,7 +18,7 @@ import { useEhGerente } from "../auth/AuthContext";
 import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
-import { OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
+import { DemonstrativoOrdemConteudo, OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination } from "./Pagination";
@@ -129,7 +130,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes">("parcelas");
+  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes" | "demonstrativo">("parcelas");
   const [encerramento, setEncerramento] = useState(false);
   const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
@@ -215,6 +216,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
 
   if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
+  {novoPagamento && <PagamentoValesModal clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} vales={[]} ordem={ordem} fecharAoSalvar onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos}/>}
   {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)} onSaved={async () => { await atualizarPagamentos(); setFeedback("Ordem reaberta para edição. Pagamentos preservados."); }}/>}
   {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
     const resultado = await api.finalizarOrdemCobranca(ordem.id, dados);
@@ -247,60 +249,63 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
       <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4"><button type="button" disabled={saving} onClick={() => { setEncerramento(false); setError(""); }} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black uppercase text-slate-700">Voltar</button><button type="submit" disabled={saving || !planoCancelamento || pinEncerramento.length < 4} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-40"><ShieldCheck size={16}/>{saving ? "Confirmando..." : "Cancelar ordem"}</button></footer>
     </form>
   </div>}
-  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 px-[10vw] py-[5vh] backdrop-blur-sm">
-    <div role="dialog" aria-modal="true" className="flex max-h-[90vh] w-full flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-      <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><p className="text-xs font-black text-slate-400">ORDEM DE COBRANÇA</p><h2 className="text-xl font-black">#{ordem.numeroSequencial} · {ordem.clienteNome}</h2><p className="mt-1 text-xs font-bold text-slate-300">CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</p><div className="mt-2 flex flex-wrap gap-2"><span className={`rounded-lg px-2 py-1 text-[10px] font-black ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><span className="rounded-lg bg-slate-800 px-2 py-1 text-[10px] font-black">EMITIDA EM {formatDate(ordem.dataEmissao)}</span></div></div><div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-white px-3 text-[10px] font-black uppercase text-slate-950"><FileText size={15}/> Demonstrativo</button>{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" className="inline-flex min-h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-[10px] font-black uppercase text-white"><MessageCircle size={15}/> WhatsApp</a>}<button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></div></header>
+  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+    <div role="dialog" aria-modal="true" className="flex max-h-[94vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+      <header className="vale-header">
+        <div className="vale-header-identity"><span className="vale-header-symbol"><FileText size={22}/></span><div className="min-w-0 flex-1"><h2>Ordem #{ordem.numeroSequencial}</h2><p>{ordem.clienteNome}</p><span>CPF/CNPJ: {ordem.clienteDocumento || "Não informado"}</span></div><span className={`rounded-lg px-2 py-1 text-xs font-bold ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><button type="button" onClick={onClose} aria-label="Fechar" className="vale-icon-button"><X size={20}/></button></div>
+        <div className="vale-header-navigation"><nav aria-label="Navegação da ordem" className="vale-tabs">
+          <button type="button" aria-pressed={abaDetalhe === "parcelas"} onClick={() => setAbaDetalhe("parcelas")}><ListChecks size={16}/> Detalhes</button>
+          <button type="button" aria-pressed={abaDetalhe === "demonstrativo"} onClick={() => setAbaDetalhe("demonstrativo")}><FileText size={16}/> Demonstrativo</button>
+          <button type="button" aria-pressed={abaDetalhe === "historico"} onClick={() => setAbaDetalhe("historico")}><History size={16}/> Histórico da ordem</button>
+          <button type="button" aria-pressed={abaDetalhe === "anotacoes"} onClick={() => setAbaDetalhe("anotacoes")}><FileText size={16}/> Anotações</button>
+        </nav><div className="vale-header-tools">{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}</div></div>
+      </header>
       <div className="min-h-0 space-y-4 overflow-y-auto bg-slate-100 p-4">
+        {abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setAbaDetalhe("parcelas")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "parcelas" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Pagamentos</button>
-          <button type="button" onClick={() => setAbaDetalhe("historico")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "historico" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Histórico da ordem</button>
-          <button type="button" onClick={() => setAbaDetalhe("anotacoes")} className={`rounded-lg px-3 py-2 text-xs font-bold ${abaDetalhe === "anotacoes" ? "bg-slate-900 text-white" : "bg-white text-slate-600"}`}>Anotações</button>
-        </div>
-        {abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="space-y-2">
+          <dl aria-label="Resumo da ordem" className="space-y-3 rounded-xl border border-slate-300 bg-white p-4 text-sm">
+            <div className="flex justify-between gap-2"><dt>Abatido</dt><dd className="font-mono font-bold">{formatCurrency(ordem.vales.reduce((s, v) => s + Number(v.valorPago || 0), 0))}</dd></div>
+            <div className="flex justify-between gap-2 text-emerald-800"><dt>Confirmado</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.recebido)}</dd></div>
+            <div className="flex justify-between gap-2 text-amber-800"><dt>A compensar</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.aguardando)}</dd></div>
+            {financeiroAtual.creditoUtilizado > 0 && <div className="flex justify-between gap-2 text-violet-800"><dt>Bônus utilizado</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.creditoUtilizado)}</dd></div>}
+            {!!financeiroAtual.transferido && <div className="flex justify-between gap-2"><dt>Transferido</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.transferido)}</dd></div>}
+            <div className="flex justify-between gap-2 border-t pt-3 text-lg font-bold"><dt>Restante</dt><dd className="font-mono">{formatCurrency(financeiroAtual.restantePresumido)}</dd></div>
+          </dl>
+        </div><section aria-label="Pagamentos registrados" className="min-w-0 space-y-3">
+          <h3 className="font-bold text-slate-800">Pagamentos registrados</h3>
           {acao && <ConfirmarAcaoPagamentosOrdem ordemId={ordem.id} acao={acao.acao} itens={acao.itens} onCancel={() => setAcao(null)} onSaved={aplicarAtualizacao}/>}
           <div className="flex flex-wrap justify-end gap-2">
-            {podeGerenciar && <><button disabled={!!acao || edicoes.size > 0} onClick={() => setSelecionados([...(ordem.pagamentos || []).map(p => ({ tipo: "recebimento" as const, id: p.id })), ...(ordem.projecoes || []).map(p => ({ tipo: "projecao" as const, id: p.id }))])} className="rounded border px-2 py-1 text-xs">Selecionar todos</button>
+            {podeGerenciar && <details className="relative"><summary className="cursor-pointer rounded border px-2 py-1.5 text-xs">Ações em lote{selecionados.length > 0 ? ` (${selecionados.length})` : ""}</summary><div className="absolute right-0 z-10 flex w-52 flex-col gap-2 rounded-lg border bg-white p-2 shadow-lg"><button disabled={!!acao || edicoes.size > 0} onClick={() => setSelecionados([...(ordem.pagamentos || []).map(p => ({ tipo: "recebimento" as const, id: p.id })), ...(ordem.projecoes || []).map(p => ({ tipo: "projecao" as const, id: p.id }))])} className="rounded border px-2 py-1 text-xs">Selecionar todos</button>
             <button disabled={!!acao || edicoes.size > 0 || !selecionados.length || selecionados.some(i => i.tipo === "projecao")} onClick={() => abrirAcao({ acao: "estornar", itens: selecionados })} className="rounded border px-2 py-1 text-xs disabled:opacity-40">Estornar selecionados</button>
-            <button disabled={!!acao || edicoes.size > 0 || !selecionados.length} onClick={() => abrirAcao({ acao: "excluir", itens: selecionados })} className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-40">Excluir selecionados</button></>}
+            <button disabled={!!acao || edicoes.size > 0 || !selecionados.length} onClick={() => abrirAcao({ acao: "excluir", itens: selecionados })} className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 disabled:opacity-40">Excluir selecionados</button></div></details>}
           <button type="button" disabled={!!acao || edicoes.size > 0 || novoPagamento || ordem.saldo <= 0.005 || ordem.status !== 'aberta'} onClick={() => setNovoPagamento(true)} className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button></div>
           <div ref={pagamentosRef} className="overflow-x-auto rounded-xl border border-slate-300 bg-white"><table className="payments-table w-full min-w-[700px] text-left text-xs">
-            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Recebido', 'Forma de pagamento', 'Situação', 'Ações'].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
+            <thead><tr><th className="w-8 p-2"><span className="sr-only">Selecionar</span></th>{['Data', 'Valor', 'Abatido', 'Confirmado', 'Forma de pagamento', 'Situação', 'Ações'].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
             <tbody>
-              {novoPagamento && <LinhaPagamento key="novo" iniciarEditando colunasAntes={1} onEditingChange={v => marcarEdicao("novo", v)} clienteId={ordem.clienteId} clienteNome={ordem.clienteNome}
-                clienteDocumento={ordem.clienteDocumento} saldo={ordem.saldo} alocar={alocarPagamento} ordemCobrancaId={ordem.id}
-                referencia={`ordem #${ordem.numeroSequencial}`} onSaved={atualizarPagamentos} onCancel={() => { marcarEdicao("novo", false); setNovoPagamento(false); }}><td/></LinhaPagamento>}
-              {!!ordem.projecoes?.length && <tr className="bg-blue-50"><th colSpan={7} className="p-2 text-left text-xs text-blue-900">Planejado · ainda não recebido</th></tr>}
-              {(ordem.projecoes || []).map(p => <LinhaPagamento key={p.id} projecao={p} colunasAntes={1}
+              {!!ordem.projecoes?.length && <tr className="bg-blue-50"><th colSpan={8} className="p-2 text-left text-xs text-blue-900">Planejado · ainda não recebido</th></tr>}
+              {(ordem.projecoes || []).map(p => <LinhaPagamento key={p.id} projecao={p} mostrarAbatimento colunasAntes={1}
                 clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento}
                 saldo={ordem.saldo} alocar={alocarPagamento} onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`previsão ${p.id.slice(0, 8)}`}
                 editavel={podeGerenciar && !acao} onEditingChange={v => marcarEdicao(p.id, v)} onSaved={atualizarPagamentos}
                 onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "projecao", id: p.id }] })}>
                 <td className="p-2"><input type="checkbox" aria-label="Selecionar previsão" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "projecao", id: p.id })}/></td>
               </LinhaPagamento>)}
-              {!!ordem.pagamentos?.length && <tr className="bg-slate-100"><th colSpan={7} className="p-2 text-left text-xs text-slate-700">Recebimentos registrados</th></tr>}
-              {[...(ordem.pagamentos || [])].reverse().slice((paginaPagamentos - 1) * 10, paginaPagamentos * 10).map(p => <LinhaPagamento key={p.id} pagamento={p} colunasAntes={1} onEditingChange={v => marcarEdicao(p.id, v)} clienteId={ordem.clienteId}
+              {!ordem.pagamentos?.length && !ordem.projecoes?.length && <tr><td colSpan={8} className="p-6 text-center text-slate-500">Nenhum pagamento registrado.</td></tr>}
+              {[...(ordem.pagamentos || [])].reverse().slice((paginaPagamentos - 1) * 10, paginaPagamentos * 10).map(p => <LinhaPagamento key={p.id} pagamento={p} mostrarAbatimento colunasAntes={1} onEditingChange={v => marcarEdicao(p.id, v)} clienteId={ordem.clienteId}
               clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} saldo={0} alocar={alocarPagamento}
               onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={podeGerenciar && !acao} onEstornar={() => abrirAcao({ acao: "estornar", itens: [{ tipo: "recebimento", id: p.id }] })} onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "recebimento", id: p.id }] })}
               onSaved={atualizarPagamentos} onComprovante={id => void abrirComprovanteSalvo(id)}><td className="p-2"><input type="checkbox" aria-label="Selecionar pagamento" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "recebimento", id: p.id })}/></td></LinhaPagamento>)}
 
             </tbody>
           </table>{(ordem.pagamentos?.length || 0) > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={ordem.pagamentos.length} onPageChange={setPaginaPagamentos}/>}</div>
-        </div> : <div className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
+        </section></div> : <div className="divide-y divide-slate-200 rounded-xl border border-slate-300 bg-white">
           {ordem.parcelas.length > 0 && <details className="px-3 py-2 text-xs"><summary className="cursor-pointer font-bold">Parcelamento anterior (somente consulta)</summary>{ordem.parcelas.map(p => <p key={p.id} className="mt-1">Parcela {p.numero} · {formatDate(p.vencimento)} · {formatCurrency(p.valor)}</p>)}</details>}
           {(ordem.eventos || []).map((evento) => <div key={evento.id} className="flex gap-3 px-3 py-2 text-[11px] leading-5"><span className="shrink-0 font-mono text-slate-500">{formatDate(evento.data)}</span><p className={evento.tipo === "estorno" ? "text-red-700" : "text-slate-700"}>{evento.texto}</p></div>)}
         </div>}
-        <div className="rounded-xl border border-slate-300 bg-white p-3 text-xs">
-          <div className="flex justify-between"><span>Total de cheques / boletos válidos</span><strong>{formatCurrency(demonstrativoOrdem(ordem).totalTitulos)}</strong></div>
-          <div className="mt-2 flex justify-between"><span>Total dos pagamentos + bônus</span><strong>{formatCurrency(financeiroAtual.presumido)}</strong></div>
-          {financeiroAtual.aguardando > 0 && <p className="mt-1 text-amber-800">Inclui {formatCurrency(financeiroAtual.aguardando)} aguardando compensação.</p>}
-          {financeiroAtual.creditoUtilizado > 0 && <p className="mt-1 text-violet-800">Inclui {formatCurrency(financeiroAtual.creditoUtilizado)} de bônus utilizado.</p>}
-          <div className="mt-2 flex justify-between border-t pt-2 font-bold"><span>Restante após pagamentos registrados</span><span>{formatCurrency(financeiroAtual.restantePresumido)}</span></div>
-        </div>
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}
       </div>

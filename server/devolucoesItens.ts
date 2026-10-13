@@ -4,7 +4,7 @@ const erro = (s: string): never => { throw Object.assign(new Error(s), { statusC
 const dinheiro = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 export const devolvidoEmOutraVendaSql = (alias: string) => `COALESCE((SELECT SUM(-r.quantidade) FROM itens_venda r JOIN vendas vr ON vr.id=r.vendaId WHERE r.itemOrigemId=${alias}.id AND r.quantidade<0 AND vr.deletedAt IS NULL AND vr.status<>'cancelada'),0)`;
 export function ultimoPrecoDevolucao(clienteId: string, produtoId: string, unidade: string, excluirVenda = '') {
-  const item = queryOne<any>(`SELECT i.*, v.desconto descontoGeral,
+  const item = queryOne<any>(`SELECT i.*, v.data dataUltimaVenda, v.desconto descontoGeral,
     (SELECT COALESCE(SUM(p.total),0) FROM itens_venda p WHERE p.vendaId=v.id AND p.quantidade>0) baseDesconto
     FROM itens_venda i JOIN vendas v ON v.id=i.vendaId
     WHERE v.clienteId=? AND i.produtoId=? AND i.unidade=? AND i.quantidade>0
@@ -12,7 +12,7 @@ export function ultimoPrecoDevolucao(clienteId: string, produtoId: string, unida
     ORDER BY v.data DESC,v.createdAt DESC,v.numeroSequencial DESC,i.rowid DESC LIMIT 1`, [clienteId,produtoId,unidade,excluirVenda]);
   if (!item) erro('Não há compra anterior deste produto para este cliente e unidade.');
   const fator = item.baseDesconto > 0 ? 1 - Number(item.descontoGeral || 0)/item.baseDesconto : 1;
-  return { itemId: item.id, preco: dinheiro(Number(item.total)/Number(item.quantidade)*fator) };
+  return { itemId: item.id, dataUltimaVenda: item.dataUltimaVenda, preco: dinheiro(Number(item.total)/Number(item.quantidade)*fator) };
 }
 export function itensElegiveisDevolucao(clienteId: string, excluirVenda = '') {
   const precos = new Map<string, ReturnType<typeof ultimoPrecoDevolucao>>();
@@ -29,7 +29,7 @@ export function itensElegiveisDevolucao(clienteId: string, excluirVenda = '') {
       return {...i,...precos.get(chave)};
     });
 }
-export function resolverLinhaDevolucao(entrada: any, clienteId: string, vendaId: string, usadas: Set<string>, atual?: any) {
+export function resolverLinhaDevolucao(entrada: any, clienteId: string, vendaId: string, usadas: Set<string>, atual?: any, autorizado = false) {
   const origemId = String(entrada.itemOrigemId || '');
   if (usadas.has(origemId)) erro('Agrupe a devolução da mesma compra em uma única linha.');
   usadas.add(origemId);
@@ -39,7 +39,10 @@ export function resolverLinhaDevolucao(entrada: any, clienteId: string, vendaId:
   if (entrada.unidade && entrada.unidade !== origem.unidade) erro('A unidade da devolução deve ser a mesma da compra.');
   if (Number(entrada.desconto || 0) !== 0) erro('Devolução não aceita desconto adicional.');
   const preservar = atual?.itemOrigemId === origemId && Number(atual.quantidade)<0;
-  const preco = preservar ? Number(atual.precoUnitario) : origem.preco;
+  if (entrada.precoDevolucaoAlterado === true && !autorizado) throw Object.assign(new Error('Senha administrativa inválida para alterar o preço de devolução.'), { statusCode: 403 });
+  const precoBase = preservar ? Number(atual.precoUnitario) : origem.preco;
+  const preco = entrada.precoDevolucaoAlterado === true && autorizado ? Number(entrada.precoUnitario) : precoBase;
+  if (!Number.isFinite(preco) || preco < 0) erro('Informe um preço de devolução válido.');
   if (Math.abs(Number(entrada.precoUnitario)-preco)>0.005 || !Number.isFinite(Number(entrada.precoUnitario))) erro('O último preço do cliente mudou. Carregue novamente os itens de devolução.');
   const total = -dinheiro(-qtd*preco), custoTotal = -dinheiro(-qtd*Number(origem.custoUnitario));
   return { ...origem, id: atual?.id || 'itv_'+crypto.randomUUID().replaceAll('-',''), vendaId,

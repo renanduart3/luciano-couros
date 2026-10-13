@@ -55,6 +55,15 @@ async function main() {
     await request('POST',`/vendas/${cancelada.id}/cancelar`,{pin});
     const elegiveis = await request('GET',`/clientes/${cliente.id}/itens-devolucao`);
     assert.equal(elegiveis.find(i=>i.id===compra.items[0].id).preco,12);
+    assert.equal(elegiveis.find(i=>i.id===compra.items[0].id).dataUltimaVenda,'2026-09-08');
+    const personalizada = await criar([linha(produto,-0.1,15,{itemOrigemId:compra.items[0].id,precoDevolucaoAlterado:true})]);
+    assert.equal(personalizada.creditoLinhaDevolucao,1.5);
+    await criar([linha(produto,-0.1,-1,{itemOrigemId:compra.items[0].id,precoDevolucaoAlterado:true})],{},409);
+    const personalizadaEditada = await editar(personalizada,personalizada.items.map(i=>({...i,precoUnitario:14,precoDevolucaoAlterado:true})));
+    assert.equal(personalizadaEditada.creditoLinhaDevolucao,1.4);
+    await request('POST',`/vendas/${personalizada.id}/cancelar`,{pin});
+    await criar([linha(produto,-0.1,15,{itemOrigemId:compra.items[0].id})],{},409);
+    await criar([linha(produto,-0.1,15,{itemOrigemId:compra.items[0].id,precoDevolucaoAlterado:true})],{autorizacaoPreco:{pin:'errado'}},403);
     const retorno = q=>linha(produto,-q,12,{itemOrigemId:compra.items[0].id});
     const mista = await criar([linha(produtoNovo,1,50),retorno(1)]);
     assert.equal(mista.totalLiquido,38); assert.equal(mista.saldoRestante,38);

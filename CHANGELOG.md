@@ -4,6 +4,12 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.39.2 — 2026-10-13
+
+- Devolução usa o último preço efetivamente vendido do produto ao cliente, com consulta da data da venda.
+- Edição do preço de devolução na seleção e nas linhas, com diálogo mostrando preço/data e senha administrativa obrigatória.
+- Preço excepcional restrito à devolução, com validação no servidor e preservação dos cálculos de crédito e do histórico.
+
 ## 1.39.1 — 2026-10-09
 
 - Ordem com abas no mesmo padrão dos vales: detalhes, demonstrativo, histórico e anotações.

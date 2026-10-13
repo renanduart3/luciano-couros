@@ -3312,7 +3312,7 @@ app.post("/api/vendas", (req, res) => {
       // Prepare item insertions
       const origensDevolucao = new Set<string>();
       const resolvedItems = items.map((it: any, itemIndex: number) => {
-        if (Number(it.quantidade)<0 || it.itemOrigemId) return resolverLinhaDevolucao(it,clienteId,vendaId,origensDevolucao);
+        if (Number(it.quantidade)<0 || it.itemOrigemId) return resolverLinhaDevolucao(it,clienteId,vendaId,origensDevolucao,undefined,!!validarPinAdministrador(autorizacaoPreco?.pin));
         const prod = queryOne<any>("SELECT * FROM produtos WHERE id = ?", [it.produtoId]);
         if (!prod || prod.deletedAt || Number(prod.ativo) !== 1) {
           const motivo = !prod ? "nao_encontrado" : prod.deletedAt ? "excluido" : "inativo";
@@ -3806,7 +3806,7 @@ app.put("/api/vendas/:id", (req, res) => {
         if (Number(entrada.quantidade)<0 || entrada.itemOrigemId) {
           if (atual && !atual.itemOrigemId) throw erroHttp('Adicione a devolução como uma nova linha vinculada à compra.',409);
           if (atual) idsInformados.add(atual.id);
-          return resolverLinhaDevolucao(entrada,venda.clienteId,vendaId,origensDevolucao,atual);
+          return resolverLinhaDevolucao(entrada,venda.clienteId,vendaId,origensDevolucao,atual,!!administrador);
         }
         if (atual?.itemOrigemId) throw erroHttp('Uma devolução deve manter quantidade negativa.',409);
         const itemNovo = !atual

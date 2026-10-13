@@ -1,3 +1,4 @@
+import { PrecoDevolucaoInput } from "./PrecoDevolucaoInput";
 import { formatarQuantidades, quantidadesPorUnidade } from "../lib/quantidades";
 import { SelecionarDevolucao } from "./SelecionarDevolucao";
 import { arredondarDinheiro } from "../lib/totaisVenda";
@@ -33,6 +34,7 @@ interface VendaRapidaViewProps {
 }
 
 interface ItemRascunho {
+  precoDevolucaoAlterado?: boolean;
   itemOrigemId?: string | null;
   id?: string;
   produtoId: string;
@@ -936,6 +938,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           items: itensPreenchidos.map((item) => ({
             id: item.id || `novo_${item.itemOrigemId || item.produtoId}`,
             itemOrigemId: item.itemOrigemId,
+            precoDevolucaoAlterado: item.precoDevolucaoAlterado,
             produtoId: item.produtoId,
             fornecedorId: item.fornecedorId,
             fornecedorReferencia: item.fornecedorReferencia,
@@ -957,6 +960,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         totalEsperado: totalLiquido,
         items: itensPreenchidos.map(it => ({
           itemOrigemId: it.itemOrigemId,
+          precoDevolucaoAlterado: it.precoDevolucaoAlterado,
           produtoId: it.produtoId,
           fornecedorId: it.fornecedorId,
           fornecedorReferencia: it.fornecedorReferencia,
@@ -1794,7 +1798,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
             <tbody className="divide-y divide-slate-100">
               {modoDevolucao && clienteSelecionado ? <SelecionarDevolucao clienteId={clienteSelecionado.id} vendaId={vendaEmEdicao?.id} onAdd={(i, quantidade) => {
                 if (itensVenda.some(r => r.itemOrigemId === i.id)) { setFeedbackMsg({ type: "error", text: "Este produto já está nas devoluções. Ajuste sua quantidade na linha vermelha." }); return false; }
-                setItensVenda(atuais => [...atuais, { itemOrigemId: i.id, produtoId: i.produtoId, fornecedorId: i.fornecedorId, fornecedorReferencia: i.fornecedorReferencia, codigo: i.referencia,
+                setItensVenda(atuais => [...atuais, { itemOrigemId: i.id, precoDevolucaoAlterado: i.precoDevolucaoAlterado, produtoId: i.produtoId, fornecedorId: i.fornecedorId, fornecedorReferencia: i.fornecedorReferencia, codigo: i.referencia,
                   nome: i.descricao, quantidade: String(-quantidade).replace('.', ','), unidade: i.unidade, precoUnitario: i.preco.toFixed(2).replace('.', ','), precoPadrao: i.preco, desconto: '' }]);
                 return true;
               }} /> : <tr className="bg-emerald-50/70">
@@ -1870,7 +1874,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                         </select>
                       </td>
                       <td className="p-2 text-right font-mono font-bold text-slate-600">
-                        {it.itemOrigemId ? <span>{formatCurrency(price)}</span> : clienteSelecionado ? <PrecoAutorizadoInput
+                        {it.itemOrigemId && clienteSelecionado ? <PrecoDevolucaoInput clienteId={clienteSelecionado.id} produtoId={it.produtoId} unidade={it.unidade} vendaId={vendaEmEdicao?.id} value={it.precoUnitario} onAuthorized={valor => handleUpdateItem(idx, { precoUnitario: valor, precoDevolucaoAlterado: true })} /> : clienteSelecionado ? <PrecoAutorizadoInput
                           clienteId={clienteSelecionado.id}
                           produtoId={it.produtoId}
                           fornecedorId={it.fornecedorId}

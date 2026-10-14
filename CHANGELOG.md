@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.40.1 — 2026-10-14
+
+- Nova aba Recebimentos no vale com comprovante acumulado e impressão; removido o ícone repetido nas linhas de pagamento.
+- Comprovante individual com número e valor original do vale no topo; saldo exibido somente no total restante.
+
 ## 1.40.0 — 2026-10-14
 
 - Comprovante individual do vale com valor original, saldo atual e pagamentos acumulados por ordem de registro.

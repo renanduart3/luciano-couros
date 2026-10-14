@@ -4,7 +4,7 @@ const path = require('node:path');
 const { buildSync } = require('esbuild');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 async function main() {
- const script = buildSync({stdin:{resolveDir:process.cwd(),loader:'tsx',contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {OrdemCobrancaDetalhesModal} from './src/components/OrdensCobrancaView';import {ComprovanteRecebimentoModal} from './src/components/ComprovanteRecebimentoModal';import {DemonstrativoOrdemConteudo} from './src/components/OrdemCobrancaDemonstrativoModal';const root=createRoot(document.getElementById('root'));window.renderReceipt=c=>root.render(<ComprovanteRecebimentoModal comprovante={c} onClose={()=>{}}/>);window.renderOrderDetails=o=>root.render(<OrdemCobrancaDetalhesModal ordem={o} onClose={()=>{}} onChanged={()=>{}}/>);window.renderOrder=o=>root.render(<DemonstrativoOrdemConteudo ordem={o}/>);`},bundle:true,platform:'browser',loader:{'.png':'dataurl'},write:false}).outputFiles[0].text;
+ const script = buildSync({stdin:{resolveDir:process.cwd(),loader:'tsx',contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {OrdemCobrancaDetalhesModal} from './src/components/OrdensCobrancaView';import {ComprovanteRecebimentoModal} from './src/components/ComprovanteRecebimentoModal';import {DemonstrativoOrdemConteudo} from './src/components/OrdemCobrancaDemonstrativoModal';const root=createRoot(document.getElementById('root'));window.renderReceipt=(c,embedded=false)=>root.render(<ComprovanteRecebimentoModal embedded={embedded} comprovante={c} onClose={()=>{}}/>);window.renderOrderDetails=o=>root.render(<OrdemCobrancaDetalhesModal ordem={o} onClose={()=>{}} onChanged={()=>{}}/>);window.renderOrder=o=>root.render(<DemonstrativoOrdemConteudo ordem={o}/>);`},bundle:true,platform:'browser',loader:{'.png':'dataurl'},write:false}).outputFiles[0].text;
  const css=fs.readFileSync(path.join('dist/assets',fs.readdirSync('dist/assets').find(f=>f.endsWith('.css'))),'utf8');
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
  try {
@@ -35,10 +35,15 @@ async function main() {
  assert.equal(await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).count(),0);
  assert.equal(await page.locator('.payment-receipt-methods tbody tr').count(),2);
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('569,00'));
- assert.ok((await page.locator('.payment-receipt-vales').first().innerText()).includes('985,60'));
+ assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('985,60'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('PIX'));
  await page.locator('.payment-receipt-paper').screenshot({path:screenshot});
  for(const width of [390,768,1280]) { await page.setViewportSize({width,height:1000});assert.ok(await page.locator('.payment-receipt-paper').evaluate(e=>e.scrollWidth <= e.clientWidth+1)); }
+ await page.evaluate(c=>window.renderReceipt(c,true),cumulative);
+ await page.getByRole('region',{name:'Comprovante de recebimento'}).waitFor();
+ assert.equal(await page.getByRole('button',{name:'Fechar comprovante'}).count(),0);
+ assert.equal(await page.getByRole('button',{name:'Imprimir',exact:true}).count(),1);
  const order={id:'o',clienteId:'c',numeroSequencial:19,status:'aberta',saldo:627.4,valorPago:500,parcelas:[],eventos:[],dataEmissao:'2026-10-14',updatedAt:'2026-10-14',clienteNome:'Teste',totalOriginal:1127.4,pagamentos:[],vales:[{id:'v',vendaId:'v',numeroSequencial:153,descricao:'MATERIAIS QUE NÃO DEVEM APARECER',valorOriginalVale:2421.4,valorPagoTotalVale:2225.8,valorVinculado:695.6,valorPago:500,saldo:195.6,saldoAtualVale:195.6,data:'2026-08-21'},{id:'v2',vendaId:'v2',numeroSequencial:154,valorOriginalVale:431.8,valorPagoTotalVale:0,valorVinculado:431.8,valorPago:0,saldo:431.8,saldoAtualVale:431.8,data:'2026-08-21'}]};
  await page.evaluate(o=>window.renderOrder(o),order);await page.getByText('VALE',{exact:true}).first().waitFor();
  assert.equal(await page.getByText('MATERIAIS QUE NÃO DEVEM APARECER',{exact:true}).count(),0);

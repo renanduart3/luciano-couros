@@ -31,7 +31,7 @@ const formatarDataHora = (valor?: string) => {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" }).format(data);
 };
 
-export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprovante: ComprovanteRecebimento; onClose: () => void }) {
+export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = false }: { comprovante: ComprovanteRecebimento; onClose: () => void; embedded?: boolean }) {
   const [loja, setLoja] = useState<LojaComprovante>(LOJA_PADRAO);
   const acumulados = comprovante.pagamentosVale;
   const temDocumentos = acumulados?.some(p => p.titulos.length > 0);
@@ -71,11 +71,11 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
     ? descreverParcelamentoCartao(comprovante.valorRecebido, normalizarQuantidadeParcelas(comprovante.parcelasCartao), comprovante.valoresParcelasCartao)
     : "";
 
-  return createPortal(<div id="print-payment-receipt" role="dialog" aria-modal="true" aria-label="Comprovante de recebimento" className="fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 sm:p-8">
+  const conteudo = <div id="print-payment-receipt" role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Comprovante de recebimento" className={embedded ? "w-full min-h-0 overflow-y-auto print:overflow-visible" : "fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 sm:p-8"}>
     <div id="comprovante-recebimento" className="w-full max-w-5xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
       <div className="flex items-center justify-between gap-3 border-b border-slate-300 bg-white p-3 print:hidden">
         <div><p className="text-[10px] font-black uppercase text-slate-500">Comprovante salvo · dados atualizados</p><h2 className="font-black text-slate-950">Recebimento {referencia}</h2></div>
-        <div className="flex gap-2"><button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white"><Printer size={16}/>Imprimir</button><button type="button" onClick={onClose} aria-label="Fechar comprovante" className="rounded-lg border border-slate-300 p-2"><X size={18}/></button></div>
+        <div className="flex gap-2"><button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white"><Printer size={16}/>Imprimir</button>{!embedded && <button type="button" onClick={onClose} aria-label="Fechar comprovante" className="rounded-lg border border-slate-300 p-2"><X size={18}/></button>}</div>
       </div>
 
       <article className={`payment-receipt-paper${acumulados ? " payment-receipt-individual" : ""}`}>
@@ -92,8 +92,8 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
         {acumulados ? <>
           <section className="payment-receipt-section">
             <h3>VALE</h3>
-            <table className="payment-receipt-vales"><thead><tr><th>Nº VALE</th><th className="number">VALOR ORIGINAL</th><th className="number">SALDO</th></tr></thead>
-              <tbody>{vales.map(v => <tr key={v.numeroSequencial}><td>#{v.numeroSequencial}</td><td className="number">{formatCurrency(v.valorVale ?? v.saldoAntes)}</td><td className="number strong">{formatCurrency(v.saldoAtual ?? v.saldoDepois)}</td></tr>)}</tbody>
+            <table className="payment-receipt-vales"><thead><tr><th>Nº VALE</th><th className="number">VALOR ORIGINAL</th></tr></thead>
+              <tbody>{vales.map(v => <tr key={v.numeroSequencial}><td>#{v.numeroSequencial}</td><td className="number">{formatCurrency(v.valorVale ?? v.saldoAntes)}</td></tr>)}</tbody>
             </table>
           </section>
           <section className="payment-receipt-section">
@@ -140,5 +140,6 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
         </footer>
       </article>
     </div>
-  </div>, document.body);
+  </div>;
+  return embedded ? conteudo : createPortal(conteudo, document.body);
 }

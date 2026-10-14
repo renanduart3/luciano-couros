@@ -4,6 +4,11 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.40.2 — 2026-10-14
+
+- Aba Recebimentos nas ordens com comprovante acumulado, pagamentos em ordem de registro e totais exclusivos da ordem.
+- Removido o ícone de comprovante individual das linhas de pagamento das ordens.
+
 ## 1.40.1 — 2026-10-14
 
 - Nova aba Recebimentos no vale com comprovante acumulado e impressão; removido o ícone repetido nas linhas de pagamento.

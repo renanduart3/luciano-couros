@@ -132,14 +132,14 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes" | "demonstrativo">("parcelas");
+  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes" | "demonstrativo" | "recebimentos">("parcelas");
   const [encerramento, setEncerramento] = useState(false);
   const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
   const [reabrirFinalizacao, setReabrirFinalizacao] = useState(false);
   const [pinEncerramento, setPinEncerramento] = useState("");
   const [motivoEncerramento, setMotivoEncerramento] = useState("");
-  const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
+
   const [editandoVales, setEditandoVales] = useState(false);
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
@@ -207,10 +207,17 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
     }
   };
 
-  const abrirComprovanteSalvo = async (recebimentoId: string) => {
-    setError("");
-    try { setComprovante(await api.getComprovanteRecebimento(recebimentoId)); }
-    catch (err: any) { setError(err.message || "Não foi possível abrir o comprovante."); }
+  const abrirComprovanteSalvo = (_recebimentoId: string) => { setAbaDetalhe("recebimentos"); };
+  const pagamentosRecibo = [...(ordem.pagamentos || [])].filter(p => p.status === "ativo")
+    .sort((a,b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const comprovanteOrdem: ComprovanteRecebimento = {
+    id: `ordem_${ordem.numeroSequencial}`, data: ordem.dataEmissao, clienteNome: ordem.clienteNome,
+    clienteDocumento: ordem.clienteDocumento, formaPagamento: "", valorRecebido: 0, valorAplicado: 0,
+    valorDevidoAntes: ordem.totalOriginal, titulos: [], observacao: ordem.observacao,
+    resumoOrdem: { numero: ordem.numeroSequencial, totalOriginal: ordem.totalOriginal, saldo: ordem.saldo },
+    vales: ordem.vales.map(v => ({ numeroSequencial: v.numeroSequencial, valorVale: v.valorOriginalVale ?? v.valorVinculado,
+      valorAplicado: v.valorPago, saldoAntes: v.valorVinculado, saldoDepois: v.saldo, saldoAtual: v.saldo })),
+    pagamentosVale: pagamentosRecibo.map(p => ({ ...p, valorNoVale: p.valorAplicadoOrdem ?? p.valorAplicado })),
   };
 
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
@@ -226,7 +233,6 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
     return { mensagem: resultado.valeResidual ? `Ordem finalizada. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Ordem finalizada e saldos encerrados." };
   }}/>} {recebimentoAberto && <RecebimentoDetalhesModal somenteLeitura={Boolean(ordem.finalizadoAt)} ordemContextoId={ordem.id} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
   {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => setDemonstrativoAberto(false)} onClose={() => setDemonstrativoAberto(false)} />}
-  {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
     <form onSubmit={encerrar} role="alertdialog" aria-modal="true" aria-labelledby="encerrar-ordem-titulo" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 p-4">
@@ -258,12 +264,13 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         <div className="vale-header-navigation"><nav aria-label="Navegação da ordem" className="vale-tabs">
           <button type="button" aria-pressed={abaDetalhe === "parcelas"} onClick={() => setAbaDetalhe("parcelas")}><ListChecks size={16}/> Detalhes</button>
           <button type="button" aria-pressed={abaDetalhe === "demonstrativo"} onClick={() => setAbaDetalhe("demonstrativo")}><FileText size={16}/> Demonstrativo</button>
+          <button type="button" aria-pressed={abaDetalhe === "recebimentos"} onClick={() => setAbaDetalhe("recebimentos")}><FileText size={16}/> Recebimentos</button>
           <button type="button" aria-pressed={abaDetalhe === "historico"} onClick={() => setAbaDetalhe("historico")}><History size={16}/> Histórico da ordem</button>
           <button type="button" aria-pressed={abaDetalhe === "anotacoes"} onClick={() => setAbaDetalhe("anotacoes")}><FileText size={16}/> Anotações</button>
         </nav><div className="vale-header-tools">{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}</div></div>
       </header>
       <div className="min-h-0 space-y-4 overflow-y-auto bg-slate-100 p-4">
-        {abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
+        {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
@@ -300,7 +307,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
               {[...(ordem.pagamentos || [])].reverse().slice((paginaPagamentos - 1) * 10, paginaPagamentos * 10).map(p => <LinhaPagamento key={p.id} pagamento={p} mostrarAbatimento colunasAntes={1} onEditingChange={v => marcarEdicao(p.id, v)} clienteId={ordem.clienteId}
               clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} saldo={0} alocar={alocarPagamento}
               onDetalhes={setRecebimentoAberto} ordemCobrancaId={ordem.id} referencia={`ordem #${ordem.numeroSequencial}`} editavel={podeGerenciar && !acao} onEstornar={() => abrirAcao({ acao: "estornar", itens: [{ tipo: "recebimento", id: p.id }] })} onExcluir={() => abrirAcao({ acao: "excluir", itens: [{ tipo: "recebimento", id: p.id }] })}
-              onSaved={atualizarPagamentos} onComprovante={id => void abrirComprovanteSalvo(id)}><td className="p-2"><input type="checkbox" aria-label="Selecionar pagamento" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "recebimento", id: p.id })}/></td></LinhaPagamento>)}
+              onSaved={atualizarPagamentos}><td className="p-2"><input type="checkbox" aria-label="Selecionar pagamento" disabled={!podeGerenciar || !!acao || edicoes.size > 0} checked={selecionados.some(i => i.id === p.id)} onChange={() => alternar({ tipo: "recebimento", id: p.id })}/></td></LinhaPagamento>)}
 
             </tbody>
           </table>{(ordem.pagamentos?.length || 0) > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={ordem.pagamentos.length} onPageChange={setPaginaPagamentos}/>}</div>

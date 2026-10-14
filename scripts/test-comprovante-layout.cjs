@@ -52,6 +52,14 @@ async function main() {
  const originalRow=await page.getByRole('region',{name:'Vales da ordem'}).locator('tbody tr').first().innerText();
  for(const amount of ['2.421,40','2.225,80','195,60']) assert.ok(originalRow.includes(amount));
  assert.ok(!originalRow.includes('695,60'));
+ const payments=[{id:'b',createdAt:'2026-10-14T12:00:00',data:'2026-09-01',formaPagamento:'pix',status:'ativo',statusPagamento:'compensado',valorRecebido:900,valorAplicado:900,valorAplicadoOrdem:300,titulos:[],bonusUtilizado:0},{id:'a',createdAt:'2026-10-14T11:00:00',data:'2026-10-14',formaPagamento:'pix',status:'ativo',statusPagamento:'compensado',valorRecebido:200,valorAplicado:200,valorAplicadoOrdem:200,titulos:[],bonusUtilizado:0}];
+ await page.evaluate(o=>window.renderOrderDetails(o),{...order,pagamentos:payments});
+ await page.getByRole('button',{name:'Recebimentos',exact:true}).click();
+ await page.getByText('TOTAL PAGO',{exact:true}).waitFor();
+ assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('500,00'));
+ assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('200,00'));
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('627,40'));
+ assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
  console.log('OK: original e abatimento acumulado por vale, saldo do recibo e atual separados, 30 vales, descrição VALE e ordem com pagamentos anteriores.');
  } finally {await browser.close();}
 }

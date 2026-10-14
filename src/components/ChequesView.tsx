@@ -28,7 +28,8 @@ const textoStatus = (cheque: ChequeGerencial) => {
   return "AGUARDANDO";
 };
 
-export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
+export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro = "" }: {
+  clienteFiltro?: string;
   onOpenVale: (vendaId: string) => void;
   onOpenOrdem: (ordemId: string) => void;
   onChanged?: () => void;
@@ -54,9 +55,10 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
   };
 
   useEffect(() => { void carregar(); }, []);
-  useEffect(() => { setPage(1); }, [filtro, busca, vencimentoInicio, vencimentoFim]);
+  useEffect(() => { setPage(1); }, [clienteFiltro, filtro, busca, vencimentoInicio, vencimentoFim]);
 
-  const filtrados = useMemo(() => cheques.filter((cheque) => {
+  const chequesCliente = useMemo(() => cheques.filter(c => !clienteFiltro || c.clienteId === clienteFiltro), [cheques, clienteFiltro]);
+  const filtrados = useMemo(() => chequesCliente.filter((cheque) => {
     if (filtro === "aguardando" && cheque.status !== "aguardando") return false;
     if (filtro === "compensados_hoje" && (cheque.status !== "compensado" || cheque.dataCompensacao !== hojeIso())) return false;
     if (filtro === "compensados" && cheque.status !== "compensado") return false;
@@ -68,12 +70,12 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
     return [cheque.clienteNome, cheque.clienteDocumento, cheque.nomeTitular, cheque.cpfTitular, cheque.cpfTerceiro, cheque.numeroCheque,
       ...cheque.vales.map((vale) => String(vale.numeroSequencial)), ...cheque.ordens.map((ordem) => String(ordem.numeroSequencial))]
       .some((valor) => String(valor || "").toLocaleLowerCase("pt-BR").includes(termo));
-  }), [cheques, filtro, busca, vencimentoInicio, vencimentoFim]);
+  }), [chequesCliente, filtro, busca, vencimentoInicio, vencimentoFim]);
 
   const totais = useMemo(() => {
-    const aguardando = cheques.filter((cheque) => cheque.status === "aguardando");
-    const compensadosHoje = cheques.filter((cheque) => cheque.status === "compensado" && cheque.dataCompensacao === hojeIso());
-    const recusados = cheques.filter((cheque) => cheque.status === "recusado");
+    const aguardando = chequesCliente.filter((cheque) => cheque.status === "aguardando");
+    const compensadosHoje = chequesCliente.filter((cheque) => cheque.status === "compensado" && cheque.dataCompensacao === hojeIso());
+    const recusados = chequesCliente.filter((cheque) => cheque.status === "recusado");
     return {
       aguardando: aguardando.length,
       valorAguardando: aguardando.reduce((total, cheque) => total + Number(cheque.valorRecebido), 0),
@@ -81,7 +83,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
       valorCompensadoHoje: compensadosHoje.reduce((total, cheque) => total + Number(cheque.valorRecebido), 0),
       recusados: recusados.length,
     };
-  }, [cheques]);
+  }, [chequesCliente]);
 
   const atualizarEditado = async () => { setCheques(await api.getCheques()); onChanged?.(); };
   const abrirComprovante = async (recebimentoId: string) => {
@@ -98,9 +100,9 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged }: {
     {comprovante && <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />}
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {[
-        ["Valor", cheques.reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
-        ["Recebido", cheques.filter(t=>t.status==="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
-        ["Restante", cheques.filter(t=>t.status!=="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+        ["Valor", chequesCliente.reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+        ["Recebido", chequesCliente.filter(t=>t.status==="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
+        ["Restante", chequesCliente.filter(t=>t.status!=="compensado").reduce((s,t)=>s+Math.round(Number(t.valorRecebido)*100),0)/100],
       ].map(([label,valor])=><div key={label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold text-slate-500">{label}</p><p className="mt-1 text-2xl font-black">{formatCurrency(Number(valor))}</p><p className="text-[10px] text-slate-500">Total dos cheques e boletos cadastrados</p></div>)}
     </div>
 

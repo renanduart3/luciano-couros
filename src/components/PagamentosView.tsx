@@ -7,7 +7,7 @@ import { paginate, Pagination } from "./Pagination";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
-import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 
 const PAGE_SIZE = 12;
 
@@ -383,7 +383,6 @@ export function PagamentosView({ onRefreshStats }: PagamentosViewProps) {
                           <span className="inline-block px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded text-[9px] font-extrabold uppercase">
                             {p.formaPagamento}
                           </span>
-                          <ResumoParcelamentoCartao formaPagamento={p.formaPagamento} parcelasCartao={p.parcelasCartao} valorTotal={p.valor} />
                           <span className="text-[10px] text-slate-500 font-medium">
                             {p.vendaSequencial ? `Venda #${p.vendaSequencial}` : "Amortização"}
                           </span>

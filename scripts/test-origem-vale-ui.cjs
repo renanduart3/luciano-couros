@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict');const {buildSync}=require('esbuild');
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 async function main(){
- const script=buildSync({stdin:{resolveDir:process.cwd(),loader:'tsx',contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {HistoricoOrigemVale} from './src/components/HistoricoOrigemVale';createRoot(document.getElementById('root')).render(<HistoricoOrigemVale vale={window.__vale}/>);`},bundle:true,platform:'browser',write:false}).outputFiles[0].text;
+ const script=buildSync({stdin:{resolveDir:process.cwd(),loader:'tsx',contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {HistoricoOrigemVale} from './src/components/HistoricoOrigemVale';createRoot(document.getElementById('root')).render(<HistoricoOrigemVale vale={window.__vale}/>);`},bundle:true,platform:'browser',loader:{'.png':'dataurl'},write:false}).outputFiles[0].text;
  const original={id:'v206',clienteId:'c',numeroSequencial:206,totalLiquido:608.31,items:[{id:'i',descricao:'Tecido histórico',quantidade:2,unidade:'metro',total:608.31}]};
  const residual={id:'v621',clienteId:'c',numeroSequencial:621,totalLiquido:2029.86,items:[],origemSaldo:{descricao:'Devedor da ordem #29',ordem:{id:'o29',numero:29},vales:[{id:'v206',numero:206}]}};
  const novo={id:'v700',clienteId:'c',numeroSequencial:700,totalLiquido:2019.86,origemSaldo:{descricao:'Devedor da ordem #36',vales:[{id:'v621',numero:621}]}};

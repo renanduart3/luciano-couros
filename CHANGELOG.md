@@ -4,6 +4,14 @@ Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.
 
+## 1.40.0 — 2026-10-14
+
+- Comprovante individual do vale com valor original, saldo atual e pagamentos acumulados por ordem de registro.
+- Vales vinculados às ordens mostram os valores originais e saldos reais, distinguindo o saldo incluído na ordem.
+- Filtro de cliente compartilhado entre cobranças, ordens e cheques/boletos; histórico com navegação dos vínculos.
+- Modal de pagamento ampliado, divisão automática dos títulos por toggle e melhorias nos campos de cartão.
+- Exclusão de pagamentos com estorno e registro no histórico, sem confirmação redundante; ícones de títulos restritos a cheques e boletos.
+
 ## 1.39.2 — 2026-10-13
 
 - Devolução usa o último preço efetivamente vendido do produto ao cliente, com consulta da data da venda.

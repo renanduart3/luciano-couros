@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { TituloRecebimento } from "../types";
 import { api } from "../lib/api";
 import { ehDuplicata, ehTituloPagamento, ehTituloTerceiro } from "../lib/pagamentos";
 
+import { distribuirCentavos } from "../lib/distribuicaoPagamento";
 import { somarMesesVencimento } from "../lib/datasPagamento";
 import { formatCurrency, todayLocalIso } from "../lib/utils";
 import { ClienteDocumentoLookupInput } from "./ClienteDocumentoLookupInput";
@@ -27,12 +28,13 @@ const novoTitulo = (tipo: string, nome = "", documento = ""): TituloRecebimento 
   nomeTitular: nome,
   documentoTitular: documento,
   valor: 0,
-  valorManual: true,
+  valorManual: false,
   vencimento: "",
   numeroDocumento: "",
 });
 
-export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome, clienteDocumento, titulos, onChange, referenciaPagamento, limiteLinhas = 12, editarStatus = false, mostrarObservacao = true }: Props) {
+export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome, clienteDocumento, valorPagamento, titulos, onChange, referenciaPagamento, limiteLinhas = 12, editarStatus = false, mostrarObservacao = true }: Props) {
+  const [manual, setManual] = useState(() => titulos.some(t => Boolean(t.id) || t.valorManual === true));
   const habilitado = ehTituloPagamento(formaPagamento);
   const terceiro = ehTituloTerceiro(formaPagamento);
   const boleto = ehDuplicata(formaPagamento);
@@ -75,6 +77,14 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
     return () => { ativo = false; };
   }, [habilitado, formaPagamento, clienteId, clienteNome, clienteDocumento, terceiro, titulos.length]);
 
+  useEffect(() => {
+    if (!habilitado || manual || !Number.isFinite(valorPagamento) || !titulos.length || titulos.some(t => t.valorManual)) return;
+    const valores = distribuirCentavos(valorPagamento, titulos.filter(t => t.status !== "recusado").length);
+    let indice = 0;
+    const proximos = titulos.map(t => t.status === "recusado" ? t : { ...t, valor: valores[indice++] ?? t.valor });
+    if (proximos.some((t, i) => t.valor !== titulos[i].valor)) publicarTitulos(proximos);
+  }, [habilitado, manual, valorPagamento, titulos]);
+
   const total = useMemo(() => titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0), [titulos]);
   if (!habilitado) return null;
 
@@ -89,6 +99,7 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
     const anterior = [...titulos].reverse().find((titulo) => titulo.status !== "recusado");
     const dataAnterior = [...titulos].reverse().find(t => t.vencimento)?.vencimento || '';
     const novo = novoTitulo(formaPagamento, anterior?.nomeTitular || (terceiro ? "" : clienteNome), anterior?.documentoTitular || (terceiro ? "" : (clienteDocumento || "")));
+    novo.valorManual = manual;
     novo.vencimento = somarMesesVencimento(dataAnterior);
     focarNovaLinha.current = true;
     publicarTitulos([...titulosAtuais.current, novo]);
@@ -102,25 +113,31 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
 
   return <section className="titulos-planilha min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-sky-50 px-3 py-2">
-      <div><h3 className="text-sm font-bold text-sky-950">{boleto ? "Boletos" : "Cheques"}{referenciaPagamento && <span className="ml-2 text-xs font-normal text-slate-600">· {referenciaPagamento}</span>}</h3><p className="mt-1 text-xs text-slate-600">Um documento por linha. Use Tab para avançar entre as células.</p></div>
-      <button type="button" onClick={adicionar} disabled={atingiuLimite} className="inline-flex min-h-9 items-center gap-1 rounded-md bg-sky-800 px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400"><Plus size={14}/>Adicionar linha</button>
+      <h3 className="text-sm font-bold text-sky-950">{boleto ? "Boletos" : "Cheques"}{referenciaPagamento && <span className="ml-2 text-xs font-normal text-slate-600">· {referenciaPagamento}</span>}</h3>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" role="switch" aria-label="Divisão automática" aria-checked={!manual} onClick={() => { const proximo = !manual; setManual(proximo); publicarTitulos(titulosAtuais.current.map(t => ({ ...t, valorManual: proximo }))); }} className="inline-flex min-h-9 items-center gap-2 rounded-md px-1 text-xs font-bold text-sky-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600">
+          <span aria-hidden="true" className={`inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors ${manual ? "bg-slate-300" : "bg-sky-700"}`}><span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${manual ? "translate-x-0" : "translate-x-4"}`} /></span>
+          Divisão automática
+        </button>
+        <button type="button" onClick={adicionar} disabled={atingiuLimite} className="inline-flex min-h-9 items-center gap-1 rounded-md bg-sky-800 px-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:bg-slate-400"><Plus size={14}/>Adicionar linha</button>
+      </div>
     </div>
     {possuiLegadoAcimaDoLimite && <p className="bg-amber-50 px-3 py-2 text-xs text-amber-900">{titulos.length} títulos. Novas linhas indisponíveis.</p>}
-    <div ref={gradeRef} className="max-h-[50vh] overflow-auto" role="region" aria-label={`Planilha de ${boleto ? "boletos" : "cheques"}`} tabIndex={0}>
-      <table className={`w-full border-collapse text-left text-xs ${editarStatus ? "min-w-[1080px]" : "min-w-[860px]"}`}>
+    <div ref={gradeRef} className="titulos-grade max-h-[50vh] overflow-y-auto overflow-x-hidden" role="region" aria-label={`Planilha de ${boleto ? "boletos" : "cheques"}`} tabIndex={0}>
+      <table className="w-full table-fixed border-collapse text-left text-xs">
         <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700"><tr>{cabecalhos.map((nome, i) => <th key={i} scope="col" className="border-b border-r border-slate-300 px-2 py-2 font-bold whitespace-nowrap">{nome || <span className="sr-only">Excluir</span>}</th>)}</tr></thead>
         <tbody>{titulos.map((titulo, indice) => {
           const recusado = titulo.status === "recusado";
           const rotulo = (nome: string) => `${nome}, linha ${indice + 1}`;
           return <tr key={titulo.id || `${formaPagamento}-${indice}`} className={`border-b border-slate-200 ${recusado ? "bg-red-50" : "even:bg-slate-50 focus-within:bg-sky-50"}`}>
             <th scope="row" className="w-9 border-r border-slate-200 bg-slate-100 px-2 text-center font-normal text-slate-500">{indice + 1}</th>
-            <td className="min-w-32 border-r border-slate-200"><input aria-label={rotulo("Nome")} required disabled={recusado} value={titulo.nomeTitular} onChange={e => atualizar(indice, { nomeTitular: e.target.value.slice(0, 160) })} className={campo}/></td>
-            <td className="w-36 border-r border-slate-200"><ClienteDocumentoLookupInput label={rotulo("CPF/CNPJ")} hideLabel required disabled={recusado} value={titulo.documentoTitular} onChange={documentoTitular => atualizar(indice, { documentoTitular })} onClienteEncontrado={nomeTitular => atualizar(indice, { nomeTitular })} labelClassName="block" inputClassName={campo}/></td>
-            <td className="w-24 border-r border-slate-200"><input aria-label={rotulo("Valor")} required disabled={recusado} type="number" min="0.01" step="0.01" value={titulo.valor || ""} onChange={e => atualizar(indice, { valor: Number(e.target.value) })} className={`${campo} text-right font-mono font-bold`}/>{titulo.valorOriginal !== undefined && Math.abs(titulo.valorOriginal - titulo.valor) > 0.005 && <span className="block px-2 pb-1 text-[10px] text-slate-500">Original: {formatCurrency(titulo.valorOriginal)}</span>}</td>
-            <td className="w-32 border-r border-slate-200"><input aria-label={rotulo("Vencimento")} required disabled={recusado} type="date" value={titulo.vencimento} onChange={e => atualizar(indice, { vencimento: e.target.value })} className={campo}/></td>
-            <td className="w-24 border-r border-slate-200"><input aria-label={rotulo(boleto ? "Número do boleto" : "Número do cheque")} required disabled={recusado} value={titulo.numeroDocumento} onChange={e => atualizar(indice, { numeroDocumento: e.target.value.slice(0, 80) })} className={campo}/></td>
-            {mostrarObservacao && <td className="min-w-40 border-r border-slate-200"><input aria-label={rotulo("Observação")} disabled={recusado} value={titulo.observacao || ""} onChange={e => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder="Opcional" className={campo}/></td>}
-            {editarStatus && <><td className="w-36 border-r border-slate-200"><select aria-label={rotulo("Situação")} value={titulo.status || "aguardando"} onChange={e => atualizar(indice, { status: e.target.value as TituloRecebimento["status"], dataCompensacao: e.target.value === "compensado" ? titulo.dataCompensacao : undefined })} className={campo}><option value="aguardando">Aguardando</option><option value="compensado">Confirmado</option><option value="recusado">Recusado</option></select></td><td className="min-w-32 border-r border-slate-200">{titulo.status === "compensado" && <input aria-label={rotulo("Compensação")} type="date" value={titulo.dataCompensacao || ""} onChange={e => atualizar(indice, { dataCompensacao: e.target.value })} className={campo}/>}</td></>}
+            <td data-label="Nome" className="min-w-32 border-r border-slate-200"><input aria-label={rotulo("Nome")} required disabled={recusado} value={titulo.nomeTitular} onChange={e => atualizar(indice, { nomeTitular: e.target.value.slice(0, 160) })} className={campo}/></td>
+            <td data-label="CPF/CNPJ" className="w-36 border-r border-slate-200"><ClienteDocumentoLookupInput label={rotulo("CPF/CNPJ")} hideLabel required disabled={recusado} value={titulo.documentoTitular} onChange={documentoTitular => atualizar(indice, { documentoTitular })} onClienteEncontrado={nomeTitular => atualizar(indice, { nomeTitular })} labelClassName="block" inputClassName={campo}/></td>
+            <td data-label="Valor (R$)" className="w-24 border-r border-slate-200"><input aria-label={rotulo("Valor")} required readOnly={!manual} disabled={recusado} type="number" min="0.01" step="0.01" value={titulo.valor || ""} onChange={e => atualizar(indice, { valor: Number(e.target.value) })} className={`${campo} text-right font-mono font-bold`}/>{titulo.valorOriginal !== undefined && Math.abs(titulo.valorOriginal - titulo.valor) > 0.005 && <span className="block px-2 pb-1 text-[10px] text-slate-500">Original: {formatCurrency(titulo.valorOriginal)}</span>}</td>
+            <td data-label="Vencimento" className="w-32 border-r border-slate-200"><input aria-label={rotulo("Vencimento")} required disabled={recusado} type="date" value={titulo.vencimento} onChange={e => atualizar(indice, { vencimento: e.target.value })} className={campo}/></td>
+            <td data-label={boleto ? "Nº boleto" : "Nº cheque"} className="w-24 border-r border-slate-200"><input aria-label={rotulo(boleto ? "Número do boleto" : "Número do cheque")} required disabled={recusado} value={titulo.numeroDocumento} onChange={e => atualizar(indice, { numeroDocumento: e.target.value.slice(0, 80) })} className={campo}/></td>
+            {mostrarObservacao && <td data-label="Observação" className="min-w-40 border-r border-slate-200"><input aria-label={rotulo("Observação")} disabled={recusado} value={titulo.observacao || ""} onChange={e => atualizar(indice, { observacao: e.target.value.slice(0, 300) })} placeholder="Opcional" className={campo}/></td>}
+            {editarStatus && <><td data-label="Situação" className="w-36 border-r border-slate-200"><select aria-label={rotulo("Situação")} value={titulo.status || "aguardando"} onChange={e => atualizar(indice, { status: e.target.value as TituloRecebimento["status"], dataCompensacao: e.target.value === "compensado" ? titulo.dataCompensacao : undefined })} className={campo}><option value="aguardando">Aguardando</option><option value="compensado">Confirmado</option><option value="recusado">Recusado</option></select></td><td data-label="Compensação" className="min-w-32 border-r border-slate-200">{titulo.status === "compensado" && <input aria-label={rotulo("Compensação")} type="date" value={titulo.dataCompensacao || ""} onChange={e => atualizar(indice, { dataCompensacao: e.target.value })} className={campo}/>}</td></>}
             <td className="w-10 text-center"><button type="button" disabled={titulos.length === 1 || recusado} onClick={() => publicarTitulos(titulosAtuais.current.filter((_, atual) => atual !== indice))} aria-label={`Excluir linha ${indice + 1}`} className="inline-flex h-8 w-8 items-center justify-center rounded text-red-700 hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-sky-600 disabled:invisible"><Trash2 size={14}/></button></td>
           </tr>;
         })}</tbody>

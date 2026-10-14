@@ -47,3 +47,9 @@ const ordemHtml=renderToStaticMarkup(React.createElement('table',null,React.crea
 assert.equal((ordemHtml.match(/<td /g)||[]).length,7);assert.ok(ordemHtml.includes('data-label="Abatido"'));assert.ok(ordemHtml.includes('data-label="Confirmado"'));assert.ok(ordemHtml.includes('25,00'));
 assert.ok(!ordemFonte.includes('Restante: {formatCurrency(financeiroOrdem(ordem).restante)}'));
 console.log('OK: coluna recebida por vale/ordem, parcial, rateio, recusa, credito e acoes acessiveis por icones.');
+
+for (const formaPagamento of ['pix', 'avista_dinheiro', 'cartao_credito']) {
+ const semTitulos=renderToStaticMarkup(React.createElement('table',null,React.createElement('tbody',null,React.createElement(LinhaPagamento,{pagamento:{...p,formaPagamento,titulos:[]},clienteId:'c',clienteNome:'Teste',saldo:0,alocar:()=>[],referencia:'vale',onSaved:async()=>{},onDetalhes:()=>{},onComprovante:()=>{}}))));
+ assert.ok(!semTitulos.includes('aria-label="Ver títulos / boletos"'));
+ assert.ok(semTitulos.includes('aria-label="Comprovante"'));
+}

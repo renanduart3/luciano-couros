@@ -3029,6 +3029,17 @@ function carregarDetalhesVenda(venda: any) {
      ORDER BY vencimento ASC, numero ASC`,
     [venda.id]
   );
+  venda.historicoMovimentacoes = queryAll<any>(
+    `SELECT a.id, a.acao, a.createdAt, a.detalhes, u.nome AS usuarioNome,
+            oc.id AS ordemId, oc.numeroSequencial AS numeroOrdem
+     FROM auditoria a LEFT JOIN usuarios u ON u.id = a.usuarioId
+     LEFT JOIN ordens_cobranca oc ON a.entidade = 'ordem_cobranca' AND oc.id = a.entidadeId
+     WHERE (a.entidade IN ('venda', 'vale') AND a.entidadeId = ?)
+        OR (a.entidade = 'recebimento_cliente' AND a.entidadeId IN (SELECT recebimentoId FROM recebimento_alocacoes WHERE vendaId = ?))
+        OR (a.entidade = 'pagamento' AND a.entidadeId IN (SELECT id FROM pagamentos WHERE vendaId = ?))
+        OR (a.entidade = 'ordem_cobranca' AND a.entidadeId IN (SELECT ordemId FROM ordem_cobranca_vales WHERE vendaId = ?))
+     ORDER BY a.createdAt DESC, a.rowid DESC`, [venda.id, venda.id, venda.id, venda.id]
+  ).map(evento => { let detalhes = {}; try { detalhes = JSON.parse(evento.detalhes || '{}'); } catch {} return { ...evento, detalhes, descricao: textoHistoricoOrdem(evento.acao, detalhes) }; });
   venda.recebimentos = queryAll<{ id: string }>(
     `SELECT DISTINCT rc.id
      FROM recebimento_alocacoes a
@@ -4662,7 +4673,8 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
         .map(p => ({ id: p.id, dados: JSON.parse(p.dados), revisao: crypto.createHash("sha256").update(p.dados).digest("hex") })),
       vales: queryAll<any>(
       `SELECT ocv.id, ocv.vendaId, ocv.valorVinculado, ocv.valorPago, ocv.saldo,
-              v.numeroSequencial, v.data, v.vencimento, v.saldoRestante AS saldoAtualVale
+              v.numeroSequencial, v.data, v.vencimento, v.totalLiquido AS valorOriginalVale,
+              v.valorPago AS valorPagoTotalVale, v.saldoRestante AS saldoAtualVale
        FROM ordem_cobranca_vales ocv
        JOIN vendas v ON v.id = ocv.vendaId
        WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL
@@ -4672,7 +4684,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
         const vale = queryOne<any>('SELECT * FROM vendas WHERE id=?', [vinculo.vendaId]);
         const origemSaldo = carregarOrigemSaldo(vale);
         const itens = queryAll<any>('SELECT descricao,quantidade,unidade FROM itens_venda WHERE vendaId=? ORDER BY rowid', [vale.id]);
-        return { ...vinculo, origemSaldo, descricao: origemSaldo?.descricao || itens.map(i => `${Number(i.quantidade).toLocaleString('pt-BR')} ${i.unidade} de ${i.descricao}`).join('; ') || 'Vale' };
+        return { ...vinculo, valorTransferidoVale: transferidoVale(vinculo.vendaId), origemSaldo, descricao: origemSaldo?.descricao || itens.map(i => `${Number(i.quantidade).toLocaleString('pt-BR')} ${i.unidade} de ${i.descricao}`).join('; ') || 'Vale' };
       }),
       pagamentos: queryAll<{ id: string }>(`SELECT DISTINCT rc.id, rc.data, rc.createdAt FROM recebimentos_cliente rc
         WHERE rc.deletedAt IS NULL AND rc.status IN ('ativo', 'recusado') AND
@@ -5766,7 +5778,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
     );
     if (!recebimento) throw erroHttp("Recebimento não encontrado.", 404);
     const vales = queryAll<any>(
-      `SELECT v.numeroSequencial, a.valor AS valorAplicado,
+      `SELECT v.id AS vendaId, v.numeroSequencial, v.totalLiquido AS valorVale, v.saldoRestante AS saldoAtual, a.valor AS valorAplicado,
               COALESCE(a.saldoAntes, v.saldoRestante + a.valor) AS saldoAntes,
               COALESCE(a.saldoDepois, v.saldoRestante) AS saldoDepois
        FROM recebimento_alocacoes a JOIN vendas v ON v.id = a.vendaId
@@ -5791,6 +5803,22 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       numeroSequencial: Number(ordem.numeroSequencial),
       valor: Number(ordem.valor),
     }));
+    const vendaIndividual = typeof req.query.vendaId === "string" ? req.query.vendaId
+      : !ordens.length && vales.length === 1 ? vales[0].vendaId : undefined;
+    if (vendaIndividual && !queryOne<any>(
+      'SELECT 1 FROM recebimento_alocacoes WHERE recebimentoId = ? AND vendaId = ?',
+      [recebimento.id, vendaIndividual]
+    )) throw erroHttp("Vale não pertence a este recebimento.", 400);
+    const valeIndividual = vendaIndividual ? queryOne<any>(
+      'SELECT numeroSequencial, totalLiquido AS valorVale, saldoRestante AS saldoAtual FROM vendas WHERE id = ? AND clienteId = ?',
+      [vendaIndividual, recebimento.clienteId]
+    ) : null;
+    const pagamentosVale = valeIndividual ? queryAll<any>(
+      `SELECT rc.id, SUM(a.valor) AS valorNoVale
+       FROM recebimentos_cliente rc JOIN recebimento_alocacoes a ON a.recebimentoId = rc.id
+       WHERE a.vendaId = ? AND a.deletedAt IS NULL AND rc.deletedAt IS NULL AND rc.status = 'ativo'
+       GROUP BY rc.id ORDER BY rc.createdAt ASC, rc.rowid ASC`, [vendaIndividual]
+    ).map(item => ({ ...carregarRecebimentoGerenciavel(item.id), valorNoVale: Number(item.valorNoVale) })) : undefined;
     res.json({
       id: recebimento.id,
       data: recebimento.data,
@@ -5811,7 +5839,8 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       bonusGerado: Number(recebimento.bonusGerado || 0),
       observacao: recebimento.observacao,
       titulos: listarTitulosRecebimento(recebimento.id),
-      vales,
+      vales: valeIndividual ? [{ saldoAntes: valeIndividual.saldoAtual, saldoDepois: valeIndividual.saldoAtual, valorAplicado: 0, ...vales.find(v => v.vendaId === vendaIndividual), ...valeIndividual }] : vales,
+      pagamentosVale,
       ordens,
     });
   } catch (error: any) {

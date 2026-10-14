@@ -68,8 +68,43 @@ async function main() {
     const criarOrdem = (vales, parcelas) => request('POST', '/ordens-cobranca', { clienteId: cliente.id, dataEmissao: '2026-09-08', vendaIds: vales.map(v => v.id), parcelas: parcelas.map((valor, i) => ({ valor, vencimento: new Date(Date.UTC(2099, 9 + i, 8)).toISOString().slice(0, 10) })) });
     const getOrdem = async (id) => (await request('GET', '/ordens-cobranca')).find(o => o.id === id);
 
+    // O vínculo guarda só o saldo cobrado; a interface recebe também o valor integral do vale.
+    const originalA = await criarVale(2421.4);
+    const originalB = await criarVale(431.8);
+    await pagar([{ vendaId: originalA.id, valor: 1725.8 }]);
+    const ordemOriginais = await criarOrdem([originalA, originalB], [1127.4]);
+    await pagar([{ vendaId: originalA.id, valor: 200 }], { ordemCobrancaId: ordemOriginais.id });
+    const ultimoOriginal = await pagar([{ vendaId: originalA.id, valor: 300 }], { ordemCobrancaId: ordemOriginais.id });
+    const posicaoOriginal = await getOrdem(ordemOriginais.id);
+    const vinculoA = posicaoOriginal.vales.find(v => v.vendaId === originalA.id);
+    const vinculoB = posicaoOriginal.vales.find(v => v.vendaId === originalB.id);
+    assert.equal(vinculoA.valorOriginalVale, 2421.4);
+    assert.equal(vinculoA.valorPagoTotalVale, 2225.8);
+    assert.equal(vinculoA.saldoAtualVale, 195.6);
+    assert.equal(vinculoA.valorVinculado, 695.6);
+    assert.equal(vinculoB.valorPagoTotalVale, 0);
+    assert.equal(vinculoB.saldoAtualVale, 431.8);
+    const reciboOriginal = await request('GET', `/recebimentos-cliente/${ultimoOriginal.id}/comprovante`);
+    assert.equal(reciboOriginal.vales[0].valorVale, 2421.4);
+    assert.equal(reciboOriginal.vales[0].saldoDepois, 195.6);
+    console.log('OK: valor original preservado, saldo vinculado distinto e pagamentos sem divisão igual entre vales.');
+
     const v1 = await criarVale(100);
     const r1 = await pagar([{ vendaId: v1.id, valor: 100 }]);
+    const reciboInicial = await request('GET', `/recebimentos-cliente/${r1.id}/comprovante`);
+    assert.equal(reciboInicial.vales[0].valorVale, 100);
+    assert.equal(reciboInicial.vales[0].saldoAtual, 0);
+    const valeParcialRecibo = await criarVale(100);
+    const primeiroRecibo = await pagar([{ vendaId: valeParcialRecibo.id, valor: 30 }]);
+    await pagar([{ vendaId: valeParcialRecibo.id, valor: 20 }]);
+    const reciboAtualizado = await request('GET', `/recebimentos-cliente/${primeiroRecibo.id}/comprovante`);
+    assert.equal(reciboAtualizado.vales[0].saldoAtual, 50);
+    assert.equal(reciboAtualizado.vales[0].saldoDepois, 70);
+    assert.deepEqual(reciboAtualizado.pagamentosVale.map(p => p.valorNoVale), [30, 20]);
+    assert.equal(reciboOriginal.pagamentosVale, undefined);
+    const individualOrdem = await request("GET", `/recebimentos-cliente/${ultimoOriginal.id}/comprovante?vendaId=${vinculoA.vendaId}`);
+    assert.equal(individualOrdem.vales.length, 1);
+    assert.equal(individualOrdem.pagamentosVale.reduce((t,p) => t+p.valorNoVale,0), 2225.8);
     const p1 = await previa('vale', v1.id);
     assert.equal(p1.totalFinanceiro, 100);
     await request('POST', `/reabertura-pagamentos/vale/${v1.id}`, { pin: 'errada', revisao: p1.revisao }, 403);
@@ -77,6 +112,10 @@ async function main() {
     await reabrir('vale', v1.id);
     await conferirVale(v1.id, 0, 100);
     conferirEstorno(r1.id);
+    const historicoExcluido = await request('GET', `/vendas/${v1.id}`);
+    assert.ok(historicoExcluido.historicoMovimentacoes.some(e => e.acao === 'estornar_recebimento'));
+    assert.equal(historicoExcluido.recebimentos.length, 0);
+
     await request('POST', `/reabertura-pagamentos/vale/${v1.id}`, { pin, revisao: p1.revisao }, 409);
     console.log('OK: vale pago -> em aberto, senha, estorno financeiro e repetição bloqueada');
 

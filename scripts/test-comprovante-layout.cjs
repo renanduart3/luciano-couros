@@ -1,0 +1,53 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { buildSync } = require('esbuild');
+const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+async function main() {
+ const script = buildSync({stdin:{resolveDir:process.cwd(),loader:'tsx',contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {OrdemCobrancaDetalhesModal} from './src/components/OrdensCobrancaView';import {ComprovanteRecebimentoModal} from './src/components/ComprovanteRecebimentoModal';import {DemonstrativoOrdemConteudo} from './src/components/OrdemCobrancaDemonstrativoModal';const root=createRoot(document.getElementById('root'));window.renderReceipt=c=>root.render(<ComprovanteRecebimentoModal comprovante={c} onClose={()=>{}}/>);window.renderOrderDetails=o=>root.render(<OrdemCobrancaDetalhesModal ordem={o} onClose={()=>{}} onChanged={()=>{}}/>);window.renderOrder=o=>root.render(<DemonstrativoOrdemConteudo ordem={o}/>);`},bundle:true,platform:'browser',loader:{'.png':'dataurl'},write:false}).outputFiles[0].text;
+ const css=fs.readFileSync(path.join('dist/assets',fs.readdirSync('dist/assets').find(f=>f.endsWith('.css'))),'utf8');
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_BIN||'C:/Program Files/Google/Chrome/Application/chrome.exe'});
+ try {
+ const page=await browser.newPage({viewport:{width:1280,height:1000}});
+ await page.route('**/*',r=>r.fulfill(r.request().url().includes('/api/')?{contentType:'application/json',body:'{}'}:{contentType:'text/html',body:'<div id="root"></div>'}));
+ await page.goto('http://teste.local');await page.addStyleTag({content:css});await page.addScriptTag({content:script});
+ const receipt={id:'rec_teste',data:'2026-10-14',clienteNome:'Cliente teste',formaPagamento:'cartao_credito',parcelasCartao:4,valorRecebido:400,valorAplicado:400,valorDevidoAntes:4443.8,titulos:[],vales:[{numeroSequencial:156,valorVale:6443.8,saldoAntes:4443.8,saldoDepois:4043.8,saldoAtual:4043.8}],ordens:[{numeroSequencial:18,valor:400}]};
+ await page.evaluate(c=>window.renderReceipt(c),receipt);
+ await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).waitFor();
+ const summary=await page.locator('.payment-receipt-vales').innerText();
+ for(const amount of ['6.443,80','2.400,00','4.043,80']) assert.ok(summary.includes(amount));
+ assert.equal(await page.locator('.payment-receipt-current-balance').count(),0);
+ assert.ok((await page.locator('.payment-receipt-columns').innerText()).includes('6.443,80'));
+ assert.equal(await page.getByText('ABATIMENTO DESTE PAGAMENTO',{exact:true}).count(),0);
+ const screenshot=process.env.PREVIEW_PATH || path.join(process.env.TEMP,'comprovante-layout.png');
+ await page.locator('.payment-receipt-paper').screenshot({path:screenshot});console.log('Prévia: '+screenshot);
+ await page.evaluate(c=>window.renderReceipt(c),{...receipt,vales:[{...receipt.vales[0],saldoAtual:3643.8}]});
+ await page.getByText(/após outras movimentações/).waitFor();
+ assert.ok((await page.locator('.payment-receipt-current-balance').innerText()).includes('3.643,80'));
+ await page.emulateMedia({media:'print'});
+ assert.equal(await page.locator('.payment-receipt-columns').evaluate(e=>getComputedStyle(e).display),'block');
+ await page.emulateMedia({media:'screen'});
+ const many={...receipt,vales:Array.from({length:30},(_,i)=>({...receipt.vales[0],numeroSequencial:156+i}))};
+ await page.evaluate(c=>window.renderReceipt(c),many);await page.locator('.payment-receipt-columns tbody tr').first().waitFor();
+ assert.equal(await page.locator('.payment-receipt-columns > section:first-child tbody tr').count(),30);
+ const cumulative={...receipt,ordens:[],vales:[{numeroSequencial:165,valorVale:1554.6,saldoAtual:985.6,saldoAntes:1354.6,saldoDepois:985.6}],pagamentosVale:[{id:'p1',data:'2026-09-08',formaPagamento:'pix',valorNoVale:200,valorRecebido:200,titulos:[],statusPagamento:'compensado'},{id:'p2',data:'2026-09-10',formaPagamento:'cartao_credito',parcelasCartao:3,valorRecebido:369,valorNoVale:369,titulos:[],statusPagamento:'compensado'}]};
+ await page.evaluate(c=>window.renderReceipt(c),cumulative);await page.getByText('TOTAL PAGO',{exact:true}).waitFor();
+ assert.equal(await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).count(),0);
+ assert.equal(await page.locator('.payment-receipt-methods tbody tr').count(),2);
+ assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('569,00'));
+ assert.ok((await page.locator('.payment-receipt-vales').first().innerText()).includes('985,60'));
+ assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('PIX'));
+ await page.locator('.payment-receipt-paper').screenshot({path:screenshot});
+ for(const width of [390,768,1280]) { await page.setViewportSize({width,height:1000});assert.ok(await page.locator('.payment-receipt-paper').evaluate(e=>e.scrollWidth <= e.clientWidth+1)); }
+ const order={id:'o',clienteId:'c',numeroSequencial:19,status:'aberta',saldo:627.4,valorPago:500,parcelas:[],eventos:[],dataEmissao:'2026-10-14',updatedAt:'2026-10-14',clienteNome:'Teste',totalOriginal:1127.4,pagamentos:[],vales:[{id:'v',vendaId:'v',numeroSequencial:153,descricao:'MATERIAIS QUE NÃO DEVEM APARECER',valorOriginalVale:2421.4,valorPagoTotalVale:2225.8,valorVinculado:695.6,valorPago:500,saldo:195.6,saldoAtualVale:195.6,data:'2026-08-21'},{id:'v2',vendaId:'v2',numeroSequencial:154,valorOriginalVale:431.8,valorPagoTotalVale:0,valorVinculado:431.8,valorPago:0,saldo:431.8,saldoAtualVale:431.8,data:'2026-08-21'}]};
+ await page.evaluate(o=>window.renderOrder(o),order);await page.getByText('VALE',{exact:true}).first().waitFor();
+ assert.equal(await page.getByText('MATERIAIS QUE NÃO DEVEM APARECER',{exact:true}).count(),0);
+ await page.evaluate(o=>window.renderOrderDetails(o),order);
+ await page.getByRole('region',{name:'Vales da ordem'}).waitFor();
+ const originalRow=await page.getByRole('region',{name:'Vales da ordem'}).locator('tbody tr').first().innerText();
+ for(const amount of ['2.421,40','2.225,80','195,60']) assert.ok(originalRow.includes(amount));
+ assert.ok(!originalRow.includes('695,60'));
+ console.log('OK: original e abatimento acumulado por vale, saldo do recibo e atual separados, 30 vales, descrição VALE e ordem com pagamentos anteriores.');
+ } finally {await browser.close();}
+}
+main().catch(e=>{console.error(e);process.exitCode=1});

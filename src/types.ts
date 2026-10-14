@@ -153,6 +153,8 @@ export interface DevolucaoVenda {
 }
 
 export interface Venda {
+  historicoMovimentacoes?: Array<{ descricao?: string | null; id: string; acao: string; createdAt: string; usuarioNome?: string; ordemId?: string; numeroOrdem?: number; detalhes: Record<string, any> }>;
+
   bonusLegado?: number;
   creditoLinhaDevolucao?: number;
   valorTransferido?: number;
@@ -402,6 +404,7 @@ export interface TituloRecebimento {
 }
 
 export interface ComprovanteRecebimento {
+  pagamentosVale?: Array<PagamentoGerenciavel & { valorNoVale: number }>;
   valoresParcelasCartao?: number[];
   id: string;
   data: string;
@@ -424,6 +427,8 @@ export interface ComprovanteRecebimento {
   vales: Array<{
     numeroSequencial: number;
     valorAplicado: number;
+    valorVale?: number;
+    saldoAtual?: number;
     saldoAntes: number;
     saldoDepois: number;
   }>;
@@ -526,6 +531,9 @@ export interface OrdemCobrancaEvento {
 }
 
 export interface OrdemCobrancaVale {
+  valorOriginalVale?: number;
+  valorPagoTotalVale?: number;
+  valorTransferidoVale?: number;
   descricao?: string;
   origemSaldo?: Venda["origemSaldo"];
   id: string;

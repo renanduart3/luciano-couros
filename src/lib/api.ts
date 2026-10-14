@@ -305,8 +305,8 @@ export const api = {
   getUltimoTituloCliente: (clienteId: string, tipo: string) =>
     fetch(`${API_BASE}/clientes/${clienteId}/titulos/ultimo?tipo=${encodeURIComponent(tipo)}`)
       .then(r => handleResponse<{ nomeTitular: string; documentoTitular: string }>(r)),
-  getComprovanteRecebimento: (recebimentoId: string) =>
-    fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/comprovante`)
+  getComprovanteRecebimento: (recebimentoId: string, vendaId?: string) =>
+    fetch(`${API_BASE}/recebimentos-cliente/${recebimentoId}/comprovante${vendaId ? `?vendaId=${encodeURIComponent(vendaId)}` : ""}`)
       .then(r => handleResponse<ComprovanteRecebimento>(r)),
   updateTituloRecebimentoStatus: (id: string, dados: { pin: string; status: "aguardando" | "compensado" | "recusado"; dataCompensacao?: string; motivo?: string }) =>
     fetch(`${API_BASE}/recebimento-titulos/${id}/status`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })

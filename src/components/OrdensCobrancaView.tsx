@@ -1,3 +1,4 @@
+import { TabelaValesOrdem } from "./TabelaValesOrdem";
 import { PagamentoValesModal } from "./PagamentoValesModal";
 import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
 import { AnotacoesDocumento } from "./AnotacoesDocumento";
@@ -15,7 +16,7 @@ import { situacaoAgendaOrdem } from "../lib/situacaoOrdem";
 import { ItemAcaoPagamentoOrdem } from "../types";
 import { LinhaPagamento } from "./LinhaPagamento";
 import { useEhGerente } from "../auth/AuthContext";
-import { ParcelamentoCartaoSelect, ResumoParcelamentoCartao } from "./ParcelamentoCartaoSelect";
+import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 import { DemonstrativoOrdemConteudo, OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
@@ -24,6 +25,7 @@ import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination } from "./Pagination";
 
 interface Props {
+  clienteFiltro?: string;
   refreshKey?: number;
   onChanged?: (ordem: OrdemCobranca) => void;
 }
@@ -109,8 +111,8 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
 function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void }) {
   return <section aria-label="Vales da ordem" className="overflow-hidden rounded-xl border border-slate-300 bg-white">
     <div className="flex items-center justify-between bg-slate-50 px-3 py-2"><h3 className="text-xs font-bold">Vales vinculados</h3>{!ordem.finalizadoAt && ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="rounded border px-2 py-1 text-xs font-bold text-blue-800">Alterar vales</button>}</div>
-    {ordem.vales.map(v => <div key={v.id} className="grid grid-cols-3 border-t px-3 py-2 text-xs"><button type="button" onClick={() => onOpenVale(v.vendaId)} className="text-left font-bold text-blue-800 underline">Vale #{v.numeroSequencial}{v.origemSaldo && <span className="block text-[10px]">{v.origemSaldo.descricao}</span>}</button><span>{formatDate(v.data)}</span><strong className="text-right font-mono">{formatCurrency(v.valorVinculado)}</strong></div>)}
-    <div className="flex justify-between border-t-2 bg-slate-100 p-3 text-xs font-bold"><span>Total dos vales</span><span>{formatCurrency(demonstrativoOrdem(ordem).totalVales)}</span></div>
+    <TabelaValesOrdem vales={ordem.vales} onOpenVale={onOpenVale}/>
+    <p className="px-3 py-2 text-xs text-slate-500">Abatido inclui pagamentos anteriores a esta ordem.</p>
   </section>;
 }
 
@@ -261,19 +263,19 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         </nav><div className="vale-header-tools">{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}</div></div>
       </header>
       <div className="min-h-0 space-y-4 overflow-y-auto bg-slate-100 p-4">
-        {abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]"><div className="space-y-3">
+        {abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
-          <dl aria-label="Resumo da ordem" className="space-y-3 rounded-xl border border-slate-300 bg-white p-4 text-sm">
-            <div className="flex justify-between gap-2"><dt>Abatido</dt><dd className="font-mono font-bold">{formatCurrency(ordem.vales.reduce((s, v) => s + Number(v.valorPago || 0), 0))}</dd></div>
-            <div className="flex justify-between gap-2 text-emerald-800"><dt>Confirmado</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.recebido)}</dd></div>
-            <div className="flex justify-between gap-2 text-amber-800"><dt>A compensar</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.aguardando)}</dd></div>
+          <dl aria-label="Resumo da ordem" className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-slate-300 bg-white p-3 text-xs">
+            <div className="flex justify-between gap-2"><dt>Saldo incluído nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(ordem.totalOriginal)}</dd></div>
+            <div className="flex justify-between gap-2"><dt>Abatido nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(ordem.vales.reduce((s, v) => s + Number(v.valorPago || 0), 0))}</dd></div>
+            {financeiroAtual.aguardando > 0.005 && <div className="flex justify-between gap-2 text-amber-800"><dt>A compensar nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.aguardando)}</dd></div>}
             {financeiroAtual.creditoUtilizado > 0 && <div className="flex justify-between gap-2 text-violet-800"><dt>Bônus utilizado</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.creditoUtilizado)}</dd></div>}
             {!!financeiroAtual.transferido && <div className="flex justify-between gap-2"><dt>Transferido</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.transferido)}</dd></div>}
-            <div className="flex justify-between gap-2 border-t pt-3 text-lg font-bold"><dt>Restante</dt><dd className="font-mono">{formatCurrency(financeiroAtual.restantePresumido)}</dd></div>
+            <div className="flex justify-between gap-2 font-bold"><dt>Falta nesta ordem</dt><dd className="font-mono">{formatCurrency(financeiroAtual.restantePresumido)}</dd></div>
           </dl>
         </div><section aria-label="Pagamentos registrados" className="min-w-0 space-y-3">
           <h3 className="font-bold text-slate-800">Pagamentos registrados</h3>
@@ -314,13 +316,14 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   </div></>;
 }
 
-export function OrdensCobrancaView({ refreshKey, onChanged }: Props) {
+export function OrdensCobrancaView({ refreshKey, onChanged, clienteFiltro }: Props) {
   const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("aberta");
   const [numeroVale, setNumeroVale] = useState("");
-  const [clienteId, setClienteId] = useState("");
+  const [clienteLocal, setClienteId] = useState("");
+  const clienteId = clienteFiltro ?? clienteLocal;
   const [dataInicio, setDataInicio] = useState("");
   const [dataFim, setDataFim] = useState("");
   const [detalhadaId, setDetalhadaId] = useState<string | null>(null);
@@ -378,7 +381,7 @@ export function OrdensCobrancaView({ refreshKey, onChanged }: Props) {
 
   return <div className="space-y-4">
     {detalhada && <OrdemCobrancaDetalhesModal ordem={detalhada} onClose={() => setDetalhadaId(null)} onChanged={atualizar}/>}
-    <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label><label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="numero_desc">Nº da ordem (maior)</option><option value="numero_asc">Nº da ordem (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
+    <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm"><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-[0.8fr_1.5fr_1fr_1fr_1fr_1fr_auto] xl:items-end"><label className="text-[10px] font-black uppercase text-slate-600">Nº do vale<input inputMode="numeric" value={numeroVale} onChange={(event) => setNumeroVale(event.target.value.replace(/\D/g, "").slice(0, 12))} placeholder="Ex.: 123" className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label>{clienteFiltro === undefined && <label className="text-[10px] font-black uppercase text-slate-600">Cliente<select value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="">Todos os clientes</option>{clientes.map((cliente) => <option key={cliente.id} value={cliente.id}>{cliente.nome}</option>)}</select></label>}<label className="text-[10px] font-black uppercase text-slate-600">Data início<input type="date" value={dataInicio} onChange={(event) => setDataInicio(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Data fim<input type="date" value={dataFim} onChange={(event) => setDataFim(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/></label><label className="text-[10px] font-black uppercase text-slate-600">Situação<select value={status} onChange={(event) => setStatus(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aberta">Em aberto</option><option value="quitada">Quitadas</option><option value="renegociada">Renegociadas</option><option value="cancelada">Canceladas</option><option value="todas">Todas</option></select></label><label className="text-[10px] font-black uppercase text-slate-600">Ordenar por<select value={ordenacao} onChange={(event) => setOrdenacao(event.target.value as typeof ordenacao)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="numero_desc">Nº da ordem (maior)</option><option value="numero_asc">Nº da ordem (menor)</option><option value="valor_desc">Valor (maior)</option><option value="valor_asc">Valor (menor)</option></select></label><button type="button" onClick={() => void carregar()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase"><RefreshCw size={15}/> Atualizar</button></div></div>
     {loading ? <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center font-bold text-slate-500">Carregando ordens...</div> : error ? <div className="flex items-center gap-2 rounded-2xl border border-red-300 bg-red-50 p-4 font-bold text-red-800"><AlertCircle size={18}/>{error}</div> : filtradasOrdenadas.length === 0 ? <div className="rounded-2xl border border-blue-200 bg-blue-50 p-10 text-center"><FileClock className="mx-auto text-blue-600" size={34}/><p className="mt-3 font-black text-blue-950">Nenhuma ordem neste filtro</p></div> : <div className="grid gap-3">{paginaOrdens.map((ordem) => {
       const agenda = situacaoAgendaOrdem(ordem);
       const posicao = financeiroOrdem(ordem);

@@ -1048,3 +1048,31 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-methods th:nth-child(4) { width: 18%; }
 .payment-receipt-methods th:last-child { width: 20%; }
 .payment-receipt-methods td:nth-child(4) { font-size: 7.5pt; }
+
+/* Títulos se reorganizam em telas estreitas, sem rolagem horizontal. */
+.titulos-grade th { white-space: normal; overflow-wrap: anywhere; }
+.titulos-grade td { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .titulos-grade table, .titulos-grade tbody { display: block; width: 100%; }
+  .titulos-grade thead { display: none; }
+  .titulos-grade tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 8px; }
+  .titulos-grade td, .titulos-grade th { display: block; width: auto; min-width: 0; }
+  .titulos-grade td::before { content: attr(data-label); display: block; padding: 2px 8px; font-size: 10px; font-weight: bold; }
+}
+
+/* Recibo em formato de planilha: original, abatido e saldo por vale. */
+.payment-receipt-vales th:first-child { width: 16%; }
+.payment-receipt-vales th:not(:first-child) { width: 28%; }
+.payment-receipt-note { margin: 0; padding: 1.5mm 2mm; font-size: 7pt; color: #475569; }
+.payment-receipt-columns .payment-receipt-vales td { font-size: 8pt; }
+
+.payment-receipt-individual .payment-receipt-methods td:last-child { font-size: 8.5pt; }
+@media screen and (max-width: 767px) {
+  .payment-receipt-individual { padding: 12px; }
+  .payment-receipt-individual .payment-receipt-header { grid-template-columns: 64px minmax(0, 1fr); gap: 8px; }
+  .payment-receipt-individual .payment-receipt-header img { width: 60px; }
+  .payment-receipt-individual .payment-receipt-meta { grid-column: 1 / -1; border-left: 0; padding-left: 0; }
+  .payment-receipt-individual th, .payment-receipt-individual td { padding: 5px 3px; overflow-wrap: anywhere; }
+  .payment-receipt-individual .number { white-space: normal; }
+  .payment-receipt-individual .payment-receipt-footer > div { gap: 16px; }
+}

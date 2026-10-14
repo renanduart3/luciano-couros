@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import React, { useEffect, useMemo, useState } from "react";
 import { Printer, X } from "lucide-react";
 import { api } from "../lib/api";
+import { FORMAS_PAGAMENTO } from "../lib/pagamentos";
 import { formatCurrency, formatDate } from "../lib/utils";
 import { ComprovanteRecebimento, TituloRecebimento } from "../types";
 import logo from "../img/logo.png";
@@ -32,6 +33,9 @@ const formatarDataHora = (valor?: string) => {
 
 export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprovante: ComprovanteRecebimento; onClose: () => void }) {
   const [loja, setLoja] = useState<LojaComprovante>(LOJA_PADRAO);
+  const acumulados = comprovante.pagamentosVale;
+  const temDocumentos = acumulados?.some(p => p.titulos.length > 0);
+  const totalPagoVale = (acumulados || []).reduce((total, p) => total + Math.round(p.valorNoVale * 100), 0) / 100;
   const titulos = comprovante.titulos || [];
   const vales = comprovante.vales || [];
   const ordens = comprovante.ordens || [];
@@ -56,7 +60,12 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
     return () => { ativo = false; };
   }, []);
 
-  const forma = comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
+  const forma = FORMAS_PAGAMENTO.find(f => f.value === comprovante.formaPagamento)?.label || comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
+  const totalOriginal = vales.reduce((total, vale) => total + Math.round(Number(vale.valorVale ?? vale.saldoAntes) * 100), 0) / 100;
+  const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
+  const saldoAtual = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoAtual ?? vale.saldoDepois) * 100), 0) / 100;
+  const abatido = Number(comprovante.valorAplicado || 0);
+  const totalRegistrado = (titulos.length ? totalTitulosValidos : Number(comprovante.valorRecebido)) + bonusUtilizado;
   const referencia = comprovante.id.replace(/^rec_/, "").slice(-8).toUpperCase();
   const parcelamento = comprovante.formaPagamento === "cartao_credito"
     ? descreverParcelamentoCartao(comprovante.valorRecebido, normalizarQuantidadeParcelas(comprovante.parcelasCartao), comprovante.valoresParcelasCartao)
@@ -69,7 +78,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
         <div className="flex gap-2"><button type="button" onClick={() => window.print()} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-emerald-700 px-4 text-xs font-black uppercase text-white"><Printer size={16}/>Imprimir</button><button type="button" onClick={onClose} aria-label="Fechar comprovante" className="rounded-lg border border-slate-300 p-2"><X size={18}/></button></div>
       </div>
 
-      <article className="payment-receipt-paper">
+      <article className={`payment-receipt-paper${acumulados ? " payment-receipt-individual" : ""}`}>
         <header className="payment-receipt-header">
           <img src={logo} alt={loja.nome} />
           <div className="payment-receipt-store"><strong>{loja.nome}</strong><span>{loja.endereco}</span><span>Fone: {loja.telefone} · Cel: {loja.celular}</span><span>{loja.email}</span></div>
@@ -80,25 +89,48 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose }: { comprova
           <span className="wide"><b>CLIENTE:</b> {comprovante.clienteNome}</span><span><b>CPF/CNPJ:</b> {comprovante.clienteDocumento || "NÃO INFORMADO"}</span>
         </section>
 
+        {acumulados ? <>
+          <section className="payment-receipt-section">
+            <h3>VALE</h3>
+            <table className="payment-receipt-vales"><thead><tr><th>Nº VALE</th><th className="number">VALOR ORIGINAL</th><th className="number">SALDO</th></tr></thead>
+              <tbody>{vales.map(v => <tr key={v.numeroSequencial}><td>#{v.numeroSequencial}</td><td className="number">{formatCurrency(v.valorVale ?? v.saldoAntes)}</td><td className="number strong">{formatCurrency(v.saldoAtual ?? v.saldoDepois)}</td></tr>)}</tbody>
+            </table>
+          </section>
+          <section className="payment-receipt-section">
+            <h3>PAGAMENTOS</h3>
+            <table className="payment-receipt-methods"><thead><tr><th>FORMA DE PAGAMENTO</th>{temDocumentos && <th>Nº CHEQUE / BOLETO</th>}<th>DATA</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead>
+              <tbody>{acumulados.map(p => <tr key={p.id}><td><b>{FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento.replaceAll("_", " ").toUpperCase()}</b>{p.formaPagamento === "cartao_credito" && <small>{descreverParcelamentoCartao(p.valorRecebido, normalizarQuantidadeParcelas(p.parcelasCartao), p.valoresParcelasCartao)}</small>}{p.bonusUtilizado > 0 && p.formaPagamento !== "bonus" && <small>Inclui bônus</small>}</td>{temDocumentos && <td>{p.titulos.map(t => t.numeroDocumento).join(", ") || "—"}</td>}<td>{formatDate(p.data)}</td><td>{p.statusPagamento === "aguardando" ? "A COMPENSAR" : "RECEBIDO"}</td><td className="number strong">{formatCurrency(p.valorNoVale)}</td></tr>)}</tbody>
+              <tfoot><tr><td colSpan={temDocumentos ? 4 : 3}>TOTAL PAGO</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr></tfoot>
+            </table>
+            <table className="payment-receipt-vales" style={{ marginTop: 16 }}><tbody><tr><td>TOTAL ORIGINAL</td><td className="number">{formatCurrency(totalOriginal)}</td></tr><tr><td><b>TOTAL RESTANTE</b></td><td className="number strong">{formatCurrency(saldoAtual)}</td></tr></tbody></table>
+          </section>
+        </> : <>
+        <div className="payment-receipt-columns">
         <section className="payment-receipt-section">
-          <h3>VALES ABATIDOS</h3>
-          <div className="payment-receipt-table-wrap"><table><thead><tr><th>REFERÊNCIA</th><th className="number">SALDO ANTES</th><th className="number">ABATIDO AGORA</th><th className="number">SALDO DEPOIS</th></tr></thead><tbody>
-            {vales.map((vale) => <tr key={`vale-${vale.numeroSequencial}`}><td><b>VALE Nº {vale.numeroSequencial}</b></td><td className="number">{formatCurrency(vale.saldoAntes)}</td><td className="number strong">{formatCurrency(vale.valorAplicado)}</td><td className="number">{formatCurrency(vale.saldoDepois)}</td></tr>)}
-            {vales.length === 0 && <tr><td colSpan={4} className="empty">Recebimento sem vínculo ativo com vale</td></tr>}
-          </tbody><tfoot><tr><td>TOTAIS</td><td className="number">{formatCurrency(comprovante.valorDevidoAntes)}</td><td className="number">{formatCurrency(comprovante.valorAplicado)}</td><td className="number">{formatCurrency(Math.max(0, comprovante.valorDevidoAntes - comprovante.valorAplicado))}</td></tr></tfoot></table></div>
+          <h3>VALES</h3>
+          <div className="payment-receipt-table-wrap"><table className="payment-receipt-vales"><thead><tr><th>VALE</th><th className="number">VALOR ORIGINAL</th><th className="number">ABATIDO ATÉ ESTE RECIBO</th><th className="number">FALTA</th></tr></thead><tbody>
+            {vales.map((vale, i) => <tr key={`${vale.numeroSequencial}-${i}`}><td><b>#{vale.numeroSequencial}</b></td><td className="number">{formatCurrency(vale.valorVale ?? vale.saldoAntes)}</td><td className="number">{formatCurrency(Math.max(0, Number(vale.valorVale ?? vale.saldoAntes) - Number(vale.saldoDepois)))}</td><td className="number strong">{formatCurrency(vale.saldoDepois)}</td></tr>)}
+            {!vales.length && <tr><td colSpan={4}>Recebimento sem vínculo ativo com vale</td></tr>}
+          </tbody><tfoot><tr><td>TOTAL</td><td className="number">{formatCurrency(totalOriginal)}</td><td className="number">{formatCurrency(Math.max(0, totalOriginal - saldoDepois))}</td><td className="number">{formatCurrency(saldoDepois)}</td></tr></tfoot></table></div>
+          {vales.length > 0 && <p className="payment-receipt-note">Este pagamento abateu {formatCurrency(abatido)}, já incluídos acima.</p>}
+          {Math.abs(saldoAtual - saldoDepois) > 0.005 && <p className="payment-receipt-current-balance payment-receipt-note">Saldo atual: <b>{formatCurrency(saldoAtual)}</b> (após outras movimentações).</p>}
           {ordens.length > 0 && <p className="payment-receipt-orders">VÍNCULO: {ordens.map((ordem) => `ORDEM Nº ${ordem.numeroSequencial}`).join(" · ")}</p>}
         </section>
 
         <section className="payment-receipt-section">
-          <h3>FORMA DE PAGAMENTO</h3>
-          <div className="payment-receipt-table-wrap"><table className="payment-receipt-methods"><thead><tr><th>FORMA / TITULAR</th><th>Nº CHEQUE / BOLETO</th><th>PAGAMENTO</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead><tbody>
+          <h3>PAGAMENTO DESTE RECIBO</h3>
+          <div className="payment-receipt-table-wrap"><table className="payment-receipt-methods"><thead><tr><th>FORMA / TITULAR</th>{titulos.length > 0 && <th>Nº CHEQUE / BOLETO</th>}<th>DATA</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead><tbody>
             {titulos.map((titulo, indice) => <tr key={titulo.id || indice} className={titulo.status === "recusado" ? "rejected" : ""}><td><b>{nomeTipo(titulo)}</b><small>{titulo.nomeTitular} · {titulo.documentoTitular || "CPF/CNPJ não informado"}</small>{titulo.observacao && <small>Obs.: {titulo.observacao}</small>}</td><td>{titulo.numeroDocumento}</td><td>{formatDate(comprovante.data)}</td><td>{(titulo.status || "aguardando").toUpperCase()}{titulo.dataCompensacao ? <small>em {formatDate(titulo.dataCompensacao)}</small> : null}{titulo.motivoStatus ? <small>{titulo.motivoStatus}</small> : null}</td><td className="number strong">{formatCurrency(titulo.valor)}</td></tr>)}
-            {titulos.length === 0 && comprovante.formaPagamento !== "bonus" && <tr><td><b>{forma}</b>{parcelamento && <small>{parcelamento}</small>}</td><td>—</td><td>{formatDate(comprovante.data)}</td><td>{comprovante.status === "recusado" ? "RECUSADO" : "RECEBIDO"}</td><td className="number strong">{formatCurrency(comprovante.valorRecebido)}</td></tr>}
-            {bonusUtilizado > 0 && <tr><td><b>BÔNUS UTILIZADO</b></td><td>—</td><td>{formatDate(comprovante.data)}</td><td>APLICADO</td><td className="number strong">{formatCurrency(bonusUtilizado)}</td></tr>}
-          </tbody><tfoot><tr><td colSpan={4}>TOTAL REGISTRADO (TÍTULOS VÁLIDOS + DINHEIRO + BÔNUS)</td><td className="number">{formatCurrency((titulos.length ? totalTitulosValidos : comprovante.valorRecebido) + bonusUtilizado)}</td></tr></tfoot></table></div>
+            {titulos.length === 0 && comprovante.formaPagamento !== "bonus" && <tr><td><b>{forma}</b>{parcelamento && <small>{parcelamento}</small>}</td>{titulos.length > 0 && <td>—</td>}<td>{formatDate(comprovante.data)}</td><td>{comprovante.status === "recusado" ? "RECUSADO" : "RECEBIDO"}</td><td className="number strong">{formatCurrency(comprovante.valorRecebido)}</td></tr>}
+            {bonusUtilizado > 0 && <tr><td><b>BÔNUS UTILIZADO</b></td>{titulos.length > 0 && <td>—</td>}<td>{formatDate(comprovante.data)}</td><td>APLICADO</td><td className="number strong">{formatCurrency(bonusUtilizado)}</td></tr>}
+          </tbody><tfoot><tr><td colSpan={titulos.length > 0 ? 4 : 3}>TOTAL DESTE PAGAMENTO</td><td className="number">{formatCurrency(totalRegistrado)}</td></tr></tfoot></table></div>
         </section>
 
-        {bonusGerado > 0.005 && <div className="payment-receipt-bonus"><span>BÔNUS GERADO PELO EXCEDENTE: <b>{formatCurrency(bonusGerado)}</b></span></div>}
+        </div>
+
+        </>}
+
+        {!acumulados && bonusGerado > 0.005 && <div className="payment-receipt-bonus"><span>BÔNUS GERADO PELO EXCEDENTE: <b>{formatCurrency(bonusGerado)}</b></span></div>}
         <div className="payment-receipt-observation"><b>OBSERVAÇÃO:</b> {comprovante.observacao || "—"}</div>
 
         <footer className="payment-receipt-footer">

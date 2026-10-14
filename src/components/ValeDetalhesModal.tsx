@@ -1,3 +1,4 @@
+import { OrdemCobrancaDetalhesModal } from "./OrdensCobrancaView";
 import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
 import React, { useEffect, useState } from "react";
@@ -26,6 +27,8 @@ interface ValeDetalhesModalProps {
 }
 
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
+  const [ordemHistorico, setOrdemHistorico] = useState<OrdemCobranca | null>(null);
+  const abrirOrdemHistorico = async (id: string) => { try { const lista = await api.getOrdensCobranca(vale.clienteId); const destino = lista.find(o => o.id === id); if (!destino) throw new Error("Ordem não encontrada."); setOrdemHistorico(destino); } catch (e: any) { setErro(e.message); } };
   const [anotacao, setAnotacao] = useState(vale.observacoes || "");
   useEffect(() => { setAnotacao(vale.observacoes || ""); }, [vale.id, vale.observacoes]);
   const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
@@ -119,10 +122,11 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
   const abrirComprovanteRecebimento = async (recebimentoId: string) => {
     setErro("");
-    try { setComprovante(await api.getComprovanteRecebimento(recebimentoId)); }
+    try { setComprovante(await api.getComprovanteRecebimento(recebimentoId, vale.id)); }
     catch (error: any) { setErro(error.message || "Não foi possível abrir o comprovante."); }
   };
 
+  if (ordemHistorico) return <OrdemCobrancaDetalhesModal ordem={ordemHistorico} onClose={() => setOrdemHistorico(null)} onChanged={o => { setOrdemHistorico(o); void atualizarPagamentos(); }}/>;
   if (recebimentoAberto) return <RecebimentoDetalhesModal somenteLeitura={bloqueado || !onUpdated} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteRecebimento(id); }} />;
   if (comprovante) return <ComprovanteRecebimentoModal comprovante={comprovante} onClose={() => setComprovante(null)} />;
   return (
@@ -141,8 +145,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
           <div className="vale-header-navigation">
             <nav aria-label="Navegação do vale" className="vale-tabs">
               <button type="button" aria-pressed={aba === "itens"} onClick={() => setAba("itens")}><List size={16}/> Detalhes</button>
-              <button type="button" aria-pressed={aba === "comprovante"} onClick={() => setAba("comprovante")}><FileText size={16}/> Comprovante</button>
-              <button type="button" aria-pressed={aba === "devolucoes"} onClick={() => setAba("devolucoes")}><RotateCcw size={16}/> Histórico de devoluções</button>
+              <button type="button" aria-pressed={aba === "comprovante"} onClick={() => setAba("comprovante")}><FileText size={16}/> Vale</button>
+              <button type="button" aria-pressed={aba === "devolucoes"} onClick={() => setAba("devolucoes")}><RotateCcw size={16}/> Histórico</button>
               <button type="button" aria-pressed={aba === "anotacoes"} onClick={() => setAba("anotacoes")}><FileText size={16}/> Anotações</button>
             </nav>
             <div className="vale-header-tools">
@@ -168,7 +172,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               <h3 className="font-black">Origem deste vale</h3><p className="text-sm">{vale.origemSaldo.descricao}</p>
               <p className="mt-2 text-sm">Valor do vale: <b>{formatCurrency(vale.totalLiquido)}</b> · Saldo atual: <b>{formatCurrency(financeiro.restantePresumido)}</b></p>
               <p className="mt-1 text-xs">Este vale possui pagamentos e negociações próprios. A origem permanece como referência histórica.</p>
-              <HistoricoOrigemVale vale={vale} />
+              <HistoricoOrigemVale vale={vale} onOpenOrdem={abrirOrdemHistorico} />
             </div>}
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
@@ -199,7 +203,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
             <p className="text-xs text-slate-600">Vencimento: {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} · {itens.length} itens{totalDevolvido > 0 && ` · Devolvido: ${formatCurrency(totalDevolvido)}`}</p>
             {bloqueado && <p className="text-xs font-bold text-blue-900">Pagamentos gerenciados pela ordem.</p>}
-            {ordemCobranca && <button type="button" onClick={onOpenOrdem} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
+            {ordemCobranca && <button type="button" onClick={() => onOpenOrdem ? onOpenOrdem() : void abrirOrdemHistorico(ordemCobranca.id)} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
             <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
               <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>
@@ -229,9 +233,20 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden">
             <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
               <div className="flex items-center justify-between gap-3 border-b border-violet-200 bg-violet-50 px-3 py-2">
-                <h3 className="flex items-center gap-2 text-xs font-black uppercase text-violet-950"><RotateCcw size={15} /> Histórico de devoluções</h3>
-                <span className="rounded-lg bg-white px-2 py-1 text-[10px] font-black text-violet-800">{devolucoes.length}</span>
+                <h3 className="flex items-center gap-2 text-xs font-black uppercase text-violet-950"><RotateCcw size={15} /> Histórico</h3>
+
               </div>
+              <div className="divide-y divide-slate-200">
+                <p className="p-3 text-xs">Vale criado em {formatDate(vale.data)} · {formatCurrency(vale.totalLiquido)}</p>
+                {vale.origemSaldo && <div className="p-3"><HistoricoOrigemVale vale={vale} onOpenOrdem={abrirOrdemHistorico}/></div>}
+                {(vale.historicoMovimentacoes || []).map(evento => <article key={evento.id} className="space-y-1 p-3 text-xs">
+                  <p className="font-bold capitalize">{evento.detalhes?.motivo?.startsWith("Exclusão") ? "Pagamento excluído" : evento.descricao || evento.acao.replaceAll("_", " ")}</p>
+                  <p>{formatDate(evento.createdAt.slice(0, 10))}{evento.usuarioNome && ` · ${evento.usuarioNome}`}</p>
+                  {evento.detalhes?.motivo && <p>{evento.detalhes.motivo}</p>}
+                  {evento.ordemId && <button type="button" className="font-bold text-blue-800 underline" onClick={() => void abrirOrdemHistorico(evento.ordemId!)}>Abrir ordem #{evento.numeroOrdem}</button>}
+                </article>)}
+              </div>
+              {erro && <p role="alert" className="p-3 text-xs text-red-800">{erro}</p>}
               {devolucoes.length === 0 ? (
                 <p className="p-5 text-center text-xs font-bold text-slate-500">Nenhuma devolução registrada neste vale.</p>
               ) : (

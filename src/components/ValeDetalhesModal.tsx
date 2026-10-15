@@ -2,7 +2,7 @@ import { OrdemCobrancaDetalhesModal } from "./OrdensCobrancaView";
 import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
 import React, { useEffect, useState } from "react";
-import { Eye, FileClock, FileText, List, MessageCircle, MoreHorizontal, Printer, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Eye, FileClock, FileText, List, MessageCircle, Printer, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
 import { VendaComprovante } from "./VendaComprovante";
@@ -156,13 +156,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
               <button type="button" onClick={imprimir} title="Imprimir vale" aria-label="Imprimir vale" className="vale-icon-button"><Printer size={19}/></button>
               {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setAba("itens"); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} title="Devolver itens do vale (requer senha administrativa)" aria-label="Devolver itens do vale" className="vale-icon-button text-violet-800"><RotateCcw size={19}/></button>}
-              {!bloqueado && onUpdated && vale.status !== "cancelada" && gerente && <details className="vale-more-actions">
-                <summary className="vale-icon-button" aria-label="Mais ações do vale" title="Mais ações"><MoreHorizontal size={20}/></summary>
-                <div className="vale-actions-menu">
-                  {gerente && !vale.finalizadoAt && <button type="button" aria-label="Finalizar vale" className="text-emerald-800" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setFinalizacao(true); }}><ShieldCheck size={16}/> Finalizar vale</button>}
-                  {gerente && <button type="button" aria-label="Cancelar vale" className="text-red-700" onClick={e => { e.currentTarget.closest('details')?.removeAttribute('open'); setModo("cancelar"); setErro(""); setPin(""); }}><Trash2 size={16}/> Cancelar vale</button>}
-                </div>
-              </details>}
+
             </div>
           </div>
         </header>
@@ -281,6 +275,10 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             <VendaComprovante venda={vale} />
           </div>
         )}
+        {!bloqueado && onUpdated && vale.status !== "cancelada" && gerente && <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-300 bg-white p-3 print:hidden">
+          <button type="button" onClick={() => { setAba("itens"); setModo("cancelar"); setErro(""); setPin(""); }} className="rounded-lg bg-red-700 px-4 py-2 text-xs font-black uppercase text-white">Cancelar vale</button>
+          {!vale.finalizadoAt && <button type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white">Finalizar vale</button>}
+        </footer>}
       </div>
       {novoPagamento && !bloqueado && <PagamentoValesModal clienteId={vale.clienteId} clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento} vales={[vale]} onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos} fecharAoSalvar/>}
     </div>

@@ -56,8 +56,8 @@ function Test-SystemHealthy {
     }
 }
 
-function Start-ManagerAction([string]$Action) {
-    if ($script:OperationProcess -and -not $script:OperationProcess.HasExited) {
+function Start-ManagerAction([string]$Action, [bool]$ExitAfterStop = $false) {
+    if ($script:ExitAfterStop -or ($script:OperationProcess -and -not $script:OperationProcess.HasExited)) {
         [System.Windows.Forms.MessageBox]::Show(
             "Aguarde a operacao atual terminar.",
             "Central de Tecidos",
@@ -70,9 +70,12 @@ function Start-ManagerAction([string]$Action) {
     $command = "& '$escapedManager' -Action '$Action' -NoBrowser"
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
     try {
-        $script:OperationProcess = Start-Process powershell.exe -Verb RunAs -PassThru -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+        $script:OperationProcess = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+        $script:ExitAfterStop = $ExitAfterStop
+        $exitItem.Enabled = -not $ExitAfterStop
     } catch {
         $script:OperationProcess = $null
+        $script:ExitAfterStop = $false
     }
 }
 
@@ -105,8 +108,7 @@ $stopItem = $menu.Items.Add("Parar")
 $restartItem = $menu.Items.Add("Reiniciar")
 $updateItem = $menu.Items.Add("Atualizar")
 $menu.Items.Add("-") | Out-Null
-$reloadIconItem = $menu.Items.Add("Recarregar icone")
-$exitItem = $menu.Items.Add("Fechar somente o icone")
+$exitItem = $menu.Items.Add("Sair")
 $notifyIcon.ContextMenuStrip = $menu
 
 $openSystem = {
@@ -127,22 +129,7 @@ $startItem.Add_Click({ Start-ManagerAction "Start" })
 $stopItem.Add_Click({ Start-ManagerAction "Stop" })
 $restartItem.Add_Click({ Start-ManagerAction "Restart" })
 $updateItem.Add_Click({ Start-ManagerAction "Update" })
-$reloadIconItem.Add_Click({
-    $notifyIcon.Visible = $false
-    Start-Sleep -Milliseconds 150
-    $notifyIcon.Visible = $true
-})
-$exitItem.Add_Click({
-    $choice = [System.Windows.Forms.MessageBox]::Show(
-        "Isso fecha somente o icone; o servidor continuara rodando.`n`nPara recuperar o controle, use 'Central de Tecidos - Reabrir Controle' no Desktop/Menu Iniciar ou execute 'ABRIR CONTROLE DO SISTEMA.cmd'.`n`nDeseja fechar o icone?",
-        "Central de Tecidos",
-        "YesNo",
-        "Warning"
-    )
-    if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-    $notifyIcon.Visible = $false
-    [System.Windows.Forms.Application]::Exit()
-})
+$exitItem.Add_Click({ Start-ManagerAction "Stop" $true })
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 3000
@@ -196,14 +183,32 @@ $timer.Add_Tick({
     $startItem.Enabled = -not $serviceRunning
     $stopItem.Enabled = $serviceRunning
     if ($script:OperationProcess -and $script:OperationProcess.HasExited) {
+        $operationSucceeded = $script:OperationProcess.ExitCode -eq 0
+        $shouldExit = $script:ExitAfterStop
+        $script:ExitAfterStop = $false
+        $exitItem.Enabled = $true
         $script:OperationProcess.Dispose()
         $script:OperationProcess = $null
+        if ($shouldExit) {
+            if ($operationSucceeded) {
+                $timer.Stop()
+                $notifyIcon.Visible = $false
+                [System.Windows.Forms.Application]::Exit()
+            } else {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Nao foi possivel parar o sistema. Tente Sair novamente.",
+                    "Central de Tecidos", "OK", "Error"
+                ) | Out-Null
+            }
+        }
     }
 })
 $timer.Start()
 
 [System.Windows.Forms.Application]::Run()
 
+$heartbeat = Join-Path $ProjectRoot '.runtime\tray-heartbeat'
+Remove-Item -LiteralPath $heartbeat -Force -ErrorAction SilentlyContinue
 $timer.Dispose()
 $notifyIcon.Dispose()
 $greenIcon.Dispose()

@@ -10,7 +10,7 @@ const raiz = process.cwd();
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'luciano-finalizacao-'));
 process.env.DATA_DIR = temp;
 let source = fs.readFileSync('server.ts', 'utf8')
-  .replace('startServer();', 'export { app, db };')
+  .replace('startServer();', 'export { app, db, ajustarBonusFinalizacao };')
   .replace('void runAutoBackup();', '')
   .replace('setInterval(() => void runAutoBackup(), 60 * 1000);', '')
   .replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();', '')
@@ -20,7 +20,7 @@ const compiled = buildSync({ stdin: { contents: source, resolveDir: raiz, loader
 process.chdir(temp);
 const mod = new Module(path.join(raiz, 'scripts/finalizacao-runtime.cjs'));
 mod.filename = mod.id; mod.paths = module.paths; mod._compile(compiled.outputFiles[0].text, mod.filename);
-const { app, db, fecharPosicao, descreverParcelamentoCartao } = mod.exports;
+const { app, db, fecharPosicao, descreverParcelamentoCartao, ajustarBonusFinalizacao } = mod.exports;
 
 function chamar(rota, params, body, esperado = 200) {
   const camada = app._router.stack.find(item => item.route?.path === rota && item.route.methods.post);
@@ -60,5 +60,16 @@ try {
   assert.deepEqual({ status: origem.status, saldo: origem.saldoRestante, finalizado: Boolean(origem.finalizadoAt) }, { status: 'paga', saldo: 0, finalizado: true });
   assert.equal(residual.totalLiquido, 60); assert.equal(residual.saldoRestante, 60); assert.equal(residual.contabilizaReceita, 0);
   assert.deepEqual(JSON.parse(residual.valeOrigemIds), [1]); assert.match(residual.observacoes, /^Devedor da ordem #1$/);
+  const debitos = [], creditos = [];
+  ajustarBonusFinalizacao('c', 0, 25.37, 'Teste ajuste', debitos, creditos);
+  assert.equal(creditos.length, 1);
+  assert.equal(db.prepare('SELECT valor FROM cliente_bonus_movimentos WHERE id=?').get(creditos[0]).valor, 25.37);
+  ajustarBonusFinalizacao('c', 25.37, 10, 'Teste reducao', debitos, creditos);
+  assert.equal(db.prepare('SELECT valor FROM cliente_bonus_movimentos WHERE id=?').get(debitos[0]).valor, 15.37);
+  assert.throws(() => ajustarBonusFinalizacao('c', 10, -1, '', [], []), /bônus válido/);
+  assert.throws(() => ajustarBonusFinalizacao('c', 10, NaN, '', [], []), /bônus válido/);
+  db.prepare("INSERT INTO cliente_bonus_movimentos(id,clienteId,data,tipo,valor) VALUES ('uso','c','2026-10-01','debito',10)").run();
+  assert.throws(() => ajustarBonusFinalizacao('c', 10, 0, '', [], []), /já foi utilizado/);
+  console.log('OK: ajuste de bônus em centavos, redução, validação e bloqueio de saldo utilizado.');
   console.log('OK: lucro presumido, 4x iguais e finalização com vale residual rastreável sem duplicar receita.');
 } finally { db.close(); }

@@ -5096,11 +5096,23 @@ function zerarExcedenteComDebito(clienteId: string, valor: number, observacao: s
   return solicitado;
 }
 
+function ajustarBonusFinalizacao(clienteId: string, atual: number, solicitado: unknown, observacao: string, debitos: string[], creditos: string[]) {
+  if (solicitado === undefined) return;
+  if (typeof solicitado !== "number" || !Number.isFinite(solicitado) || solicitado < 0 || solicitado > Number.MAX_SAFE_INTEGER / 100) throw erroHttp("Informe um bônus válido, maior ou igual a zero.", 400);
+  const diferenca = (Math.round(solicitado * 100) - Math.round(atual * 100)) / 100;
+  if (diferenca < 0) zerarExcedenteComDebito(clienteId, -diferenca, observacao, debitos);
+  if (diferenca > 0) {
+    const id = "bon_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+    execute("INSERT INTO cliente_bonus_movimentos (id, clienteId, data, tipo, valor, observacao) VALUES (?, ?, ?, 'credito', ?, ?)", [id, clienteId, dataHojeLocal(), diferenca, observacao]);
+    creditos.push(id);
+  }
+}
+
 app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
-    const destinoRestante = req.body?.destinoRestante === "zerar" ? "zerar" : "novo_vale";
+    const destinoRestante = "novo_vale";
     let residual: ReturnType<typeof criarValeResidual> = null;
     runInTransaction(() => {
       const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status IN ('aberta','quitada') AND finalizadoAt IS NULL AND deletedAt IS NULL", [req.params.id]);
@@ -5113,6 +5125,7 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       recalcularOrdemCobranca(ordem.id);
       ordem.saldo = queryOne<any>('SELECT saldo FROM ordens_cobranca WHERE id=?', [ordem.id]).saldo;
       const bonusDebitoIds: string[] = [];
+      const bonusCreditoIds: string[] = [];
       const vales = queryAll<any>(`SELECT v.id, v.numeroSequencial, v.saldoRestante, ocv.saldo AS saldoTransferivel
         FROM ordem_cobranca_vales ocv JOIN vendas v ON v.id = ocv.vendaId
         WHERE ocv.ordemId = ? AND ocv.removidoAt IS NULL`, [ordem.id]);
@@ -5120,11 +5133,11 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       if (restante > 0.005 && destinoRestante === "novo_vale") {
         residual = criarValeResidual(ordem.clienteId, restante, vales, '', ordem);
       }
-      if (req.body?.zerarExcedente) {
+      if (req.body?.bonusFinal !== undefined || req.body?.zerarExcedente) {
         const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total
           FROM recebimentos_cliente rc WHERE rc.deletedAt IS NULL AND rc.status = 'ativo' AND
           (rc.ordemCobrancaId = ? OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos ocr WHERE ocr.ordemId = ? AND ocr.recebimentoId = rc.id AND ocr.deletedAt IS NULL))`, [ordem.id, ordem.id])?.total || 0);
-        zerarExcedenteComDebito(ordem.clienteId, bonus, `Excedente zerado ao finalizar a ordem #${ordem.numeroSequencial}`, bonusDebitoIds);
+        ajustarBonusFinalizacao(ordem.clienteId, bonus, req.body?.bonusFinal ?? 0, `Bônus ajustado ao finalizar a ordem #${ordem.numeroSequencial}`, bonusDebitoIds, bonusCreditoIds);
       }
       const agora = new Date().toISOString();
       for (const vale of vales) {
@@ -5135,7 +5148,7 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       execute("UPDATE ordem_cobranca_parcelas SET status = CASE WHEN status = 'pendente' THEN 'renegociada' ELSE status END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND deletedAt IS NULL", [ordem.id]);
       execute("UPDATE ordens_cobranca SET saldo = 0, status = 'quitada', finalizadoAt = ?, valeResidualId = ?, motivoEncerramento = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [agora, residual?.id || null, String(req.body?.motivo || "").trim() || null, ordem.id]);
-      registrarAuditoria(administrador.id, "ordem_cobranca_finalizada", "ordem_cobranca", ordem.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, excedenteZerado: Boolean(req.body?.zerarExcedente), vales: vales.map(v => v.numeroSequencial) });
+      registrarAuditoria(administrador.id, "ordem_cobranca_finalizada", "ordem_cobranca", ordem.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, bonusCreditoIds, bonusFinal: req.body?.bonusFinal, excedenteZerado: Boolean(req.body?.zerarExcedente), vales: vales.map(v => v.numeroSequencial) });
     });
     res.json({ ordem: listarOrdensCobranca("AND oc.id = ?", [req.params.id])[0], valeResidual: residual });
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
@@ -5146,7 +5159,7 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
     exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
-    const destinoRestante = req.body?.destinoRestante === "zerar" ? "zerar" : "novo_vale";
+    const destinoRestante = "novo_vale";
     let residual: ReturnType<typeof criarValeResidual> = null;
     runInTransaction(() => {
       const vale = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status <> 'cancelada' AND finalizadoAt IS NULL", [req.params.id]);
@@ -5159,18 +5172,19 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
         AND b.deletedAt IS NULL AND b.tipo='debito' AND b.valor>0 AND b.observacao LIKE 'Crédito aplicado na venda #%'`, [vale.id, vale.id, vale.id]);
       if (!pagamento) throw erroHttp("Adicione um pagamento válido antes de finalizar o vale.", 409);
       const bonusDebitoIds: string[] = [];
+      const bonusCreditoIds: string[] = [];
       const restante = Math.max(0, Math.round(Number(vale.saldoRestante || 0) * 100) / 100);
       if (restante > 0.005 && destinoRestante === "novo_vale") residual = criarValeResidual(vale.clienteId, restante, [vale]);
-      if (req.body?.zerarExcedente) {
+      if (req.body?.bonusFinal !== undefined || req.body?.zerarExcedente) {
         const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total FROM recebimentos_cliente rc
           WHERE rc.deletedAt IS NULL AND rc.status = 'ativo' AND EXISTS
           (SELECT 1 FROM recebimento_alocacoes ra WHERE ra.recebimentoId = rc.id AND ra.vendaId = ? AND ra.deletedAt IS NULL)`, [vale.id])?.total || 0);
-        zerarExcedenteComDebito(vale.clienteId, bonus, `Excedente zerado ao finalizar o vale #${vale.numeroSequencial}`, bonusDebitoIds);
+        ajustarBonusFinalizacao(vale.clienteId, bonus, req.body?.bonusFinal ?? 0, `Bônus ajustado ao finalizar o vale #${vale.numeroSequencial}`, bonusDebitoIds, bonusCreditoIds);
       }
       const agora = new Date().toISOString();
       execute("UPDATE vendas SET saldoRestante = 0, status = 'paga', finalizadoAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [agora, vale.id]);
       execute("UPDATE vale_parcelas SET saldo = 0, status = 'paga', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [vale.id]);
-      registrarAuditoria(administrador.id, "vale_finalizado", "venda", vale.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, excedenteZerado: Boolean(req.body?.zerarExcedente) });
+      registrarAuditoria(administrador.id, "vale_finalizado", "venda", vale.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, bonusCreditoIds, bonusFinal: req.body?.bonusFinal, excedenteZerado: Boolean(req.body?.zerarExcedente) });
     });
     res.json({ vale: carregarDetalhesVenda(queryOne<any>(`SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco, c.documento AS clienteDocumento FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?`, [req.params.id])), valeResidual: residual });
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }

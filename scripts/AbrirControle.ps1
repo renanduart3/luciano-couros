@@ -14,6 +14,23 @@ if (-not (Test-Path -LiteralPath $trayScript)) {
     exit 1
 }
 
+# The desktop shortcut also starts the server again after choosing Sair.
+$managerScript = Join-Path $PSScriptRoot "GerenciarSistema.ps1"
+$command = "& '" + $managerScript.Replace("'", "''") + "' -Action Start"
+$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+try {
+    $operation = Start-Process powershell.exe -Verb RunAs -WindowStyle Hidden -Wait -PassThru -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    $operation.Refresh()
+    if ($operation.ExitCode -ne 0) { throw "Nao foi possivel iniciar o sistema." }
+} catch {
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show(
+        "O sistema nao foi iniciado. Tente abrir o atalho novamente.`n$($_.Exception.Message)",
+        "Central de Tecidos", "OK", "Error"
+    ) | Out-Null
+    exit 1
+}
+
 $runtime = Join-Path (Split-Path -Parent $PSScriptRoot) '.runtime'
 $heartbeat = Join-Path $runtime 'tray-heartbeat'
 # An old tray holds the same mutex but cannot answer folder requests. Replace only

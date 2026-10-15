@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.3 — 14/10/2026
+
+- Finalização de vales e ordens: rótulos Devedor e Bônus, ajuste administrativo do bônus com auditoria e reabertura, e geração obrigatória de vale para o saldo restante.
+- Ações de finalizar e cancelar no rodapé, com cancelamento em vermelho.
+
+- Bandeja do Windows: “Sair” substitui “Fechar somente o ícone” e “Recarregar ícone”, parando o servidor antes de encerrar o controle.
+- Ícone aberto pelo atalho da área de trabalho, sem inicialização automática no login; o atalho inicia novamente o servidor após sair.
+
 Todas as alterações relevantes do sistema serão registradas neste arquivo.
 
 O projeto usa versionamento semântico: `MAJOR.MINOR.PATCH`.

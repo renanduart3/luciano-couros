@@ -157,22 +157,23 @@ async function main() {
     assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(ri.id).status, 'ativo');
     console.log('OK: vale finalizado reabre, preserva recebimento e permite editar mercadorias');
 
-    // Zerar restante não impede que uma correção restaure a dívida.
+    // Mesmo clientes antigos que pedem zerar devem gerar um vale residual.
     const vz = await criarVale(100), oz = await criarOrdem([vz], []);
     await pagar([{ vendaId: vz.id, valor: 40 }], { ordemCobrancaId: oz.id });
-    await finalizar('ordem', oz.id, { destinoRestante: 'zerar' });
+    const residualLegado = await finalizar('ordem', oz.id, { destinoRestante: 'zerar' });
+    assert.ok(residualLegado.valeResidual);
     await reabrirFinal('ordem', oz.id);
-    assert.equal((await getOrdem(oz.id)).saldo, 60);
+    assert.equal((await getOrdem(oz.id)).saldo, 0);
 
     // Ajuste de bônus da finalização tem vínculo exato e é revertido uma única vez.
     const vb = await criarVale(100), ob = await criarOrdem([vb], []);
     await pagar([{ vendaId: vb.id, valor: 100 }], { ordemCobrancaId: ob.id, valorRecebido: 120 });
     const saldoBonus = () => db.prepare("SELECT SUM(CASE WHEN tipo='credito' THEN valor ELSE -valor END) n FROM cliente_bonus_movimentos WHERE clienteId=? AND deletedAt IS NULL").get(cliente.id).n;
     assert.equal(saldoBonus(), 20);
-    await finalizar('ordem', ob.id, { zerarExcedente: true }); assert.equal(saldoBonus(), 0);
+    await finalizar('ordem', ob.id, { bonusFinal: 0 }); assert.equal(saldoBonus(), 0);
     await reabrirFinal('ordem', ob.id); assert.equal(saldoBonus(), 20);
     assert.equal((await getOrdem(ob.id)).valorPago, 100);
-    console.log('OK: reabertura restaura saldo perdoado e bônus zerado, mantendo pagamentos');
+    console.log('OK: reabertura preserva o residual e restaura o bônus ajustado, mantendo pagamentos');
 
     // Falha durante reabertura reverte a origem e preserva o residual.
     const vr = await criarVale(100), or = await criarOrdem([vr], []);

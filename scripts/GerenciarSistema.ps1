@@ -359,8 +359,11 @@ function Install-TrayShortcut {
     $shell = New-Object -ComObject WScript.Shell
     $powershellPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
     $iconPath = Join-Path $ProjectRoot "src\img\favicon.ico"
+    # Migrate existing installations: the tray is opened only by the user.
+    $startupShortcut = Join-Path ([Environment]::GetFolderPath("Startup")) $TrayShortcutName
+    Remove-Item -LiteralPath $startupShortcut -Force -ErrorAction SilentlyContinue
     $shortcutTargets = @(
-        @{ Path = Join-Path ([Environment]::GetFolderPath("Startup")) $TrayShortcutName; Name = $TrayShortcutName },
+        @{ Path = Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayShortcutName; Name = $TrayShortcutName },
         @{ Path = Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayRecoveryShortcutName; Name = $TrayRecoveryShortcutName },
         @{ Path = Join-Path ([Environment]::GetFolderPath("Programs")) $TrayRecoveryShortcutName; Name = $TrayRecoveryShortcutName }
     )
@@ -370,7 +373,7 @@ function Install-TrayShortcut {
         $shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$TrayLauncherScript`""
         $shortcut.WorkingDirectory = $ProjectRoot
         $shortcut.IconLocation = $iconPath
-        $shortcut.Description = "Reabre o controle da Central de Tecidos na bandeja do Windows."
+        $shortcut.Description = "Inicia a Central de Tecidos e abre o controle na bandeja do Windows."
         $shortcut.Save()
     }
 }
@@ -423,7 +426,7 @@ function Uninstall-SystemService {
     Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
     $desktopRecoveryShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayRecoveryShortcutName
     $startMenuRecoveryShortcut = Join-Path ([Environment]::GetFolderPath("Programs")) $TrayRecoveryShortcutName
-    Remove-Item -LiteralPath $desktopRecoveryShortcut, $startMenuRecoveryShortcut -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) $TrayShortcutName), $desktopRecoveryShortcut, $startMenuRecoveryShortcut -Force -ErrorAction SilentlyContinue
     Write-Host "Servico e inicializacao automatica do icone removidos." -ForegroundColor Green
 }
 

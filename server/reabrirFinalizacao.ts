@@ -52,8 +52,13 @@ export function criarReaberturaFinalizacao(deps: {
       if (restante) falha('O saldo transferido antigo diverge da origem. Concilie o histórico antes de reabrir.');
     }
     if (dados.excedenteZerado && !Array.isArray(dados.bonusDebitoIds)) falha('O bônus zerado nesta finalização antiga precisa ser conciliado antes de reabrir.');
-    const bonus = (dados.bonusDebitoIds || []).map((bonusId: string) => queryOne<any>('SELECT * FROM cliente_bonus_movimentos WHERE id=?', [bonusId]));
-    if (bonus.some((b: any) => !b || b.deletedAt || b.tipo !== 'debito' || b.clienteId !== alvo.clienteId)) falha('O ajuste de bônus da finalização mudou. Atualize o histórico.');
+    const bonus = [...(dados.bonusDebitoIds || []), ...(dados.bonusCreditoIds || [])].map((bonusId: string) => queryOne<any>('SELECT * FROM cliente_bonus_movimentos WHERE id=?', [bonusId]));
+    if (bonus.some((b: any) => !b || b.deletedAt || !['debito', 'credito'].includes(b.tipo) || b.clienteId !== alvo.clienteId)) falha('O ajuste de bônus da finalização mudou. Atualize o histórico.');
+    const creditoRemovido = bonus.reduce((total: number, b: any) => total + (b.tipo === 'credito' ? 1 : -1) * Number(b.valor), 0);
+    if (creditoRemovido > 0) {
+      const saldo = Number(queryOne<any>("SELECT COALESCE(SUM(CASE WHEN tipo='credito' THEN valor ELSE -valor END),0) AS saldo FROM cliente_bonus_movimentos WHERE clienteId=? AND deletedAt IS NULL", [alvo.clienteId])?.saldo || 0);
+      if (saldo + 0.005 < creditoRemovido) falha('O bônus desta finalização já foi utilizado. Estorne o uso antes de reabrir.');
+    }
     const parcelas = vales.flatMap(v => queryAll<any>('SELECT * FROM vale_parcelas WHERE vendaId=? AND deletedAt IS NULL ORDER BY id', [v.id]));
     const vinculos = tipo === 'ordem' ? queryAll<any>('SELECT * FROM ordem_cobranca_vales WHERE ordemId=? ORDER BY id', [id]) : [];
     const parcelasOrdem = tipo === 'ordem' ? queryAll<any>('SELECT * FROM ordem_cobranca_parcelas WHERE ordemId=? AND deletedAt IS NULL ORDER BY id', [id]) : [];
@@ -66,7 +71,7 @@ export function criarReaberturaFinalizacao(deps: {
       const p = preparar(tipo, id);
       return { revisao: p.revisao, numero: p.alvo.numeroSequencial, vales: p.vales.map(v => v.numeroSequencial),
         residual: p.residual ? { numero: p.residual.numeroSequencial, valor: p.residual.totalLiquido } : null,
-        bonusRestituido: p.bonus.reduce((s: number, b: any) => s + Number(b.valor), 0) };
+        bonusRestituido: p.bonus.reduce((s: number, b: any) => s + (b.tipo === 'debito' ? 1 : -1) * Number(b.valor), 0) };
     },
     executar: (tipo: Tipo, id: string, revisao: string, usuario: string, motivo: string) => runInTransaction(() => {
       const p = preparar(tipo, id);

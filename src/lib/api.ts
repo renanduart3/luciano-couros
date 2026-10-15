@@ -374,11 +374,11 @@ export const api = {
     }>(r)),
   reabrirFinalizacao: (tipo: 'ordem' | 'vale', id: string, dados: { pin: string; motivo: string; revisao: string }) =>
     fetch(`${API_BASE}/finalizacoes/${tipo}/${id}/reabertura`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }).then(r => handleResponse<{ success: boolean }>(r)),
-  finalizarOrdemCobranca: (id: string, dados: { pin: string; destinoRestante: "novo_vale" | "zerar"; zerarExcedente: boolean; motivo?: string }) =>
+  finalizarOrdemCobranca: (id: string, dados: { pin: string; destinoRestante: "novo_vale"; bonusFinal: number; motivo?: string }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/finalizar`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
     }).then(r => handleResponse<{ ordem: OrdemCobranca; valeResidual: { id: string; numeroSequencial: number; valor: number } | null }>(r)),
-  finalizarVale: (id: string, dados: { pin: string; destinoRestante: "novo_vale" | "zerar"; zerarExcedente: boolean; motivo?: string }) =>
+  finalizarVale: (id: string, dados: { pin: string; destinoRestante: "novo_vale"; bonusFinal: number; motivo?: string }) =>
     fetch(`${API_BASE}/vendas/${id}/finalizar`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados)
     }).then(r => handleResponse<{ vale: Venda; valeResidual: { id: string; numeroSequencial: number; valor: number } | null }>(r)),

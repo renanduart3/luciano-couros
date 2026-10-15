@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.5 — 15/10/2026
+
+- Devoluções de vales com saldo pendente abatem a dívida e as parcelas, sem criar bônus. Devoluções acima do saldo ou com saldo histórico divergente exigem conciliação.
+- Mensagens da tela de devolução refletem o novo cálculo; teste cobre pagamento, devolução e estorno com recomposição do saldo.
+- Preparada conciliação pontual e auditada do bônus indevido de R$ 380 no Vale #138, com conferência prévia e backup; depende da base atual do cliente para aplicação.
+
 ## 1.40.4 — 15/10/2026
 
 - Recibos de recebimento exibem TOTAL na tabela de pagamentos e VALOR VALE ou VALOR DA ORDEM, DEVEDOR e TOTAL PAGO no resumo.

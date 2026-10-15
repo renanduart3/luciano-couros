@@ -3664,12 +3664,20 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       });
 
       const valorCredito = Math.round(resolvidos.reduce((total, item) => total + item.totalCredito, 0) * 100) / 100;
-      const bonusIntegral = Boolean(venda.vencimento);
+      // Uma devolução do vale reduz a dívida. Um eventual valor já pago exige
+      // restituição/conciliação própria, nunca um bônus desvinculado do pagamento.
+      const saldoConferido = saldoVale(venda.id, Number(venda.totalLiquido), Number(venda.valorPago));
+      if (venda.vencimento && Math.abs(saldoConferido - Number(venda.saldoRestante)) > 0.005) {
+        throw erroHttp("O saldo gravado do vale diverge do histórico. Concilie o vale antes da devolução.", 409);
+      }
+      if (venda.vencimento && valorCredito > saldoConferido + 0.005) {
+        throw erroHttp("A devolução supera o saldo devedor do vale. Estorne ou concilie os pagamentos antes de registrar esta devolução.", 409);
+      }
       const devolucaoId = "dev_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
       execute(
         `INSERT INTO devolucoes_venda (id, vendaId, clienteId, data, valorCredito, modalidade, observacoes)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, bonusIntegral ? "bonus_integral" : "abatimento", String(observacoes || "").trim().slice(0, 100) || null]
+        [devolucaoId, vendaId, venda.clienteId, data, valorCredito, "abatimento", String(observacoes || "").trim().slice(0, 100) || null]
       );
       for (const item of resolvidos) {
         execute(
@@ -3691,12 +3699,12 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       const saldoAnterior = Number(venda.saldoRestante);
-      const novoTotal = bonusIntegral ? totalAnterior : Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
-      const novoPago = bonusIntegral ? pagoAnterior : Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
-      const novoSaldo = bonusIntegral ? saldoAnterior : Math.round(saldoVale(venda.id, novoTotal, novoPago) * 100) / 100;
-      const abatimentoVale = bonusIntegral ? 0 : Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
-      const bonusGerado = bonusIntegral ? valorCredito : Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
-      const primeiroVencimento = bonusIntegral ? venda.vencimento : reduzirParcelasValePorDevolucao(vendaId, valorCredito);
+      const novoTotal = Math.round(Math.max(0, totalAnterior - valorCredito) * 100) / 100;
+      const novoPago = Math.round(Math.min(pagoAnterior, novoTotal) * 100) / 100;
+      const novoSaldo = Math.round(saldoVale(venda.id, novoTotal, novoPago) * 100) / 100;
+      const abatimentoVale = Math.round(Math.min(valorCredito, saldoAnterior) * 100) / 100;
+      const bonusGerado = Math.round(Math.max(0, valorCredito - abatimentoVale) * 100) / 100;
+      const primeiroVencimento = reduzirParcelasValePorDevolucao(vendaId, valorCredito);
 
       execute(
         `UPDATE devolucoes_venda
@@ -3712,7 +3720,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
          WHERE id = ?`,
         [novoTotal, novoPago, novoSaldo, novoSaldo <= 0.005 ? "paga" : "pendente", primeiroVencimento, vendaId]
       );
-      if (!bonusIntegral) recalcularParcelasVale(vendaId);
+      recalcularParcelasVale(vendaId);
 
       if (bonusGerado > 0.005) {
         execute(
@@ -3734,7 +3742,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
         valorCredito,
         abatimentoVale,
         bonusGerado,
-        modalidade: bonusIntegral ? "bonus_integral" : "abatimento",
+        modalidade: "abatimento",
         totalAnterior,
         totalAtual: novoTotal,
         saldoAnterior,

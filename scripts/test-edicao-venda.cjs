@@ -67,19 +67,43 @@ async function main() {
     assert.equal(descontada.totalLiquido, 270);
     let devolvida = await criar();
     const devolucaoVale = await request('POST', `/vendas/${devolvida.id}/devolucoes`, { pin, data: '2026-09-11', items: [{ itemVendaId: devolvida.items[0].id, quantidade: 100 }] });
-    assert.equal(devolucaoVale.bonusGerado, 100);
-    assert.equal(devolucaoVale.abatimentoVale, 0);
+    assert.equal(devolucaoVale.bonusGerado, 0);
+    assert.equal(devolucaoVale.abatimentoVale, 100);
     devolvida = await request('GET', `/vendas/${devolvida.id}`);
-    assert.equal(devolvida.totalLiquido, 300);
-    assert.equal(devolvida.saldoRestante, 300);
+    assert.equal(devolvida.totalLiquido, 200);
+    assert.equal(devolvida.saldoRestante, 200);
     assert.equal(devolvida.totalMercadoriasAposDevolucoes, 200);
-    assert.equal(devolvida.bonusGeradoVenda, 100);
-    assert.equal(devolvida.devolucoes[0].modalidade, 'bonus_integral');
-    assert.equal(db.prepare("SELECT saldo FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL").get(devolvida.id).saldo, 300);
-    await editar(devolvida, devolvida.items, 0, { totalEsperado: 300 }, 409);
+    assert.equal(devolvida.bonusGeradoVenda, 0);
+    assert.equal(devolvida.devolucoes[0].modalidade, 'abatimento');
+    assert.equal(db.prepare("SELECT saldo FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL").get(devolvida.id).saldo, 200);
+    await editar(devolvida, devolvida.items, 0, { totalEsperado: 200 });
     assert.equal(devolvida.items[0].quantidadeDisponivel, 200);
     await editar(devolvida, [{ ...devolvida.items[0], produtoId: produto2.id }], 0, {}, 409);
-    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).totalLiquido, 300);
+    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).totalLiquido, 200);
+    const valeEstorno = await criar();
+    await request('POST', `/clientes/${cliente.id}/carteira/recebimentos`, {
+      data: '2026-09-11', formaPagamento: 'pix', valorRecebido: 100,
+      alocacoes: [{ vendaId: valeEstorno.id, valor: 100 }]
+    }, 201);
+    const devolucaoAposPagamento = await request('POST', `/vendas/${valeEstorno.id}/devolucoes`, {
+      pin, data: '2026-09-11', items: [{ itemVendaId: valeEstorno.items[0].id, quantidade: 100 }]
+    });
+    assert.equal(devolucaoAposPagamento.venda.totalLiquido, 200);
+    assert.equal(devolucaoAposPagamento.venda.valorPago, 100);
+    assert.equal(devolucaoAposPagamento.venda.saldoRestante, 100);
+    assert.equal(devolucaoAposPagamento.bonusGerado, 0);
+    await request('POST', `/vendas/${valeEstorno.id}/devolucoes`, {
+      pin, data: '2026-09-11', items: [{ itemVendaId: valeEstorno.items[0].id, quantidade: 101 }]
+    }, 409);
+    const previaEstorno = await request('GET', `/reabertura-pagamentos/vale/${valeEstorno.id}`);
+    await request('POST', `/reabertura-pagamentos/vale/${valeEstorno.id}`, {
+      pin, revisao: previaEstorno.revisao, motivo: 'Teste de estorno após devolução'
+    });
+    const estornado = await request('GET', `/vendas/${valeEstorno.id}`);
+    assert.equal(estornado.totalLiquido, 200);
+    assert.equal(estornado.valorPago, 0);
+    assert.equal(estornado.saldoRestante, 200);
+    assert.equal(estornado.bonusGeradoVenda, 0);
     const valeExcedente = await criar();
     const pagamentoExcedente = await request('POST', `/clientes/${cliente.id}/carteira/recebimentos`, {
       data: '2026-09-11', formaPagamento: 'pix', valorRecebido: 350,
@@ -89,14 +113,14 @@ async function main() {
     const valeComBonus = await request('GET', `/vendas/${valeExcedente.id}`);
     assert.equal(valeComBonus.bonusGeradoVenda, 50);
     assert.equal(valeComBonus.saldoRestante, 0);
-    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).bonusGeradoVenda, 100);
+    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).bonusGeradoVenda, 0);
     const usoBonus = await request('POST', `/clientes/${cliente.id}/carteira/recebimentos`, {
-      data: '2026-09-11', formaPagamento: 'bonus', valorRecebido: 0, bonusUtilizado: 100,
-      alocacoes: [{ vendaId: devolvida.id, valor: 100 }]
+      data: '2026-09-11', formaPagamento: 'bonus', valorRecebido: 0, bonusUtilizado: 50,
+      alocacoes: [{ vendaId: devolvida.id, valor: 50 }]
     }, 201);
-    assert.equal(usoBonus.bonusUtilizado, 100);
-    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).saldoRestante, 200);
-    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).bonusGeradoVenda, 100);
+    assert.equal(usoBonus.bonusUtilizado, 50);
+    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).saldoRestante, 150);
+    assert.equal((await request('GET', `/vendas/${devolvida.id}`)).bonusGeradoVenda, 0);
     let multipla = await criar();
     multipla = await editar(multipla, [...multipla.items, { id: 'adicional', produtoId: produto2.id, quantidade: 2.49, precoUnitario: 94.9, desconto: 0 }]);
     assert.equal(multipla.totalLiquido, 536.30);
@@ -106,7 +130,7 @@ async function main() {
     assert.equal(multipla.totalLiquido, 270);
     const relatorio = await request('GET', `/relatorios?clienteId=${cliente.id}`);
     assert.equal(relatorio.vendas.find(v => v.id === devolvida.id).totalLiquido, 200);
-    assert.equal(relatorio.vendas.find(v => v.id === devolvida.id).totalFinanceiroVale, 300);
+    assert.equal(relatorio.vendas.find(v => v.id === devolvida.id).totalFinanceiroVale, 200);
     const linhas = relatorio.itensVendidos.filter(i => i.vendaId === venda.id);
     assert.ok(Math.abs(linhas.reduce((s, i) => s + i.valorVendaLiquido, 0) - 236.30) < 0.005);
     const pagaCriada = await request('POST', '/vendas', { clienteId: cliente.id, data: '2026-09-11', formaPagamento: 'pix', valorPago: 100, descontoGeral: 0, autorizacaoPreco: { pin },

@@ -109,7 +109,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
       setMotivo("");
       setQuantidadesDevolucao({});
       setResultadoDevolucao(
-        `${formatCurrency(resultado.bonusGerado)} creditado como bônus. A dívida e as parcelas do vale permanecem inalteradas.`
+        `${formatCurrency(resultado.abatimentoVale)} abatido da dívida. O saldo e as parcelas do vale foram atualizados.`
       );
       onUpdated?.(resultado.venda);
     } catch (error: any) {
@@ -174,7 +174,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-violet-950">Devolver itens do vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-violet-800">O valor integral da devolução vira bônus. A dívida e as parcelas do vale permanecem.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-violet-800"><X size={17} /></button></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-violet-950">Devolver itens do vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-violet-800">A devolução abate a dívida e atualiza as parcelas. Se superar o saldo devedor, concilie os pagamentos antes.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-violet-800"><X size={17} /></button></div>
               <div className="overflow-hidden rounded-xl border border-violet-200 bg-white">
                 <div className="divide-y divide-slate-100">
                   {itens.filter((item) => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005).map((item) => {

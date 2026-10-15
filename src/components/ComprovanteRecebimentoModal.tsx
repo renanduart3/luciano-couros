@@ -64,6 +64,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
   const totalOriginal = comprovante.resumoOrdem?.totalOriginal ?? vales.reduce((total, vale) => total + Math.round(Number(vale.valorVale ?? vale.saldoAntes) * 100), 0) / 100;
   const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
   const saldoAtual = comprovante.resumoOrdem?.saldo ?? vales.reduce((total, vale) => total + Math.round(Number(vale.saldoAtual ?? vale.saldoDepois) * 100), 0) / 100;
+  const valeDevedor = comprovante.resumoOrdem?.valeDevedor ?? vales[0]?.valeDevedor;
   const abatido = Number(comprovante.valorAplicado || 0);
   const totalRegistrado = (titulos.length ? totalTitulosValidos : Number(comprovante.valorRecebido)) + bonusUtilizado;
   const referencia = comprovante.id.replace(/^rec_/, "").slice(-8).toUpperCase();
@@ -91,7 +92,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
 
         {acumulados ? <>
           <section className="payment-receipt-section">
-            <h3>{comprovante.resumoOrdem ? `ORDEM Nº ${comprovante.resumoOrdem.numero} · VALES` : "VALE"}</h3>
+            <h3>{comprovante.resumoOrdem ? `ORDEM DE COBRANÇA Nº ${comprovante.resumoOrdem.numero} · VALES` : "VALE"}</h3>
             <table className="payment-receipt-vales"><thead><tr><th>Nº VALE</th><th className="number">VALOR ORIGINAL</th></tr></thead>
               <tbody>{vales.map(v => <tr key={v.numeroSequencial}><td>#{v.numeroSequencial}</td><td className="number">{formatCurrency(v.valorVale ?? v.saldoAntes)}</td></tr>)}</tbody>
             </table>
@@ -100,9 +101,10 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
             <h3>PAGAMENTOS</h3>
             <table className="payment-receipt-methods"><thead><tr><th>FORMA DE PAGAMENTO</th>{temDocumentos && <th>Nº CHEQUE / BOLETO</th>}<th>DATA</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead>
               <tbody>{acumulados.map(p => <tr key={p.id}><td><b>{FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento.replaceAll("_", " ").toUpperCase()}</b>{p.formaPagamento === "cartao_credito" && <small>{descreverParcelamentoCartao(p.valorRecebido, normalizarQuantidadeParcelas(p.parcelasCartao), p.valoresParcelasCartao)}</small>}{p.bonusUtilizado > 0 && p.formaPagamento !== "bonus" && <small>Inclui bônus</small>}</td>{temDocumentos && <td>{p.titulos.map(t => t.numeroDocumento).join(", ") || "—"}</td>}<td>{formatDate(p.data)}</td><td>{p.statusPagamento === "aguardando" ? "A COMPENSAR" : "RECEBIDO"}</td><td className="number strong">{formatCurrency(p.valorNoVale)}</td></tr>)}</tbody>
-              <tfoot><tr><td colSpan={temDocumentos ? 4 : 3}>TOTAL PAGO</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr></tfoot>
+              <tfoot><tr><td colSpan={temDocumentos ? 4 : 3}>TOTAL</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr></tfoot>
             </table>
-            <table className="payment-receipt-vales" style={{ marginTop: 16 }}><tbody><tr><td>{comprovante.resumoOrdem ? "TOTAL ORIGINAL DA ORDEM" : "TOTAL ORIGINAL"}</td><td className="number">{formatCurrency(totalOriginal)}</td></tr><tr><td><b>TOTAL RESTANTE</b></td><td className="number strong">{formatCurrency(saldoAtual)}</td></tr></tbody></table>
+            <table className="payment-receipt-vales" style={{ marginTop: 16 }}><tbody><tr><td>{comprovante.resumoOrdem ? "VALOR DA ORDEM" : "VALOR VALE"}</td><td className="number">{formatCurrency(totalOriginal)}</td></tr><tr><td><b>DEVEDOR</b></td><td className="number strong">{formatCurrency(saldoAtual)}</td></tr><tr><td><b>TOTAL PAGO</b></td><td className="number strong">{formatCurrency(totalPagoVale)}</td></tr></tbody></table>
+            {valeDevedor && <p className="payment-receipt-note">Saldo devedor transferido para o vale #{valeDevedor}.</p>}
           </section>
         </> : <>
         <div className="payment-receipt-columns">

@@ -404,7 +404,7 @@ export interface TituloRecebimento {
 }
 
 export interface ComprovanteRecebimento {
-  resumoOrdem?: { numero: number; totalOriginal: number; saldo: number };
+  resumoOrdem?: { numero: number; totalOriginal: number; saldo: number; valeDevedor?: number };
   pagamentosVale?: Array<PagamentoGerenciavel & { valorNoVale: number }>;
   valoresParcelasCartao?: number[];
   id: string;
@@ -430,6 +430,7 @@ export interface ComprovanteRecebimento {
     valorAplicado: number;
     valorVale?: number;
     saldoAtual?: number;
+    valeDevedor?: number;
     saldoAntes: number;
     saldoDepois: number;
   }>;
@@ -552,6 +553,8 @@ export interface ProjecaoPagamentoOrdem { id: string; revisao: string; dados: Pa
 export type ItemAcaoPagamentoOrdem = { tipo: "recebimento" | "projecao"; id: string };
 export interface OrdemCobranca {
   valorTransferido?: number;
+  saldoDevedorAtual?: number;
+  numeroValeDevedor?: number;
   projecoes?: ProjecaoPagamentoOrdem[];
   pagamentos: PagamentoGerenciavel[];
   id: string;

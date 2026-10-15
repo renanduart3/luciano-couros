@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 const path = require('node:path');
+const fs = require('node:fs');
 const { buildSync } = require('esbuild');
 const compiled = buildSync({ entryPoints: ['src/lib/planilhaPrototipo.ts'], bundle: true, platform: 'node', format: 'cjs', write: false });
 const mod = new Module(path.resolve('scripts/planilha-runtime.cjs'));
@@ -23,4 +24,8 @@ assert.equal(apresentarCelula({ A1: '=SOMA(B1:B3)', B1: 'Título', B2: '1.234,56
 const cadeia = { A40: '1' };
 for (let l = 39; l > 0; l--) cadeia[`A${l}`] = `=A${l + 1}+A${l + 1}`;
 assert.equal(avaliarCelula(cadeia, 'A1').n, 2n ** 39n);
+const tela = fs.readFileSync('src/components/PlanilhasPrototipoView.tsx', 'utf8');
+const menu = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
+assert.doesNotMatch(tela, /localStorage|sessionStorage|fetch\(|\bapi\.|indexedDB/);
+assert.doesNotMatch(menu, /id:\s*["']planilhas["']/);
 console.log('OK: operações decimais exatas, arredondamento, referências, soma, recálculo e erros controlados.');

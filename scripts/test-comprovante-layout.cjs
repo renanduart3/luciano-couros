@@ -35,6 +35,11 @@ async function main() {
  assert.equal(await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).count(),0);
  assert.equal(await page.locator('.payment-receipt-methods tbody tr').count(),2);
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('569,00'));
+ assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('TOTAL'));
+ assert.ok(!(await page.locator('.payment-receipt-methods tfoot').innerText()).includes('TOTAL PAGO'));
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR VALE'));
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('DEVEDOR'));
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('TOTAL PAGO'));
  assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('985,60'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('PIX'));
@@ -59,6 +64,7 @@ async function main() {
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('500,00'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('200,00'));
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('627,40'));
+ assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR DA ORDEM'));
  assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
  console.log('OK: original e abatimento acumulado por vale, saldo do recibo e atual separados, 30 vales, descrição VALE e ordem com pagamentos anteriores.');
  } finally {await browser.close();}

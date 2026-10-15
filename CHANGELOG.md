@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.4 — 15/10/2026
+
+- Recibos de recebimento exibem TOTAL na tabela de pagamentos e VALOR VALE ou VALOR DA ORDEM, DEVEDOR e TOTAL PAGO no resumo.
+- Saldo devedor dos comprovantes acompanha o vale residual após finalização, inclusive transferências posteriores; saldos gravados como zero indevidamente são conferidos com o valor pago.
+- Protótipo da planilha incorporado ao código com dados de exemplo, sem persistência ou acesso no menu enquanto aguarda aprovação.
+
 ## 1.40.3 — 14/10/2026
 
 - Finalização de vales e ordens: rótulos Devedor e Bônus, ajuste administrativo do bônus com auditoria e reabertura, e geração obrigatória de vale para o saldo restante.

@@ -576,8 +576,27 @@ async function main() {
     await request('GET', `/ordens-cobranca/${fo.id}/cancelamento/previa`, undefined, 409);
     assert.equal((await getOrdem(fo.id)).saldo, 0);
     assert.equal((await request('GET', `/vendas/${ff.valeResidual.id}`)).saldoRestante, 60);
+    const ordemFinalizada = await getOrdem(fo.id);
+    assert.equal(ordemFinalizada.saldoDevedorAtual, 60);
+    assert.equal(ordemFinalizada.numeroValeDevedor, ff.valeResidual.numeroSequencial);
+    const comprovanteOrdemFinalizada = await request('GET', `/recebimentos-cliente/${fr.id}/comprovante?vendaId=${fv.id}`);
+    assert.equal(comprovanteOrdemFinalizada.vales[0].saldoAtual, 60);
+    assert.equal(comprovanteOrdemFinalizada.vales[0].valeDevedor, ff.valeResidual.numeroSequencial);
     assert.equal(db.prepare('SELECT status FROM recebimentos_cliente WHERE id=?').get(fr.id).status, 'ativo');
     console.log('OK: estorno com finalização/residual bloqueado sem qualquer mutação até a conciliação das partes 3/4');
+
+    const valeFinalizado = await criarVale(724.22);
+    const recebimentoParcial = await pagar([{ vendaId: valeFinalizado.id, valor: 48.71 }]);
+    const finalizacaoVale = await request('POST', `/vendas/${valeFinalizado.id}/finalizar`, { pin });
+    const reciboFinalizado = await request('GET', `/recebimentos-cliente/${recebimentoParcial.id}/comprovante?vendaId=${valeFinalizado.id}`);
+    assert.equal(reciboFinalizado.vales[0].saldoAtual, 675.51);
+    assert.equal(reciboFinalizado.vales[0].valeDevedor, finalizacaoVale.valeResidual.numeroSequencial);
+    const valeDivergente = await criarVale(100);
+    const recebimentoDivergente = await pagar([{ vendaId: valeDivergente.id, valor: 25 }]);
+    db.prepare('UPDATE vendas SET saldoRestante = 0 WHERE id = ?').run(valeDivergente.id);
+    const reciboConferido = await request('GET', `/recebimentos-cliente/${recebimentoDivergente.id}/comprovante?vendaId=${valeDivergente.id}`);
+    assert.equal(reciboConferido.vales[0].saldoAtual, 75);
+    console.log('OK: recibo mostra dívida transferida e não mostra zero quando o saldo gravado diverge do valor pago');
 
     await request('DELETE', `/produtos/${produto.id}`, {}, 403);
     await request('DELETE', `/produtos/${produto.id}`, { pin: 'errada' }, 403);

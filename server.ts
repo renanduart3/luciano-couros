@@ -4544,6 +4544,26 @@ app.post("/api/compras/:id/cancelar", (req, res) => {
 
 
 // 8. ORDENS DE COBRANÇA
+function localizarValeDevedor(vendaId: string) {
+  let atual = queryOne<any>(
+    'SELECT id, numeroSequencial, saldoRestante AS saldoAtual, finalizadoAt FROM vendas WHERE id = ? AND deletedAt IS NULL',
+    [vendaId]
+  );
+  const visitados = new Set<string>();
+  while (atual?.finalizadoAt && !visitados.has(atual.id)) {
+    visitados.add(atual.id);
+    const proximo = queryOne<any>(
+      `SELECT v.id, v.numeroSequencial, v.saldoRestante AS saldoAtual, v.finalizadoAt
+       FROM vale_residual_origens o JOIN vendas v ON v.id = o.valeResidualId
+       WHERE o.vendaOrigemId = ? AND v.deletedAt IS NULL
+       ORDER BY v.numeroSequencial DESC LIMIT 1`, [atual.id]
+    );
+    if (!proximo) break;
+    atual = proximo;
+  }
+  return atual;
+}
+
 function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
   return queryAll<any>(
     `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone,
@@ -4558,6 +4578,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
      ORDER BY oc.numeroSequencial DESC`,
     params
   ).map((ordem) => {
+    const valeDevedor = ordem.valeResidualId ? localizarValeDevedor(ordem.valeResidualId) : null;
     const parcelas = queryAll<any>(
       `SELECT ocp.id, ocp.ordemId, ocp.numero, ocp.vencimento, ocp.valor,
               ocp.valorPago, ocp.saldo, ocp.status, ocp.valorRenegociado, ocp.formaPagamentoPrevista,
@@ -4668,6 +4689,8 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
     eventos.sort((a, b) => String(a.data).localeCompare(String(b.data)));
     return {
       ...ordem,
+      saldoDevedorAtual: valeDevedor ? Number(valeDevedor.saldoAtual) : undefined,
+      numeroValeDevedor: valeDevedor?.numeroSequencial,
       valorTransferido: transferidoOrdem(ordem.id),
       projecoes: queryAll<any>("SELECT * FROM ordem_pagamentos_projetados WHERE ordemId = ? AND estado = 'pendente' ORDER BY createdAt DESC, rowid DESC", [ordem.id])
         .map(p => ({ id: p.id, dados: JSON.parse(p.dados), revisao: crypto.createHash("sha256").update(p.dados).digest("hex") })),
@@ -5824,9 +5847,19 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       [recebimento.id, vendaIndividual]
     )) throw erroHttp("Vale não pertence a este recebimento.", 400);
     const valeIndividual = vendaIndividual ? queryOne<any>(
-      'SELECT numeroSequencial, totalLiquido AS valorVale, saldoRestante AS saldoAtual FROM vendas WHERE id = ? AND clienteId = ?',
+      'SELECT numeroSequencial, totalLiquido AS valorVale, valorPago, saldoRestante AS saldoAtual, finalizadoAt FROM vendas WHERE id = ? AND clienteId = ?',
       [vendaIndividual, recebimento.clienteId]
     ) : null;
+    // A finalização zera o vale original e transfere a dívida para outro vale.
+    // Em ordens, o saldo do vale residual corresponde à dívida conjunta da ordem.
+    const destino = valeIndividual?.finalizadoAt ? localizarValeDevedor(vendaIndividual) : null;
+    const residual = destino?.id !== vendaIndividual ? destino : null;
+    // Em vales não finalizados, total menos valor pago impede um saldo gravado
+    // incorretamente como zero de produzir recibo de quitação falso.
+    const saldoConferido = valeIndividual && !valeIndividual.finalizadoAt
+      ? Math.max(0, Math.round((Number(valeIndividual.valorVale) - Number(valeIndividual.valorPago)) * 100) / 100,
+          Number(valeIndividual.saldoAtual))
+      : Number(residual?.saldoAtual ?? valeIndividual?.saldoAtual ?? 0);
     const pagamentosVale = valeIndividual ? queryAll<any>(
       `SELECT rc.id, SUM(a.valor) AS valorNoVale
        FROM recebimentos_cliente rc JOIN recebimento_alocacoes a ON a.recebimentoId = rc.id
@@ -5853,7 +5886,8 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       bonusGerado: Number(recebimento.bonusGerado || 0),
       observacao: recebimento.observacao,
       titulos: listarTitulosRecebimento(recebimento.id),
-      vales: valeIndividual ? [{ saldoAntes: valeIndividual.saldoAtual, saldoDepois: valeIndividual.saldoAtual, valorAplicado: 0, ...vales.find(v => v.vendaId === vendaIndividual), ...valeIndividual }] : vales,
+      vales: valeIndividual ? [{ saldoAntes: saldoConferido, saldoDepois: saldoConferido, valorAplicado: 0, ...vales.find(v => v.vendaId === vendaIndividual), ...valeIndividual,
+        saldoAtual: saldoConferido, valeDevedor: residual?.numeroSequencial }] : vales,
       pagamentosVale,
       ordens,
     });

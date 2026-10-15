@@ -30,6 +30,14 @@ function chamar(rota, params, body, esperado = 200) {
   return resposta;
 }
 
+function consultar(rota, params, query = {}) {
+  const camada = app._router.stack.find(item => item.route?.path === rota && item.route.methods.get);
+  let resposta, status = 200;
+  camada.route.stack[0].handle({ params, query }, { status(codigo) { status = codigo; return this; }, json(valor) { resposta = valor; } });
+  assert.equal(status, 200, JSON.stringify(resposta));
+  return resposta;
+}
+
 try {
   const posicao = fecharPosicao(1000, 300, 900, 0);
   assert.deepEqual({ entrou: posicao.recebido, presumido: posicao.presumido, devido: posicao.restantePresumido, excedente: posicao.excedentePresumido }, { entrou: 300, presumido: 1200, devido: 0, excedente: 200 });
@@ -55,11 +63,37 @@ try {
   const resultado = chamar('/api/ordens-cobranca/:id/finalizar', { id: 'o1' }, { pin: '1234', destinoRestante: 'novo_vale', zerarExcedente: false });
   assert.equal(resultado.ordem.finalizadoAt != null, true);
   assert.equal(resultado.valeResidual.numeroSequencial, 2);
+  assert.equal(resultado.ordem.saldoDevedorAtual, 60);
+  assert.equal(resultado.ordem.numeroValeDevedor, 2);
   const origem = db.prepare("SELECT status,saldoRestante,finalizadoAt FROM vendas WHERE id='v1'").get();
   const residual = db.prepare("SELECT totalLiquido,saldoRestante,contabilizaReceita,valeOrigemIds,observacoes FROM vendas WHERE id=?").get(resultado.valeResidual.id);
   assert.deepEqual({ status: origem.status, saldo: origem.saldoRestante, finalizado: Boolean(origem.finalizadoAt) }, { status: 'paga', saldo: 0, finalizado: true });
   assert.equal(residual.totalLiquido, 60); assert.equal(residual.saldoRestante, 60); assert.equal(residual.contabilizaReceita, 0);
   assert.deepEqual(JSON.parse(residual.valeOrigemIds), [1]); assert.match(residual.observacoes, /^Devedor da ordem #1$/);
+  const reciboDaOrdem = consultar('/api/recebimentos-cliente/:id/comprovante', { id: 'r1' }, { vendaId: 'v1' });
+  assert.equal(reciboDaOrdem.vales[0].saldoAtual, 60);
+  assert.equal(reciboDaOrdem.vales[0].valeDevedor, resultado.valeResidual.numeroSequencial);
+
+  db.prepare("INSERT INTO vendas(id,numeroSequencial,clienteId,data,subtotal,desconto,totalLiquido,valorPago,saldoRestante,status,vencimento) VALUES ('v2',3,'c','2026-09-24',724.22,0,724.22,48.71,675.51,'pendente','2026-10-01')").run();
+  db.prepare("INSERT INTO recebimentos_cliente(id,clienteId,data,valorRecebido,valorAplicado,formaPagamento) VALUES ('r2','c','2026-09-24',48.71,48.71,'pix')").run();
+  db.prepare("INSERT INTO recebimento_alocacoes(id,recebimentoId,vendaId,valor,saldoAntes,saldoDepois) VALUES ('a2','r2','v2',48.71,724.22,675.51)").run();
+  const finalizacaoDireta = chamar('/api/vendas/:id/finalizar', { id: 'v2' }, { pin: '1234' });
+  const reciboDireto = consultar('/api/recebimentos-cliente/:id/comprovante', { id: 'r2' }, { vendaId: 'v2' });
+  assert.equal(reciboDireto.vales[0].saldoAtual, 675.51);
+  assert.equal(reciboDireto.vales[0].valeDevedor, finalizacaoDireta.valeResidual.numeroSequencial);
+  db.prepare("INSERT INTO recebimentos_cliente(id,clienteId,data,valorRecebido,valorAplicado,formaPagamento) VALUES ('r4','c','2026-09-25',100,100,'pix')").run();
+  db.prepare('INSERT INTO recebimento_alocacoes(id,recebimentoId,vendaId,valor,saldoAntes,saldoDepois) VALUES (?,?,?,?,?,?)')
+    .run('a4', 'r4', finalizacaoDireta.valeResidual.id, 100, 675.51, 575.51);
+  db.prepare('UPDATE vendas SET valorPago = 100, saldoRestante = 575.51 WHERE id = ?').run(finalizacaoDireta.valeResidual.id);
+  const segundaFinalizacao = chamar('/api/vendas/:id/finalizar', { id: finalizacaoDireta.valeResidual.id }, { pin: '1234' });
+  const reciboAposSegundaFinalizacao = consultar('/api/recebimentos-cliente/:id/comprovante', { id: 'r2' }, { vendaId: 'v2' });
+  assert.equal(reciboAposSegundaFinalizacao.vales[0].saldoAtual, 575.51);
+  assert.equal(reciboAposSegundaFinalizacao.vales[0].valeDevedor, segundaFinalizacao.valeResidual.numeroSequencial);
+
+  db.prepare("INSERT INTO vendas(id,numeroSequencial,clienteId,data,subtotal,desconto,totalLiquido,valorPago,saldoRestante,status,vencimento) VALUES ('v3',6,'c','2026-09-24',100,0,100,25,0,'pendente','2026-10-01')").run();
+  db.prepare("INSERT INTO recebimentos_cliente(id,clienteId,data,valorRecebido,valorAplicado,formaPagamento) VALUES ('r3','c','2026-09-24',25,25,'pix')").run();
+  db.prepare("INSERT INTO recebimento_alocacoes(id,recebimentoId,vendaId,valor,saldoAntes,saldoDepois) VALUES ('a3','r3','v3',25,100,75)").run();
+  assert.equal(consultar('/api/recebimentos-cliente/:id/comprovante', { id: 'r3' }, { vendaId: 'v3' }).vales[0].saldoAtual, 75);
   const debitos = [], creditos = [];
   ajustarBonusFinalizacao('c', 0, 25.37, 'Teste ajuste', debitos, creditos);
   assert.equal(creditos.length, 1);

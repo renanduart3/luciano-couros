@@ -1,31 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, Check, ChevronDown, FlaskConical, FunctionSquare, RotateCcw, Sheet, Table2 } from "lucide-react";
 import { apresentarCelula, Celulas, COLUNAS, endereco, EXEMPLO, LINHAS } from "../lib/planilhaPrototipo";
 
 type Rascunho = { celulas: Celulas; moedas: string[]; nome: string };
 const inicial = (): Rascunho => ({ celulas: { ...EXEMPLO }, moedas: ["C4", "C5", "C6", "D4", "D5", "D6", "D8", "D9", "D10"], nome: "Simulação de materiais" });
-export function PlanilhasPrototipoView({ usuarioId }: { usuarioId: string }) {
-  const chave = `luciano:prototipo-planilha:v1:${usuarioId}`;
-  const [rascunho, setRascunho] = useState<Rascunho>(() => {
-    try {
-      const salvo = JSON.parse(localStorage.getItem(chave) || "null");
-      if (salvo && typeof salvo.nome === "string" && salvo.celulas && Array.isArray(salvo.moedas)) {
-        const celulas = Object.fromEntries(Object.entries(salvo.celulas).filter(([id, v]) => /^[A-J]([1-9]|[1-3]\d|40)$/.test(id) && typeof v === "string" && v.length <= 300)) as Celulas;
-        return { celulas, moedas: salvo.moedas.filter((v: unknown) => typeof v === "string"), nome: salvo.nome.slice(0, 60) };
-      }
-    } catch { /* Um rascunho inválido não impede abrir o protótipo. */ }
-    return inicial();
-  });
+export function PlanilhasPrototipoView() {
+  const [rascunho, setRascunho] = useState<Rascunho>(inicial);
   const [selecionada, setSelecionada] = useState("D10");
   const [editando, setEditando] = useState<string | null>(null);
   const [texto, setTexto] = useState("");
-  const [status, setStatus] = useState("Salvando rascunho…");
   const [restaurar, setRestaurar] = useState(false);
   const grade = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    try { localStorage.setItem(chave, JSON.stringify(rascunho)); setStatus("Rascunho salvo neste navegador"); }
-    catch { setStatus("Não foi possível salvar neste navegador"); }
-  }, [rascunho, chave]);
   const exibicao = useMemo(() => Object.fromEntries(Array.from({ length: LINHAS }, (_, l) => Array.from({ length: COLUNAS }, (_, c) => {
     const id = endereco(l, c); return [id, apresentarCelula(rascunho.celulas, id, rascunho.moedas.includes(id))];
   })).flat()), [rascunho]);
@@ -52,9 +37,9 @@ export function PlanilhasPrototipoView({ usuarioId }: { usuarioId: string }) {
   return <section className="mx-auto flex max-w-[1600px] flex-col gap-4">
     <header className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-3"><span className="rounded-2xl bg-emerald-100 p-3 text-emerald-800"><Sheet size={26}/></span><div><div className="flex items-center gap-2"><h1 className="text-2xl font-black tracking-tight text-slate-900">Planilhas</h1><span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">Protótipo</span></div><p className="mt-1 text-sm text-slate-500">Um espaço para organizar ideias e fazer suas contas.</p></div></div>
-      <div className="flex items-center gap-2 text-xs text-slate-500"><Check size={14} className="text-emerald-600"/>{status}</div>
+      <div className="flex items-center gap-2 text-xs text-slate-500"><Check size={14} className="text-emerald-600"/>Simulação temporária</div>
     </header>
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-950"><FlaskConical size={17} className="shrink-0"/><p><strong>Área de demonstração.</strong> Dados fictícios. O rascunho fica neste navegador e não altera vendas, estoque ou financeiro.</p></div>
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-950"><FlaskConical size={17} className="shrink-0"/><p><strong>Área de demonstração.</strong> Dados fictícios. Alterações são temporárias e não alteram vendas, estoque ou financeiro.</p></div>
     <div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
         <label className="flex items-center gap-2 text-emerald-800"><Table2 size={19}/><input aria-label="Nome da planilha" maxLength={60} value={rascunho.nome} onChange={e => setRascunho(a => ({ ...a, nome: e.target.value }))} className="w-52 rounded px-2 py-1 text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"/></label>

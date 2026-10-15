@@ -113,7 +113,7 @@ export default function App() {
           <RelatoriosView />
         );
       case "planilhas":
-        return <PlanilhasPrototipoView usuarioId={usuario!.id} />;
+        return <PlanilhasPrototipoView />;
       case "config":
         return (
           <BackupConfigView

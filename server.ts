@@ -5823,7 +5823,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
     );
     if (!recebimento) throw erroHttp("Recebimento não encontrado.", 404);
     const vales = queryAll<any>(
-      `SELECT v.id AS vendaId, v.numeroSequencial, v.totalLiquido AS valorVale, v.saldoRestante AS saldoAtual, a.valor AS valorAplicado,
+      `SELECT v.id AS vendaId, v.numeroSequencial, v.data, v.totalLiquido AS valorVale, v.saldoRestante AS saldoAtual, a.valor AS valorAplicado,
               COALESCE(a.saldoAntes, v.saldoRestante + a.valor) AS saldoAntes,
               COALESCE(a.saldoDepois, v.saldoRestante) AS saldoDepois
        FROM recebimento_alocacoes a JOIN vendas v ON v.id = a.vendaId
@@ -5855,7 +5855,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       [recebimento.id, vendaIndividual]
     )) throw erroHttp("Vale não pertence a este recebimento.", 400);
     const valeIndividual = vendaIndividual ? queryOne<any>(
-      'SELECT numeroSequencial, totalLiquido AS valorVale, valorPago, saldoRestante AS saldoAtual, finalizadoAt FROM vendas WHERE id = ? AND clienteId = ?',
+      'SELECT numeroSequencial, data, totalLiquido AS valorVale, valorPago, saldoRestante AS saldoAtual, finalizadoAt FROM vendas WHERE id = ? AND clienteId = ?',
       [vendaIndividual, recebimento.clienteId]
     ) : null;
     // A finalização zera o vale original e transfere a dívida para outro vale.

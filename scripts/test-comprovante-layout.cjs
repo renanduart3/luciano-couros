@@ -40,7 +40,7 @@ async function main() {
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR VALE'));
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('DEVEDOR'));
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('TOTAL PAGO'));
- assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
+ assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),4);
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('985,60'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('PIX'));
  await page.locator('.payment-receipt-paper').screenshot({path:screenshot});
@@ -65,7 +65,7 @@ async function main() {
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('200,00'));
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('627,40'));
  assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR DA ORDEM'));
- assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),2);
+ assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),4);
  console.log('OK: original e abatimento acumulado por vale, saldo do recibo e atual separados, 30 vales, descrição VALE e ordem com pagamentos anteriores.');
  } finally {await browser.close();}
 }

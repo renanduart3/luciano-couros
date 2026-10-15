@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.6 — 15/10/2026
+
+- Recibos acumulados de ordens e vales mostram VALE, Nº VALE, data de emissão, valor original e TOTAL VALES.
+- Cheques e duplicatas aparecem individualmente nos pagamentos, com número, situação, data de compensação ou vencimento e valor aplicado; pagamentos compartilhados preservam o total do documento.
+
 ## 1.40.5 — 15/10/2026
 
 - Devoluções de vales com saldo pendente abatem a dívida e as parcelas, sem criar bônus. Devoluções acima do saldo ou com saldo histórico divergente exigem conciliação.

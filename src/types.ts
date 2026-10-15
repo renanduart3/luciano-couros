@@ -427,6 +427,7 @@ export interface ComprovanteRecebimento {
   titulos: TituloRecebimento[];
   vales: Array<{
     numeroSequencial: number;
+    data?: string;
     valorAplicado: number;
     valorVale?: number;
     saldoAtual?: number;

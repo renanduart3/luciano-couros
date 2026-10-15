@@ -216,7 +216,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
     valorDevidoAntes: ordem.totalOriginal, titulos: [], observacao: ordem.observacao,
     resumoOrdem: { numero: ordem.numeroSequencial, totalOriginal: ordem.totalOriginal,
       saldo: ordem.saldoDevedorAtual ?? ordem.saldo, valeDevedor: ordem.numeroValeDevedor },
-    vales: ordem.vales.map(v => ({ numeroSequencial: v.numeroSequencial, valorVale: v.valorOriginalVale ?? v.valorVinculado,
+    vales: ordem.vales.map(v => ({ numeroSequencial: v.numeroSequencial, data: v.data, valorVale: v.valorOriginalVale ?? v.valorVinculado,
       valorAplicado: v.valorPago, saldoAntes: v.valorVinculado, saldoDepois: v.saldo, saldoAtual: v.saldo })),
     pagamentosVale: pagamentosRecibo.map(p => ({ ...p, valorNoVale: p.valorAplicadoOrdem ?? p.valorAplicado })),
   };

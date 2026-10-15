@@ -9,6 +9,7 @@ import { VendaModuleView } from "./components/VendaModuleView";
 import { FornecedoresModuleView } from "./components/FornecedoresModuleView";
 import { ValesView } from "./components/ValesView";
 import { ComprasView } from "./components/ComprasView";
+import { PlanilhasPrototipoView } from "./components/PlanilhasPrototipoView";
 import { AlterarSenhaObrigatoria, LoginView } from "./components/LoginView";
 import { api } from "./lib/api";
 import { UsuarioSistema } from "./types";
@@ -111,6 +112,8 @@ export default function App() {
         return (
           <RelatoriosView />
         );
+      case "planilhas":
+        return <PlanilhasPrototipoView usuarioId={usuario!.id} />;
       case "config":
         return (
           <BackupConfigView

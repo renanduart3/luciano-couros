@@ -34,6 +34,15 @@ assert.equal((html.match(/R\$\s*1\.200,00/g) || []).length, 3);
 const ordem = mod.exports.render({ ...recibo, resumoOrdem: { numero: 12, totalOriginal: 1553.4, saldo: 353.4, valeDevedor: 811 } });
 assert.match(ordem, /VALOR DA ORDEM/);
 assert.match(ordem, /Saldo devedor transferido para o vale #811/);
+const ordem19 = mod.exports.render({ ...recibo,
+  resumoOrdem: { numero: 19, totalOriginal: 1127.4, saldo: 0 },
+  vales: [
+    { numeroSequencial: 153, data: '2026-08-21', valorVale: 2421.4, saldoAntes: 1127.4, saldoDepois: 0 },
+    { numeroSequencial: 154, data: '2026-08-21', valorVale: 481.8, saldoAntes: 0, saldoDepois: 0 },
+  ],
+});
+assert.match(ordem19, /TOTAL VALES<\/td><td class="number">R\$\s*2\.903,20/);
+assert.match(ordem19, /VALOR DA ORDEM<\/td><td class="number">R\$\s*2\.903,20/);
 const titulo = (n, data) => ({ id: `t${n}`, tipo: 'cheque_emitente', numeroDocumento: String(n), valor: 200,
   vencimento: '2026-10-30', dataCompensacao: data, status: 'compensado' });
 const quatroCheques = mod.exports.render({ ...recibo, pagamentosVale: [{ ...recibo.pagamentosVale[0],

@@ -65,8 +65,8 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
   }, []);
 
   const forma = FORMAS_PAGAMENTO.find(f => f.value === comprovante.formaPagamento)?.label || comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
-  const totalOriginal = comprovante.resumoOrdem?.totalOriginal ?? vales.reduce((total, vale) => total + Math.round(Number(vale.valorVale ?? vale.saldoAntes) * 100), 0) / 100;
   const totalVales = vales.reduce((total, vale) => total + centavos(vale.valorVale ?? vale.saldoAntes), 0) / 100;
+  const totalOriginal = totalVales;
   const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
   const saldoAtual = comprovante.resumoOrdem?.saldo ?? vales.reduce((total, vale) => total + Math.round(Number(vale.saldoAtual ?? vale.saldoDepois) * 100), 0) / 100;
   const valeDevedor = comprovante.resumoOrdem?.valeDevedor ?? vales[0]?.valeDevedor;

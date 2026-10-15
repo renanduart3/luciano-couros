@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.40.7 — 15/10/2026
+
+- O valor da ordem no comprovante acumulado usa a soma dos valores originais dos vales vinculados, igual ao TOTAL VALES, mesmo quando o total negociado da ordem é menor.
+
 ## 1.40.6 — 15/10/2026
 
 - Recibos acumulados de ordens e vales mostram VALE, Nº VALE, data de emissão, valor original e TOTAL VALES.

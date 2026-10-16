@@ -58,7 +58,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   useEffect(() => { setAnotacao(vale.observacoes || ""); }, [vale.id, vale.observacoes]);
   const [recebimentoAberto, setRecebimentoAberto] = useState<string | null>(null);
   const gerente = useEhGerente();
-  const bloqueado = ordemCobranca?.status === "aberta" || Boolean(vale.finalizadoAt);
+  const ordemAtiva = ordemCobranca?.status === "aberta" && ordemCobranca.vales.some(vinculo => vinculo.vendaId === vale.id);
+  const bloqueado = ordemAtiva || Boolean(vale.finalizadoAt);
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
   const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); setPaginaPagamentos(1); };
@@ -216,8 +217,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>}
 
             <p className="text-xs text-slate-600">Vencimento: {vale.vencimento ? formatDate(vale.vencimento) : "Sem vencimento"} · {itens.length} itens{totalDevolvido > 0 && ` · Devolvido: ${formatCurrency(totalDevolvido)}`}</p>
-            {bloqueado && <p className="text-xs font-bold text-blue-900">Pagamentos gerenciados pela ordem.</p>}
-            {ordemCobranca && <button type="button" onClick={() => onOpenOrdem ? onOpenOrdem() : void abrirOrdemHistorico(ordemCobranca.id)} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
+            {ordemAtiva && <p className="text-xs font-bold text-blue-900">Pagamentos gerenciados pela ordem.</p>}
+            {ordemAtiva && ordemCobranca && <button type="button" onClick={() => onOpenOrdem ? onOpenOrdem() : void abrirOrdemHistorico(ordemCobranca.id)} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
             <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
               <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>

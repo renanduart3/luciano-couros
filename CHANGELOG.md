@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.40.14 — 16/10/2026
+
+- A indicação “Pagamentos gerenciados pela ordem” e o acesso à ordem aparecem somente para vales efetivamente vinculados a uma ordem aberta. Vales finalizados sem ordem e vínculos de ordens canceladas deixam de exibir essa indicação.
+
 ## 1.40.13 — 16/10/2026
 
 - Histórico de vendas sem os atalhos redundantes de devolução na lista e nos detalhes; a devolução continua disponível no fluxo da venda.

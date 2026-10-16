@@ -1,38 +1,40 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
-import { formatCurrency, formatDecimal } from '../lib/utils';
 import { ValeDetalhesModal } from './ValeDetalhesModal';
 import type { Venda } from '../types';
 
-/** Consulta sob demanda: não expande a cadeia inteira nem altera a dívida. */
+/** Referência histórica compacta; os documentos de origem são consultados sob demanda. */
 export function HistoricoOrigemVale({ vale, onOpenOrdem }: { vale: Venda; onOpenOrdem?: (id: string) => void }) {
   const [documento, setDocumento] = useState<Venda | null>(null);
-  const [caminho, setCaminho] = useState<Venda[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const requisicao = useRef(0);
-  useEffect(() => { setCaminho([]); setErro(''); setCarregando(false); requisicao.current++; return () => { requisicao.current++; }; }, [vale.id]);
-  const atual = caminho[caminho.length - 1] || vale;
-  const consultar = async (id: string) => {
-    if (carregando) return;
-    if (id === vale.id || caminho.some(v => v.id === id)) { setErro('Esta referência já está no caminho consultado. Confira o histórico da origem.'); return; }
+  useEffect(() => { setDocumento(null); setErro(''); setCarregando(false); requisicao.current++; return () => { requisicao.current++; }; }, [vale.id]);
+  const origem = vale.origemSaldo;
+  if (!origem) return null;
+
+  const consultarVale = async (id: string) => {
+    if (carregando || id === vale.id) return;
     const versao = ++requisicao.current;
-    setCarregando(true); setErro('');
+    setCarregando(true);
+    setErro('');
     try {
-      const origem = await api.getVenda(id);
+      const anterior = await api.getVenda(id);
       if (versao !== requisicao.current) return;
-      if (origem.clienteId !== vale.clienteId) throw new Error('A referência pertence a outro cliente. Confira o histórico.');
-      setCaminho(anteriores => [...anteriores, origem]);
-    } catch (e: any) { if (versao === requisicao.current) setErro(e.message || 'Não foi possível consultar a origem.'); }
-    finally { if (versao === requisicao.current) setCarregando(false); }
+      if (anterior.clienteId !== vale.clienteId) throw new Error('A referência pertence a outro cliente. Confira o histórico.');
+      setDocumento(anterior);
+    } catch (e: any) {
+      if (versao === requisicao.current) setErro(e.message || 'Não foi possível consultar a origem.');
+    } finally {
+      if (versao === requisicao.current) setCarregando(false);
+    }
   };
-  if (documento) return <ValeDetalhesModal vale={documento} onClose={() => setDocumento(null)}/>;
-  return <div className="mt-3 space-y-2 border-t border-amber-300 pt-3 text-xs">
-    <p className="font-bold">Consultar vales e materiais de origem</p>
-    {caminho.length > 0 && <><button type="button" disabled={carregando} onClick={() => { setCaminho(c => c.slice(0, -1)); setErro(''); }} className="rounded border border-amber-400 px-2 py-1 font-bold">Voltar</button><p>Vale #{vale.numeroSequencial} → {caminho.map(v => `Vale #${v.numeroSequencial}`).join(' → ')}</p></>}
-    {atual.origemSaldo?.ordem && onOpenOrdem && <button type="button" onClick={() => onOpenOrdem(atual.origemSaldo!.ordem!.id)} className="rounded border border-amber-400 bg-white px-2 py-1 font-bold text-blue-800 underline">Abrir ordem #{atual.origemSaldo.ordem.numero}</button>}
-    {atual.origemSaldo && <><p className="font-bold">{atual.origemSaldo.descricao}</p><div className="flex flex-wrap gap-2">{atual.origemSaldo.vales.map(v => <button type="button" key={v.numero} disabled={!v.id || carregando} onClick={() => v.id && void consultar(v.id)} className="rounded border border-amber-400 bg-white px-2 py-1 font-bold text-blue-800 underline disabled:opacity-50">Vale #{v.numero}</button>)}</div></>}
-    {caminho.length > 0 && <><button type="button" onClick={() => setDocumento(atual)} className="rounded bg-blue-700 px-3 py-2 font-bold text-white">Abrir vale #{atual.numeroSequencial}</button><p>Valor original do documento: {formatCurrency(atual.totalLiquido)}. Consulta histórica, sem somar novamente à dívida.</p><ul className="space-y-1">{atual.items?.map(i => <li key={i.id}>{formatDecimal(i.quantidade)} {i.unidade} · {i.descricao} · {formatCurrency(i.total)}</li>)}</ul>{!atual.items?.length && !atual.origemSaldo && <p>Este registro não possui materiais disponíveis no histórico.</p>}</>}
-    {carregando && <p role="status">Carregando origem…</p>}{erro && <p role="alert" className="text-red-800">{erro}</p>}
-  </div>;
+
+  return <>
+    <span> · Origem: {origem.ordem ? <>Devedor da <button type="button" onClick={() => onOpenOrdem?.(origem.ordem!.id)} className="font-bold text-blue-800 underline hover:text-blue-950">Ordem #{origem.ordem.numero}</button></> : origem.vales.length ? <>Devedor do {origem.vales.length === 1 ? 'vale' : 'vales'} {origem.vales.map((v, index) => <React.Fragment key={v.id || v.numero}>{index > 0 && ', '}{v.id ? <button type="button" disabled={carregando || v.id === vale.id} onClick={() => void consultarVale(v.id!)} className="font-bold text-blue-800 underline hover:text-blue-950 disabled:opacity-50">Vale #{v.numero}</button> : `Vale #${v.numero}`}</React.Fragment>)}</> : origem.descricao}</span>
+    {carregando && <span role="status"> · Carregando origem…</span>}
+    {erro && <span role="alert" className="text-red-800"> · {erro}</span>}
+    {documento && createPortal(<ValeDetalhesModal vale={documento} onClose={() => setDocumento(null)}/>, document.body)}
+  </>;
 }

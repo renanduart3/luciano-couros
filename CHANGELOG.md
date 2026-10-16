@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.12 — 16/10/2026
+
+- Vales gerados com saldo devedor mostram a origem somente na linha de criação do Histórico, com link direto para a ordem de cobrança; origens sem ordem mantêm links para os vales anteriores.
+- A aba Recebimentos vazia ocupa a área da modal, mantendo os botões de cancelar e finalizar no rodapé.
+
 ## 1.40.11 — 16/10/2026
 
 - Exclusão e estorno de recebimentos recalculam o pago a partir dos lançamentos ativos quando devoluções ou edições antigas limitaram o valor gravado do vale.

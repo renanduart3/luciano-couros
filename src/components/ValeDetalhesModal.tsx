@@ -189,12 +189,6 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
-            {vale.origemSaldo && <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-              <h3 className="font-black">Origem deste vale</h3><p className="text-sm">{vale.origemSaldo.descricao}</p>
-              <p className="mt-2 text-sm">Valor do vale: <b>{formatCurrency(vale.totalLiquido)}</b> · Saldo atual: <b>{formatCurrency(financeiro.restantePresumido)}</b></p>
-              <p className="mt-1 text-xs">Este vale possui pagamentos e negociações próprios. A origem permanece como referência histórica.</p>
-              <HistoricoOrigemVale vale={vale} onOpenOrdem={abrirOrdemHistorico} />
-            </div>}
             {resultadoDevolucao && <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-bold text-emerald-900"><span>{resultadoDevolucao}</span><button type="button" onClick={imprimir} className="inline-flex items-center gap-1 rounded-lg bg-emerald-700 px-3 py-2 font-black uppercase text-white"><Printer size={14} /> Imprimir vale atualizado</button></div>}
 
             {modo === "devolver" && <div className="space-y-3 rounded-2xl border border-violet-300 bg-violet-50 p-4">
@@ -248,7 +242,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
           </div>
         ) : aba === "recebimentos" ? (
-          comprovante ? <ComprovanteRecebimentoModal embedded comprovante={comprovante} onClose={() => setAba("itens")} /> : <p className="p-6 text-sm text-slate-500">{vale.recebimentos?.length ? "Carregando recebimentos…" : "Nenhum recebimento registrado para este vale."}</p>
+          comprovante ? <ComprovanteRecebimentoModal embedded comprovante={comprovante} onClose={() => setAba("itens")} /> : <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden"><p className="text-sm text-slate-500">{vale.recebimentos?.length ? "Carregando recebimentos…" : "Nenhum recebimento registrado para este vale."}</p></div>
         ) : aba === "anotacoes" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden"><AnotacoesDocumento valor={anotacao} onSave={async (texto, anterior) => { const atualizado = await api.saveAnotacaoVale(vale.id, texto, anterior); setAnotacao(atualizado.observacoes || ""); onUpdated?.(atualizado); }}/></div>
         ) : aba === "devolucoes" ? (
@@ -259,8 +253,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
 
               </div>
               <div className="divide-y divide-slate-200">
-                <p className="p-3 text-xs">Vale criado em {formatDate(vale.data)} · {formatCurrency(vale.totalLiquido)}</p>
-                {vale.origemSaldo && <div className="p-3"><HistoricoOrigemVale vale={vale} onOpenOrdem={abrirOrdemHistorico}/></div>}
+                <p className="p-3 text-xs">Vale criado em {formatDate(vale.data)} · {formatCurrency(vale.totalLiquido)}{vale.origemSaldo && <HistoricoOrigemVale vale={vale} onOpenOrdem={abrirOrdemHistorico}/>}</p>
                 {(vale.historicoMovimentacoes || []).map(evento => <article key={evento.id} className="space-y-1 p-3 text-xs">
                   <p className="font-bold capitalize">{evento.detalhes?.motivo?.startsWith("Exclusão") ? "Pagamento excluído" : evento.descricao || evento.acao.replaceAll("_", " ")}</p>
                   <p>{formatDate(evento.createdAt.slice(0, 10))}{evento.usuarioNome && ` · ${evento.usuarioNome}`}</p>

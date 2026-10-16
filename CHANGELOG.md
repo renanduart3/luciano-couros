@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.13 — 16/10/2026
+
+- Histórico de vendas sem os atalhos redundantes de devolução na lista e nos detalhes; a devolução continua disponível no fluxo da venda.
+- Em vales finalizados, “Reabrir para editar” fica no rodapé, à direita.
+- Grade de pagamentos sem a linha “Excedente em bônus” abaixo do valor recebido.
+
 ## 1.40.12 — 16/10/2026
 
 - Vales gerados com saldo devedor mostram a origem somente na linha de criação do Histórico, com link direto para a ordem de cobrança; origens sem ordem mantêm links para os vales anteriores.

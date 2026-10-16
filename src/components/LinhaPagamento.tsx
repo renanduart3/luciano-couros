@@ -128,7 +128,6 @@ export function LinhaPagamento({ children, mostrarAbatimento = false, colunasAnt
       <td data-label="Valor" className="p-2 text-right font-mono">{editando ? <input aria-label={`Valor ${referencia}`} inputMode="decimal" value={titulo ? total.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : valor} readOnly={titulo} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => setValor(e.target.value)} className={`${campo} min-w-24 text-right`}/>  : pagamento || projecao ? <>
         <span className="font-bold">{formatCurrency((pagamento || projecao!.dados).valorRecebido)}</span>
         {Number((pagamento || projecao!.dados).bonusUtilizado) > 0 && <span className="block text-[10px] font-sans text-violet-800">+ {formatCurrency((pagamento || projecao!.dados).bonusUtilizado)} em bônus utilizado</span>}
-        {pagamento?.status === "ativo" && pagamento.bonusGerado > 0 && <span className="block text-[10px] font-sans text-violet-800">Excedente em bônus: {formatCurrency(pagamento.bonusGerado)}</span>}
       </> : "—"}</td>
       {mostrarAbatimento && <td data-label="Abatido" className="p-2 text-right font-mono font-bold">{pagamento ? formatCurrency(pagamento.status === "ativo" ? pagamento.valorAplicadoOrdem ?? pagamento.valorAplicado : 0) : "—"}</td>}
       <td data-label={mostrarAbatimento ? "Confirmado" : "Recebido"} className="p-2 text-right font-mono font-bold text-emerald-800">{pagamento ? formatCurrency(recebido) : "—"}</td>

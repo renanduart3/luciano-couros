@@ -328,7 +328,7 @@ export function OrdensCobrancaView({ refreshKey, onChanged, clienteFiltro }: Pro
   const [ordens, setOrdens] = useState<OrdemCobranca[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("aberta");
+  const [status, setStatus] = useState("todas");
   const [numeroVale, setNumeroVale] = useState("");
   const [clienteLocal, setClienteId] = useState("");
   const clienteId = clienteFiltro ?? clienteLocal;

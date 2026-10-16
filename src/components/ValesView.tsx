@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CalendarClock, CheckSquare2, Eye, FileClock, Filter, HandCoins, Landmark, MessageCircle, WalletCards, X } from "lucide-react";
 import { Cliente, OrdemCobranca, Venda } from "../types";
 import { api } from "../lib/api";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate, todayLocalIso } from "../lib/utils";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
 import { CobrancaValesModal } from "./CobrancaValesModal";
@@ -19,7 +19,7 @@ interface ValesViewProps {
 
 type FiltroStatus = "abertos" | "vencidos" | "a_vencer" | "quitados" | "cancelados" | "todos";
 
-const hojeIso = () => new Date().toISOString().slice(0, 10);
+const hojeIso = todayLocalIso;
 type OrdenacaoVales = "numero_desc" | "numero_asc" | "valor_desc" | "valor_asc";
 
 const diasEmAtraso = (vencimento?: string) => {
@@ -42,7 +42,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
   const [valeDetalhado, setValeDetalhado] = useState<Venda | null>(null);
   const [numeroVale, setNumeroVale] = useState("");
   const [clienteId, setClienteId] = useState("");
-  const [status, setStatus] = useState<FiltroStatus>("abertos");
+  const [status, setStatus] = useState<FiltroStatus>("todos");
   const [vencimentoInicio, setVencimentoInicio] = useState("");
   const [vencimentoFim, setVencimentoFim] = useState("");
   const [page, setPage] = useState(1);
@@ -116,7 +116,6 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
 
   useEffect(() => {
     setSelecionados(new Set());
-    if (clienteId) setStatus("abertos");
   }, [clienteId]);
 
   const clientesFiltro = useMemo(() => {
@@ -176,7 +175,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
 
   const limparFiltros = () => {
     setNumeroVale("");
-    setStatus("abertos");
+    setStatus("todos");
     setVencimentoInicio("");
     setVencimentoFim("");
     setSelecionados(new Set());
@@ -230,7 +229,8 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
       )}
       {cobrancaAberta && clienteSelecionado && <CobrancaValesModal onOpenOrdem={(ordem) => { setCobrancaAberta(false); setSelecionados(new Set()); setOrdemDetalhada(ordem); }} clienteId={clienteSelecionado.id} clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => { setCobrancaAberta(false); setSelecionados(new Set()); }} onSaved={(ordem) => { setOrdens((atuais) => [ordem, ...atuais]); setOrdensRefreshKey((atual) => atual + 1); }} />}
       <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Vales</h1>
-      <div className="mr-auto w-full max-w-xs rounded-xl border border-slate-300 bg-white p-2.5 shadow-sm">
+      <div className="flex flex-wrap items-end justify-start gap-3">
+      <div className="w-full max-w-xs rounded-xl border border-slate-300 bg-white p-2.5 shadow-sm sm:w-72">
         <label htmlFor="vales-cliente" className="block text-[10px] font-black uppercase text-slate-700">Cliente</label>
         <select id="vales-cliente" aria-describedby="vales-cliente-escopo" value={clienteId} onChange={(event) => setClienteId(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs font-bold uppercase text-slate-950">
           <option value="">Todos os clientes</option>
@@ -238,13 +238,14 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
         </select>
         <p id="vales-cliente-escopo" className="sr-only">Aplicado a Cobranças, Ordens e Cheques e boletos.</p>
       </div>
-      <nav aria-label="Abas de vales" className="border-b border-slate-200 pb-4">
+      <nav aria-label="Abas de vales" className="min-w-0 border-b border-slate-200 pb-1">
         <div className="grid w-full grid-cols-3 gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:w-fit sm:gap-2">
           <button type="button" onClick={() => setTab("abertos")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={16} /> Cobranças</button>
           <button type="button" onClick={() => setTab("ordens")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={16} /> Ordens</button>
           <button type="button" onClick={() => setTab("cheques")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "cheques" ? "module-tab-active" : ""}`}><Landmark size={16} /> Cheques e boletos</button>
         </div>
       </nav>
+      </div>
       {tab === "ordens" ? (
         <OrdensCobrancaView clienteFiltro={clienteId} refreshKey={ordensRefreshKey} onChanged={atualizarFinanceiro} />
       ) : tab === "cheques" ? (

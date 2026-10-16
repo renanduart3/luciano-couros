@@ -7,7 +7,7 @@ import { RecebimentoDetalhesModal } from "./RecebimentoDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
 
-type Filtro = "aguardando" | "compensados_hoje" | "compensados" | "recusados" | "todos";
+type Filtro = "aguardando" | "a_vencer" | "compensados_hoje" | "compensados" | "recusados" | "todos";
 
 const PAGE_SIZE = 10;
 const hojeIso = todayLocalIso;
@@ -37,7 +37,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro 
   const [cheques, setCheques] = useState<ChequeGerencial[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("aguardando");
+  const [filtro, setFiltro] = useState<Filtro>("todos");
   const [busca, setBusca] = useState("");
   const [vencimentoInicio, setVencimentoInicio] = useState("");
   const [vencimentoFim, setVencimentoFim] = useState("");
@@ -60,6 +60,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro 
   const chequesCliente = useMemo(() => cheques.filter(c => !clienteFiltro || c.clienteId === clienteFiltro), [cheques, clienteFiltro]);
   const filtrados = useMemo(() => chequesCliente.filter((cheque) => {
     if (filtro === "aguardando" && cheque.status !== "aguardando") return false;
+    if (filtro === "a_vencer" && (cheque.status !== "aguardando" || cheque.vencimento < hojeIso())) return false;
     if (filtro === "compensados_hoje" && (cheque.status !== "compensado" || cheque.dataCompensacao !== hojeIso())) return false;
     if (filtro === "compensados" && cheque.status !== "compensado") return false;
     if (filtro === "recusados" && cheque.status !== "recusado") return false;
@@ -109,7 +110,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro 
     <div className="rounded-2xl border border-slate-300 bg-white p-3 shadow-sm">
       <div className="grid gap-2 lg:grid-cols-[1.5fr_0.9fr_0.8fr_0.8fr_auto]">
         <label className="relative block"><Search className="absolute left-3 top-3 text-slate-400" size={17}/><input value={busca} onChange={(event) => setBusca(event.target.value)} placeholder="Cliente, CPF/CNPJ, cheque, boleto, vale ou ordem" className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 pl-10 pr-3 text-sm font-bold"/></label>
-        <select aria-label="Situação dos títulos" value={filtro} onChange={(event) => setFiltro(event.target.value as Filtro)} className="min-h-11 rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="aguardando">Em carteira</option><option value="compensados_hoje">Compensados hoje</option><option value="compensados">Compensados</option><option value="recusados">Com problema</option><option value="todos">Todos</option></select>
+        <select aria-label="Situação dos títulos" value={filtro} onChange={(event) => setFiltro(event.target.value as Filtro)} className="min-h-11 rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"><option value="todos">Todos</option><option value="aguardando">Em carteira</option><option value="a_vencer">A vencer</option><option value="compensados_hoje">Compensados hoje</option><option value="compensados">Compensados</option><option value="recusados">Com problema</option></select>
         <input aria-label="Vencimento inicial" title="Vencimento inicial" type="date" value={vencimentoInicio} onChange={(event) => setVencimentoInicio(event.target.value)} className="min-h-11 rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/>
         <input aria-label="Vencimento final" title="Vencimento final" type="date" value={vencimentoFim} onChange={(event) => setVencimentoFim(event.target.value)} className="min-h-11 rounded-xl border border-slate-300 bg-slate-50 px-3 text-sm font-bold"/>
         <button type="button" onClick={() => void carregar()} disabled={loading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 px-3 text-xs font-black uppercase text-slate-700"><RefreshCw className={loading ? "animate-spin" : ""} size={16}/>Atualizar</button>

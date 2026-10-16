@@ -109,7 +109,6 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
               <tbody>{linhasAcumuladas.map(linha => <tr key={linha.id}><td><b>{linha.forma}</b>{linha.detalhe && <small>{linha.detalhe}</small>}</td><td>{linha.numero}</td><td>{formatDate(linha.data)}</td><td>{linha.situacao}</td><td className="number strong">{formatCurrency(linha.valor)}</td></tr>)}</tbody>
               <tfoot><tr><td colSpan={4}>TOTAL</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr></tfoot>
             </table>
-            <table className="payment-receipt-vales" style={{ marginTop: 16 }}><tbody><tr><td>{comprovante.resumoOrdem ? "VALOR DA ORDEM" : "VALOR VALE"}</td><td className="number">{formatCurrency(totalOriginal)}</td></tr><tr><td><b>DEVEDOR</b></td><td className="number strong">{formatCurrency(saldoAtual)}</td></tr><tr><td><b>TOTAL PAGO</b></td><td className="number strong">{formatCurrency(totalPagoVale)}</td></tr></tbody></table>
             {valeDevedor && <p className="payment-receipt-note">Saldo devedor transferido para o vale #{valeDevedor}.</p>}
           </section>
         </> : <>

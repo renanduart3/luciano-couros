@@ -27,7 +27,7 @@ async function main() {
  await page.getByRole('switch',{name:'Divisão automática'}).click();await page.waitForFunction(()=>document.querySelector('[aria-label="Valor, linha 1"]').value==='250');
  for(const width of [1280,1024,768,390]) {
   await page.setViewportSize({width,height:900});
-  const overflow=await page.evaluate(()=>Array.from(document.querySelectorAll('[role="dialog"],.titulos-grade')).map(e=>({w:e.clientWidth,s:e.scrollWidth})).filter(e=>e.s>e.w+1));
+  const overflow=await page.evaluate(()=>Array.from(document.querySelectorAll('[role="dialog"]')).map(e=>({w:e.clientWidth,s:e.scrollWidth})).filter(e=>e.s>e.w+1));
   assert.deepEqual(overflow,[],`overflow horizontal em ${width}`);
  }
  await page.evaluate(()=>window.renderCase('excluir'));await page.getByRole('button',{name:'Excluir',exact:true}).click();

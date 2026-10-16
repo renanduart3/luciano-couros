@@ -110,6 +110,7 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
 
   const campo = "titulo-pagamento-input h-9 w-full min-w-0 rounded-none border-0 bg-transparent px-2 text-xs text-slate-900 outline-none focus:bg-white focus:ring-2 focus:ring-inset focus:ring-sky-600 disabled:text-red-700";
   const cabecalhos = ["#", "Nome", "CPF/CNPJ", "Valor (R$)", "Vencimento", boleto ? "Nº boleto" : "Nº cheque", ...(mostrarObservacao ? ["Obs."] : []), ...(editarStatus ? ["Situação", "Compensação"] : []), ""];
+  const larguras = [40, 220, 160, 115, 160, 125, ...(mostrarObservacao ? [180] : []), ...(editarStatus ? [140, 150] : []), 48];
 
   return <section className="titulos-planilha min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white">
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-300 bg-sky-50 px-3 py-2">
@@ -123,8 +124,9 @@ export function TitulosPagamentoEditor({ formaPagamento, clienteId, clienteNome,
       </div>
     </div>
     {possuiLegadoAcimaDoLimite && <p className="bg-amber-50 px-3 py-2 text-xs text-amber-900">{titulos.length} títulos. Novas linhas indisponíveis.</p>}
-    <div ref={gradeRef} className="titulos-grade max-h-[50vh] overflow-y-auto overflow-x-hidden" role="region" aria-label={`Planilha de ${boleto ? "boletos" : "cheques"}`} tabIndex={0}>
-      <table className="w-full table-fixed border-collapse text-left text-xs">
+    <div ref={gradeRef} className="titulos-grade max-h-[50vh] overflow-auto" role="region" aria-label={`Planilha de ${boleto ? "boletos" : "cheques"}`} tabIndex={0}>
+      <table className="w-full table-fixed border-collapse text-left text-xs" style={{ minWidth: larguras.reduce((total, largura) => total + largura, 0) }}>
+        <colgroup>{larguras.map((largura, indice) => <col key={indice} style={{ width: largura }} />)}</colgroup>
         <thead className="sticky top-0 z-10 bg-slate-100 text-slate-700"><tr>{cabecalhos.map((nome, i) => <th key={i} scope="col" className="border-b border-r border-slate-300 px-2 py-2 font-bold whitespace-nowrap">{nome || <span className="sr-only">Excluir</span>}</th>)}</tr></thead>
         <tbody>{titulos.map((titulo, indice) => {
           const recusado = titulo.status === "recusado";

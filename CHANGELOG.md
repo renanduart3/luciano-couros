@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.8 — 16/10/2026
+
+- Filtro de cliente e abas de Cobranças, Ordens e Cheques e boletos na mesma faixa; situação inicial “Todos” e filtro “A vencer” para títulos dentro do intervalo de vencimento informado.
+- Detalhes do vale com janela mais ampla e cabeçalho compacto, reunindo identificação, abas e ações em telas largas.
+- Campos e colunas da grade de pagamentos alinhados; comprovantes acumulados de vales e ordens sem o quadro final de valor, devedor e total pago.
+
 ## 1.40.7 — 15/10/2026
 
 - O valor da ordem no comprovante acumulado usa a soma dos valores originais dos vales vinculados, igual ao TOTAL VALES, mesmo quando o total negociado da ordem é menor.

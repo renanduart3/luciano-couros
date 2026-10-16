@@ -25,14 +25,11 @@ assert.match(html, /<tfoot><tr><td colSpan="4">TOTAL<\/td><td class="number">R\$
 assert.match(html, /<th>VALE<\/th><th>Nº VALE<\/th><th>DATA EMISSÃO<\/th>/);
 assert.match(html, /<td>09\/10\/2026<\/td>/);
 assert.match(html, /TOTAL VALES<\/td><td class="number">R\$\s*1\.553,40/);
-assert.match(html, /VALOR VALE/);
-assert.match(html, /DEVEDOR/);
-assert.match(html, /R\$\s*353,40/);
-assert.match(html, /TOTAL PAGO/);
-assert.equal((html.match(/R\$\s*1\.200,00/g) || []).length, 3);
+assert.doesNotMatch(html, /VALOR VALE|DEVEDOR|TOTAL PAGO/);
+assert.equal((html.match(/R\$\s*1\.200,00/g) || []).length, 2);
 
 const ordem = mod.exports.render({ ...recibo, resumoOrdem: { numero: 12, totalOriginal: 1553.4, saldo: 353.4, valeDevedor: 811 } });
-assert.match(ordem, /VALOR DA ORDEM/);
+assert.doesNotMatch(ordem, /VALOR DA ORDEM/);
 assert.match(ordem, /Saldo devedor transferido para o vale #811/);
 const ordem19 = mod.exports.render({ ...recibo,
   resumoOrdem: { numero: 19, totalOriginal: 1127.4, saldo: 0 },
@@ -42,7 +39,7 @@ const ordem19 = mod.exports.render({ ...recibo,
   ],
 });
 assert.match(ordem19, /TOTAL VALES<\/td><td class="number">R\$\s*2\.903,20/);
-assert.match(ordem19, /VALOR DA ORDEM<\/td><td class="number">R\$\s*2\.903,20/);
+assert.doesNotMatch(ordem19, /VALOR DA ORDEM|DEVEDOR|TOTAL PAGO/);
 const titulo = (n, data) => ({ id: `t${n}`, tipo: 'cheque_emitente', numeroDocumento: String(n), valor: 200,
   vencimento: '2026-10-30', dataCompensacao: data, status: 'compensado' });
 const quatroCheques = mod.exports.render({ ...recibo, pagamentosVale: [{ ...recibo.pagamentosVale[0],

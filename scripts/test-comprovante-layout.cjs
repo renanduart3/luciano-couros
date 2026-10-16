@@ -31,17 +31,15 @@ async function main() {
  await page.evaluate(c=>window.renderReceipt(c),many);await page.locator('.payment-receipt-columns tbody tr').first().waitFor();
  assert.equal(await page.locator('.payment-receipt-columns > section:first-child tbody tr').count(),30);
  const cumulative={...receipt,ordens:[],vales:[{numeroSequencial:165,valorVale:1554.6,saldoAtual:985.6,saldoAntes:1354.6,saldoDepois:985.6}],pagamentosVale:[{id:'p1',data:'2026-09-08',formaPagamento:'pix',valorNoVale:200,valorRecebido:200,titulos:[],statusPagamento:'compensado'},{id:'p2',data:'2026-09-10',formaPagamento:'cartao_credito',parcelasCartao:3,valorRecebido:369,valorNoVale:369,titulos:[],statusPagamento:'compensado'}]};
- await page.evaluate(c=>window.renderReceipt(c),cumulative);await page.getByText('TOTAL PAGO',{exact:true}).waitFor();
+ await page.evaluate(c=>window.renderReceipt(c),cumulative);await page.getByText('TOTAL VALES',{exact:true}).waitFor();
  assert.equal(await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).count(),0);
  assert.equal(await page.locator('.payment-receipt-methods tbody tr').count(),2);
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('569,00'));
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('TOTAL'));
  assert.ok(!(await page.locator('.payment-receipt-methods tfoot').innerText()).includes('TOTAL PAGO'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR VALE'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('DEVEDOR'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('TOTAL PAGO'));
+ assert.equal(await page.locator('.payment-receipt-vales').count(),1);
  assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),4);
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('985,60'));
+ assert.ok(!(await page.locator('.payment-receipt-paper').innerText()).includes('DEVEDOR'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('PIX'));
  await page.locator('.payment-receipt-paper').screenshot({path:screenshot});
  for(const width of [390,768,1280]) { await page.setViewportSize({width,height:1000});assert.ok(await page.locator('.payment-receipt-paper').evaluate(e=>e.scrollWidth <= e.clientWidth+1)); }
@@ -60,13 +58,12 @@ async function main() {
  const payments=[{id:'b',createdAt:'2026-10-14T12:00:00',data:'2026-09-01',formaPagamento:'pix',status:'ativo',statusPagamento:'compensado',valorRecebido:900,valorAplicado:900,valorAplicadoOrdem:300,titulos:[],bonusUtilizado:0},{id:'a',createdAt:'2026-10-14T11:00:00',data:'2026-10-14',formaPagamento:'pix',status:'ativo',statusPagamento:'compensado',valorRecebido:200,valorAplicado:200,valorAplicadoOrdem:200,titulos:[],bonusUtilizado:0}];
  await page.evaluate(o=>window.renderOrderDetails(o),{...order,pagamentos:payments});
  await page.getByRole('button',{name:'Recebimentos',exact:true}).click();
- await page.getByText('TOTAL PAGO',{exact:true}).waitFor();
+ await page.getByText('TOTAL VALES',{exact:true}).waitFor();
  assert.ok((await page.locator('.payment-receipt-methods tfoot').innerText()).includes('500,00'));
  assert.ok((await page.locator('.payment-receipt-methods tbody tr').first().innerText()).includes('200,00'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('627,40'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('VALOR DA ORDEM'));
+ assert.equal(await page.locator('.payment-receipt-vales').count(),1);
  assert.ok((await page.locator('.payment-receipt-vales').first().innerText()).includes('2.853,20'));
- assert.ok((await page.locator('.payment-receipt-vales').last().innerText()).includes('2.853,20'));
+ assert.ok(!(await page.locator('.payment-receipt-paper').innerText()).includes('VALOR DA ORDEM'));
  assert.equal(await page.locator('.payment-receipt-vales').first().locator('th').count(),4);
  console.log('OK: original e abatimento acumulado por vale, saldo do recibo e atual separados, 30 vales, descrição VALE e ordem com pagamentos anteriores.');
  } finally {await browser.close();}

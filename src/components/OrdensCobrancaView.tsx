@@ -228,7 +228,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   return <>
   {novoPagamento && <PagamentoValesModal clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} vales={[]} ordem={ordem} fecharAoSalvar onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos}/>}
   {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)} onSaved={async () => { await atualizarPagamentos(); setFeedback("Ordem reaberta para edição. Pagamentos preservados."); }}/>}
-  {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
+  {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} demonstrativo={<DemonstrativoOrdemConteudo ordem={ordem}/>} recebimento={<ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => {}}/>} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
     const resultado = await api.finalizarOrdemCobranca(ordem.id, dados);
     onChanged(resultado.ordem);
     return { mensagem: resultado.valeResidual ? `Ordem finalizada. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Ordem finalizada e saldos encerrados." };

@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.10 — 16/10/2026
+
+- A confirmação de finalização de ordens e vales oferece prévias de Demonstrativo e Recebimento sem perder os campos preenchidos.
+- Nos vales, a prévia de recebimentos permite escolher entre os comprovantes registrados; a modal mantém rolagem e campos adaptados a telas menores.
+
 ## 1.40.9 — 16/10/2026
 
 - Modais de detalhes de ordens e vales mantêm altura estável entre abas, com margem em relação às bordas da tela e rolagem no conteúdo.

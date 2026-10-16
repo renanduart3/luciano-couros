@@ -26,6 +26,31 @@ interface ValeDetalhesModalProps {
   onOpenOrdem?: () => void;
 }
 
+function RecebimentosValeFinalizacao({ vale }: { vale: Venda }) {
+  const [comprovanteSelecionado, setComprovanteSelecionado] = useState<ComprovanteRecebimento | null>(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  const abrir = async (id: string) => {
+    setCarregando(true);
+    setErro("");
+    try { setComprovanteSelecionado(await api.getComprovanteRecebimento(id, vale.id)); }
+    catch (error: any) { setErro(error.message || "Não foi possível abrir o comprovante."); }
+    finally { setCarregando(false); }
+  };
+  if (comprovanteSelecionado) return <div className="space-y-3">
+    <button type="button" onClick={() => setComprovanteSelecionado(null)} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-800">Ver outros recebimentos</button>
+    <ComprovanteRecebimentoModal embedded comprovante={comprovanteSelecionado} onClose={() => setComprovanteSelecionado(null)}/>
+  </div>;
+  return <div className="mx-auto max-w-3xl space-y-3">
+    {vale.recebimentos?.length ? vale.recebimentos.map(pagamento => <button key={pagamento.id} type="button" disabled={carregando} onClick={() => void abrir(pagamento.id)} className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-300 bg-white p-4 text-left text-sm hover:bg-slate-50 disabled:opacity-50">
+      <span className="font-bold text-slate-800">Recebimento de {formatDate(pagamento.data)} · {pagamento.formaPagamento || "Pagamento"}</span>
+      <strong className="whitespace-nowrap font-mono text-slate-950">Aplicado neste vale: {formatCurrency(pagamento.valorAplicado)}</strong>
+    </button>) : <p className="rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-600">Nenhum recebimento registrado para este vale.</p>}
+    {carregando && <p className="text-sm text-slate-600">Carregando comprovante…</p>}
+    {erro && <p role="alert" className="text-sm font-bold text-red-700">{erro}</p>}
+  </div>;
+}
+
 export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
   const [ordemHistorico, setOrdemHistorico] = useState<OrdemCobranca | null>(null);
   const abrirOrdemHistorico = async (id: string) => { try { const lista = await api.getOrdensCobranca(vale.clienteId); const destino = lista.find(o => o.id === id); if (!destino) throw new Error("Ordem não encontrada."); setOrdemHistorico(destino); } catch (e: any) { setErro(e.message); } };
@@ -134,7 +159,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   return (
     <div id="print-vale-detail-overlay" className="fixed inset-0 z-[110] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-4 lg:p-6">
       <div className="flex h-[calc(100dvh-1.5rem)] w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)] print:h-auto print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
-        {finalizacao && <FinalizarFinanceiroModal titulo={`vale #${vale.numeroSequencial}`} restante={financeiro.restantePresumido} excedente={financeiro.excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
+        {finalizacao && <FinalizarFinanceiroModal titulo={`vale #${vale.numeroSequencial}`} restante={financeiro.restantePresumido} excedente={financeiro.excedentePresumido} demonstrativo={<VendaComprovante venda={vale}/>} recebimento={<RecebimentosValeFinalizacao vale={vale}/>} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
           const resultado = await api.finalizarVale(vale.id, dados);
           onUpdated?.(resultado.vale);
           return { mensagem: resultado.valeResidual ? `Vale finalizado. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Vale finalizado e saldos encerrados." };

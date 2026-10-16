@@ -9,6 +9,7 @@ const falha = (mensagem: string, statusCode = 409): never => { throw Object.assi
 
 export function criarGerenciadorReabertura(deps: {
   recalcularVale: (id: string) => void;
+  reduzirParcelasVale: (id: string, valor: number) => void;
   estornarOrdens: (id: string) => void;
   auditar: (usuarioId: string, acao: string, entidade: string, id: string, detalhes: any) => void;
 }) {
@@ -62,12 +63,36 @@ export function criarGerenciadorReabertura(deps: {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status != 'cancelada'", [vendaId]);
       if (!venda) falha("Um vale deste pagamento foi cancelado. Revise o histórico antes de estornar.");
       if (venda.clienteId !== alvo.clienteId) falha("Há um vale de outro cliente neste recebimento. Revise os vínculos antes de estornar.");
-      if (valor > Number(venda.valorPago) + 0.005) falha(`O histórico do vale #${venda.numeroSequencial} diverge do valor pago. Revise os lançamentos antes de estornar.`);
-      return { ...venda, valorEstornado: valor };
+      const alocacoesAtivas = Number(queryOne<any>(`SELECT COALESCE(SUM(a.valor), 0) AS total FROM recebimento_alocacoes a
+        JOIN recebimentos_cliente r ON r.id = a.recebimentoId
+        WHERE a.vendaId = ? AND a.deletedAt IS NULL AND r.deletedAt IS NULL AND r.status = 'ativo'`, [vendaId])?.total || 0);
+      const pagamentosLegados = Number(queryOne<any>(`SELECT COALESCE(SUM(p.valor), 0) AS total FROM pagamentos p WHERE p.vendaId = ? AND p.deletedAt IS NULL
+        AND p.recebimentoId IS NULL AND NOT EXISTS (SELECT 1 FROM recebimentos_cliente rc WHERE rc.pagamentoId = p.id)`, [vendaId])?.total || 0);
+      const bonusLegado = Number(queryOne<any>(`SELECT COALESCE(SUM(b.valor), 0) AS total FROM cliente_bonus_movimentos b WHERE b.vendaId = ?
+        AND b.recebimentoId IS NULL AND b.tipo = 'debito' AND b.deletedAt IS NULL AND b.observacao LIKE 'Crédito aplicado na venda #%'`, [vendaId])?.total || 0);
+      const aplicadoAntes = dinheiro(alocacoesAtivas + pagamentosLegados + bonusLegado);
+      const aplicadoDepois = dinheiro(aplicadoAntes - valor);
+      const devolucoesLegadas = queryAll<any>("SELECT * FROM devolucoes_venda WHERE vendaId = ? AND modalidade = 'bonus_integral' ORDER BY createdAt, id", [vendaId]);
+      const devolucoesComBonus = queryAll<any>("SELECT * FROM devolucoes_venda WHERE vendaId = ? AND modalidade <> 'bonus_integral' AND bonusGerado > 0.005 ORDER BY createdAt, id", [vendaId]);
+      const creditosVenda = queryAll<any>(`SELECT * FROM cliente_bonus_movimentos WHERE vendaId = ? AND recebimentoId IS NULL AND tipo = 'credito' AND deletedAt IS NULL
+        AND (observacao LIKE 'Crédito excedente da devolução%' OR observacao LIKE 'Crédito excedente da alteração%') ORDER BY id`, [vendaId]);
+      if (devolucoesComBonus.reduce((s, d) => s + Number(d.bonusGerado), 0) > creditosVenda
+        .filter(c => String(c.observacao || '').startsWith('Crédito excedente da devolução'))
+        .reduce((s, c) => s + Number(c.valor), 0) + 0.005) {
+        falha(`O bônus da devolução do vale #${venda.numeroSequencial} não possui crédito correspondente. Concilie a carteira antes do estorno.`);
+      }
+      const totalDepois = dinheiro(Math.max(0, Number(venda.totalLiquido) - devolucoesLegadas.reduce((s, d) => s + Number(d.valorCredito), 0)));
+      if (aplicadoDepois < -0.005 || aplicadoDepois > totalDepois + 0.005) falha(`O vale #${venda.numeroSequencial} ainda possui pagamentos acima da dívida após este estorno. Concilie os outros lançamentos primeiro.`);
+      if (Number(venda.valorPago) > Math.min(Number(venda.totalLiquido), aplicadoAntes) + 0.005) falha(`O vale #${venda.numeroSequencial} possui valor pago sem lançamento ativo correspondente. Concilie o histórico antes de estornar.`);
+      if (Number(venda.valorPago) + 0.005 < Math.min(Number(venda.totalLiquido), aplicadoAntes) && !creditosVenda.length && !devolucoesLegadas.length) {
+        falha(`O histórico do vale #${venda.numeroSequencial} diverge do valor pago sem crédito de devolução ou alteração para conciliar.`);
+      }
+      if (devolucoesLegadas.length && queryOne<any>(`SELECT oc.id FROM ordem_cobranca_vales ov JOIN ordens_cobranca oc ON oc.id=ov.ordemId
+        WHERE ov.vendaId=? AND ov.removidoAt IS NULL AND oc.deletedAt IS NULL AND oc.status='aberta' LIMIT 1`, [vendaId])) {
+        falha(`O vale #${venda.numeroSequencial} está em uma ordem aberta. Concilie a devolução na ordem antes do estorno.`);
+      }
+      return { ...venda, valorEstornado: valor, pagoDepois: dinheiro(Math.min(totalDepois, Math.max(0, aplicadoDepois))), totalDepois, devolucoesLegadas, devolucoesComBonus, creditosVenda };
     });
-    if (tipo === "vale" && Math.abs(Number(alvo.valorPago) - (valoresPorVale.get(id) || 0)) > 0.005) {
-      falha("Este vale possui pagamentos antigos sem vínculo individual. É necessário conciliar esses lançamentos antes de reabrir, para preservar os saldos.");
-    }
     const ordens = [...new Map(recebimentos.flatMap(r => queryAll<any>(`SELECT oc.*, oc.id AS ordemId, oc.status AS statusOrdem
       FROM ordens_cobranca oc WHERE oc.deletedAt IS NULL AND (oc.id = ? OR EXISTS (
         SELECT 1 FROM ordem_cobranca_recebimentos pr WHERE pr.ordemId=oc.id AND pr.recebimentoId=? AND pr.deletedAt IS NULL)
@@ -90,7 +115,8 @@ export function criarGerenciadorReabertura(deps: {
     const movimentos = bonusLegados.concat(recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM cliente_bonus_movimentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id])));
     const saldoBonus = Number(queryOne<any>(`SELECT COALESCE(SUM(CASE WHEN tipo = 'credito' THEN valor ELSE -valor END), 0) AS saldo
       FROM cliente_bonus_movimentos WHERE clienteId = ? AND deletedAt IS NULL`, [alvo.clienteId])?.saldo || 0);
-    const variacaoBonus = dinheiro(movimentos.reduce((total, m) => total + (m.tipo === "credito" ? -Number(m.valor) : Number(m.valor)), 0));
+    const variacaoBonus = dinheiro(movimentos.reduce((total, m) => total + (m.tipo === "credito" ? -Number(m.valor) : Number(m.valor)), 0)
+      - vales.reduce((total, vale) => total + vale.creditosVenda.reduce((s: number, credito: any) => s + Number(credito.valor), 0), 0));
     if (saldoBonus + variacaoBonus < -0.005) falha("O bônus gerado por este pagamento já foi utilizado. Estorne primeiro o uso desse bônus para não deixar a carteira negativa.");
     const lancamentos = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM pagamentos WHERE (id = ? OR recebimentoId = ?) AND deletedAt IS NULL ORDER BY id", [r.pagamentoId || "", r.id]));
     const instrumentos = recebimentos.flatMap(r => queryAll<any>("SELECT * FROM recebimento_instrumentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
@@ -114,7 +140,9 @@ export function criarGerenciadorReabertura(deps: {
       variacaoBonus,
       quantidadePagamentos: recebimentos.length + legados.length + bonusLegados.length,
       compartilhado: tipo === "vale" ? vales.some((v) => v.id !== id) : tipo === "parcela" ? parcelas.some((p) => p.parcelaId !== id) : vales.length > 1 || new Set(parcelas.map((p) => p.parcelaId)).size > 1,
-      vales: vales.map((v) => ({ numero: v.numeroSequencial, valor: v.valorEstornado })),
+      vales: vales.map((v) => ({ numero: v.numeroSequencial, valor: v.valorEstornado,
+        saldoDepois: dinheiro(saldoVale(v.id, v.totalDepois, v.pagoDepois)),
+        bonusRevertido: dinheiro(v.creditosVenda.reduce((s: number, credito: any) => s + Number(credito.valor), 0)) })),
       ordens: ordens.map(o => ({ numero: o.numeroSequencial, status: o.status })),
       parcelas: [...new Map(parcelas.map((p) => [p.parcelaId, { numero: p.numero, ordemNumero: p.numeroSequencial }])).values()],
     };
@@ -127,10 +155,25 @@ export function criarGerenciadorReabertura(deps: {
       if (!revisao || revisao !== plano.resumo.revisao) falha("Os pagamentos mudaram desde a conferência. Feche esta confirmação e abra novamente para revisar os valores.");
       const agora = new Date().toISOString();
       for (const vale of plano.vales) {
-        const pago = dinheiro(Math.max(0, Number(vale.valorPago) - vale.valorEstornado));
-        const saldo = dinheiro(saldoVale(vale.id, Number(vale.totalLiquido), pago));
-        execute("UPDATE vendas SET valorPago = ?, saldoRestante = ?, status = ?, updatedAt = ? WHERE id = ?", [pago, saldo, saldo > 0.005 ? "pendente" : "paga", agora, vale.id]);
+        let totalAnterior = Number(vale.totalLiquido);
+        for (const devolucao of vale.devolucoesLegadas) {
+          const abatimento = dinheiro(Math.min(totalAnterior, Number(devolucao.valorCredito)));
+          totalAnterior = dinheiro(totalAnterior - abatimento);
+          deps.reduzirParcelasVale(vale.id, abatimento);
+          execute("UPDATE devolucoes_venda SET modalidade = 'abatimento', abatimentoVale = ?, bonusGerado = 0, updatedAt = ? WHERE id = ?", [abatimento, agora, devolucao.id]);
+        }
+        for (const devolucao of vale.devolucoesComBonus) execute("UPDATE devolucoes_venda SET abatimentoVale = ?, bonusGerado = 0, updatedAt = ? WHERE id = ?", [
+          dinheiro(Math.min(Number(devolucao.valorCredito), Number(devolucao.abatimentoVale) + Number(devolucao.bonusGerado))), agora, devolucao.id,
+        ]);
+        const saldo = dinheiro(saldoVale(vale.id, vale.totalDepois, vale.pagoDepois));
+        execute("UPDATE vendas SET totalLiquido = ?, valorPago = ?, saldoRestante = ?, status = ?, updatedAt = ? WHERE id = ?", [vale.totalDepois, vale.pagoDepois, saldo, saldo > 0.005 ? "pendente" : "paga", agora, vale.id]);
+        for (const credito of vale.creditosVenda) execute("UPDATE cliente_bonus_movimentos SET deletedAt = ? WHERE id = ? AND deletedAt IS NULL", [agora, credito.id]);
         deps.recalcularVale(vale.id);
+        if (vale.devolucoesLegadas.length || vale.devolucoesComBonus.length || vale.creditosVenda.length) deps.auditar(usuarioId, "conciliar_devolucao_no_estorno", "venda", vale.id, {
+          devolucoesConvertidas: vale.devolucoesLegadas.map((d: any) => d.id), devolucoesComBonusRevertido: vale.devolucoesComBonus.map((d: any) => d.id),
+          bonusRevertido: dinheiro(vale.creditosVenda.reduce((s: number, credito: any) => s + Number(credito.valor), 0)),
+          totalAnterior: vale.totalLiquido, totalAtual: vale.totalDepois, pagoAnterior: vale.valorPago, pagoAtual: vale.pagoDepois, saldoAtual: saldo,
+        });
       }
       for (const recebimento of plano.recebimentos) {
         execute("UPDATE recebimentos_cliente SET status = 'cancelado', deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, recebimento.id]);

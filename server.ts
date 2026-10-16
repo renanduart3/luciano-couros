@@ -6168,6 +6168,7 @@ setTimeout(executarProgramacaoFinanceira, 0).unref();
 
 const reabertura = criarGerenciadorReabertura({
   recalcularVale: recalcularParcelasVale,
+  reduzirParcelasVale: reduzirParcelasValePorDevolucao,
   estornarOrdens: estornarRecebimentoEmOrdens,
   auditar: registrarAuditoria,
 });

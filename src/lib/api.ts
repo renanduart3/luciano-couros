@@ -295,7 +295,7 @@ export const api = {
     fetch(`${API_BASE}/reabertura-pagamentos/${tipo}/${id}`).then(r => handleResponse<{
       revisao: string; titulo: string; totalFinanceiro: number; totalEstornado: number;
       variacaoBonus: number; quantidadePagamentos: number; compartilhado: boolean;
-      vales: Array<{ numero: number; valor: number }>;
+      vales: Array<{ numero: number; valor: number; saldoDepois: number; bonusRevertido: number }>;
       parcelas: Array<{ numero: number; ordemNumero: number }>;
     }>(r)),
   reabrirPagamento: (tipo: "vale" | "parcela" | "recebimento", id: string, dados: { pin: string; revisao: string; motivo: string }) =>

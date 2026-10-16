@@ -119,6 +119,61 @@ async function main() {
     await request('POST', `/reabertura-pagamentos/vale/${v1.id}`, { pin, revisao: p1.revisao }, 409);
     console.log('OK: vale pago -> em aberto, senha, estorno financeiro e repetição bloqueada');
 
+    // Registros antigos concediam bônus integral pela devolução do vale sem abater a dívida.
+    // Ao excluir o pagamento, a devolução passa a abater o vale e o bônus é revertido.
+    const valeDevolvido = await criarVale(100);
+    const pagamentoDevolvido = await pagar([{ vendaId: valeDevolvido.id, valor: 80 }]);
+    db.prepare(`INSERT INTO devolucoes_venda (id,vendaId,clienteId,data,valorCredito,abatimentoVale,bonusGerado,modalidade)
+      VALUES (?,?,?,?,30,0,30,'bonus_integral')`).run('dev_legado_teste', valeDevolvido.id, cliente.id, '2026-09-08');
+    db.prepare(`INSERT INTO cliente_bonus_movimentos (id,clienteId,vendaId,data,tipo,valor,observacao)
+      VALUES (?,?,?,'2026-09-08','credito',30,'Crédito excedente da devolução da venda #teste')`).run('bonus_devolucao_teste', cliente.id, valeDevolvido.id);
+    const previaDevolvido = await previa('recebimento', pagamentoDevolvido.id);
+    assert.equal(previaDevolvido.variacaoBonus, -30);
+    await reabrir('recebimento', pagamentoDevolvido.id);
+    await conferirVale(valeDevolvido.id, 0, 70);
+    assert.equal(db.prepare('SELECT modalidade,abatimentoVale,bonusGerado FROM devolucoes_venda WHERE id=?').get('dev_legado_teste').modalidade, 'abatimento');
+    assert.ok(db.prepare('SELECT deletedAt FROM cliente_bonus_movimentos WHERE id=?').get('bonus_devolucao_teste').deletedAt);
+    conferirEstorno(pagamentoDevolvido.id);
+
+    // Edições antigas podiam limitar valorPago sem reduzir a alocação já recebida.
+    const valeEditado = await criarVale(100);
+    const pagamentoEditado = await pagar([{ vendaId: valeEditado.id, valor: 100 }]);
+    db.prepare("UPDATE vendas SET totalLiquido=70,valorPago=70,saldoRestante=0 WHERE id=?").run(valeEditado.id);
+    db.prepare("UPDATE vale_parcelas SET valor=70,valorPago=70,saldo=0 WHERE vendaId=?").run(valeEditado.id);
+    db.prepare(`INSERT INTO cliente_bonus_movimentos (id,clienteId,vendaId,data,tipo,valor,observacao)
+      VALUES (?,?,?,'2026-09-08','credito',30,'Crédito excedente da alteração da venda #teste')`).run('bonus_edicao_teste', cliente.id, valeEditado.id);
+    assert.equal((await previa('recebimento', pagamentoEditado.id)).variacaoBonus, -30);
+    await reabrir('recebimento', pagamentoEditado.id);
+    await conferirVale(valeEditado.id, 0, 70);
+    assert.ok(db.prepare('SELECT deletedAt FROM cliente_bonus_movimentos WHERE id=?').get('bonus_edicao_teste').deletedAt);
+    conferirEstorno(pagamentoEditado.id);
+    const valeAbatido = await criarVale(100);
+    const pagamentoAbatido = await pagar([{ vendaId: valeAbatido.id, valor: 80 }]);
+    db.prepare("UPDATE vendas SET totalLiquido=70,valorPago=70,saldoRestante=0 WHERE id=?").run(valeAbatido.id);
+    db.prepare("UPDATE vale_parcelas SET valor=70,valorPago=70,saldo=0 WHERE vendaId=?").run(valeAbatido.id);
+    db.prepare(`INSERT INTO devolucoes_venda (id,vendaId,clienteId,data,valorCredito,abatimentoVale,bonusGerado,modalidade)
+      VALUES (?,?,?,?,30,20,10,'abatimento')`).run('dev_abatimento_teste', valeAbatido.id, cliente.id, '2026-09-08');
+    db.prepare(`INSERT INTO cliente_bonus_movimentos (id,clienteId,vendaId,data,tipo,valor,observacao)
+      VALUES (?,?,?,'2026-09-08','credito',10,'Crédito excedente da devolução da venda #teste')`).run('bonus_abatimento_teste', cliente.id, valeAbatido.id);
+    await reabrir('recebimento', pagamentoAbatido.id);
+    await conferirVale(valeAbatido.id, 0, 70);
+    assert.deepEqual(db.prepare('SELECT abatimentoVale,bonusGerado FROM devolucoes_venda WHERE id=?').get('dev_abatimento_teste'), { abatimentoVale: 30, bonusGerado: 0 });
+    assert.ok(db.prepare('SELECT deletedAt FROM cliente_bonus_movimentos WHERE id=?').get('bonus_abatimento_teste').deletedAt);
+    const valeComBonusUsado = await criarVale(100);
+    const pagamentoComBonusUsado = await pagar([{ vendaId: valeComBonusUsado.id, valor: 100 }]);
+    db.prepare("UPDATE vendas SET totalLiquido=70,valorPago=70,saldoRestante=0 WHERE id=?").run(valeComBonusUsado.id);
+    db.prepare("UPDATE vale_parcelas SET valor=70,valorPago=70,saldo=0 WHERE vendaId=?").run(valeComBonusUsado.id);
+    db.prepare(`INSERT INTO cliente_bonus_movimentos (id,clienteId,vendaId,data,tipo,valor,observacao)
+      VALUES (?,?,?,'2026-09-08','credito',30,'Crédito excedente da alteração da venda #teste')`).run('bonus_usado_teste', cliente.id, valeComBonusUsado.id);
+    const destinoBonus = await criarVale(30);
+    const usoBonusVenda = await pagar([{ vendaId: destinoBonus.id, valor: 30 }], { formaPagamento: 'bonus', valorRecebido: 0, bonusUtilizado: 30 });
+    await request('GET', `/reabertura-pagamentos/recebimento/${pagamentoComBonusUsado.id}`, undefined, 409);
+    await conferirVale(valeComBonusUsado.id, 70, 0);
+    await reabrir('recebimento', usoBonusVenda.id);
+    await reabrir('recebimento', pagamentoComBonusUsado.id);
+    await conferirVale(valeComBonusUsado.id, 0, 70);
+    console.log('OK: estorno concilia devolução antiga e edição que limitou o valor pago, sem deixar bônus indevido');
+
     const va = await criarVale(100), vb = await criarVale(100);
     const ordem = await criarOrdem([va, vb], [100, 100]);
     const ra = await pagar([{ vendaId: va.id, valor: 100 }], { parcelaOrdemId: ordem.parcelas[0].id });

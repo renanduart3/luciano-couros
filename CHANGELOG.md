@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.11 — 16/10/2026
+
+- Exclusão e estorno de recebimentos recalculam o pago a partir dos lançamentos ativos quando devoluções ou edições antigas limitaram o valor gravado do vale.
+- Devoluções antigas que geravam bônus integral passam a abater a dívida ao excluir o pagamento; bônus vinculados ao vale são revertidos na mesma transação, com bloqueio se a carteira não tiver saldo para o ajuste.
+- A confirmação da exclusão mostra o saldo previsto dos vales e o bônus revertido. Testes cobrem devoluções antigas, edições, bônus já utilizado e base local em cópias descartáveis.
+
 ## 1.40.10 — 16/10/2026
 
 - A confirmação de finalização de ordens e vales oferece prévias de Demonstrativo e Recebimento sem perder os campos preenchidos.

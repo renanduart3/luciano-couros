@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.9 — 16/10/2026
+
+- Modais de detalhes de ordens e vales mantêm altura estável entre abas, com margem em relação às bordas da tela e rolagem no conteúdo.
+- Cabeçalhos reorganizados: identificação e situação separadas da navegação, com botão de fechar fixo no canto superior direito.
+
 ## 1.40.8 — 16/10/2026
 
 - Filtro de cliente e abas de Cobranças, Ordens e Cheques e boletos na mesma faixa; situação inicial “Todos” e filtro “A vencer” para títulos dentro do intervalo de vencimento informado.

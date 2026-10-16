@@ -132,8 +132,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   if (recebimentoAberto) return <RecebimentoDetalhesModal somenteLeitura={bloqueado || !onUpdated} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteRecebimento(id); }} />;
 
   return (
-    <div id="print-vale-detail-overlay" className="fixed inset-0 z-[110] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-2 backdrop-blur-sm sm:p-3">
-      <div className="flex max-h-[calc(100dvh-1rem)] w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl sm:max-h-[calc(100dvh-1.5rem)] print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
+    <div id="print-vale-detail-overlay" className="fixed inset-0 z-[110] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-slate-950/65 p-3 backdrop-blur-sm sm:p-4 lg:p-6">
+      <div className="flex h-[calc(100dvh-1.5rem)] w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-slate-100 shadow-2xl sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)] print:h-auto print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
         {finalizacao && <FinalizarFinanceiroModal titulo={`vale #${vale.numeroSequencial}`} restante={financeiro.restantePresumido} excedente={financeiro.excedentePresumido} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
           const resultado = await api.finalizarVale(vale.id, dados);
           onUpdated?.(resultado.vale);
@@ -155,10 +155,9 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
               <button type="button" onClick={imprimir} title="Imprimir vale" aria-label="Imprimir vale" className="vale-icon-button"><Printer size={19}/></button>
               {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setAba("itens"); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} title="Devolver itens do vale (requer senha administrativa)" aria-label="Devolver itens do vale" className="vale-icon-button text-violet-800"><RotateCcw size={19}/></button>}
-              <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button"><X size={20}/></button>
-
             </div>
           </div>
+          <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button vale-header-close"><X size={20}/></button>
         </header>
         {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="vale" id={vale.id} onClose={() => setReabrirFinalizacao(false)} onSaved={atualizarPagamentos}/>}
         {gerente && vale.finalizadoAt && onUpdated && <div className="p-3 print:hidden"><button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-bold text-white">Reabrir para editar</button></div>}

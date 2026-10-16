@@ -77,7 +77,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
     ? descreverParcelamentoCartao(comprovante.valorRecebido, normalizarQuantidadeParcelas(comprovante.parcelasCartao), comprovante.valoresParcelasCartao)
     : "";
 
-  const conteudo = <div id="print-payment-receipt" role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Comprovante de recebimento" className={embedded ? "w-full min-h-0 overflow-y-auto print:overflow-visible" : "fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 sm:p-8"}>
+  const conteudo = <div id="print-payment-receipt" role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label="Comprovante de recebimento" className={embedded ? "min-h-0 w-full flex-1 overflow-y-auto print:overflow-visible" : "fixed inset-0 z-[180] flex items-start justify-center overflow-y-auto bg-slate-950/80 p-3 sm:p-8"}>
     <div id="comprovante-recebimento" className="w-full max-w-5xl overflow-hidden rounded-2xl bg-slate-100 shadow-2xl print:max-w-none print:overflow-visible print:rounded-none print:bg-white print:shadow-none">
       <div className="flex items-center justify-between gap-3 border-b border-slate-300 bg-white p-3 print:hidden">
         <div><p className="text-[10px] font-black uppercase text-slate-500">Comprovante salvo · dados atualizados</p><h2 className="font-black text-slate-950">Recebimento {referencia}</h2></div>

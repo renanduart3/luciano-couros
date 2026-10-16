@@ -1,7 +1,7 @@
 {
   "name": "luciano-couros",
   "private": true,
-  "version": "1.40.8",
+  "version": "1.40.9",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

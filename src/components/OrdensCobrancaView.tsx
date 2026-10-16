@@ -258,10 +258,10 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
       <footer className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4"><button type="button" disabled={saving} onClick={() => { setEncerramento(false); setError(""); }} className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-black uppercase text-slate-700">Voltar</button><button type="submit" disabled={saving || !planoCancelamento || pinEncerramento.length < 4} className="inline-flex items-center gap-2 rounded-xl bg-red-700 px-4 py-2.5 text-xs font-black uppercase text-white disabled:opacity-40"><ShieldCheck size={16}/>{saving ? "Confirmando..." : "Cancelar ordem"}</button></footer>
     </form>
   </div>}
-  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-    <div role="dialog" aria-modal="true" className="flex max-h-[94vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+  <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/70 p-3 backdrop-blur-sm sm:p-4 lg:p-6">
+    <div role="dialog" aria-modal="true" className="flex h-[calc(100dvh-1.5rem)] w-full max-w-[1600px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-[calc(100dvh-2rem)] lg:h-[calc(100dvh-3rem)]">
       <header className="vale-header">
-        <div className="vale-header-identity"><span className="vale-header-symbol"><FileText size={22}/></span><div className="min-w-0 flex-1"><h2>Ordem #{ordem.numeroSequencial}</h2><p>{ordem.clienteNome}</p><span>CPF/CNPJ: {ordem.clienteDocumento || "Não informado"}</span></div><span className={`rounded-lg px-2 py-1 text-xs font-bold ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span><button type="button" onClick={onClose} aria-label="Fechar" className="vale-icon-button"><X size={20}/></button></div>
+        <div className="vale-header-identity"><span className="vale-header-symbol"><FileText size={22}/></span><div className="min-w-0 flex-1"><h2>Ordem #{ordem.numeroSequencial}</h2><p>{ordem.clienteNome}</p><span>CPF/CNPJ: {ordem.clienteDocumento || "Não informado"}</span></div><span className={`shrink-0 rounded-lg px-2 py-1 text-xs font-bold ${statusClass[ordem.status]}`}>{statusLabel[ordem.status]}</span></div>
         <div className="vale-header-navigation"><nav aria-label="Navegação da ordem" className="vale-tabs">
           <button type="button" aria-pressed={abaDetalhe === "parcelas"} onClick={() => setAbaDetalhe("parcelas")}><ListChecks size={16}/> Detalhes</button>
           <button type="button" aria-pressed={abaDetalhe === "demonstrativo"} onClick={() => setAbaDetalhe("demonstrativo")}><FileText size={16}/> Demonstrativo</button>
@@ -269,8 +269,9 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
           <button type="button" aria-pressed={abaDetalhe === "historico"} onClick={() => setAbaDetalhe("historico")}><History size={16}/> Histórico da ordem</button>
           <button type="button" aria-pressed={abaDetalhe === "anotacoes"} onClick={() => setAbaDetalhe("anotacoes")}><FileText size={16}/> Anotações</button>
         </nav><div className="vale-header-tools">{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}</div></div>
+        <button type="button" onClick={onClose} aria-label="Fechar" className="vale-icon-button vale-header-close"><X size={20}/></button>
       </header>
-      <div className="min-h-0 space-y-4 overflow-y-auto bg-slate-100 p-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-100 p-4">
         {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (

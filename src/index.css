@@ -1057,6 +1057,7 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-methods th:nth-child(4) { width: 18%; }
 .payment-receipt-methods th:last-child { width: 20%; }
 .payment-receipt-methods td:nth-child(4) { font-size: 7.5pt; }
+.payment-receipt-balance { margin-top: 2mm; font-weight: 900; }
 
 /* Títulos se reorganizam em telas estreitas, sem rolagem horizontal. */
 .titulos-grade th { white-space: normal; overflow-wrap: anywhere; }

@@ -24,14 +24,14 @@ export function demonstrativoOrdem(ordem: OrdemCobranca) {
     };
     const documentos = p.titulos.length ? p.titulos.map((t, i) => ({
       id: `${p.id}-${t.id || i}`, data: t.vencimento || p.data, forma,
-      referencia: t.numeroDocumento || String(i + 1), valor: ratear(t.valor, t.status || "aguardando"),
+      referencia: t.numeroDocumento || String(i + 1), titular: t.nomeTitular?.trim() || "", valor: ratear(t.valor, t.status || "aguardando"),
       status: t.status || "aguardando", titulo: true,
     })) : p.valorRecebido > 0 ? [{
       id: p.id, data: p.data, forma: forma + (p.formaPagamento === "cartao_credito" ? ` · ${p.parcelasCartao || 1}x` : ""),
-      referencia: "", valor: ratear(p.valorRecebido, p.statusPagamento), status: p.statusPagamento, titulo: false,
+      referencia: "", titular: "", valor: ratear(p.valorRecebido, p.statusPagamento), status: p.statusPagamento, titulo: false,
     }] : [];
     if (p.bonusUtilizado > 0 && p.status === "ativo") documentos.push({
-      id: `${p.id}-bonus`, data: p.data, forma: "Bônus utilizado", referencia: "",
+      id: `${p.id}-bonus`, data: p.data, forma: "Bônus utilizado", referencia: "", titular: "",
       valor: ratear(p.bonusUtilizado, "bonus"), status: "compensado", titulo: false,
     });
     return documentos;

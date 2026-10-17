@@ -57,7 +57,7 @@ assert.match(rateado, /TOTAL<\/td><td class="number">R\$\s*56,00/);
 assert.match(rateado, /BÔNUS UTILIZADO<\/b>.*?R\$\s*8,00/);
 const ordemExcedente = mod.exports.render({ ...excedente, resumoOrdem: { id: 'ordem', numero: 15, saldo: 0 },
   pagamentosVale: [{ ...excedente.pagamentosVale[0], ordemCobrancaId: 'ordem' }] });
-assert.match(ordemExcedente, /TOTAL<\/td><td class="number">R\$\s*9\.000,00/);
+assert.match(ordemExcedente, /TOTAL PAGAMENTOS<\/td><td class="number">R\$\s*9\.000,00/);
 
 const ordem = mod.exports.render({ ...recibo, resumoOrdem: { numero: 12, totalOriginal: 1553.4, saldo: 353.4, valeDevedor: 811 } });
 assert.doesNotMatch(ordem, /VALOR DA ORDEM/);
@@ -71,7 +71,9 @@ const ordem19 = mod.exports.render({ ...recibo,
   ],
 });
 assert.match(ordem19, /TOTAL VALES<\/td><td class="number">R\$\s*2\.903,20/);
-assert.match(ordem19, /DEVEDOR<\/td><td class="number">R\$\s*1\.703,20/);
+assert.match(ordem19, /TOTAL PAGAMENTOS<\/td><td class="number">R\$\s*1\.200,00/);
+assert.match(ordem19, /payment-receipt-balance"><table><tbody><tr><td>SALDO \(TOTAL VALES - TOTAL PAGAMENTOS\)<\/td><td class="number">R\$\s*1\.703,20/);
+assert.doesNotMatch(ordem19, /<td colSpan="4">DEVEDOR<\/td>/);
 assert.doesNotMatch(ordem19, /VALOR DA ORDEM|TOTAL PAGO/);
 const titulo = (n, data) => ({ id: `t${n}`, tipo: 'cheque_emitente', numeroDocumento: String(n), valor: 200,
   vencimento: '2026-10-30', dataCompensacao: data, status: 'compensado' });

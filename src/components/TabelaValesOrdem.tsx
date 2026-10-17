@@ -3,8 +3,8 @@ import type { OrdemCobranca } from "../types";
 import { financeiroOrdem } from "../lib/financeiro";
 import { formatCurrency, formatDate } from "../lib/utils";
 
-export function TabelaValesOrdem({ ordem, onOpenVale }: {
-  ordem: OrdemCobranca; onOpenVale?: (id: string) => void;
+export function TabelaValesOrdem({ ordem, onOpenVale, somenteTotal = false }: {
+  ordem: OrdemCobranca; onOpenVale?: (id: string) => void; somenteTotal?: boolean;
 }) {
   const totalVales = ordem.vales.reduce((soma, vale) => soma + Math.round(Number(vale.valorOriginalVale ?? vale.valorVinculado) * 100), 0) / 100;
   const financeiro = financeiroOrdem(ordem);
@@ -17,8 +17,8 @@ export function TabelaValesOrdem({ ordem, onOpenVale }: {
     </tr>)}</tbody>
     <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold">
       <tr><td className="p-2" colSpan={2}>TOTAL</td><td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(totalVales)}</td></tr>
-      <tr><td className="p-2" colSpan={2}>PAGO</td><td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(financeiro.presumido)}</td></tr>
-      <tr><td className="p-2" colSpan={2}>DEVEDOR</td><td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(financeiro.restantePresumido)}</td></tr>
+      {!somenteTotal && <><tr><td className="p-2" colSpan={2}>PAGO</td><td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(financeiro.presumido)}</td></tr>
+      <tr><td className="p-2" colSpan={2}>DEVEDOR</td><td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(financeiro.restantePresumido)}</td></tr></>}
     </tfoot>
   </table></div>;
 }

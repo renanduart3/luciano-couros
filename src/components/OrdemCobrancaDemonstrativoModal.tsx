@@ -42,6 +42,8 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
 
 export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) {
   const resumo = demonstrativoOrdem(ordem);
+  const totalVales = ordem.vales.reduce((soma, vale) => soma + Math.round(Number(vale.valorOriginalVale ?? vale.valorVinculado) * 100), 0);
+  const restante = (totalVales - Math.round(resumo.pago * 100)) / 100;
   return (
           <section className="mx-auto max-w-[900px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-950 shadow-sm print:max-w-none print:shadow-none">
             <header className="flex items-start justify-between gap-4 bg-slate-900 px-4 py-3 text-white">
@@ -61,21 +63,20 @@ export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) 
               </div>
             </div>
 
-            <TabelaValesOrdem ordem={ordem}/>
+            <TabelaValesOrdem ordem={ordem} somenteTotal/>
 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
               <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
-                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-right">Valor</th><th className="w-28 p-2 text-left">Situação</th></tr></thead>
+                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-left">Situação</th><th className="w-28 p-2 text-right">Valor</th></tr></thead>
                 <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
                   <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
-                  <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}</td>
-                  <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
+                  <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}{l.titular && ` - ${l.titular}`}</td>
                   <td className={`p-2 ${l.status === 'compensado' ? 'text-emerald-800' : 'text-amber-900'}`}>{l.status === 'compensado' ? 'Pago' : l.status === 'recusado' ? 'Recusado' : 'Aguardando'}</td>
+                  <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
                 </tr>)}</tbody>
                 <tfoot className="border-t-2 border-slate-900 bg-slate-100 font-bold">
-                  <tr><td colSpan={2} className="p-2">TOTAL DE CHEQUES / BOLETOS VÁLIDOS</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.totalTitulos)}</td><td/></tr>
-                  <tr><td colSpan={2} className="p-2">TOTAL DOS PAGAMENTOS + BÔNUS</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.pago)}</td><td/></tr>
+                  <tr><td colSpan={3} className="p-2">TOTAL</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.pago)}</td></tr>
                 </tfoot>
               </table></div>
               {!ordem.pagamentos?.length && <p className="text-xs text-slate-500">Nenhum pagamento registrado.</p>}
@@ -83,14 +84,11 @@ export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) 
 
             {ordem.observacao && <div className="border-t border-slate-300 bg-slate-50 px-4 py-3 text-xs"><strong className="block text-[10px] uppercase text-slate-500">Observação da negociação</strong><span className="font-bold text-slate-800">{ordem.observacao}</span></div>}
 
-            <footer className="grid grid-cols-2 border-t-2 border-slate-900 bg-emerald-100 text-right">
-              <div className="px-4 py-3 text-xs text-emerald-950">
-                <p>Dinheiro / títulos compensados: <b>{formatCurrency(resumo.recebido)}</b></p>
+            <footer className="grid grid-cols-2 border-t-2 border-slate-900 bg-emerald-100">
+              <div className="px-4 py-3 text-left text-xs text-emerald-950">
                 <p>Aguardando compensação: <b>{formatCurrency(resumo.aguardando)}</b></p>
-                {resumo.bonus > 0 && <p>Bônus utilizado: <b>{formatCurrency(resumo.bonus)}</b></p>}
-                {resumo.transferido > 0 && <p>Transferido para outro vale: <b>{formatCurrency(resumo.transferido)}</b></p>}
               </div>
-              <div className="px-4 py-3"><span className="block text-[9px] font-black uppercase text-emerald-800">Restante após pagamentos registrados</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(resumo.restante)}</strong></div>
+              <div className="px-4 py-3 text-right"><span className="block text-[9px] font-black uppercase text-emerald-800">RESTANTE</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(restante)}</strong></div>
             </footer>
           </section>
   );

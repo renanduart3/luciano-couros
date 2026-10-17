@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.16 — 17/10/2026
+
+- Demonstrativo da ordem de cobrança com apenas o total dos vales, total único dos pagamentos e saldo calculado pela diferença entre eles; títulos aguardando compensação já entram no total pago.
+- Pagamentos do demonstrativo exibem o valor na última coluna e o nome do titular após o número de cheques e boletos, quando informado.
+- Recibo de pagamento da ordem mostra TOTAL PAGAMENTOS na tabela e SALDO (TOTAL VALES - TOTAL PAGAMENTOS) em uma linha separada abaixo.
+
 ## 1.40.15 — 17/10/2026
 
 - Bônus disponível como forma de pagamento, com valor editável e validação do saldo da carteira; removidos o seletor anterior e os textos adicionais nos indicadores e na grade de pagamentos.

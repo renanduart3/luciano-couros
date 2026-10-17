@@ -67,6 +67,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
   const forma = FORMAS_PAGAMENTO.find(f => f.value === comprovante.formaPagamento)?.label || comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
   const totalVales = vales.reduce((total, vale) => total + centavos(vale.valorVale ?? vale.saldoAntes), 0) / 100;
   const devedor = Math.max(0, Math.round((totalVales - totalPagoVale) * 100) / 100);
+  const saldoOrdem = Math.round((totalVales - totalPagoVale) * 100) / 100;
   const totalOriginal = totalVales;
   const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
   const saldoAtual = comprovante.resumoOrdem?.saldo ?? vales.reduce((total, vale) => total + Math.round(Number(vale.saldoAtual ?? vale.saldoDepois) * 100), 0) / 100;
@@ -108,9 +109,10 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
             <h3>PAGAMENTOS</h3>
             <table className="payment-receipt-methods"><thead><tr><th>FORMA DE PAGAMENTO</th><th>Nº CHEQUE / BOLETO</th><th>DATA</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead>
               <tbody>{linhasAcumuladas.map(linha => <tr key={linha.id}><td><b>{linha.forma}</b>{linha.detalhe && <small>{linha.detalhe}</small>}</td><td>{linha.numero}</td><td>{formatDate(linha.data)}</td><td>{linha.situacao}</td><td className="number strong">{formatCurrency(linha.valor)}</td></tr>)}</tbody>
-              <tfoot><tr><td colSpan={4}>TOTAL</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr>
-                <tr><td colSpan={4}>DEVEDOR</td><td className="number">{formatCurrency(devedor)}</td></tr></tfoot>
+              <tfoot><tr><td colSpan={4}>{comprovante.resumoOrdem ? "TOTAL PAGAMENTOS" : "TOTAL"}</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr>
+                {!comprovante.resumoOrdem && <tr><td colSpan={4}>DEVEDOR</td><td className="number">{formatCurrency(devedor)}</td></tr>}</tfoot>
             </table>
+            {comprovante.resumoOrdem && <div className="payment-receipt-balance"><table><tbody><tr><td>SALDO (TOTAL VALES - TOTAL PAGAMENTOS)</td><td className="number">{formatCurrency(saldoOrdem)}</td></tr></tbody></table></div>}
             {valeDevedor && <p className="payment-receipt-transfer">Saldo devedor transferido para o vale #{valeDevedor}.</p>}
           </section>
           {!comprovante.resumoOrdem && Number(comprovante.bonusGeradoVale || 0) > 0.005 && <section className="payment-receipt-section payment-receipt-bonus-summary">

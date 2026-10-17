@@ -31,7 +31,7 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   const [parcelasCartao, setParcelasCartao] = useState(1);
   const [titulos, setTitulos] = useState<TituloRecebimento[]>([]);
   const [bonus, setBonus] = useState("");
-  const [bonusAtivo, setBonusAtivo] = useState(false);
+  const [bonusManual, setBonusManual] = useState(false);
   const [saldoBonus, setSaldoBonus] = useState(0);
   const [erro, setErro] = useState("");
   const [feedback, setFeedback] = useState("");
@@ -41,13 +41,16 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
   useEffect(() => {
     api.getCarteiraResumo(clienteId).then((resumo) => setSaldoBonus(Number(resumo.saldoBonus || 0))).catch(() => setSaldoBonus(0));
   }, [clienteId]);
+  useEffect(() => {
+    if (formaPagamento === "bonus" && !bonusManual) setBonus(Math.min(Math.max(0, saldoBonus), Math.max(0, totalDivida)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  }, [formaPagamento, bonusManual, saldoBonus, totalDivida]);
 
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const valorBase = parseBrazilianNumber(valor);
   const totalTitulos = useMemo(() => Math.round(titulos.reduce((soma, titulo) => soma + (titulo.status === "recusado" ? 0 : Number(titulo.valor || 0)), 0) * 100) / 100, [titulos]);
-  const valorInformado = pagamentoTitulo ? totalTitulos : valorBase;
-  const bonusUsado = formaPagamento === "bonus" ? valorInformado : bonusAtivo ? parseBrazilianNumber(bonus) : 0;
-  const valorTotal = formaPagamento === "bonus" ? valorInformado : valorInformado + bonusUsado;
+  const valorInformado = formaPagamento === "bonus" ? parseBrazilianNumber(bonus) : pagamentoTitulo ? totalTitulos : valorBase;
+  const bonusUsado = formaPagamento === "bonus" ? valorInformado : 0;
+  const valorTotal = valorInformado;
   const credito = distribuirCentavos(valorBase, parcelasCartao);
   const alocacoes = useMemo(() => {
     let restante = Math.max(0, valorTotal);
@@ -95,7 +98,6 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
       registrado = true;
       setValor("0,00");
       setBonus("");
-      setBonusAtivo(false);
       setFeedback(`Pagamento registrado: ${formatCurrency(resultado.valorAplicado)} abatido` + (resultado.bonusGerado > 0.005 ? ` e ${formatCurrency(resultado.bonusGerado)} gerado em bônus.` : "."));
       if (fecharAoSalvar) {
         await onSaved();
@@ -117,16 +119,9 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
     <form onSubmit={registrar} role="dialog" aria-modal="true" aria-labelledby="pagamento-vales-titulo" className="flex max-h-[90vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-slate-300 bg-slate-950 p-4 text-white"><div><h2 id="pagamento-vales-titulo" className="text-lg font-black">Adicionar pagamento · {ordem ? `Ordem #${ordem.numeroSequencial}` : `Vale #${vales[0]?.numeroSequencial}`}</h2><p className="mt-1 text-xs font-bold text-slate-300">{clienteNome} · CPF/CNPJ: {clienteDocumento || "Não informado"}</p></div><button type="button" onClick={onClose} aria-label="Fechar" className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"><X size={20}/></button></header>
       <div className="min-w-0 space-y-4 overflow-x-hidden overflow-y-auto bg-slate-100 p-4">
-        <div className={`grid items-start gap-3 rounded-xl border border-slate-300 bg-white p-3 ${formaPagamento === "cartao_credito" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}><label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 h-11 w-full rounded-lg border px-3 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label><label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor para distribuir" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className="mt-1 h-11 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono text-lg font-black text-emerald-900" />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Valor total para distribuir entre os títulos.</span>}</label><label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setErro(""); }} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.filter(forma => forma.value !== "bonus").map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>{formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase} disabled={salvando} className="!max-w-none [&_select]:h-11"/>}</div>
-        <div className="flex min-h-14 flex-wrap items-center gap-4 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2"><span className="font-bold text-slate-700">Bônus</span><button type="button" role="switch" aria-label="Ativar bônus do cliente" aria-checked={bonusAtivo} disabled={salvando} onClick={() => {
-            if (bonusAtivo && !pagamentoTitulo) setValor(Math.max(0, valorInformado + bonusUsado).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-            setBonusAtivo(!bonusAtivo); setBonus("");
-          }} className={`inline-flex h-5 w-9 items-center rounded-full p-0.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-600 ${bonusAtivo ? "bg-violet-600" : "bg-slate-300"}`}><span className={`h-4 w-4 rounded-full bg-white shadow transition-transform ${bonusAtivo ? "translate-x-4" : "translate-x-0"}`} /></button></div>
-          {<div aria-hidden={!bonusAtivo} className={`flex min-w-0 flex-wrap items-center gap-4 text-violet-900 ${bonusAtivo ? "visible" : "invisible"}`}><span className="sr-only">Bônus ativo</span><span>Disponível: {formatCurrency(saldoBonus)}</span><label className="inline-flex items-center gap-2">Bônus a utilizar<input aria-label="Bônus a utilizar" inputMode="decimal" value={bonus} disabled={salvando || !bonusAtivo} tabIndex={bonusAtivo ? 0 : -1} onChange={e => { const proximo = parseBrazilianNumber(e.target.value); if (!pagamentoTitulo && Number.isFinite(proximo)) setValor(Math.max(0, valorInformado + bonusUsado - proximo).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })); setBonus(e.target.value); }} placeholder="0,00" className="w-28 rounded-lg border border-violet-200 bg-white p-2 text-right"/></label><span>Total: {formatCurrency(valorTotal)}</span></div>}
-        </div>
-        {formaPagamento === "bonus" && <div className="rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-black text-violet-900">BÔNUS DISPONÍVEL: {formatCurrency(saldoBonus)}</div>}
-        <TitulosPagamentoEditor mostrarObservacao={false} formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={Math.max(0, valorBase - (bonusAtivo ? parseBrazilianNumber(bonus) : 0))} titulos={titulos} onChange={setTitulos} />
+        <div className={`grid items-start gap-3 rounded-xl border border-slate-300 bg-white p-3 ${formaPagamento === "cartao_credito" ? "sm:grid-cols-2 lg:grid-cols-4" : formaPagamento === "bonus" ? "sm:grid-cols-2" : "sm:grid-cols-3"}`}><label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">Data<input type="date" readOnly={pagamentoTitulo} value={data} onChange={(event) => setData(event.target.value)} className={`mt-1 h-11 w-full rounded-lg border px-3 font-bold ${pagamentoTitulo ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500" : "border-slate-300"}`} /></label>{formaPagamento !== "bonus" && <label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">{pagamentoTitulo ? "Valor para distribuir" : "Valor do pagamento"}<input autoFocus={!pagamentoTitulo} inputMode="decimal" value={valor} onChange={(event) => setValor(event.target.value)} className="mt-1 h-11 w-full rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-right font-mono text-lg font-black text-emerald-900" />{pagamentoTitulo && <span className="mt-1 block text-[9px] font-bold text-sky-700">Valor total para distribuir entre os títulos.</span>}</label>}<label className="flex min-w-0 flex-col text-[10px] font-black uppercase text-slate-600">Forma de pagamento<select value={formaPagamento} onChange={(event) => { setFormaPagamento(event.target.value); setBonusManual(false); setTitulos([]); setErro(""); }} className="mt-1 h-11 w-full rounded-lg border border-slate-300 px-3 font-bold">{FORMAS_PAGAMENTO.map((forma) => <option key={forma.value} value={forma.value}>{forma.label}</option>)}</select></label>{formaPagamento === "cartao_credito" && <ParcelamentoCartaoSelect formaPagamento={formaPagamento} parcelas={parcelasCartao} onChange={setParcelasCartao} valorTotal={valorBase} disabled={salvando} className="!max-w-none [&_select]:h-11"/>}</div>
+        {formaPagamento === "bonus" && <label className="flex flex-wrap items-center gap-3 rounded-xl border border-violet-300 bg-violet-50 p-3 text-xs font-black text-violet-900"><span>Bônus disponível: {formatCurrency(saldoBonus)}</span><span>Bônus a utilizar</span><input aria-label="Bônus a utilizar" inputMode="decimal" value={bonus} disabled={salvando} onChange={event => { setBonusManual(true); setBonus(event.target.value); }} className="w-32 rounded-lg border border-violet-300 bg-white p-2 text-right font-mono"/></label>}
+        <TitulosPagamentoEditor mostrarObservacao={false} formaPagamento={formaPagamento} clienteId={clienteId} clienteNome={clienteNome} clienteDocumento={clienteDocumento} valorPagamento={formaPagamento === "bonus" ? 0 : valorBase} titulos={titulos} onChange={setTitulos} />
         <div className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">Restante após pagamento</span><strong className="font-mono">{formatCurrency(Math.max(0, totalDivida - totalAplicado))}</strong></div>
         {bonusGerado > 0.005 && <p className="text-xs text-violet-800">Excedente em bônus: <strong>{formatCurrency(bonusGerado)}</strong></p>}
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-xs font-black text-emerald-800"><CheckCircle2 size={16}/>{feedback}</div>}

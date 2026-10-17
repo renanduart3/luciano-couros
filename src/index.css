@@ -1078,6 +1078,9 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-vales-summary th:nth-child(3) { width: 28%; }
 .payment-receipt-vales-summary th:last-child { width: 38%; }
 .payment-receipt-note { margin: 0; padding: 1.5mm 2mm; font-size: 7pt; color: #475569; }
+.payment-receipt-transfer { margin: 2mm 0 0; border: 0.2mm solid #a5b4c7; border-left: 1mm solid #64748b; border-radius: 2mm; background: #f1f5f9; padding: 2mm 3mm; font-size: 7.5pt; font-weight: 700; color: #334155; }
+.payment-receipt-bonus-summary h3 { background: #f5f3ff; border-color: #a78bfa; }
+.payment-receipt-bonus-summary td:last-child { color: #6d28d9; }
 .payment-receipt-columns .payment-receipt-vales td { font-size: 8pt; }
 
 .payment-receipt-individual .payment-receipt-methods td:last-child { font-size: 8.5pt; }

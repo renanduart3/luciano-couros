@@ -1,16 +1,31 @@
 import { FORMAS_PAGAMENTO } from "./pagamentos";
 import { formatCurrency } from "./utils";
 import type { ComprovanteRecebimento } from "../types";
+import { parteNoVale, valoresConfirmados } from "./financeiro";
 
 type PagamentoAcumulado = NonNullable<ComprovanteRecebimento["pagamentosVale"]>[number];
 export type LinhaAcumulada = { id: string; forma: string; numero: string; data: string; situacao: string; valor: number; detalhe?: string };
 export const centavos = (valor: number) => Math.round(Number(valor || 0) * 100);
 
-export function linhasDoPagamento(pagamento: PagamentoAcumulado, descricaoCartao?: string): LinhaAcumulada[] {
+export function linhasDoPagamento(pagamento: PagamentoAcumulado, descricaoCartao?: string, contexto?: { vendaId?: string; ordemId?: string }): LinhaAcumulada[] {
   const forma = FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label
     || pagamento.formaPagamento.replaceAll("_", " ").toUpperCase();
-  const total = centavos(pagamento.valorNoVale);
-  const bonus = Math.min(total, centavos(pagamento.bonusUtilizado));
+  let total = centavos(pagamento.valorNoVale);
+  let bonus = Math.min(total, centavos(pagamento.bonusUtilizado));
+  if (contexto) {
+    const valores = valoresConfirmados({ ...pagamento, status: pagamento.status || "ativo" });
+    const ratear = (valor: number) => {
+      if (contexto.vendaId && pagamento.alocacoes?.length) return centavos(parteNoVale(pagamento, contexto.vendaId, valor));
+      const fator = contexto.ordemId && pagamento.ordemCobrancaId === contexto.ordemId ? 1
+        : pagamento.valorAplicado > 0 ? Math.min(1, pagamento.valorNoVale / pagamento.valorAplicado)
+        : 1;
+      return Math.round(centavos(valor) * fator);
+    };
+    // O recibo mostra o que foi entregue, inclusive o excedente que virou bônus.
+    // O valor alocado continua servindo apenas como proporção em pagamentos compartilhados.
+    total = ratear(valores.recebido) + ratear(valores.aguardando);
+    bonus = Math.min(total, ratear(valores.credito));
+  }
   const dinheiro = total - bonus;
   const titulosValidos = pagamento.titulos.filter(titulo => titulo.status !== "recusado");
   const totalTitulos = titulosValidos.reduce((soma, titulo) => soma + centavos(titulo.valor), 0);

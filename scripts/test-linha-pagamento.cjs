@@ -21,6 +21,10 @@ assert.ok(html.includes('75,00'));assert.ok(!html.includes('Abatido'));
 assert.ok(html.includes('aria-label="Excluir"'));assert.ok(html.includes('data-label="Recebido"'));assert.ok(html.includes('payment-actions'));
 assert.ok(html.includes('aria-label="Comprovante"'));assert.ok(html.includes('data-recebimento-id="p"'));
 assert.ok(!html.includes('>Comprovante</button>'));
+const bonusHtml=renderToStaticMarkup(React.createElement('table',null,React.createElement('tbody',null,React.createElement(LinhaPagamento,{pagamento:{...p,formaPagamento:'bonus',valorRecebido:0,bonusUtilizado:100,titulos:[],statusPagamento:'compensado'},clienteId:'c',clienteNome:'Teste',saldo:0,alocar:()=>[],referencia:'vale',onSaved:async()=>{}}))));
+assert.ok(bonusHtml.includes('data-label="Valor"'));
+assert.ok(bonusHtml.includes('100,00'));
+assert.ok(!bonusHtml.includes('em bônus utilizado'));
 const titulo={nomeTitular:'Fulano',documentoTitular:'12345678909',valor:100,vencimento:'2026-10-10',numeroDocumento:'ABC',observacao:'Teste',status:'aguardando'};
 const renderEditor=(formaPagamento)=>renderToStaticMarkup(React.createElement(TitulosPagamentoEditor,{formaPagamento,clienteId:'c',clienteNome:'Cliente',clienteDocumento:'12345678909',valorPagamento:100,titulos:[titulo],onChange:()=>{}}));
 const chequeHtml=renderEditor('cheque_emitente');
@@ -36,6 +40,7 @@ assert.ok(!resumoHtml.includes('>Entrou<'));assert.ok(!resumoHtml.includes('Pago
 assert.ok(resumoHtml.includes('R$\u00a0600,00'));assert.ok(resumoHtml.includes('R$\u00a0400,00'));
 const resumoComBonus=renderToStaticMarkup(React.createElement(ResumoFinanceiroFixo,{negociado:1000,rotuloTotal:'Devedor',bonusGerado:380,financeiro:{negociado:1000,recebido:200,aguardando:400,presumido:600,restante:800,restantePresumido:400,bonus:0,excedentePresumido:0,creditoUtilizado:0}}));
 assert.ok(resumoComBonus.includes('Bônus deste vale'));assert.ok(resumoComBonus.includes('R$\u00a0380,00'));
+assert.ok(!resumoComBonus.includes('Inclui'));
 assert.equal((resumoComBonus.match(/Bônus deste vale/g)||[]).length,1);
 const valeFonte=fs.readFileSync('src/components/ValeDetalhesModal.tsx','utf8');
 assert.ok(!valeFonte.includes('SALDO DO CLIENTE'));

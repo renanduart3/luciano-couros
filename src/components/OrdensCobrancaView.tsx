@@ -111,8 +111,7 @@ function EditarValesOrdem({ ordem, onCancel, onSaved }: { ordem: OrdemCobranca; 
 function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale }: { ordem: OrdemCobranca; onEditarVales: () => void; onOpenVale: (id: string) => void }) {
   return <section aria-label="Vales da ordem" className="overflow-hidden rounded-xl border border-slate-300 bg-white">
     <div className="flex items-center justify-between bg-slate-50 px-3 py-2"><h3 className="text-xs font-bold">Vales vinculados</h3>{!ordem.finalizadoAt && ordem.status === "aberta" && <button type="button" onClick={onEditarVales} className="rounded border px-2 py-1 text-xs font-bold text-blue-800">Alterar vales</button>}</div>
-    <TabelaValesOrdem vales={ordem.vales} onOpenVale={onOpenVale}/>
-    <p className="px-3 py-2 text-xs text-slate-500">Abatido inclui pagamentos anteriores a esta ordem.</p>
+    <TabelaValesOrdem ordem={ordem} onOpenVale={onOpenVale}/>
   </section>;
 }
 
@@ -214,7 +213,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
     id: `ordem_${ordem.numeroSequencial}`, data: ordem.dataEmissao, clienteNome: ordem.clienteNome,
     clienteDocumento: ordem.clienteDocumento, formaPagamento: "", valorRecebido: 0, valorAplicado: 0,
     valorDevidoAntes: ordem.totalOriginal, titulos: [], observacao: ordem.observacao,
-    resumoOrdem: { numero: ordem.numeroSequencial,
+    resumoOrdem: { id: ordem.id, numero: ordem.numeroSequencial,
       saldo: ordem.saldoDevedorAtual ?? ordem.saldo, valeDevedor: ordem.numeroValeDevedor },
     vales: ordem.vales.map(v => ({ numeroSequencial: v.numeroSequencial, data: v.data, valorVale: v.valorOriginalVale ?? v.valorVinculado,
       valorAplicado: v.valorPago, saldoAntes: v.valorVinculado, saldoDepois: v.saldo, saldoAtual: v.saldo })),
@@ -222,7 +221,6 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   };
 
   const linkWhatsApp = whatsappUrl(ordem.clienteTelefone);
-  const financeiroAtual = financeiroOrdem(ordem);
 
   if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
@@ -278,14 +276,6 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>
         )}
 
-          <dl aria-label="Resumo da ordem" className="flex flex-wrap gap-x-6 gap-y-2 rounded-xl border border-slate-300 bg-white p-3 text-xs">
-            <div className="flex justify-between gap-2"><dt>Saldo incluído nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(ordem.totalOriginal)}</dd></div>
-            <div className="flex justify-between gap-2"><dt>Abatido nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(ordem.vales.reduce((s, v) => s + Number(v.valorPago || 0), 0))}</dd></div>
-            {financeiroAtual.aguardando > 0.005 && <div className="flex justify-between gap-2 text-amber-800"><dt>A compensar nesta ordem</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.aguardando)}</dd></div>}
-            {financeiroAtual.creditoUtilizado > 0 && <div className="flex justify-between gap-2 text-violet-800"><dt>Bônus utilizado</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.creditoUtilizado)}</dd></div>}
-            {!!financeiroAtual.transferido && <div className="flex justify-between gap-2"><dt>Transferido</dt><dd className="font-mono font-bold">{formatCurrency(financeiroAtual.transferido)}</dd></div>}
-            <div className="flex justify-between gap-2 font-bold"><dt>Falta nesta ordem</dt><dd className="font-mono">{formatCurrency(financeiroAtual.restantePresumido)}</dd></div>
-          </dl>
         </div><section aria-label="Pagamentos registrados" className="min-w-0 space-y-3">
           <h3 className="font-bold text-slate-800">Pagamentos registrados</h3>
           {acao && <ConfirmarAcaoPagamentosOrdem ordemId={ordem.id} acao={acao.acao} itens={acao.itens} onCancel={() => setAcao(null)} onSaved={aplicarAtualizacao}/>}

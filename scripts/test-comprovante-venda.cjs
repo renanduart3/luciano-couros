@@ -46,11 +46,29 @@ html = render({ ...venda, contabilizaReceita: 0, items: [], totalLiquido: 60, va
 assert.ok(html.includes('VALE DE SALDO DEVEDOR'));
 assert.equal((html.match(/Devedor da ordem #12/g) || []).length, 2);
 assert.ok(!html.includes('Devedor do vale #119'));
+const linhaResidual = html.match(/<tr[^>]*>[^<]*<td[^>]*>[^<]*<\/td>.*?Devedor da ordem #12.*?<\/tr>/)?.[0];
+assert.ok(linhaResidual && (linhaResidual.match(/60,00/g) || []).length === 2, 'O valor do vale residual deve constar no unitário e no total.');
 assert.ok(html.includes('40,00'));
 assert.ok(!html.includes('DESCONTOS / AJUSTES'));
 assert.ok(!html.includes('Nº ITENS'));
 assert.equal((html.match(/data-receipt-page=/g) || []).length, 1);
-console.log('OK: residual com valor, saldo e todas as referências, sem itens ou descontos fictícios.');
+console.log('OK: residual com origem, valor no unitário e total, saldo e sem descontos fictícios.');
+
+const acerto = (total, pago) => renderToStaticMarkup(React.createElement(mod.exports.VendaComprovante, {
+  demonstrativoPagamento: true, venda: { ...venda, numeroSequencial: 174, contabilizaReceita: 0, items: [],
+    totalLiquido: total, valorPago: total, recebimentos: [{ id: 'pagamento', status: 'ativo', statusPagamento: 'compensado',
+      valorRecebido: pago, bonusUtilizado: 0, valorAplicado: total, titulos: [], alocacoes: [{ vendaId: venda.id, valor: total }] }],
+    origemSaldo: { ordem: { numero: 15 }, vales: [] } },
+}));
+const acerto174 = acerto(8170.2, 9000);
+assert.equal((acerto174.match(/>PAGO<\/td>/g) || []).length, 2);
+assert.equal((acerto174.match(/-R\$\s?9\.000,00/g) || []).length, 4);
+assert.equal((acerto174.match(/-R\$\s?829,80/g) || []).length, 2);
+assert.equal((acerto174.match(/>BÔNUS GERADO<\/span>/g) || []).length, 2);
+assert.match(acerto(5076.27, 5500), /-R\$\s?423,73/);
+assert.match(acerto(100, 40), /DEVEDOR<\/span><strong>R\$\s?60,00/);
+assert.match(acerto(100, 100), /SALDO<\/span><strong>R\$\s?0,00/);
+console.log('OK: acerto mostra pagamento integral negativo e bônus, inclusive o caso do vale #174.');
 
 html = render({ ...venda, totalLiquido: 0, creditoLinhaDevolucao: 24, items: [{...venda.items[0],quantidade:-2,precoUnitario:12,total:-24,itemOrigemId:'compra'}] });
 assert.equal((html.match(/receipt-return-row/g)||[]).length,2);

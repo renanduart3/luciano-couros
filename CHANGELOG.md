@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.15 — 17/10/2026
+
+- Bônus disponível como forma de pagamento, com valor editável e validação do saldo da carteira; removidos o seletor anterior e os textos adicionais nos indicadores e na grade de pagamentos.
+- Vales vinculados à ordem exibem número, data, valor e totais de pago e devedor.
+- Vales de saldo devedor mostram a origem e o valor nos campos unitário e total da impressão.
+- A finalização do vale abre diretamente o comprovante acumulado de recebimentos. O demonstrativo de acerto mostra a linha PAGO negativa e identifica o excedente como bônus gerado.
+- Comprovantes exibem o pagamento integral, incluindo o excedente convertido em bônus, com rateio para pagamentos compartilhados; adicionados saldo devedor, demonstrativo de bônus e destaque da transferência para outro vale.
+
 ## 1.40.14 — 16/10/2026
 
 - A indicação “Pagamentos gerenciados pela ordem” e o acesso à ordem aparecem somente para vales efetivamente vinculados a uma ordem aberta. Vales finalizados sem ordem e vínculos de ordens canceladas deixam de exibir essa indicação.

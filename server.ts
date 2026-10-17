@@ -5892,6 +5892,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       valorAplicado: Number(recebimento.valorAplicado),
       bonusUtilizado: Number(recebimento.bonusUtilizado || 0),
       bonusGerado: Number(recebimento.bonusGerado || 0),
+      bonusGeradoVale: valeIndividual ? bonusGeradoPorVenda([vendaIndividual]).get(vendaIndividual) || 0 : undefined,
       observacao: recebimento.observacao,
       titulos: listarTitulosRecebimento(recebimento.id),
       vales: valeIndividual ? [{ saldoAntes: saldoConferido, saldoDepois: saldoConferido, valorAplicado: 0, ...vales.find(v => v.vendaId === vendaIndividual), ...valeIndividual,

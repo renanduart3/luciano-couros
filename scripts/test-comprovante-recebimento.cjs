@@ -25,12 +25,44 @@ assert.match(html, /<tfoot><tr><td colSpan="4">TOTAL<\/td><td class="number">R\$
 assert.match(html, /<th>VALE<\/th><th>Nº VALE<\/th><th>DATA EMISSÃO<\/th>/);
 assert.match(html, /<td>09\/10\/2026<\/td>/);
 assert.match(html, /TOTAL VALES<\/td><td class="number">R\$\s*1\.553,40/);
-assert.doesNotMatch(html, /VALOR VALE|DEVEDOR|TOTAL PAGO/);
+assert.match(html, /DEVEDOR<\/td><td class="number">R\$\s*353,40/);
+assert.doesNotMatch(html, /VALOR VALE|TOTAL PAGO/);
 assert.equal((html.match(/R\$\s*1\.200,00/g) || []).length, 2);
+
+const comBonus = mod.exports.render({ ...recibo, bonusGeradoVale: 53.4 });
+assert.match(comBonus, /DEMONSTRATIVO DE BÔNUS/);
+assert.match(comBonus, /BÔNUS GERADO<\/th>/);
+assert.match(comBonus, /R\$\s*53,40/);
+
+const excedente = {
+  ...recibo, bonusGeradoVale: 829.8,
+  vales: [{ vendaId: 'vale174', numeroSequencial: 174, valorVale: 8170.2, saldoAntes: 8170.2, saldoDepois: 0 }],
+  pagamentosVale: [{ ...recibo.pagamentosVale[0], status: 'ativo', valorNoVale: 8170.2, valorAplicado: 8170.2,
+    valorRecebido: 9000, bonusGerado: 829.8, alocacoes: [{ vendaId: 'vale174', valor: 8170.2 }] }],
+};
+const htmlExcedente = mod.exports.render(excedente);
+assert.match(htmlExcedente, /class="number strong">R\$\s*9\.000,00/);
+assert.match(htmlExcedente, /TOTAL<\/td><td class="number">R\$\s*9\.000,00/);
+assert.match(htmlExcedente, /DEVEDOR<\/td><td class="number">R\$\s*0,00/);
+assert.match(htmlExcedente, /<td class="number">R\$\s*9\.000,00<\/td><td class="number strong">R\$\s*829,80/);
+const varios = mod.exports.render({ ...excedente, pagamentosVale: [
+  { ...excedente.pagamentosVale[0], id: 'primeiro', valorRecebido: 1000, valorNoVale: 1000, valorAplicado: 1000, alocacoes: [{ vendaId: 'vale174', valor: 1000 }] },
+  { ...excedente.pagamentosVale[0], id: 'segundo', valorRecebido: 8000, valorNoVale: 7170.2, valorAplicado: 7170.2, alocacoes: [{ vendaId: 'vale174', valor: 7170.2 }] },
+] });
+assert.match(varios, /TOTAL<\/td><td class="number">R\$\s*9\.000,00/);
+const compartilhado = { ...excedente.pagamentosVale[0], valorRecebido: 120, bonusUtilizado: 20, valorAplicado: 100, valorNoVale: 40,
+  alocacoes: [{ vendaId: 'vale174', valor: 40 }, { vendaId: 'outro', valor: 60 }] };
+const rateado = mod.exports.render({ ...excedente, pagamentosVale: [compartilhado] });
+assert.match(rateado, /TOTAL<\/td><td class="number">R\$\s*56,00/);
+assert.match(rateado, /BÔNUS UTILIZADO<\/b>.*?R\$\s*8,00/);
+const ordemExcedente = mod.exports.render({ ...excedente, resumoOrdem: { id: 'ordem', numero: 15, saldo: 0 },
+  pagamentosVale: [{ ...excedente.pagamentosVale[0], ordemCobrancaId: 'ordem' }] });
+assert.match(ordemExcedente, /TOTAL<\/td><td class="number">R\$\s*9\.000,00/);
 
 const ordem = mod.exports.render({ ...recibo, resumoOrdem: { numero: 12, totalOriginal: 1553.4, saldo: 353.4, valeDevedor: 811 } });
 assert.doesNotMatch(ordem, /VALOR DA ORDEM/);
 assert.match(ordem, /Saldo devedor transferido para o vale #811/);
+assert.match(ordem, /payment-receipt-transfer/);
 const ordem19 = mod.exports.render({ ...recibo,
   resumoOrdem: { numero: 19, totalOriginal: 1127.4, saldo: 0 },
   vales: [
@@ -39,7 +71,8 @@ const ordem19 = mod.exports.render({ ...recibo,
   ],
 });
 assert.match(ordem19, /TOTAL VALES<\/td><td class="number">R\$\s*2\.903,20/);
-assert.doesNotMatch(ordem19, /VALOR DA ORDEM|DEVEDOR|TOTAL PAGO/);
+assert.match(ordem19, /DEVEDOR<\/td><td class="number">R\$\s*1\.703,20/);
+assert.doesNotMatch(ordem19, /VALOR DA ORDEM|TOTAL PAGO/);
 const titulo = (n, data) => ({ id: `t${n}`, tipo: 'cheque_emitente', numeroDocumento: String(n), valor: 200,
   vencimento: '2026-10-30', dataCompensacao: data, status: 'compensado' });
 const quatroCheques = mod.exports.render({ ...recibo, pagamentosVale: [{ ...recibo.pagamentosVale[0],

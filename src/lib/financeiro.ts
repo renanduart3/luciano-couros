@@ -33,7 +33,7 @@ export function valoresConfirmados(p: PagamentoGerenciavel) {
   return { recebido: (confirmado + cents(p.bonusUtilizado)) / 100, aguardando: aguardando / 100, credito: Number(p.bonusUtilizado || 0) };
 }
 // O rateio acumulado conserva centavos e impede contar o mesmo recebimento inteiro em cada vale.
-function parteNoVale(p: PagamentoGerenciavel, id: string, valor: number) {
+export function parteNoVale(p: PagamentoGerenciavel, id: string, valor: number) {
   const itens = (p.alocacoes || []).filter(a => !a.deletedAt).sort((a,b) => a.vendaId.localeCompare(b.vendaId));
   const total = itens.reduce((s,a) => s+cents(a.valor),0);
   let acumulado = 0, anterior = 0, resultado = 0;

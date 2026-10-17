@@ -404,8 +404,9 @@ export interface TituloRecebimento {
 }
 
 export interface ComprovanteRecebimento {
-  resumoOrdem?: { numero: number; saldo: number; valeDevedor?: number };
+  resumoOrdem?: { id?: string; numero: number; saldo: number; valeDevedor?: number };
   pagamentosVale?: Array<PagamentoGerenciavel & { valorNoVale: number }>;
+  bonusGeradoVale?: number;
   valoresParcelasCartao?: number[];
   id: string;
   data: string;
@@ -426,6 +427,7 @@ export interface ComprovanteRecebimento {
   observacao?: string;
   titulos: TituloRecebimento[];
   vales: Array<{
+    vendaId?: string;
     numeroSequencial: number;
     data?: string;
     valorAplicado: number;

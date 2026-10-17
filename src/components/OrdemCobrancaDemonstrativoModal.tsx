@@ -61,8 +61,7 @@ export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) 
               </div>
             </div>
 
-            <TabelaValesOrdem vales={ordem.vales} descricao/>
-            <p className="px-3 py-2 text-xs text-slate-600">Abatido inclui pagamentos anteriores a esta ordem.</p>
+            <TabelaValesOrdem ordem={ordem}/>
 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>

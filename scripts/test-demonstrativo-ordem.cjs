@@ -2,6 +2,8 @@ const assert = require('node:assert/strict');
 const { buildSync } = require('esbuild');
 const Module = require('node:module');
 const path = require('node:path');
+const React = require('react');
+const { renderToStaticMarkup } = require('react-dom/server');
 const result = buildSync({ entryPoints: ['src/lib/demonstrativoOrdem.ts'], bundle: true, platform: 'node', format: 'cjs', write: false });
 const mod = new Module(__filename);
 mod.filename = __filename;
@@ -42,6 +44,22 @@ assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, valorAplicado
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [] }).restante, 5000);
 assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...cheque, titulos: cheque.titulos.map(t => ({ ...t, status: 'recusado' })) }] }).pago, 0);
 console.log('OK: títulos em linhas únicas; compensação parcial, estorno, recusados, bônus e recebimento compartilhado.');
+
+const tabelaBuild = buildSync({ entryPoints: ['src/components/TabelaValesOrdem.tsx'], bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false });
+const tabelaMod = new Module(__filename);
+tabelaMod.filename = __filename;
+tabelaMod.paths = module.paths;
+tabelaMod._compile(tabelaBuild.outputFiles[0].text, __filename);
+const tabelaHtml = renderToStaticMarkup(React.createElement(tabelaMod.exports.TabelaValesOrdem, { ordem: {
+  id: 'ordem', totalOriginal: 100, saldo: 50,
+  vales: [{ id: 'vinculo', vendaId: 'vale', numeroSequencial: 12, data: '2026-10-10', valorOriginalVale: 120, valorVinculado: 100 }],
+  pagamentos: [{ ...pix, valorRecebido: 50, valorAplicado: 50, valorAplicadoOrdem: 50 }],
+} }));
+assert.ok(tabelaHtml.includes('>Vale<') && tabelaHtml.includes('>Data<') && tabelaHtml.includes('>Valor<'));
+assert.ok(tabelaHtml.includes('10/10/2026'));
+assert.ok(tabelaHtml.includes('120,00') && tabelaHtml.includes('50,00'));
+assert.ok(tabelaHtml.includes('>TOTAL<') && tabelaHtml.includes('>PAGO<') && tabelaHtml.includes('>DEVEDOR<'));
+assert.ok(!tabelaHtml.includes('Abatido') && !tabelaHtml.includes('Transferido') && !tabelaHtml.includes('Falta'));
 
 r = demonstrativoOrdem({...ordem, vales:[{valorVinculado:60},{valorVinculado:40}], pagamentos:[{...cheque,valorRecebido:80,bonusUtilizado:20,valorAplicado:100,valorAplicadoOrdem:50,titulos:[{...cheque.titulos[0],valor:30},{...cheque.titulos[1],valor:50}]}]});
 assert.deepEqual(r.linhas.map(l=>l.valor),[15,25,10]);

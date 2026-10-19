@@ -654,6 +654,31 @@ body main .payment-compact button {
   font-size: 8.5pt;
 }
 
+/* Recibos acumulados de vale e ordem: conteúdo compacto, em preto e branco. */
+.payment-receipt-individual { min-height: 0; padding: 9mm; font-size: 7.5pt; color: #111; }
+.payment-receipt-individual .payment-receipt-header { grid-template-columns: 22mm minmax(0, 1fr) 49mm; gap: 2mm; padding: 2mm; }
+.payment-receipt-individual .payment-receipt-header img { width: 20mm; max-height: 15mm; filter: grayscale(1); }
+.payment-receipt-individual .payment-receipt-store { line-height: 1.2; }
+.payment-receipt-individual .payment-receipt-store strong { font-size: 10pt; }
+.payment-receipt-individual .payment-receipt-meta { gap: 0.6mm; padding-left: 2mm; }
+.payment-receipt-individual .payment-receipt-meta > strong { font-size: 8.5pt; }
+.payment-receipt-individual .payment-receipt-client { margin-top: 1.5mm; }
+.payment-receipt-individual .payment-receipt-client > span { padding: 1mm 1.5mm; }
+.payment-receipt-individual .payment-receipt-section { margin-top: 2mm; }
+.payment-receipt-individual .payment-receipt-section h3 { padding: 0.9mm 1.5mm; font-size: 7.5pt; }
+.payment-receipt-individual .payment-receipt-section th,
+.payment-receipt-individual .payment-receipt-section td { padding: 0.9mm 1.5mm; }
+.payment-receipt-individual .payment-receipt-methods td:first-child { overflow-wrap: anywhere; }
+.payment-receipt-individual .payment-receipt-methods th:first-child { width: 36%; }
+.payment-receipt-individual .payment-receipt-methods th:nth-child(2) { width: 14%; }
+.payment-receipt-individual .payment-receipt-methods th:nth-child(3) { width: 16%; }
+.payment-receipt-individual .payment-receipt-methods th:nth-child(4) { width: 16%; }
+.payment-receipt-individual .payment-receipt-methods th:last-child { width: 18%; }
+.payment-receipt-individual .payment-receipt-observation { min-height: 0; margin-top: 2mm; padding: 1.5mm; }
+.payment-receipt-individual .payment-receipt-footer { margin-top: 7mm; }
+.payment-receipt-individual .payment-receipt-footer > p { margin-bottom: 7mm; }
+.payment-receipt-individual .payment-receipt-footer > small { margin-top: 5mm; }
+
 .payment-receipt-header {
   display: grid;
   grid-template-columns: 28mm minmax(0, 1fr) 58mm;
@@ -1057,7 +1082,25 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-methods th:nth-child(4) { width: 18%; }
 .payment-receipt-methods th:last-child { width: 20%; }
 .payment-receipt-methods td:nth-child(4) { font-size: 7.5pt; }
-.payment-receipt-balance { margin-top: 2mm; font-weight: 900; }
+.payment-receipt-balance {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 2mm 0 0;
+  border-top: 0.2mm solid #777;
+  border-left: 0.2mm solid #777;
+}
+.payment-receipt-balance > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2mm;
+  min-width: 0;
+  border-right: 0.2mm solid #777;
+  border-bottom: 0.2mm solid #777;
+  padding: 1mm 1.5mm;
+}
+.payment-receipt-balance dt { font-weight: 700; }
+.payment-receipt-balance dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Títulos se reorganizam em telas estreitas, sem rolagem horizontal. */
 .titulos-grade th { white-space: normal; overflow-wrap: anywhere; }
@@ -1080,8 +1123,6 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-vales-summary th:last-child { width: 38%; }
 .payment-receipt-note { margin: 0; padding: 1.5mm 2mm; font-size: 7pt; color: #475569; }
 .payment-receipt-transfer { margin: 2mm 0 0; border: 0.2mm solid #a5b4c7; border-left: 1mm solid #64748b; border-radius: 2mm; background: white; padding: 2mm 3mm; font-size: 7.5pt; font-weight: 400; color: #334155; }
-.payment-receipt-bonus-summary h3 { background: white; border-color: #0f172a; }
-.payment-receipt-bonus-summary td:last-child { color: #6d28d9; }
 .payment-receipt-columns .payment-receipt-vales td { font-size: 8pt; }
 
 .payment-receipt-individual .payment-receipt-methods td:last-child { font-size: 8.5pt; }

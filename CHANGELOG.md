@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.19 — 19/10/2026
+
+- Recibos acumulados de vales e ordens exibem Total, Pago, Devedor e Bônus em duas linhas compactas, sem saldo negativo ou demonstrativo de bônus redundante.
+- Pagamentos por cheque e boleto mostram as siglas CQ, CQ-TER, BO e BO-TER com o nome do titular.
+- Layout dos recibos de recebimento reduzido e preparado em preto e branco para impressão em uma página A4 nos casos revisados.
+
 ## 1.40.18 — 19/10/2026
 
 - Finalização de ordens ganha comprovante próprio em duas vias, com a soma dos vales, total pago e saldo ou bônus; a aba Comprovante aparece após finalizar e é removida ao reabrir.

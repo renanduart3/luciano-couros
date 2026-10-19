@@ -4,8 +4,12 @@ import type { ComprovanteRecebimento } from "../types";
 import { parteNoVale, valoresConfirmados } from "./financeiro";
 
 type PagamentoAcumulado = NonNullable<ComprovanteRecebimento["pagamentosVale"]>[number];
-export type LinhaAcumulada = { id: string; forma: string; numero: string; data: string; situacao: string; valor: number; detalhe?: string };
+export type LinhaAcumulada = { id: string; forma: string; titular?: string; numero: string; data: string; situacao: string; valor: number; detalhe?: string };
 export const centavos = (valor: number) => Math.round(Number(valor || 0) * 100);
+const siglasTitulo: Record<string, string> = {
+  cheque_emitente: "CQ", cheque_terceiro: "CQ-TER",
+  duplicata_emitente: "BO", duplicata_terceiro: "BO-TER",
+};
 
 export function linhasDoPagamento(pagamento: PagamentoAcumulado, descricaoCartao?: string, contexto?: { vendaId?: string; ordemId?: string }): LinhaAcumulada[] {
   const forma = FORMAS_PAGAMENTO.find(f => f.value === pagamento.formaPagamento)?.label
@@ -39,7 +43,8 @@ export function linhasDoPagamento(pagamento: PagamentoAcumulado, descricaoCartao
     distribuido += valor;
     return {
       id: `${pagamento.id}-${titulo.id || indice}`,
-      forma: FORMAS_PAGAMENTO.find(f => f.value === titulo.tipo)?.label || forma,
+      forma: siglasTitulo[titulo.tipo] || forma,
+      titular: titulo.nomeTitular?.trim() || undefined,
       numero: titulo.numeroDocumento || "—",
       data: titulo.dataCompensacao || titulo.vencimento || pagamento.data,
       situacao: titulo.status === "recusado" ? "RECUSADO" : titulo.status === "aguardando" ? "A COMPENSAR" : "RECEBIDO",

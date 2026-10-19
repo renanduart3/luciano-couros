@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.40.17 — 19/10/2026
+
+- O demonstrativo de bônus do recibo de vale calcula o excedente pela diferença entre o total dos pagamentos exibidos e o valor original do vale, sem somar créditos anteriores de devoluções.
+
 ## 1.40.16 — 17/10/2026
 
 - Demonstrativo da ordem de cobrança com apenas o total dos vales, total único dos pagamentos e saldo calculado pela diferença entre eles; títulos aguardando compensação já entram no total pago.

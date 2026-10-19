@@ -67,6 +67,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
   const forma = FORMAS_PAGAMENTO.find(f => f.value === comprovante.formaPagamento)?.label || comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
   const totalVales = vales.reduce((total, vale) => total + centavos(vale.valorVale ?? vale.saldoAntes), 0) / 100;
   const devedor = Math.max(0, Math.round((totalVales - totalPagoVale) * 100) / 100);
+  const bonusExcedenteVale = Math.max(0, Math.round((totalPagoVale - totalVales) * 100) / 100);
   const saldoOrdem = Math.round((totalVales - totalPagoVale) * 100) / 100;
   const totalOriginal = totalVales;
   const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
@@ -115,10 +116,10 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
             {comprovante.resumoOrdem && <div className="payment-receipt-balance"><table><tbody><tr><td>SALDO (TOTAL VALES - TOTAL PAGAMENTOS)</td><td className="number">{formatCurrency(saldoOrdem)}</td></tr></tbody></table></div>}
             {valeDevedor && <p className="payment-receipt-transfer">Saldo devedor transferido para o vale #{valeDevedor}.</p>}
           </section>
-          {!comprovante.resumoOrdem && Number(comprovante.bonusGeradoVale || 0) > 0.005 && <section className="payment-receipt-section payment-receipt-bonus-summary">
+          {!comprovante.resumoOrdem && bonusExcedenteVale > 0.005 && <section className="payment-receipt-section payment-receipt-bonus-summary">
             <h3>DEMONSTRATIVO DE BÔNUS</h3>
             <table><thead><tr><th>VALE</th><th className="number">VALOR ORIGINAL</th><th className="number">PAGO</th><th className="number">BÔNUS GERADO</th></tr></thead>
-              <tbody><tr><td>#{vales[0]?.numeroSequencial}</td><td className="number">{formatCurrency(totalVales)}</td><td className="number">{formatCurrency(totalPagoVale)}</td><td className="number strong">{formatCurrency(comprovante.bonusGeradoVale || 0)}</td></tr></tbody>
+              <tbody><tr><td>#{vales[0]?.numeroSequencial}</td><td className="number">{formatCurrency(totalVales)}</td><td className="number">{formatCurrency(totalPagoVale)}</td><td className="number strong">{formatCurrency(bonusExcedenteVale)}</td></tr></tbody>
             </table>
           </section>}
         </> : <>

@@ -29,10 +29,17 @@ assert.match(html, /DEVEDOR<\/td><td class="number">R\$\s*353,40/);
 assert.doesNotMatch(html, /VALOR VALE|TOTAL PAGO/);
 assert.equal((html.match(/R\$\s*1\.200,00/g) || []).length, 2);
 
-const comBonus = mod.exports.render({ ...recibo, bonusGeradoVale: 53.4 });
-assert.match(comBonus, /DEMONSTRATIVO DE BÔNUS/);
-assert.match(comBonus, /BÔNUS GERADO<\/th>/);
-assert.match(comBonus, /R\$\s*53,40/);
+const creditoDeDevolucao = mod.exports.render({ ...recibo, bonusGeradoVale: 380 });
+assert.doesNotMatch(creditoDeDevolucao, /DEMONSTRATIVO DE BÔNUS/);
+
+const vale138 = mod.exports.render({ ...recibo, bonusGeradoVale: 1308.55,
+  vales: [{ vendaId: 'vale138', numeroSequencial: 138, valorVale: 2469.9, saldoAntes: 2469.9, saldoDepois: 0 }],
+  pagamentosVale: [{ ...recibo.pagamentosVale[0], valorNoVale: 2469.9, valorAplicado: 2469.9,
+    valorRecebido: 3398.45, bonusGerado: 928.55, alocacoes: [{ vendaId: 'vale138', valor: 2469.9 }] }],
+});
+assert.match(vale138, /DEMONSTRATIVO DE BÔNUS/);
+assert.match(vale138, /<td class="number">R\$\s*3\.398,45<\/td><td class="number strong">R\$\s*928,55/);
+assert.doesNotMatch(vale138, /R\$\s*1\.308,55/);
 
 const excedente = {
   ...recibo, bonusGeradoVale: 829.8,

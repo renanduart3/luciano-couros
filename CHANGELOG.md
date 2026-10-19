@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.18 — 19/10/2026
+
+- Finalização de ordens ganha comprovante próprio em duas vias, com a soma dos vales, total pago e saldo ou bônus; a aba Comprovante aparece após finalizar e é removida ao reabrir.
+- Detalhes da ordem e rodapé do demonstrativo mostram Total, Pago, Devedor e Bônus calculados sobre a soma dos valores originais dos vales.
+- Comprovantes e demonstrativo impresso passam a usar fundo branco e menos negrito para economizar tinta.
+
 ## 1.40.17 — 19/10/2026
 
 - O demonstrativo de bônus do recibo de vale calcula o excedente pela diferença entre o total dos pagamentos exibidos e o valor original do vale, sem somar créditos anteriores de devoluções.

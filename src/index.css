@@ -251,7 +251,7 @@ textarea {
   padding: 25mm 25mm 45mm;
   background: white;
   color: #111827;
-  box-shadow: 0 18px 50px rgb(15 23 42 / 25%);
+  box-shadow: none;
 }
 
 .receipt-copy {
@@ -303,7 +303,7 @@ textarea {
 }
 
 .receipt-store em {
-  font-weight: 700;
+  font-weight: 400;
 }
 
 .receipt-document-meta {
@@ -381,16 +381,16 @@ textarea {
 
 .receipt-items-table th {
   height: 3.5mm;
-  background: #f1f5f9;
+  background: white;
   text-align: center;
   font-size: 6.6pt;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .receipt-items-table .receipt-return-row td {
-  background: #fee2e2 !important;
-  color: #b91c1c !important;
-  font-weight: 800;
+  background: white !important;
+  color: #111827 !important;
+  font-weight: 600;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
@@ -400,7 +400,7 @@ textarea {
 .receipt-qty { width: 18mm; }
 .receipt-money { width: 31mm; }
 .receipt-product-code,
-.receipt-supplier-code { text-align: center; font-family: monospace; font-weight: 800; }
+.receipt-supplier-code { text-align: center; font-family: monospace; font-weight: 600; }
 .receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
 
 .receipt-payment-line {
@@ -437,7 +437,7 @@ textarea {
   grid-template-columns: 1fr 42mm;
   margin-top: auto;
   border-top: 0.3mm solid #111827;
-  background: #f8fafc;
+  background: white;
 }
 
 .receipt-counts {
@@ -681,27 +681,27 @@ body main .payment-compact button {
 .payment-receipt-client > span:nth-last-child(-n+2) { border-bottom: 0; }
 
 .payment-receipt-section { margin-top: 3.2mm; }
-.payment-receipt-section h3 { margin: 0; border: 0.25mm solid #0f172a; background: #e2e8f0; padding: 1.4mm 2mm; text-align: center; font-size: 8pt; letter-spacing: 0.04em; }
+.payment-receipt-section h3 { margin: 0; border: 0.25mm solid #0f172a; background: white; padding: 1.4mm 2mm; text-align: center; font-size: 8pt; letter-spacing: 0.04em; }
 .payment-receipt-table-wrap { overflow-x: auto; }
 .payment-receipt-section table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .payment-receipt-section th,
 .payment-receipt-section td { border: 0.2mm solid #94a3b8; padding: 1.5mm 2mm; vertical-align: top; }
-.payment-receipt-section th { background: #f8fafc; font-size: 7pt; }
+.payment-receipt-section th { background: white; font-size: 7pt; }
 .payment-receipt-section th:first-child { width: 38%; }
 .payment-receipt-section td small { display: block; margin-top: 0.7mm; font-size: 6.6pt; font-weight: 600; color: #475569; }
 .payment-receipt-section .number { text-align: right; font-variant-numeric: tabular-nums; }
-.payment-receipt-section .strong { font-weight: 800; }
+.payment-receipt-section .strong { font-weight: 600; }
 .payment-receipt-section .empty { padding: 4mm; text-align: center; color: #64748b; font-weight: 700; }
-.payment-receipt-section tfoot { background: #e2e8f0; font-weight: 900; }
-.payment-receipt-section tr.rejected { background: #fef2f2; color: #991b1b; text-decoration: line-through; }
+.payment-receipt-section tfoot { background: white; font-weight: 700; }
+.payment-receipt-section tr.rejected { background: white; color: #111827; text-decoration: line-through; }
 .payment-receipt-orders { margin: 0; border: 0.2mm solid #94a3b8; border-top: 0; padding: 1.5mm 2mm; font-size: 7pt; font-weight: 800; }
 
-.payment-receipt-bonus { display: flex; justify-content: center; gap: 12mm; margin-top: 3mm; border: 0.3mm solid #92400e; background: #ffedd5; padding: 1.8mm 3mm; font-size: 9pt; font-weight: 800; }
+.payment-receipt-bonus { display: flex; justify-content: center; gap: 12mm; margin-top: 3mm; border: 0.3mm solid #0f172a; background: white; padding: 1.8mm 3mm; font-size: 9pt; font-weight: 700; }
 .payment-receipt-observation { min-height: 8mm; margin-top: 3mm; border: 0.25mm solid #64748b; padding: 2mm; }
 .payment-receipt-footer { margin-top: 12mm; text-align: center; }
 .payment-receipt-footer > p { margin: 0 0 12mm; font-weight: 700; }
 .payment-receipt-footer > div { display: grid; grid-template-columns: 1fr 1fr; gap: 28mm; }
-.payment-receipt-footer > div span { border-top: 0.25mm solid #0f172a; padding-top: 2mm; font-weight: 800; }
+.payment-receipt-footer > div span { border-top: 0.25mm solid #0f172a; padding-top: 2mm; font-weight: 400; }
 .payment-receipt-footer > small { display: block; margin-top: 8mm; border-top: 0.2mm solid #94a3b8; padding-top: 2mm; }
 
 /* Print Specific Media Styles */
@@ -1079,8 +1079,8 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 .payment-receipt-vales-summary th:nth-child(3) { width: 28%; }
 .payment-receipt-vales-summary th:last-child { width: 38%; }
 .payment-receipt-note { margin: 0; padding: 1.5mm 2mm; font-size: 7pt; color: #475569; }
-.payment-receipt-transfer { margin: 2mm 0 0; border: 0.2mm solid #a5b4c7; border-left: 1mm solid #64748b; border-radius: 2mm; background: #f1f5f9; padding: 2mm 3mm; font-size: 7.5pt; font-weight: 700; color: #334155; }
-.payment-receipt-bonus-summary h3 { background: #f5f3ff; border-color: #a78bfa; }
+.payment-receipt-transfer { margin: 2mm 0 0; border: 0.2mm solid #a5b4c7; border-left: 1mm solid #64748b; border-radius: 2mm; background: white; padding: 2mm 3mm; font-size: 7.5pt; font-weight: 400; color: #334155; }
+.payment-receipt-bonus-summary h3 { background: white; border-color: #0f172a; }
 .payment-receipt-bonus-summary td:last-child { color: #6d28d9; }
 .payment-receipt-columns .payment-receipt-vales td { font-size: 8pt; }
 
@@ -1093,4 +1093,35 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
   .payment-receipt-individual th, .payment-receipt-individual td { padding: 5px 3px; overflow-wrap: anywhere; }
   .payment-receipt-individual .number { white-space: normal; }
   .payment-receipt-individual .payment-receipt-footer > div { gap: 16px; }
+}
+
+/* Papel sem áreas preenchidas e com destaque tipográfico só nos valores-chave. */
+@media screen {
+  main .order-statement th,
+  main .receipt-copy th { background-color: white !important; font-weight: 600 !important; }
+  main .order-statement td,
+  main .receipt-copy td { font-weight: 400; }
+}
+@media print {
+  .receipt-copy, .payment-receipt-paper, .order-statement { box-shadow: none !important; }
+  .receipt-copy *, .payment-receipt-paper *, .order-statement * {
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    color: #111827 !important;
+  }
+  .receipt-copy :where(b, strong, em, th),
+  .payment-receipt-paper :where(b, strong, th),
+  .order-statement :where(b, strong, th) { font-weight: 400 !important; }
+  .receipt-document-meta > strong,
+  .receipt-items-table th,
+  .receipt-total strong,
+  .payment-receipt-meta > strong,
+  .payment-receipt-section h3,
+  .payment-receipt-section tfoot,
+  .payment-receipt-bonus b,
+  .order-statement > header strong,
+  .order-statement footer strong { font-weight: 700 !important; }
+  .payment-receipt-section tfoot td,
+  .order-statement tfoot td { font-weight: 600 !important; }
 }

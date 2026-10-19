@@ -9,7 +9,7 @@ const mod = new Module(__filename);
 mod.filename = __filename;
 mod.paths = module.paths;
 mod._compile(result.outputFiles[0].text, __filename);
-const { demonstrativoOrdem } = mod.exports;
+const { demonstrativoOrdem, totaisValesOrdem } = mod.exports;
 const cheque = { id: 'cheque', data: '2026-09-10', formaPagamento: 'cheque_emitente', status: 'ativo',
   statusPagamento: 'aguardando', valorRecebido: 3222, bonusUtilizado: 0, valorAplicado: 3222, valorAplicadoOrdem: 3222,
   titulos: [{ id: '1', numeroDocumento: '1', vencimento: '2026-09-10', valor: 2222, status: 'compensado' },
@@ -62,7 +62,7 @@ const tabelaHtml = renderToStaticMarkup(React.createElement(tabelaMod.exports.Ta
 assert.ok(tabelaHtml.includes('>Vale<') && tabelaHtml.includes('>Data<') && tabelaHtml.includes('>Valor<'));
 assert.ok(tabelaHtml.includes('10/10/2026'));
 assert.ok(tabelaHtml.includes('120,00') && tabelaHtml.includes('50,00'));
-assert.ok(tabelaHtml.includes('>TOTAL<') && tabelaHtml.includes('>PAGO<') && tabelaHtml.includes('>DEVEDOR<'));
+assert.ok(tabelaHtml.includes('>TOTAL<') && tabelaHtml.includes('>PAGO<') && tabelaHtml.includes('>DEVEDOR<') && tabelaHtml.includes('>BÔNUS<'));
 assert.ok(!tabelaHtml.includes('Abatido') && !tabelaHtml.includes('Transferido') && !tabelaHtml.includes('Falta'));
 
 const demonstrativoBuild = buildSync({ entryPoints: ['src/components/OrdemCobrancaDemonstrativoModal.tsx'], bundle: true, platform: 'node', format: 'cjs', packages: 'external', write: false });
@@ -81,11 +81,17 @@ assert.match(demonstrativoHtml, /<th[^>]*>Situação<\/th><th[^>]*>Valor<\/th>/)
 assert.match(demonstrativoHtml, /CHEQUE EMITENTE · #45 - Renan Farias<\/td><td[^>]*>Aguardando<\/td><td[^>]*>R\$\s*20,00<\/td>/);
 assert.match(demonstrativoHtml, /<tr><td colSpan="3" class="p-2">TOTAL<\/td><td[^>]*>R\$\s*70,00<\/td><\/tr>/);
 assert.equal((demonstrativoHtml.match(/>TOTAL<\/td>/g) || []).length, 2);
-assert.ok(!demonstrativoHtml.includes('>PAGO<') && !demonstrativoHtml.includes('>DEVEDOR<'));
+for (const rotulo of ['TOTAL', 'PAGO', 'DEVEDOR', 'BÔNUS']) assert.ok(demonstrativoHtml.includes(`>${rotulo}</span>`));
 assert.ok(!demonstrativoHtml.includes('TOTAL DE CHEQUES') && !demonstrativoHtml.includes('TOTAL DOS PAGAMENTOS'));
-assert.ok(demonstrativoHtml.includes('Aguardando compensação: <b>R$\u00a020,00'));
-assert.ok(demonstrativoHtml.includes('RESTANTE</span><strong class="font-mono text-xl text-emerald-950">R$\u00a050,00'));
+assert.ok(demonstrativoHtml.includes('Aguardando compensação: R$\u00a020,00 (incluído em Pago)'));
+assert.match(demonstrativoHtml, /DEVEDOR<\/span><strong[^>]*>R\$\s*50,00/);
+assert.match(demonstrativoHtml, /BÔNUS<\/span><strong[^>]*>R\$\s*0,00/);
 assert.ok(!demonstrativoHtml.includes('Dinheiro / títulos compensados:') && !demonstrativoHtml.includes('Restante após pagamentos registrados'));
+
+const totais20 = totaisValesOrdem({ id: 'ordem20', totalOriginal: 7284.8,
+  vales: [2271, 437.8, 836, 110, 3630].map(valorOriginalVale => ({ valorOriginalVale })),
+  pagamentos: [{ ...pix, valorRecebido: 9750, valorAplicado: 7284.8, valorAplicadoOrdem: 7284.8 }] });
+assert.deepEqual(totais20, { total: 7284.8, pago: 9750, devedor: 0, bonus: 2465.2 });
 
 r = demonstrativoOrdem({...ordem, vales:[{valorVinculado:60},{valorVinculado:40}], pagamentos:[{...cheque,valorRecebido:80,bonusUtilizado:20,valorAplicado:100,valorAplicadoOrdem:50,titulos:[{...cheque.titulos[0],valor:30},{...cheque.titulos[1],valor:50}]}]});
 assert.deepEqual(r.linhas.map(l=>l.valor),[15,25,10]);

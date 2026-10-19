@@ -19,6 +19,7 @@ import { useEhGerente } from "../auth/AuthContext";
 import { ParcelamentoCartaoSelect } from "./ParcelamentoCartaoSelect";
 import { TitulosPagamentoEditor } from "./TitulosPagamentoEditor";
 import { ComprovanteRecebimentoModal } from "./ComprovanteRecebimentoModal";
+import { ComprovanteFinalizacaoOrdem, ComprovanteFinalizacaoOrdemModal } from "./ComprovanteFinalizacaoOrdem";
 import { DemonstrativoOrdemConteudo, OrdemCobrancaDemonstrativoModal } from "./OrdemCobrancaDemonstrativoModal";
 import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
@@ -131,7 +132,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes" | "demonstrativo" | "recebimentos">("parcelas");
+  const [abaDetalhe, setAbaDetalhe] = useState<"parcelas" | "historico" | "anotacoes" | "demonstrativo" | "recebimentos" | "comprovante">("parcelas");
   const [encerramento, setEncerramento] = useState(false);
   const [planoCancelamento, setPlanoCancelamento] = useState<Awaited<ReturnType<typeof api.previaCancelamentoOrdem>> | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
@@ -143,6 +144,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
   const [demonstrativoAberto, setDemonstrativoAberto] = useState(false);
+  const [comprovanteAberto, setComprovanteAberto] = useState(false);
   const [selecionados, setSelecionados] = useState<ItemAcaoPagamentoOrdem[]>([]);
   const [acao, setAcao] = useState<{ acao: "estornar" | "excluir"; itens: ItemAcaoPagamentoOrdem[] } | null>(null);
   const [edicoes, setEdicoes] = useState<Set<string>>(new Set());
@@ -225,13 +227,23 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
   if (valeAberto) return <ValeDetalhesModal vale={valeAberto} onUpdated={ordem.status === "aberta" ? undefined : atualizado => { setValeAberto(atualizado); void api.getOrdensCobranca(ordem.clienteId).then(lista => { const atual = lista.find(o => o.id === ordem.id); if (atual) onChanged(atual); }).catch(e => setError(e.message)); }} ordemCobranca={ordem} onOpenOrdem={() => setValeAberto(null)} onClose={() => setValeAberto(null)} />;
   return <>
   {novoPagamento && <PagamentoValesModal clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} vales={[]} ordem={ordem} fecharAoSalvar onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos}/>}
-  {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)} onSaved={async () => { await atualizarPagamentos(); setFeedback("Ordem reaberta para edição. Pagamentos preservados."); }}/>}
-  {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} demonstrativo={<DemonstrativoOrdemConteudo ordem={ordem}/>} recebimento={<ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => {}}/>} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
+  {reabrirFinalizacao && <ReabrirFinalizacaoModal
+    tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)}
+    onSaved={async () => {
+      setAbaDetalhe("parcelas");
+      setComprovanteAberto(false);
+      await atualizarPagamentos();
+      setFeedback("Ordem reaberta para edição. Pagamentos preservados.");
+    }}
+  />}
+  {finalizacao && <FinalizarFinanceiroModal titulo={`ordem #${ordem.numeroSequencial}`} restante={financeiroOrdem(ordem).restantePresumido} excedente={financeiroOrdem(ordem).excedentePresumido} demonstrativo={<ComprovanteFinalizacaoOrdem ordem={ordem}/>} recebimento={<ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => {}}/>} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
     const resultado = await api.finalizarOrdemCobranca(ordem.id, dados);
     onChanged(resultado.ordem);
+    setAbaDetalhe("comprovante");
     return { mensagem: resultado.valeResidual ? `Ordem finalizada. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Ordem finalizada e saldos encerrados." };
   }}/>} {recebimentoAberto && <RecebimentoDetalhesModal somenteLeitura={Boolean(ordem.finalizadoAt)} ordemContextoId={ordem.id} recebimentoId={recebimentoAberto} onClose={() => setRecebimentoAberto(null)} onSaved={atualizarPagamentos} onComprovante={id => { setRecebimentoAberto(null); void abrirComprovanteSalvo(id); }} />}
   {demonstrativoAberto && <OrdemCobrancaDemonstrativoModal ordem={ordem} onOpenOrdem={() => setDemonstrativoAberto(false)} onClose={() => setDemonstrativoAberto(false)} />}
+  {comprovanteAberto && ordem.finalizadoAt && <ComprovanteFinalizacaoOrdemModal ordem={ordem} onClose={() => setComprovanteAberto(false)} />}
   {encerramento && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-sm">
     <form onSubmit={encerrar} role="alertdialog" aria-modal="true" aria-labelledby="encerrar-ordem-titulo" className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-3 border-b border-slate-200 bg-slate-50 p-4">
@@ -263,6 +275,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         <div className="vale-header-navigation"><nav aria-label="Navegação da ordem" className="vale-tabs">
           <button type="button" aria-pressed={abaDetalhe === "parcelas"} onClick={() => setAbaDetalhe("parcelas")}><ListChecks size={16}/> Detalhes</button>
           <button type="button" aria-pressed={abaDetalhe === "demonstrativo"} onClick={() => setAbaDetalhe("demonstrativo")}><FileText size={16}/> Demonstrativo</button>
+          {ordem.finalizadoAt && <button type="button" aria-pressed={abaDetalhe === "comprovante"} onClick={() => setAbaDetalhe("comprovante")}><FileText size={16}/> Comprovante</button>}
           <button type="button" aria-pressed={abaDetalhe === "recebimentos"} onClick={() => setAbaDetalhe("recebimentos")}><FileText size={16}/> Recebimentos</button>
           <button type="button" aria-pressed={abaDetalhe === "historico"} onClick={() => setAbaDetalhe("historico")}><History size={16}/> Histórico da ordem</button>
           <button type="button" aria-pressed={abaDetalhe === "anotacoes"} onClick={() => setAbaDetalhe("anotacoes")}><FileText size={16}/> Anotações</button>
@@ -270,7 +283,7 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         <button type="button" onClick={onClose} aria-label="Fechar" className="vale-icon-button vale-header-close"><X size={20}/></button>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-100 p-4">
-        {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
+        {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "comprovante" && ordem.finalizadoAt ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setComprovanteAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><ComprovanteFinalizacaoOrdem ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>

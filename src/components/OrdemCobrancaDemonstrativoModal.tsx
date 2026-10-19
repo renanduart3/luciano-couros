@@ -1,6 +1,6 @@
 import { TabelaValesOrdem } from "./TabelaValesOrdem";
 import React from "react";
-import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
+import { demonstrativoOrdem, totaisValesOrdem } from "../lib/demonstrativoOrdem";
 import { createPortal } from "react-dom";
 import { Printer, WalletCards, X } from "lucide-react";
 import { OrdemCobranca } from "../types";
@@ -42,53 +42,53 @@ export function OrdemCobrancaDemonstrativoModal({ ordem, onClose, onOpenOrdem }:
 
 export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) {
   const resumo = demonstrativoOrdem(ordem);
-  const totalVales = ordem.vales.reduce((soma, vale) => soma + Math.round(Number(vale.valorOriginalVale ?? vale.valorVinculado) * 100), 0);
-  const restante = (totalVales - Math.round(resumo.pago * 100)) / 100;
+  const totais = totaisValesOrdem(ordem);
   return (
-          <section className="mx-auto max-w-[900px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-950 shadow-sm print:max-w-none print:shadow-none">
-            <header className="flex items-start justify-between gap-4 bg-slate-900 px-4 py-3 text-white">
+          <section className="order-statement mx-auto max-w-[900px] overflow-hidden rounded-lg border-2 border-slate-900 bg-white text-slate-950 print:max-w-none">
+            <header className="flex items-start justify-between gap-4 border-b-2 border-slate-900 bg-white px-4 py-3 text-slate-950">
               <div>
-                <div className="flex items-center gap-2"><WalletCards size={20}/><strong className="text-base font-black uppercase">Ordem de cobrança #{ordem.numeroSequencial}</strong></div>
-                <p className="mt-1 text-xs font-bold text-slate-300">DEMONSTRATIVO ATUALIZADO · POSIÇÃO DE PAGAMENTOS</p>
+                <div className="flex items-center gap-2"><WalletCards size={20}/><strong className="text-base font-bold uppercase">Ordem de cobrança #{ordem.numeroSequencial}</strong></div>
+                <p className="mt-1 text-xs text-slate-600">DEMONSTRATIVO ATUALIZADO · POSIÇÃO DE PAGAMENTOS</p>
               </div>
-              <div className="text-right text-xs font-black"><span className="block text-slate-300">DATA DA ORDEM</span>{formatDate(ordem.dataEmissao)}<span className="mt-1 block text-[9px] text-slate-400">ATUALIZADO EM {formatDate(ordem.updatedAt)}</span></div>
+              <div className="text-right text-xs"><span className="block text-slate-600">DATA DA ORDEM</span>{formatDate(ordem.dataEmissao)}<span className="mt-1 block text-[9px] text-slate-600">ATUALIZADO EM {formatDate(ordem.updatedAt)}</span></div>
             </header>
 
-            <div className="border-b-2 border-slate-900 bg-amber-50 px-4 py-1.5">
-              <span className="text-[10px] font-black uppercase text-amber-800">Cliente</span>
-              <h3 className="text-base leading-tight font-black uppercase text-slate-950">{ordem.clienteNome}</h3>
-              <div className="flex flex-wrap gap-x-5 gap-y-0 text-xs font-bold text-slate-700">
-                <span>CPF/CNPJ: <strong>{ordem.clienteDocumento || "NÃO INFORMADO"}</strong></span>
-                {ordem.clienteTelefone && <span>TELEFONE: <strong>{ordem.clienteTelefone}</strong></span>}
+            <div className="border-b-2 border-slate-900 bg-white px-4 py-1.5">
+              <span className="text-[10px] uppercase text-slate-600">Cliente</span>
+              <h3 className="text-base leading-tight font-semibold uppercase text-slate-950">{ordem.clienteNome}</h3>
+              <div className="flex flex-wrap gap-x-5 gap-y-0 text-xs text-slate-700">
+                <span>CPF/CNPJ: {ordem.clienteDocumento || "NÃO INFORMADO"}</span>
+                {ordem.clienteTelefone && <span>TELEFONE: {ordem.clienteTelefone}</span>}
               </div>
             </div>
 
             <TabelaValesOrdem ordem={ordem} somenteTotal/>
 
             <div className="border-t-2 border-slate-900 p-3">
-              <h3 className="mb-2 text-xs font-bold">Pagamentos registrados</h3>
+              <h3 className="mb-2 text-xs font-semibold">Pagamentos registrados</h3>
               <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
-                <thead className="bg-slate-100"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-left">Situação</th><th className="w-28 p-2 text-right">Valor</th></tr></thead>
+                <thead className="bg-white"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-left">Situação</th><th className="w-28 p-2 text-right">Valor</th></tr></thead>
                 <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
                   <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
                   <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}{l.titular && ` - ${l.titular}`}</td>
                   <td className={`p-2 ${l.status === 'compensado' ? 'text-emerald-800' : 'text-amber-900'}`}>{l.status === 'compensado' ? 'Pago' : l.status === 'recusado' ? 'Recusado' : 'Aguardando'}</td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
                 </tr>)}</tbody>
-                <tfoot className="border-t-2 border-slate-900 bg-slate-100 font-bold">
+                <tfoot className="border-t-2 border-slate-900 bg-white font-semibold">
                   <tr><td colSpan={3} className="p-2">TOTAL</td><td className="p-2 text-right font-mono">{formatCurrency(resumo.pago)}</td></tr>
                 </tfoot>
               </table></div>
               {!ordem.pagamentos?.length && <p className="text-xs text-slate-500">Nenhum pagamento registrado.</p>}
             </div>
 
-            {ordem.observacao && <div className="border-t border-slate-300 bg-slate-50 px-4 py-3 text-xs"><strong className="block text-[10px] uppercase text-slate-500">Observação da negociação</strong><span className="font-bold text-slate-800">{ordem.observacao}</span></div>}
+            {ordem.observacao && <div className="border-t border-slate-300 bg-white px-4 py-3 text-xs"><strong className="block text-[10px] font-semibold uppercase text-slate-600">Observação da negociação</strong><span className="text-slate-800">{ordem.observacao}</span></div>}
 
-            <footer className="grid grid-cols-2 border-t-2 border-slate-900 bg-emerald-100">
-              <div className="px-4 py-3 text-left text-xs text-emerald-950">
-                <p>Aguardando compensação: <b>{formatCurrency(resumo.aguardando)}</b></p>
+            <footer className="border-t-2 border-slate-900 bg-white px-4 py-3">
+              <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+                {([['TOTAL', totais.total], ['PAGO', totais.pago], ['DEVEDOR', totais.devedor], ['BÔNUS', totais.bonus]] as const).map(([rotulo, valor]) =>
+                  <div key={rotulo} className="border-l border-slate-300 pl-2"><span className="block text-[10px] uppercase text-slate-600">{rotulo}</span><strong className="font-mono text-base text-slate-950">{formatCurrency(valor)}</strong></div>)}
               </div>
-              <div className="px-4 py-3 text-right"><span className="block text-[9px] font-black uppercase text-emerald-800">RESTANTE</span><strong className="font-mono text-xl text-emerald-950">{formatCurrency(restante)}</strong></div>
+              {resumo.aguardando > 0.005 && <p className="mt-2 text-xs text-slate-700">Aguardando compensação: {formatCurrency(resumo.aguardando)} (incluído em Pago)</p>}
             </footer>
           </section>
   );

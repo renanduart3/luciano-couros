@@ -4574,7 +4574,7 @@ function localizarValeDevedor(vendaId: string) {
 
 function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
   return queryAll<any>(
-    `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone,
+    `SELECT oc.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco,
             COALESCE((
               SELECT SUM(CASE WHEN bm.tipo = 'credito' THEN bm.valor ELSE -bm.valor END)
               FROM cliente_bonus_movimentos bm

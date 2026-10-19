@@ -3,6 +3,12 @@ import { OrdemCobranca } from "../types";
 import { FORMAS_PAGAMENTO } from "./pagamentos";
 
 const centavos = (v: number) => Math.round(Number(v || 0) * 100);
+export function totaisValesOrdem(ordem: OrdemCobranca) {
+  const total = ordem.vales.reduce((soma, vale) => soma + centavos(vale.valorOriginalVale ?? vale.valorVinculado), 0);
+  const pago = centavos(financeiroOrdem(ordem).presumido);
+  return { total: total / 100, pago: pago / 100,
+    devedor: Math.max(0, total - pago) / 100, bonus: Math.max(0, pago - total) / 100 };
+}
 export function demonstrativoOrdem(ordem: OrdemCobranca) {
   const linhas = (ordem.pagamentos || []).filter(p => p.status !== "cancelado").flatMap(p => {
     const forma = FORMAS_PAGAMENTO.find(f => f.value === p.formaPagamento)?.label || p.formaPagamento;

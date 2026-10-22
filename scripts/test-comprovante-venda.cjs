@@ -30,7 +30,7 @@ html = render({ ...venda, items: itens, devolucoes, totalLiquido: 260 });
 assert.equal((html.match(/data-receipt-page=/g) || []).length, 2);
 assert.equal((html.match(/receipt-return-row/g) || []).length, 4);
 for (const via of html.matchAll(/<tbody>(.*?)<\/tbody>/g)) {
-  assert.equal((via[1].match(/<tr/g) || []).length, 12);
+  assert.equal((via[1].match(/<tr/g) || []).length, 15);
 }
 assert.ok(html.indexOf('PRODUTO 13') < html.indexOf('DEVOLVIDO: PRODUTO 0'));
 html = render({ ...venda, devolucoes: [{ ...devolucao, modalidade: 'bonus_integral', valorCredito: 94.9 }], totalMercadoriasAposDevolucoes: 141.4 });
@@ -108,3 +108,14 @@ for (const vencimento of [undefined, '2099-10-08']) {
   assert.deepEqual(original.map(i => i.descricao), ['ZEBRA', 'ÁLAMO', 'couro', 'ZULU', 'Abacate']);
 }
 console.log('OK: ordem alfabética em vendas e vales, devoluções separadas e itens originais preservados.');
+
+for (const quantidade of [0, 1, 15, 16, 30, 31]) {
+  for (const extras of [{}, {bonusLegado: 20, valorPago: 20, valorTransferido: 10, creditoLinhaDevolucao: 5, desconto: 10}]) {
+    html = render({...venda, ...extras, items: Array.from({length: quantidade}, (_, i) => ({...venda.items[0], id: `fixo-${i}`})), observacoes: 'Observação longa '.repeat(300)});
+    assert.equal((html.match(/data-receipt-page=/g) || []).length, Math.max(1, Math.ceil(quantidade / 15)));
+    for (const via of html.matchAll(/<tbody>(.*?)<\/tbody>/g)) {
+      assert.equal((via[1].match(/<tr/g) || []).length, 15, 'Sempre 15 linhas, inclusive com faixas financeiras.');
+    }
+  }
+}
+console.log('OK: exatamente 15 linhas em cada via, sem reduzir a capacidade por bônus, transferência ou ajustes.');

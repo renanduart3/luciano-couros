@@ -28,8 +28,7 @@ const LOJA_PADRAO: LojaComprovante = {
   email: "lucianocouros@hotmail.com",
 };
 
-// Versão de avaliação com mais respiro. Voltar para 18 reativa
-// automaticamente as medidas compactas preservadas no CSS.
+// O formulário da impressora exige exatamente 15 linhas em todas as vias.
 const ITENS_POR_FOLHA = 15;
 type ItemComprovante = ItemVenda & { linhaDevolucao?: boolean; linhaSaldo?: boolean };
 
@@ -49,7 +48,7 @@ function ViaComprovante({ venda, loja, via, itens, todosItens, ultimaPagina, lim
   const saldoAcerto = Math.round((Number(venda.totalLiquido) - financeiro.presumido) * 100) / 100;
   const valorRecebido = Math.max(0, financeiro.recebido - financeiro.creditoUtilizado);
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
-  const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim().slice(0, 100);
+  const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim();
   const titulo = residual ? "VALE DE SALDO DEVEDOR" : instrumento?.tipo?.startsWith("cheque")
     ? "VENDA / CHEQUE"
     : ehVale
@@ -97,21 +96,22 @@ function ViaComprovante({ venda, loja, via, itens, todosItens, ultimaPagina, lim
         </tbody>
       </table>
 
-      {ultimaPagina && <>
-      {(Math.abs(abatimentoAtual) >= 0.01 || bonusDevolucao >= 0.01) && <div className="receipt-payment-line">
-        <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
-        <span><b>{bonusDevolucao >= 0.01 ? "BÔNUS DEV. (DÍVIDA MANTIDA):" : "DESCONTOS / AJUSTES DE DEVOLUÇÃO:"}</b> {formatCurrency(bonusDevolucao >= 0.01 ? bonusDevolucao : abatimentoAtual)}</span>
-      </div>}
-      {Number(venda.valorTransferido || 0) > 0 && <div className="receipt-payment-line"><span>TRANSFERIDO PARA OUTRO VALE: {formatCurrency(venda.valorTransferido!)}</span></div>}
-      <div className="receipt-payment-line">
+      {ultimaPagina && <div className="receipt-financial-area">
+      <div className="receipt-payment-line receipt-payment-summary">
         <span className="receipt-payment-method"><b>FORMA:</b> {formaPagamento.replaceAll("_", " ").toUpperCase()}{formaPagamento === "cartao_credito" ? ` · ${descreverParcelamentoCartao(valorRecebido, parcelasCartao)}` : ""}</span>
-        {financeiro.creditoUtilizado > 0 && <span className="receipt-payment-value"><b>BÔNUS UTILIZADO:</b> {formatCurrency(financeiro.creditoUtilizado)}</span>}
         <span className="receipt-payment-value"><b>VALOR RECEBIDO:</b> {formatCurrency(valorRecebido)}</span>
         <span className="receipt-payment-observation"><b>OBSERVAÇÃO:</b> <span title={observacaoComprovante}>{observacaoComprovante || "—"}</span></span>
       </div>
-
-      {Number(venda.creditoLinhaDevolucao || 0)>0 && <div className="receipt-payment-line"><b>CRÉDITO NA CARTEIRA: {formatCurrency(venda.creditoLinhaDevolucao!)}</b></div>}
-      </>}
+      {(Math.abs(abatimentoAtual) >= 0.01 || bonusDevolucao >= 0.01) && <div className="receipt-payment-line receipt-payment-adjustments">
+        <span><b>SUBTOTAL DOS ITENS:</b> {formatCurrency(subtotalAtual)}</span>
+        <span><b>{bonusDevolucao >= 0.01 ? "BÔNUS DEV. (DÍVIDA MANTIDA):" : "DESCONTOS / AJUSTES DE DEVOLUÇÃO:"}</b> {formatCurrency(bonusDevolucao >= 0.01 ? bonusDevolucao : abatimentoAtual)}</span>
+      </div>}
+      {(Number(venda.valorTransferido || 0) > 0 || financeiro.creditoUtilizado > 0 || Number(venda.creditoLinhaDevolucao || 0) > 0) && <div className="receipt-payment-line receipt-payment-extras">
+        {Number(venda.valorTransferido || 0) > 0 && <span>TRANSFERIDO PARA OUTRO VALE: {formatCurrency(venda.valorTransferido!)}</span>}
+        {financeiro.creditoUtilizado > 0 && <span className="receipt-payment-value"><b>BÔNUS UTILIZADO:</b> {formatCurrency(financeiro.creditoUtilizado)}</span>}
+        {Number(venda.creditoLinhaDevolucao || 0)>0 && <span><b>CRÉDITO NA CARTEIRA: {formatCurrency(venda.creditoLinhaDevolucao!)}</b></span>}
+      </div>}
+      </div>}
       {ultimaPagina ? <footer className="receipt-footer">
         <div className="receipt-counts">{demonstrativoPagamento ? <><span>VALE #{venda.numeroSequencial}</span><span className="receipt-signature">ASS. CLIENTE:</span></> : residual ? <><span>SALDO ATUAL: <b>{formatCurrency(financeiroVale(venda).restantePresumido)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></> : <><span>QUANTIDADE: <b>{formatarQuantidades(todosItens)}</b></span><span className="receipt-signature">ASS. CLIENTE:</span></>}</div>
         <div className="receipt-total"><span>{demonstrativoPagamento ? saldoAcerto < 0 ? "BÔNUS GERADO" : saldoAcerto > 0 ? "DEVEDOR" : "SALDO" : residual ? "VALOR DO VALE" : "VALOR TOTAL"}</span><strong>{formatCurrency(demonstrativoPagamento ? saldoAcerto : venda.totalLiquido)}</strong></div>
@@ -190,12 +190,7 @@ export function VendaComprovante({ venda, demonstrativoPagamento = false }: Vend
       total: -pago, custoTotal: 0, lucroBruto: 0 };
     return [...itensAtuais, pagamento];
   }, [venda, itensAtuais, demonstrativoPagamento]);
-  // Cada faixa financeira ocupa aproximadamente três linhas da tabela.
-  const faixasExtras = Number(Boolean(venda.desconto || venda.devolucoes?.length || venda.items?.some(i => i.quantidade < 0)))
-    + Number(Number(venda.valorTransferido || 0) > 0)
-    + Number(Number(venda.creditoLinhaDevolucao || 0) > 0)
-    + Number(financeiroVale(venda).creditoUtilizado > 0);
-  const limiteItens = Math.max(3, ITENS_POR_FOLHA - faixasExtras * 3);
+  const limiteItens = ITENS_POR_FOLHA;
   const paginas = useMemo(() => {
     const itens = itensDemonstrativo;
     if (itens.length === 0) return [[]];

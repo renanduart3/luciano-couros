@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.20 — 22/10/2026
+
+- Restaurado o layout do comprovante de vendas com exatamente 15 linhas por via, na altura do formulário da impressora do cliente.
+- Forma de pagamento, valor recebido e observação permanecem na mesma faixa; observações excedentes são cortadas sem deslocar a tabela, a assinatura ou o total.
+- Bônus, transferências, descontos, ajustes de devolução e crédito na carteira acomodados na área inferior, sem reduzir a quantidade de linhas ou alterar as medidas das duas vias.
+
 ## 1.40.19 — 19/10/2026
 
 - Recibos acumulados de vales e ordens exibem Total, Pago, Devedor e Bônus em duas linhas compactas, sem saldo negativo ou demonstrativo de bônus redundante.

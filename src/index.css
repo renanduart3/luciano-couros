@@ -303,7 +303,7 @@ textarea {
 }
 
 .receipt-store em {
-  font-weight: 400;
+  font-weight: 700;
 }
 
 .receipt-document-meta {
@@ -381,16 +381,16 @@ textarea {
 
 .receipt-items-table th {
   height: 3.5mm;
-  background: white;
+  background: #f1f5f9;
   text-align: center;
   font-size: 6.6pt;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .receipt-items-table .receipt-return-row td {
-  background: white !important;
-  color: #111827 !important;
-  font-weight: 600;
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  font-weight: 800;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
@@ -400,7 +400,7 @@ textarea {
 .receipt-qty { width: 18mm; }
 .receipt-money { width: 31mm; }
 .receipt-product-code,
-.receipt-supplier-code { text-align: center; font-family: monospace; font-weight: 600; }
+.receipt-supplier-code { text-align: center; font-family: monospace; font-weight: 800; }
 .receipt-number { text-align: right; font-variant-numeric: tabular-nums; }
 
 .receipt-payment-line {
@@ -437,7 +437,7 @@ textarea {
   grid-template-columns: 1fr 42mm;
   margin-top: auto;
   border-top: 0.3mm solid #111827;
-  background: white;
+  background: #f8fafc;
 }
 
 .receipt-counts {
@@ -467,9 +467,7 @@ textarea {
 .receipt-due { border-top: 0.2mm solid #111827; }
 .receipt-total strong { font-size: 9pt; }
 
-/* Variante de avaliação com 15 itens por via. As medidas compactas acima
-   permanecem como padrão: para desfazer o teste, basta restaurar
-   ITENS_POR_FOLHA para 18 em VendaComprovante.tsx. */
+/* Formulário de venda: medidas fixas para a impressora do cliente. */
 .receipt-pages[data-items-per-sheet="15"] .receipt-header {
   height: 20mm;
   min-height: 20mm;
@@ -513,6 +511,76 @@ textarea {
   height: 9.5mm;
   min-height: 9.5mm;
   flex-basis: 9.5mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-items-table {
+  flex: 0 0 auto;
+  height: 56.5mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-items-table td {
+  height: 3.5333mm;
+  padding: 0 0.7mm;
+  line-height: 2.6mm;
+  font-weight: 400;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-items-table th {
+  height: 3.5mm;
+  padding: 0 0.7mm;
+  line-height: 2.6mm;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-financial-area {
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  border-top: 0.3mm solid #111827;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-financial-area .receipt-payment-line {
+  box-sizing: border-box;
+  height: 2.7mm;
+  min-height: 2.7mm;
+  flex: 0 0 2.7mm;
+  padding: 0 1mm;
+  gap: 3mm;
+  line-height: 2.7mm;
+  overflow: hidden;
+  border-top: 0;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-summary {
+  grid-template-columns: minmax(0, 1.15fr) max-content minmax(0, 1.35fr);
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-adjustments {
+  grid-template-columns: max-content minmax(0, 1fr);
+  font-size: 6pt;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-extras {
+  grid-auto-flow: column;
+  grid-template-columns: none;
+  grid-auto-columns: max-content;
+  font-size: 6pt;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-observation {
+  min-height: 0;
+  font-size: 6.6pt;
+  text-overflow: clip;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-observation > b {
+  flex: 0 0 auto;
+}
+
+.receipt-pages[data-items-per-sheet="15"] .receipt-payment-observation > span {
+  text-overflow: clip;
 }
 
 .receipt-cut {
@@ -1138,20 +1206,17 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
 
 /* Papel sem áreas preenchidas e com destaque tipográfico só nos valores-chave. */
 @media screen {
-  main .order-statement th,
-  main .receipt-copy th { background-color: white !important; font-weight: 600 !important; }
-  main .order-statement td,
-  main .receipt-copy td { font-weight: 400; }
+  main .order-statement th { background-color: white !important; font-weight: 600 !important; }
+  main .order-statement td { font-weight: 400; }
 }
 @media print {
   .receipt-copy, .payment-receipt-paper, .order-statement { box-shadow: none !important; }
-  .receipt-copy *, .payment-receipt-paper *, .order-statement * {
+  .payment-receipt-paper *, .order-statement * {
     background-color: transparent !important;
     background-image: none !important;
     box-shadow: none !important;
     color: #111827 !important;
   }
-  .receipt-copy :where(b, strong, em, th),
   .payment-receipt-paper :where(b, strong, th),
   .order-statement :where(b, strong, th) { font-weight: 400 !important; }
   .receipt-document-meta > strong,

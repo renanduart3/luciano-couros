@@ -8,7 +8,7 @@ export function TabelaValesOrdem({ ordem, onOpenVale, somenteTotal = false }: {
 }) {
   const totais = totaisValesOrdem(ordem);
   return <div className="overflow-x-auto print:overflow-visible"><table className="w-full text-xs">
-    <thead className="bg-white"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Data</th><th className="p-2 text-right">Valor</th></tr></thead>
+    <thead className="bg-white"><tr><th className="p-2 text-left">Vale</th><th className="p-2 text-left">Emissão do vale</th><th className="p-2 text-right">Valor</th></tr></thead>
     <tbody>{ordem.vales.map(vale => <tr key={vale.id} className="border-t border-slate-200">
       <td className="p-2">{onOpenVale ? <button type="button" onClick={() => onOpenVale(vale.vendaId)} className="font-bold text-blue-800 underline">#{vale.numeroSequencial}</button> : <b>#{vale.numeroSequencial}</b>}</td>
       <td className="p-2 whitespace-nowrap">{formatDate(vale.data)}</td>

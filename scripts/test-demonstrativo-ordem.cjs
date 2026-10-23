@@ -59,7 +59,7 @@ const tabelaHtml = renderToStaticMarkup(React.createElement(tabelaMod.exports.Ta
   vales: [{ id: 'vinculo', vendaId: 'vale', numeroSequencial: 12, data: '2026-10-10', valorOriginalVale: 120, valorVinculado: 100 }],
   pagamentos: [{ ...pix, valorRecebido: 50, valorAplicado: 50, valorAplicadoOrdem: 50 }],
 } }));
-assert.ok(tabelaHtml.includes('>Vale<') && tabelaHtml.includes('>Data<') && tabelaHtml.includes('>Valor<'));
+assert.ok(tabelaHtml.includes('>Vale<') && tabelaHtml.includes('>Emissão do vale<') && tabelaHtml.includes('>Valor<'));
 assert.ok(tabelaHtml.includes('10/10/2026'));
 assert.ok(tabelaHtml.includes('120,00') && tabelaHtml.includes('50,00'));
 assert.ok(tabelaHtml.includes('>TOTAL<') && tabelaHtml.includes('>PAGO<') && tabelaHtml.includes('>DEVEDOR<') && tabelaHtml.includes('>BÔNUS<'));

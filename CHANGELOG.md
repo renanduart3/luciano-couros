@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.21 — 23/10/2026
+
+- Cobranças e ordens iniciam com o filtro Em aberto; documentos sem saldo ficam em Quitados e Todos.
+- Situações dos vales padronizadas como Em aberto, Quitado e Vencido; ordens também classificadas pelo saldo financeiro e vencimento.
+- Valor original identificado como Valor do vale, com indicação de saldo transferido para evitar confusão com dívida em aberto.
+- Data de novas ordens definida pelo servidor no dia da criação, no fuso de São Paulo; emissão e demais dados originais dos vales preservados integralmente no agrupamento.
+- Data da ordem exibida nos detalhes e coluna de emissão dos vales identificada explicitamente no demonstrativo.
+
 ## 1.40.20 — 22/10/2026
 
 - Restaurado o layout do comprovante de vendas com exatamente 15 linhas por via, na altura do formulário da impressora do cliente.

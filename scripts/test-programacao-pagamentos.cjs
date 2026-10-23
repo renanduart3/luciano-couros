@@ -21,8 +21,8 @@ try {
   const agenda = mod.exports.situacaoAgendaOrdem;
   assert.equal(agenda({status: 'cancelada', pagamentos: [{titulos:[{status:'aguardando',vencimento:'2099-01-01'}]}]}).texto, 'Ordem cancelada');
   assert.equal(agenda({status: 'renegociada'}).texto, 'Ordem renegociada');
-  assert.equal(agenda({status: 'aberta'}).texto, 'Saldo em aberto');
-  assert.equal(agenda({status: 'quitada'}).texto, 'Concluída');
+  assert.equal(agenda({status: 'aberta', totalOriginal: 100, pagamentos: []}).texto, 'Saldo em aberto');
+  assert.equal(agenda({status: 'quitada', totalOriginal: 0, pagamentos: []}).texto, 'Concluída');
   initDatabase();
   db.prepare("INSERT INTO clientes (id, nome) VALUES ('teste-auto', 'Teste automação')").run();
   db.prepare("INSERT INTO recebimentos_cliente (id, clienteId, data, formaPagamento, valorRecebido, valorAplicado) VALUES ('teste-auto', 'teste-auto', '2028-01-01', 'cheque_emitente', 100, 100)").run();

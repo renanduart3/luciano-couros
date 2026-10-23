@@ -4751,7 +4751,7 @@ app.get("/api/ordens-cobranca", (req, res) => {
 app.post("/api/ordens-cobranca", (req, res) => {
   try {
     const clienteId = String(req.body?.clienteId || "");
-    const dataEmissao = String(req.body?.dataEmissao || "");
+    const dataEmissao = dataHojeLocal();
     const observacao = String(req.body?.observacao || "").trim();
     const vendaIds = [...new Set((Array.isArray(req.body?.vendaIds) ? req.body.vendaIds : []).map((id: unknown) => String(id)).filter(Boolean))];
     if (!clienteId || !ehDataIsoValida(dataEmissao) || vendaIds.length === 0) {

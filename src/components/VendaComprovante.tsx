@@ -45,7 +45,7 @@ function ViaComprovante({ venda, loja, via, itens, todosItens, ultimaPagina, lim
   const formaPagamento = String(venda.formaPagamento || (ehVale ? "vale" : "não informada"));
   const parcelasCartao = normalizarQuantidadeParcelas(venda.parcelasCartao);
   const financeiro = financeiroVale(venda);
-  const saldoAcerto = Math.round((Number(venda.totalLiquido) - financeiro.presumido) * 100) / 100;
+  const saldoAcerto = Math.round((Number(venda.totalLiquido) - financeiro.presumido - (demonstrativoPagamento ? financeiro.transferido || 0 : 0)) * 100) / 100;
   const valorRecebido = Math.max(0, financeiro.recebido - financeiro.creditoUtilizado);
   const observacaoDevolucao = (venda.devolucoes || []).find((devolucao) => devolucao.observacoes?.trim())?.observacoes;
   const observacaoComprovante = String(observacaoDevolucao || venda.observacoes || "").trim();
@@ -184,11 +184,15 @@ export function VendaComprovante({ venda, demonstrativoPagamento = false }: Vend
   }, [venda]);
   const itensDemonstrativo = useMemo(() => {
     const pago = financeiroVale(venda).presumido;
-    if (!demonstrativoPagamento || pago <= 0) return itensAtuais;
+    if (!demonstrativoPagamento) return itensAtuais;
+    const transferido = financeiroVale(venda).transferido || 0;
+    const transferencias: ItemComprovante[] = transferido > 0 ? [{ id: 'transferencia-anterior', vendaId: venda.id, produtoId: '', descricao: 'SALDO JÁ TRANSFERIDO PARA OUTRO VALE',
+      quantidade: 1, unidade: 'un', precoUnitario: -transferido, custoUnitario: 0, desconto: 0,
+      total: -transferido, custoTotal: 0, lucroBruto: 0 }] : [];
     const pagamento: ItemComprovante = { id: 'pagamento-acerto', vendaId: venda.id, produtoId: '', descricao: 'PAGO',
       quantidade: 1, unidade: 'un', precoUnitario: -pago, custoUnitario: 0, desconto: 0,
       total: -pago, custoTotal: 0, lucroBruto: 0 };
-    return [...itensAtuais, pagamento];
+    return [...itensAtuais, ...transferencias, ...(pago > 0 ? [pagamento] : [])];
   }, [venda, itensAtuais, demonstrativoPagamento]);
   const limiteItens = ITENS_POR_FOLHA;
   const paginas = useMemo(() => {

@@ -66,7 +66,8 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
 
   const forma = FORMAS_PAGAMENTO.find(f => f.value === comprovante.formaPagamento)?.label || comprovante.formaPagamento.replaceAll("_", " ").toUpperCase();
   const totalVales = vales.reduce((total, vale) => total + centavos(vale.valorVale ?? vale.saldoAntes), 0) / 100;
-  const devedor = Math.max(0, Math.round((totalVales - totalPagoVale) * 100) / 100);
+  const transferido = comprovante.resumoOrdem ? 0 : vales.reduce((total, vale) => total + centavos(vale.valorTransferido || 0), 0) / 100;
+  const devedor = Math.max(0, Math.round((totalVales - totalPagoVale - transferido) * 100) / 100);
   const bonusExcedenteVale = Math.max(0, Math.round((totalPagoVale - totalVales) * 100) / 100);
   const totalOriginal = totalVales;
   const saldoDepois = vales.reduce((total, vale) => total + Math.round(Number(vale.saldoDepois) * 100), 0) / 100;
@@ -117,6 +118,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
               <div><dt>DEVEDOR</dt><dd>{formatCurrency(devedor)}</dd></div>
               <div><dt>BÔNUS</dt><dd>{formatCurrency(bonusExcedenteVale)}</dd></div>
             </dl>
+            {transferido > 0 && <p className="payment-receipt-transfer">Valor já transferido para outro vale: {formatCurrency(transferido)}.</p>}
             {valeDevedor && <p className="payment-receipt-transfer">Saldo devedor transferido para o vale #{valeDevedor}.</p>}
           </section>
         </> : <>

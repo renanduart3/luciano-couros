@@ -10,7 +10,7 @@ const raiz = process.cwd();
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'luciano-finalizacao-'));
 process.env.DATA_DIR = temp;
 let source = fs.readFileSync('server.ts', 'utf8')
-  .replace('startServer();', 'export { app, db, ajustarBonusFinalizacao };')
+  .replace('startServer();', 'export { app, db, ajustarBonusFinalizacao, reaberturaFinalizacao };')
   .replace('void runAutoBackup();', '')
   .replace('setInterval(() => void runAutoBackup(), 60 * 1000);', '')
   .replace('setInterval(executarProgramacaoFinanceira, 60_000).unref();', '')
@@ -20,12 +20,12 @@ const compiled = buildSync({ stdin: { contents: source, resolveDir: raiz, loader
 process.chdir(temp);
 const mod = new Module(path.join(raiz, 'scripts/finalizacao-runtime.cjs'));
 mod.filename = mod.id; mod.paths = module.paths; mod._compile(compiled.outputFiles[0].text, mod.filename);
-const { app, db, fecharPosicao, descreverParcelamentoCartao, ajustarBonusFinalizacao } = mod.exports;
+const { app, db, fecharPosicao, descreverParcelamentoCartao, ajustarBonusFinalizacao, reaberturaFinalizacao } = mod.exports;
 
 function chamar(rota, params, body, esperado = 200) {
   const camada = app._router.stack.find(item => item.route?.path === rota && item.route.methods.post);
   let resposta, status = 200;
-  camada.route.stack[0].handle({ params, body }, { status(codigo) { status = codigo; return this; }, json(valor) { resposta = valor; } });
+  camada.route.stack[0].handle({ params, body, headers: {} }, { status(codigo) { status = codigo; return this; }, json(valor) { resposta = valor; } });
   assert.equal(status, esperado, JSON.stringify(resposta));
   return resposta;
 }
@@ -94,6 +94,53 @@ try {
   db.prepare("INSERT INTO recebimentos_cliente(id,clienteId,data,valorRecebido,valorAplicado,formaPagamento) VALUES ('r3','c','2026-09-24',25,25,'pix')").run();
   db.prepare("INSERT INTO recebimento_alocacoes(id,recebimentoId,vendaId,valor,saldoAntes,saldoDepois) VALUES ('a3','r3','v3',25,100,75)").run();
   assert.equal(consultar('/api/recebimentos-cliente/:id/comprovante', { id: 'r3' }, { vendaId: 'v3' }).vales[0].saldoAtual, 75);
+  // O devedor resultante recebe somente o próprio pagamento; a origem fica intacta.
+  const originalSnapshot = JSON.stringify(resultado.ordem.comprovantesFinalizacao);
+  const snapshotVale = JSON.stringify(finalizacaoDireta.vale.comprovantesFinalizacao);
+  assert.equal(resultado.ordem.comprovantesFinalizacao.length, 1);
+  assert.equal(finalizacaoDireta.vale.comprovantesFinalizacao.length, 1);
+  assert.equal(finalizacaoDireta.vale.comprovantesFinalizacao[0].documento.saldoRestante, 675.51);
+  assert.equal(finalizacaoDireta.vale.comprovantesFinalizacao[0].documento.comprovantesFinalizacao, undefined);
+  const pagoResidual = chamar('/api/clientes/:id/carteira/recebimentos', { id: 'c' }, {
+    data: '2026-10-26', valorRecebido: 10, bonusUtilizado: 0, formaPagamento: 'pix',
+    alocacoes: [{ vendaId: resultado.valeResidual.id, valor: 10 }]
+  }, 201);
+  const residualPago = consultar('/api/recebimentos-cliente/:id/comprovante', { id: pagoResidual.id }, { vendaId: resultado.valeResidual.id });
+  assert.equal(residualPago.vales[0].saldoAtual, 50);
+  assert.equal(db.prepare("SELECT valorPago FROM vendas WHERE id='v1'").get().valorPago, 40);
+  assert.equal(JSON.stringify(consultar('/api/ordens-cobranca', {}, {}).find(o => o.id === 'o1').comprovantesFinalizacao), originalSnapshot);
+  assert.equal(JSON.stringify(consultar('/api/vendas/:id', { id: 'v2' }).comprovantesFinalizacao), snapshotVale);
+
+  // Regressão: total 23,47 com 20 já transferidos deixa somente 3,47 neste vale.
+  db.prepare("INSERT INTO vendas(id,numeroSequencial,clienteId,data,subtotal,desconto,totalLiquido,valorPago,saldoRestante,status,vencimento) VALUES ('reaberto',900,'c','2026-10-26',23.47,0,23.47,0,3.47,'pendente','2026-11-22')").run();
+  db.prepare("INSERT INTO vale_residual_origens(valeResidualId,vendaOrigemId,numeroValeOrigem,valorTransferido) VALUES (?,'reaberto',900,20)").run(segundaFinalizacao.valeResidual.id);
+  const parcial = chamar('/api/clientes/:id/carteira/recebimentos', { id: 'c' }, {
+    data: '2026-10-26', valorRecebido: 3.47, bonusUtilizado: 0, formaPagamento: 'pix',
+    alocacoes: [{ vendaId: 'reaberto', valor: 3.47 }]
+  }, 201);
+  assert.equal(consultar('/api/recebimentos-cliente/:id/comprovante', { id: parcial.id }, { vendaId: 'reaberto' }).vales[0].saldoAtual, 0);
+  const encerrado = chamar('/api/vendas/:id/finalizar', { id: 'reaberto' }, { pin: '1234' });
+  assert.equal(encerrado.valeResidual, null);
+  const copia = encerrado.vale.comprovantesFinalizacao[0].documento;
+  assert.equal(copia.financeiro.transferido, 20);
+  assert.equal(copia.financeiro.presumido, 3.47);
+  assert.equal(copia.financeiro.restantePresumido, 0);
+  assert.equal(JSON.stringify(consultar('/api/vendas/:id', { id: 'v2' }).comprovantesFinalizacao), snapshotVale);
+  assert.equal(JSON.stringify(consultar('/api/vendas', {}).find(v => v.id === 'v2').comprovantesFinalizacao), snapshotVale, 'Listagem deve preservar a aba final após atualização.');
+  const snapshotResidual = consultar('/api/vendas/:id', { id: finalizacaoDireta.valeResidual.id }).comprovantesFinalizacao[0].documento;
+  assert.equal(snapshotResidual.id, finalizacaoDireta.valeResidual.id);
+  assert.equal(snapshotResidual.totalLiquido, 675.51);
+  assert.equal(snapshotResidual.financeiro.presumido, 100);
+  assert.equal(snapshotResidual.financeiro.restantePresumido, 575.51);
+  assert.deepEqual(snapshotResidual.recebimentos.map(p=>p.id), ['r4']);
+  const gerente = db.prepare("SELECT id FROM usuarios WHERE perfil='administrador'").get().id;
+  const previa = reaberturaFinalizacao.preparar('vale', 'reaberto');
+  reaberturaFinalizacao.executar('vale', 'reaberto', previa.revisao, gerente, 'Teste preservação');
+  const novamente = chamar('/api/vendas/:id/finalizar', { id: 'reaberto' }, { pin: '1234' });
+  assert.equal(novamente.vale.comprovantesFinalizacao.length, 2);
+  assert.equal(JSON.stringify(novamente.vale.comprovantesFinalizacao[1]), JSON.stringify(encerrado.vale.comprovantesFinalizacao[0]));
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM comprovantes_finalizacao WHERE tipo='ordem' AND documentoId='reaberto'").get().n, 0);
+  console.log('OK: pagamento no residual isolado, transferências descontadas e comprovantes persistidos e preservados após reabertura.');
   const debitos = [], creditos = [];
   ajustarBonusFinalizacao('c', 0, 25.37, 'Teste ajuste', debitos, creditos);
   assert.equal(creditos.length, 1);

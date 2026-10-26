@@ -1,7 +1,7 @@
 import { OrdemCobrancaDetalhesModal } from "./OrdensCobrancaView";
 import { AnotacoesDocumento } from "./AnotacoesDocumento";
 import { HistoricoOrigemVale } from "./HistoricoOrigemVale";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Eye, FileClock, FileText, List, MessageCircle, Printer, RotateCcw, ShieldCheck, X } from "lucide-react";
 import { ComprovanteRecebimento, OrdemCobranca, PagamentoGerenciavel, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal, todayLocalIso, whatsappUrl } from "../lib/utils";
@@ -17,8 +17,10 @@ import { FinalizarFinanceiroModal } from "./FinalizarFinanceiroModal";
 import { ReabrirFinalizacaoModal } from "./ReabrirFinalizacaoModal";
 import { Pagination, paginate } from "./Pagination";
 import { ResumoFinanceiroFixo } from "./ResumoFinanceiroFixo";
+import { ComprovantesFinalizacao } from "./ComprovantesFinalizacao";
 
 interface ValeDetalhesModalProps {
+  key?: string;
   vale: Venda;
   onClose: () => void;
   onUpdated?: (vale: Venda | null) => void;
@@ -32,6 +34,9 @@ function RecebimentosValeFinalizacao({ vale }: { vale: Venda }) {
   const [erro, setErro] = useState("");
   const recebimentoId = vale.recebimentos?.find(pagamento => pagamento.status === "ativo")?.id;
   useEffect(() => {
+    setComprovante(null);
+    setErro("");
+    setCarregando(false);
     if (!recebimentoId) return;
     let ativo = true;
     setCarregando(true);
@@ -41,13 +46,19 @@ function RecebimentosValeFinalizacao({ vale }: { vale: Venda }) {
       .catch((error: Error) => { if (ativo) setErro(error.message || "Não foi possível abrir o demonstrativo."); })
       .finally(() => { if (ativo) setCarregando(false); });
     return () => { ativo = false; };
-  }, [recebimentoId, vale.id]);
+  }, [recebimentoId, vale.id, vale.updatedAt]);
   if (erro) return <p role="alert" className="rounded-xl border border-red-300 bg-white p-4 text-sm font-bold text-red-700">{erro}</p>;
   if (comprovante) return <ComprovanteRecebimentoModal embedded comprovante={comprovante} onClose={() => {}}/>;
   return <p className="rounded-xl border border-slate-300 bg-white p-4 text-sm text-slate-600">{carregando ? "Carregando demonstrativo de recebimentos…" : "Nenhum recebimento registrado para este vale."}</p>;
 }
 
-export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
+export function ValeDetalhesModal(props: ValeDetalhesModalProps) {
+  return <ConteudoValeDetalhes key={props.vale.id} {...props}/>;
+}
+
+function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenOrdem }: ValeDetalhesModalProps) {
+  const requisicaoComprovante = useRef(0);
+  useEffect(() => () => { requisicaoComprovante.current++; }, []);
   const [ordemHistorico, setOrdemHistorico] = useState<OrdemCobranca | null>(null);
   const abrirOrdemHistorico = async (id: string) => { try { const lista = await api.getOrdensCobranca(vale.clienteId); const destino = lista.find(o => o.id === id); if (!destino) throw new Error("Ordem não encontrada."); setOrdemHistorico(destino); } catch (e: any) { setErro(e.message); } };
   const [anotacao, setAnotacao] = useState(vale.observacoes || "");
@@ -59,7 +70,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   const [novoPagamento, setNovoPagamento] = useState(false);
   const [paginaPagamentos, setPaginaPagamentos] = useState(1);
   const atualizarPagamentos = async () => { onUpdated?.(await api.getVenda(vale.id)); setNovoPagamento(false); setPaginaPagamentos(1); };
-  const [aba, setAba] = useState<"itens" | "comprovante" | "recebimentos" | "devolucoes" | "anotacoes">("itens");
+  const [aba, setAba] = useState<"itens" | "comprovante" | "recebimentos" | "devolucoes" | "anotacoes" | "finalizacao">("itens");
   const [modo, setModo] = useState<"devolver" | "cancelar" | null>(null);
   const [finalizacao, setFinalizacao] = useState(false);
   const [reabrirFinalizacao, setReabrirFinalizacao] = useState(false);
@@ -143,11 +154,12 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
   };
 
   const abrirComprovanteRecebimento = async (recebimentoId: string) => {
+    const requisicao = ++requisicaoComprovante.current;
     setAba("recebimentos");
     setComprovante(null);
     setErro("");
-    try { setComprovante(await api.getComprovanteRecebimento(recebimentoId, vale.id)); }
-    catch (error: any) { setErro(error.message || "Não foi possível abrir o comprovante."); }
+    try { const resultado = await api.getComprovanteRecebimento(recebimentoId, vale.id); if (requisicao === requisicaoComprovante.current) setComprovante(resultado); }
+    catch (error: any) { if (requisicao === requisicaoComprovante.current) setErro(error.message || "Não foi possível abrir o comprovante."); }
   };
 
   if (ordemHistorico) return <OrdemCobrancaDetalhesModal ordem={ordemHistorico} onClose={() => setOrdemHistorico(null)} onChanged={o => { setOrdemHistorico(o); void atualizarPagamentos(); }}/>;
@@ -159,6 +171,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
         {finalizacao && <FinalizarFinanceiroModal titulo={`vale #${vale.numeroSequencial}`} restante={financeiro.restantePresumido} excedente={financeiro.excedentePresumido} demonstrativo={<VendaComprovante venda={vale} demonstrativoPagamento/>} recebimento={<RecebimentosValeFinalizacao vale={vale}/>} onClose={() => setFinalizacao(false)} onConfirm={async dados => {
           const resultado = await api.finalizarVale(vale.id, dados);
           onUpdated?.(resultado.vale);
+          setAba("finalizacao");
           return { mensagem: resultado.valeResidual ? `Vale finalizado. O restante foi transferido para o vale #${resultado.valeResidual.numeroSequencial}.` : "Vale finalizado e saldos encerrados." };
         }}/>}<header className="vale-header print:hidden">
           <div className="vale-header-identity">
@@ -172,6 +185,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
               <button type="button" aria-pressed={aba === "recebimentos"} onClick={() => { setAba("recebimentos"); const pagamento = vale.recebimentos?.[0]; if (pagamento) void abrirComprovanteRecebimento(pagamento.id); }}><FileText size={16}/> Recebimentos</button>
               <button type="button" aria-pressed={aba === "devolucoes"} onClick={() => setAba("devolucoes")}><RotateCcw size={16}/> Histórico</button>
               <button type="button" aria-pressed={aba === "anotacoes"} onClick={() => setAba("anotacoes")}><FileText size={16}/> Anotações</button>
+              {!!vale.comprovantesFinalizacao?.length && <button type="button" aria-pressed={aba === "finalizacao"} onClick={() => setAba("finalizacao")}><FileText size={16}/> Vale finalizado</button>}
             </nav>
             <div className="vale-header-tools">
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
@@ -217,7 +231,7 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             {ordemAtiva && ordemCobranca && <button type="button" onClick={() => onOpenOrdem ? onOpenOrdem() : void abrirOrdemHistorico(ordemCobranca.id)} className="group flex w-full items-center justify-between gap-3 rounded-xl border border-blue-300 bg-blue-50 p-3 text-left text-blue-950 transition-colors hover:border-blue-500 hover:bg-blue-100"><span className="flex items-center gap-2 text-xs font-black uppercase"><FileClock size={17}/> Vinculado à ordem de cobrança #{ordemCobranca.numeroSequencial}</span><span className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-3 py-2 text-xs font-black uppercase text-white shadow-sm group-hover:bg-blue-800">Abrir ordem <Eye size={15}/></span></button>}
 
             <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
-              <ResumoFinanceiroFixo negociado={vale.totalLiquido} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>
+              <ResumoFinanceiroFixo negociado={Math.max(0, Math.round((vale.totalLiquido - (financeiro.transferido || 0)) * 100) / 100)} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>
             <div className="min-w-0 overflow-x-auto rounded-xl border border-slate-300 bg-white">
               <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
               <table className="payments-table w-full min-w-[720px] text-xs">
@@ -237,6 +251,8 @@ export function ValeDetalhesModal({ vale, onClose, onUpdated, ordemCobranca, onO
             </div>
 
           </div>
+        ) : aba === "finalizacao" ? (
+          <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5"><ComprovantesFinalizacao key={vale.id} tipo="vale" comprovantes={vale.comprovantesFinalizacao || []}/></div>
         ) : aba === "recebimentos" ? (
           comprovante ? <ComprovanteRecebimentoModal embedded comprovante={comprovante} onClose={() => setAba("itens")} /> : <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5 print:hidden"><p className="text-sm text-slate-500">{vale.recebimentos?.length ? "Carregando recebimentos…" : "Nenhum recebimento registrado para este vale."}</p></div>
         ) : aba === "anotacoes" ? (

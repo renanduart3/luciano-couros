@@ -2976,6 +2976,7 @@ const valorDevolvidoEmBonusSql = (alias: string) =>
   `(COALESCE(${alias}.creditoLinhaDevolucao,0) + COALESCE((SELECT SUM(d.valorCredito) FROM devolucoes_venda d WHERE d.vendaId = ${alias}.id AND d.modalidade = 'bonus_integral'), 0))`;
 
 function carregarDetalhesVenda(venda: any) {
+  venda.comprovantesFinalizacao = carregarComprovantesFinalizacao('vale', venda.id);
   venda.origemSaldo = carregarOrigemSaldo(venda);
   venda.bonusGeradoVenda = bonusGeradoPorVenda([venda.id]).get(venda.id) || 0;
   venda.items = queryAll<any>(
@@ -3139,7 +3140,12 @@ function carregarDetalhesVendasEmLote(vendas: any[]) {
      ORDER BY vencimento ASC, numero ASC`, ids
   ), "vendaId");
 
+  const comprovantesPorVenda = agrupar(queryAll<any>(
+    `SELECT id, documentoId, data, documento FROM comprovantes_finalizacao
+     WHERE tipo='vale' AND documentoId IN (${marcadores}) ORDER BY data DESC, rowid DESC`, ids
+  ).map(c => ({ ...c, documento: JSON.parse(c.documento) })), 'documentoId');
   vendas.forEach((venda) => {
+    venda.comprovantesFinalizacao = (comprovantesPorVenda.get(venda.id) || []).map(({ id, data, documento }) => ({ id, data, documento }));
     venda.origemSaldo = carregarOrigemSaldo(venda);
     venda.bonusGeradoVenda = bonusPorVenda.get(venda.id) || 0;
     venda.items = itensPorVenda.get(venda.id) || [];
@@ -4697,6 +4703,7 @@ function listarOrdensCobranca(filtro = "", params: unknown[] = []) {
     eventos.sort((a, b) => String(a.data).localeCompare(String(b.data)));
     return {
       ...ordem,
+      comprovantesFinalizacao: carregarComprovantesFinalizacao('ordem', ordem.id),
       saldoDevedorAtual: valeDevedor ? Number(valeDevedor.saldoAtual) : undefined,
       numeroValeDevedor: valeDevedor?.numeroSequencial,
       valorTransferido: transferidoOrdem(ordem.id),
@@ -5077,6 +5084,19 @@ app.post("/api/ordens-cobranca/:id/encerrar", exigirGerente, (req, res) => {
   }
 });
 
+function carregarComprovantesFinalizacao(tipo: 'vale' | 'ordem', id: string) {
+  return queryAll<any>('SELECT * FROM comprovantes_finalizacao WHERE tipo=? AND documentoId=? ORDER BY data DESC, rowid DESC', [tipo, id])
+    .map(c => ({ id: c.id, data: c.data, documento: JSON.parse(c.documento) }));
+}
+
+function salvarComprovanteFinalizacao(tipo: 'vale' | 'ordem', documento: any, data: string) {
+  // Cópia independente: nunca incorpora versões anteriores nem consulta o residual ao reimprimir.
+  const { comprovantesFinalizacao, historicoMovimentacoes, eventos, ...copia } = documento;
+  copia.finalizadoAt = data;
+  execute('INSERT INTO comprovantes_finalizacao(id,tipo,documentoId,data,documento) VALUES (?,?,?,?,?)',
+    [crypto.randomUUID(), tipo, documento.id, data, JSON.stringify(copia)]);
+}
+
 function criarValeResidual(clienteId: string, valor: number, valesOrigem: Array<{ id: string; numeroSequencial: number; saldoRestante: number; saldoTransferivel?: number }>, observacaoExtra = "", ordemOrigem?: { id: string; numeroSequencial: number }) {
   const centavos = Math.max(0, Math.round(Number(valor || 0) * 100));
   if (centavos <= 0) return null;
@@ -5155,6 +5175,7 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       if (!pagamento) throw erroHttp("Adicione um pagamento válido antes de finalizar a ordem. Cheques e boletos aguardando compensação são aceitos.", 409);
       recalcularOrdemCobranca(ordem.id);
       ordem.saldo = queryOne<any>('SELECT saldo FROM ordens_cobranca WHERE id=?', [ordem.id]).saldo;
+      const documentoFinalizacao = listarOrdensCobranca('AND oc.id = ?', [ordem.id])[0];
       const bonusDebitoIds: string[] = [];
       const bonusCreditoIds: string[] = [];
       const vales = queryAll<any>(`SELECT v.id, v.numeroSequencial, v.saldoRestante, ocv.saldo AS saldoTransferivel
@@ -5179,6 +5200,7 @@ app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
       execute("UPDATE ordem_cobranca_parcelas SET status = CASE WHEN status = 'pendente' THEN 'renegociada' ELSE status END, updatedAt = CURRENT_TIMESTAMP WHERE ordemId = ? AND deletedAt IS NULL", [ordem.id]);
       execute("UPDATE ordens_cobranca SET saldo = 0, status = 'quitada', finalizadoAt = ?, valeResidualId = ?, motivoEncerramento = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?",
         [agora, residual?.id || null, String(req.body?.motivo || "").trim() || null, ordem.id]);
+      salvarComprovanteFinalizacao('ordem', documentoFinalizacao, agora);
       registrarAuditoria(administrador.id, "ordem_cobranca_finalizada", "ordem_cobranca", ordem.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, bonusCreditoIds, bonusFinal: req.body?.bonusFinal, excedenteZerado: Boolean(req.body?.zerarExcedente), vales: vales.map(v => v.numeroSequencial) });
     });
     res.json({ ordem: listarOrdensCobranca("AND oc.id = ?", [req.params.id])[0], valeResidual: residual });
@@ -5202,9 +5224,12 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
         UNION SELECT b.id FROM cliente_bonus_movimentos b WHERE b.vendaId=? AND b.recebimentoId IS NULL
         AND b.deletedAt IS NULL AND b.tipo='debito' AND b.valor>0 AND b.observacao LIKE 'Crédito aplicado na venda #%'`, [vale.id, vale.id, vale.id]);
       if (!pagamento) throw erroHttp("Adicione um pagamento válido antes de finalizar o vale.", 409);
+      const documentoFinalizacao = carregarDetalhesVenda(queryOne<any>(`SELECT v.*, c.nome AS clienteNome,
+        c.telefone AS clienteTelefone, c.endereco AS clienteEndereco, c.documento AS clienteDocumento
+        FROM vendas v JOIN clientes c ON c.id=v.clienteId WHERE v.id=?`, [vale.id]));
       const bonusDebitoIds: string[] = [];
       const bonusCreditoIds: string[] = [];
-      const restante = Math.max(0, Math.round(Number(vale.saldoRestante || 0) * 100) / 100);
+      const restante = saldoVale(vale.id, Number(vale.totalLiquido), Number(vale.valorPago));
       if (restante > 0.005 && destinoRestante === "novo_vale") residual = criarValeResidual(vale.clienteId, restante, [vale]);
       if (req.body?.bonusFinal !== undefined || req.body?.zerarExcedente) {
         const bonus = Number(queryOne<{ total: number }>(`SELECT COALESCE(SUM(rc.bonusGerado), 0) AS total FROM recebimentos_cliente rc
@@ -5215,6 +5240,7 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
       const agora = new Date().toISOString();
       execute("UPDATE vendas SET saldoRestante = 0, status = 'paga', finalizadoAt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [agora, vale.id]);
       execute("UPDATE vale_parcelas SET saldo = 0, status = 'paga', updatedAt = CURRENT_TIMESTAMP WHERE vendaId = ? AND deletedAt IS NULL", [vale.id]);
+      salvarComprovanteFinalizacao('vale', documentoFinalizacao, agora);
       registrarAuditoria(administrador.id, "vale_finalizado", "venda", vale.id, { destinoRestante, restante, valeResidual: residual, bonusDebitoIds, bonusCreditoIds, bonusFinal: req.body?.bonusFinal, excedenteZerado: Boolean(req.body?.zerarExcedente) });
     });
     res.json({ vale: carregarDetalhesVenda(queryOne<any>(`SELECT v.*, c.nome AS clienteNome, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco, c.documento AS clienteDocumento FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?`, [req.params.id])), valeResidual: residual });
@@ -5862,11 +5888,10 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
     // Em ordens, o saldo do vale residual corresponde à dívida conjunta da ordem.
     const destino = valeIndividual?.finalizadoAt ? localizarValeDevedor(vendaIndividual) : null;
     const residual = destino?.id !== vendaIndividual ? destino : null;
-    // Em vales não finalizados, total menos valor pago impede um saldo gravado
-    // incorretamente como zero de produzir recibo de quitação falso.
+    // Recalcula a dívida própria, descontando pagamentos e transferências anteriores.
+    // Um vale reaberto não pode cobrar novamente a dívida que já saiu para o residual.
     const saldoConferido = valeIndividual && !valeIndividual.finalizadoAt
-      ? Math.max(0, Math.round((Number(valeIndividual.valorVale) - Number(valeIndividual.valorPago)) * 100) / 100,
-          Number(valeIndividual.saldoAtual))
+      ? saldoVale(vendaIndividual!, Number(valeIndividual.valorVale), Number(valeIndividual.valorPago))
       : Number(residual?.saldoAtual ?? valeIndividual?.saldoAtual ?? 0);
     const pagamentosVale = valeIndividual ? queryAll<any>(
       `SELECT rc.id, SUM(a.valor) AS valorNoVale
@@ -5896,7 +5921,7 @@ app.get("/api/recebimentos-cliente/:id/comprovante", (req, res) => {
       observacao: recebimento.observacao,
       titulos: listarTitulosRecebimento(recebimento.id),
       vales: valeIndividual ? [{ saldoAntes: saldoConferido, saldoDepois: saldoConferido, valorAplicado: 0, ...vales.find(v => v.vendaId === vendaIndividual), ...valeIndividual,
-        saldoAtual: saldoConferido, valeDevedor: residual?.numeroSequencial }] : vales,
+        valorTransferido: transferidoVale(vendaIndividual!), saldoAtual: saldoConferido, valeDevedor: residual?.numeroSequencial }] : vales,
       pagamentosVale,
       ordens,
     });

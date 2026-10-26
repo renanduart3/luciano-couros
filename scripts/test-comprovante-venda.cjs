@@ -119,3 +119,11 @@ for (const quantidade of [0, 1, 15, 16, 30, 31]) {
   }
 }
 console.log('OK: exatamente 15 linhas em cada via, sem reduzir a capacidade por bônus, transferência ou ajustes.');
+
+const transferido = { ...venda, totalLiquido: 23.47, valorPago: 3.47, valorTransferido: 20 };
+const antes = render(transferido);
+const acertoTransferido = renderToStaticMarkup(React.createElement(mod.exports.VendaComprovante, { venda: transferido, demonstrativoPagamento: true }));
+assert.equal((acertoTransferido.match(/SALDO JÁ TRANSFERIDO PARA OUTRO VALE/g) || []).length, 2);
+assert.match(acertoTransferido, /-R\$\s?20,00/);
+assert.equal(render(transferido), antes, 'Demonstrativo não modifica o comprovante do vale.');
+console.log('OK: transferência anterior discriminada somente no demonstrativo, sem alterar o vale.');

@@ -1,3 +1,4 @@
+import { ComprovantesFinalizacao } from "./ComprovantesFinalizacao";
 import { TabelaValesOrdem } from "./TabelaValesOrdem";
 import { PagamentoValesModal } from "./PagamentoValesModal";
 import { demonstrativoOrdem } from "../lib/demonstrativoOrdem";
@@ -118,7 +119,11 @@ function ResumoCompartilhavelOrdem({ ordem, onEditarVales, onOpenVale }: { ordem
   </section>;
 }
 
-export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebimentoDestaque }: { recebimentoDestaque?: string; ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void }) {
+type DetalhesOrdemProps = { key?: string; recebimentoDestaque?: string; ordem: OrdemCobranca; onClose: () => void; onChanged: (ordem: OrdemCobranca) => void };
+export function OrdemCobrancaDetalhesModal(props: DetalhesOrdemProps) {
+  return <ConteudoOrdemDetalhes key={props.ordem.id} {...props}/>;
+}
+function ConteudoOrdemDetalhes({ ordem, onClose, onChanged, recebimentoDestaque }: DetalhesOrdemProps) {
   const gerente = useEhGerente();
   const pagamentosRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -277,15 +282,15 @@ export function OrdemCobrancaDetalhesModal({ ordem, onClose, onChanged, recebime
         <div className="vale-header-navigation"><nav aria-label="Navegação da ordem" className="vale-tabs">
           <button type="button" aria-pressed={abaDetalhe === "parcelas"} onClick={() => setAbaDetalhe("parcelas")}><ListChecks size={16}/> Detalhes</button>
           <button type="button" aria-pressed={abaDetalhe === "demonstrativo"} onClick={() => setAbaDetalhe("demonstrativo")}><FileText size={16}/> Demonstrativo</button>
-          {ordem.finalizadoAt && <button type="button" aria-pressed={abaDetalhe === "comprovante"} onClick={() => setAbaDetalhe("comprovante")}><FileText size={16}/> Comprovante</button>}
           <button type="button" aria-pressed={abaDetalhe === "recebimentos"} onClick={() => setAbaDetalhe("recebimentos")}><FileText size={16}/> Recebimentos</button>
           <button type="button" aria-pressed={abaDetalhe === "historico"} onClick={() => setAbaDetalhe("historico")}><History size={16}/> Histórico da ordem</button>
           <button type="button" aria-pressed={abaDetalhe === "anotacoes"} onClick={() => setAbaDetalhe("anotacoes")}><FileText size={16}/> Anotações</button>
+          {(ordem.finalizadoAt || !!ordem.comprovantesFinalizacao?.length) && <button type="button" aria-pressed={abaDetalhe === "comprovante"} onClick={() => setAbaDetalhe("comprovante")}><FileText size={16}/> Ordem finalizada</button>}
         </nav><div className="vale-header-tools">{linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}</div></div>
         <button type="button" onClick={onClose} aria-label="Fechar" className="vale-icon-button vale-header-close"><X size={20}/></button>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-slate-100 p-4">
-        {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "comprovante" && ordem.finalizadoAt ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setComprovanteAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><ComprovanteFinalizacaoOrdem ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
+        {abaDetalhe === "recebimentos" ? <ComprovanteRecebimentoModal embedded comprovante={comprovanteOrdem} onClose={() => setAbaDetalhe("parcelas")} /> : abaDetalhe === "demonstrativo" ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setDemonstrativoAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><DemonstrativoOrdemConteudo ordem={ordem}/></div> : abaDetalhe === "comprovante" && ordem.comprovantesFinalizacao?.length ? <ComprovantesFinalizacao key={ordem.id} tipo="ordem" comprovantes={ordem.comprovantesFinalizacao}/> : abaDetalhe === "comprovante" && ordem.finalizadoAt ? <div className="space-y-3"><div className="flex justify-end"><button type="button" onClick={() => setComprovanteAberto(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white">Imprimir / salvar PDF</button></div><ComprovanteFinalizacaoOrdem ordem={ordem}/></div> : abaDetalhe === "anotacoes" ? <AnotacoesDocumento valor={ordem.observacao || ""} onSave={async (texto, anterior) => { onChanged(await api.saveAnotacaoOrdem(ordem.id, texto, anterior)); }}/> : abaDetalhe === "parcelas" ? <div className="grid items-start gap-4"><div className="space-y-3">
         {editandoVales ? <EditarValesOrdem ordem={ordem} onCancel={() => setEditandoVales(false)} onSaved={(atualizada) => { setEditandoVales(false); setFeedback("Vales e saldo da ordem atualizados."); onChanged(atualizada); }}/>
         : (
           <ResumoCompartilhavelOrdem onOpenVale={id => void abrirVale(id)} ordem={ordem} onEditarVales={() => { setError(""); setFeedback(""); setEditandoVales(true); }}/>

@@ -119,3 +119,10 @@ conferirResumo(ordem17, '2\\.767,40', '7\\.000,00', '0,00', '4\\.232,60');
 assert.doesNotMatch(ordem20, /SALDO \(TOTAL VALES/);
 assert.match(ordem20, /payment-receipt-order/);
 console.log('OK: nomenclaturas e valores do recibo de vale e ordem.');
+
+const reaberto = mod.exports.render({...recibo,
+  vales:[{vendaId:'reaberto',numeroSequencial:897,valorVale:23.47,valorTransferido:20,saldoAntes:3.47,saldoDepois:0}],
+  pagamentosVale:[{...recibo.pagamentosVale[0],valorRecebido:3.47,valorAplicado:3.47,valorNoVale:3.47,alocacoes:[{vendaId:'reaberto',valor:3.47}]}]
+});
+conferirResumo(reaberto,'23,47','3,47','0,00','0,00');
+assert.match(reaberto,/Valor já transferido para outro vale/);

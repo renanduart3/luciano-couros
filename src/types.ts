@@ -152,7 +152,10 @@ export interface DevolucaoVenda {
   items: ItemDevolucaoVenda[];
 }
 
+export interface ComprovanteFinalizacao<T> { id: string; data: string; documento: T; }
+
 export interface Venda {
+  comprovantesFinalizacao?: ComprovanteFinalizacao<Venda>[];
   historicoMovimentacoes?: Array<{ descricao?: string | null; id: string; acao: string; createdAt: string; usuarioNome?: string; ordemId?: string; numeroOrdem?: number; detalhes: Record<string, any> }>;
 
   bonusLegado?: number;
@@ -432,6 +435,7 @@ export interface ComprovanteRecebimento {
     data?: string;
     valorAplicado: number;
     valorVale?: number;
+    valorTransferido?: number;
     saldoAtual?: number;
     valeDevedor?: number;
     saldoAntes: number;
@@ -555,6 +559,7 @@ export interface OrdemCobrancaVale {
 export interface ProjecaoPagamentoOrdem { id: string; revisao: string; dados: PagamentoGerenciavel; }
 export type ItemAcaoPagamentoOrdem = { tipo: "recebimento" | "projecao"; id: string };
 export interface OrdemCobranca {
+  comprovantesFinalizacao?: ComprovanteFinalizacao<OrdemCobranca>[];
   valorTransferido?: number;
   saldoDevedorAtual?: number;
   numeroValeDevedor?: number;

@@ -73,13 +73,13 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
     }
     onRefreshStats?.();
     try {
-      const [vendas, listaOrdens] = await Promise.all([api.getVendas(), api.getOrdensCobranca()]);
+      const [vendas, listaOrdens, detalhe] = await Promise.all([api.getVendas(), api.getOrdensCobranca(), valeDetalhado ? api.getVenda(valeDetalhado.id) : Promise.resolve(null)]);
       if (versao !== versaoCarga.current) return;
       const quitados = vendas.filter(v => v.status !== "cancelada" && !estaEmAberto(v) && vales.some(antes => antes.id === v.id && estaEmAberto(antes)));
       if (quitados.length && ["abertos", "vencidos", "a_vencer"].includes(status)) setFeedbackPagamento(`Pagamento atualizado. Vales ${quitados.map(v => `#${v.numeroSequencial}`).join(", ")} estão quitados e saíram do filtro de abertos. Use Todos para consultar seus comprovantes.`);
       setVales(vendas.filter(venda => Boolean(venda.vencimento)));
       setOrdens(listaOrdens);
-      setValeDetalhado(atual => atual ? vendas.find(venda => venda.id === atual.id) || null : null);
+      setValeDetalhado(atual => atual && detalhe?.id === atual.id ? detalhe : atual);
       setOrdemDetalhada(atual => atual ? listaOrdens.find(item => item.id === atual.id) || null : null);
     } catch (err: any) {
       if (versao === versaoCarga.current) setError(err.message || "Não foi possível atualizar os saldos.");

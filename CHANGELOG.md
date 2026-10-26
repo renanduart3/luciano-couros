@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.22 — 26/10/2026
+
+- Corrigido o saldo devedor de vales com transferências anteriores, evitando cobrar novamente valores já destinados a um vale residual.
+- Novas finalizações salvam uma cópia independente do demonstrativo no banco, com pagamentos e devedor daquele momento, acessível nas abas Vale finalizado e Ordem finalizada.
+- Comprovantes finais preservados após reabertura, novas finalizações e pagamentos nos vales residuais; documento do vale e recibos de recebimento mantidos separados.
+- Corrigidos o carregamento das finalizações na listagem e a troca de documentos para impedir perda da aba ou exibição de recebimentos anteriores.
+- Validados o exemplo do vale de R$ 109,90 com pagamento de R$ 40,00, a finalização do residual, os recibos, a persistência e a navegação das abas.
+
 ## 1.40.21 — 23/10/2026
 
 - Cobranças e ordens iniciam com o filtro Em aberto; documentos sem saldo ficam em Quitados e Todos.

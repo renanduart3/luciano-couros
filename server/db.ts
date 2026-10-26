@@ -838,6 +838,11 @@ export function initDatabase() {
   try { db.prepare('ALTER TABLE vendas ADD COLUMN creditoLinhaDevolucao REAL DEFAULT 0').run(); } catch (e) {}
   db.prepare('CREATE INDEX IF NOT EXISTS idx_item_devolucao_origem ON itens_venda(itemOrigemId)').run();
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
+  db.prepare(`CREATE TABLE IF NOT EXISTS comprovantes_finalizacao (
+    id TEXT PRIMARY KEY, tipo TEXT NOT NULL CHECK(tipo IN ('vale','ordem')),
+    documentoId TEXT NOT NULL, data TEXT NOT NULL, documento TEXT NOT NULL
+  )`).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_comprovante_finalizacao_documento ON comprovantes_finalizacao(tipo, documentoId)').run();
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN finalizadoAt TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE ordens_cobranca ADD COLUMN valeResidualId TEXT`).run(); } catch (e) {}
   db.prepare(`CREATE TABLE IF NOT EXISTS vale_residual_origens (

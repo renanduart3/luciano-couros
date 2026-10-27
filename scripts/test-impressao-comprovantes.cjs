@@ -35,6 +35,7 @@ async function main() {
     {nome:'vale-621-referencia',tipo:'venda',venda:{...venda,numeroSequencial:621,contabilizaReceita:0,totalLiquido:2029.86,subtotal:0,items:[],origemSaldo:{ordem:{id:'o29',numero:29},descricao:'Devedor da ordem #29',vales:[206,227,228,229,313].map(numero=>({numero}))}}},
     {nome:'ordem-com-vale-residual',tipo:'ordem',origem:'ordens-view',ordem:{...ordem,vales:[{...ordem.vales[0],numeroSequencial:621,descricao:'Devedor da ordem #29'}]}},
     {nome:'recibo-ordem',tipo:'recibo',origem:'ordens-view',recibo,ordem},
+    {nome:'recibo-ordem-acumulado',tipo:'recibo',origem:'ordens-view',recibo:{...recibo,resumoOrdem:{id:'o',numero:12,saldo:0},pagamentosVale:ordem.pagamentos.map(p=>({...p,valorNoVale:100})),vales:[{...recibo.vales[0],valorVale:100}]},ordem},
     {nome:'recibo-vale',tipo:'recibo',origem:'print-vale-detail-overlay',recibo:{...recibo,formaPagamento:'cheque_emitente',valorRecebido:120,valorAplicado:140,valorDevidoAntes:140,titulos:Array.from({length:12},(_,i)=>title(i)),vales:[{numeroSequencial:42,saldoAntes:140,valorAplicado:140,saldoDepois:0}]},ordem},
     {nome:'recibo-relatorio',tipo:'recibo',origem:'relatorios-view',recibo:{...recibo,valorDevidoAntes:2500,valorAplicado:2500,valorRecebido:2480,vales:Array.from({length:50},(_,i)=>({numeroSequencial:i+1,saldoAntes:50,valorAplicado:50,saldoDepois:0}))},ordem},
     {nome:'demonstrativo',tipo:'ordem',origem:'ordens-view',ordem:{...ordem,totalOriginal:420,vales:[{...ordem.vales[0],valorVinculado:420}],pagamentos:[{...ordem.pagamentos[0],formaPagamento:'cheque_emitente',valorRecebido:400,valorAplicado:420,valorAplicadoOrdem:420,titulos:Array.from({length:40},(_,i)=>title(i))}]}},
@@ -59,6 +60,19 @@ async function main() {
       await page.evaluate(async()=>{await document.fonts.ready; await Promise.all([...document.images].map(i=>i.decode().catch(()=>{})));});
       await page.emulateMedia({media:'print'});
       assert.ok(await page.locator(target).isVisible(),f.nome);
+      for (const media of ['screen', 'print']) {
+        await page.emulateMedia({media});
+        const fundos = await page.locator(`${target} :is(.receipt-copy, .payment-receipt-paper, .order-statement), ${target} :is(.receipt-copy, .payment-receipt-paper, .order-statement) *`).evaluateAll(es => es.filter(e => {
+          if (!e.getClientRects().length) return false;
+          const cor = getComputedStyle(e).backgroundColor;
+          const valor = e.closest('.receipt-total') || e.matches('.payment-receipt-balance dd, tfoot td.number, .order-statement footer strong, .order-statement tfoot td:last-child');
+          return !['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)'].includes(cor) && !(valor && cor === 'rgb(245, 245, 245)');
+        }).map(e => ({tag:e.tagName,classe:e.className,cor:getComputedStyle(e).backgroundColor})));
+        assert.deepEqual(fundos, [], `Fundo preenchido fora dos totais: ${f.nome} / ${media}`);
+        if (f.tipo === 'ordem') assert.ok(await page.locator('.order-statement').evaluate(e => Math.abs(e.getBoundingClientRect().width - 160*96/25.4) < 1), `Largura da ordem deve ser 160 mm: ${media}`);
+        if (f.nome === 'recibo-ordem-acumulado') assert.ok(await page.locator('.payment-receipt-order').evaluate(e => Math.abs(e.getBoundingClientRect().width - 160*96/25.4) < 1), `Largura do recibo da ordem: ${media}`);
+      }
+      await page.emulateMedia({media:'print'});
       if(f.tipo==='recibo') {
         assert.equal(await page.locator('#print-payment-receipt').evaluate(e=>e.parentElement===document.body),true);
         assert.equal(await page.locator('#print-cobranca-vales').isVisible(),false);
@@ -110,6 +124,7 @@ async function main() {
       }
       if (f.nome==='vale-621-referencia') { assert.equal(await page.locator('.receipt-copy').filter({hasText:'Devedor da ordem #29'}).count(),2); await page.screenshot({path:path.join(out,'vale-621-referencia.png'),fullPage:true}); }
       await page.pdf({path:path.join(out,f.nome+'.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:false});
+      if (f.nome === 'ordem-com-vale-residual') await page.locator('.order-statement').screenshot({path:path.join(out,'ordem-largura.png')});
       await page.close();
       console.log('OK: impressão '+f.nome);
     }

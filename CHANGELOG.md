@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.40.23 — 27/10/2026
+
+- Fundos brancos nos comprovantes, vales e demonstrativos para economizar toner, com destaque cinza claro restrito aos totais.
+- Removidos os preenchimentos dos cabeçalhos, rodapés e linhas de devolução, preservando bordas e identificação dos valores.
+- Demonstrativo e recibo de recebimentos da ordem alinhados à largura útil de 160 mm dos vales, mantendo altura variável e paginação.
+- Validados 13 cenários de impressão, incluindo fundos, larguras, duas vias e as 15 linhas dos vales.
+
 ## 1.40.22 — 26/10/2026
 
 - Corrigido o saldo devedor de vales com transferências anteriores, evitando cobrar novamente valores já destinados a um vale residual.

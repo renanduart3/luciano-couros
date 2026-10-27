@@ -381,14 +381,14 @@ textarea {
 
 .receipt-items-table th {
   height: 3.5mm;
-  background: #f1f5f9;
+  background: white;
   text-align: center;
   font-size: 6.6pt;
   font-weight: 800;
 }
 
 .receipt-items-table .receipt-return-row td {
-  background: #fee2e2 !important;
+  background: white !important;
   color: #b91c1c !important;
   font-weight: 800;
   -webkit-print-color-adjust: exact;
@@ -437,7 +437,7 @@ textarea {
   grid-template-columns: 1fr 42mm;
   margin-top: auto;
   border-top: 0.3mm solid #111827;
-  background: #f8fafc;
+  background: white;
 }
 
 .receipt-counts {
@@ -1230,4 +1230,60 @@ body .vale-actions-menu button { display: flex; align-items: center; gap: 10px; 
   .order-statement footer strong { font-weight: 700 !important; }
   .payment-receipt-section tfoot td,
   .order-statement tfoot td { font-weight: 600 !important; }
+}
+
+/* Papel econômico: o fundo da interface não deve preencher os documentos. */
+body :is(.receipt-copy, .payment-receipt-paper, .order-statement),
+body :is(.receipt-copy, .payment-receipt-paper, .order-statement) * {
+  background-color: white !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+body .receipt-copy .receipt-return-row td {
+  background-color: white !important;
+  color: #111827 !important;
+}
+/* Apenas os totais recebem cinza claro, inclusive quando há duas vias. */
+body .receipt-copy .receipt-total,
+body .receipt-copy .receipt-total *,
+body .payment-receipt-paper .payment-receipt-balance dd,
+body .payment-receipt-paper tfoot td.number,
+body .order-statement footer strong,
+body .order-statement tfoot td:last-child {
+  background-color: #f5f5f5 !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+/* A área útil do vale é 160 mm: A4 menos 25 mm de cada lado. */
+body .order-statement {
+  box-sizing: border-box;
+  width: 160mm;
+  max-width: 100%;
+}
+@media print {
+  @page cobranca { size: A4 portrait; margin: 10mm 25mm; }
+  #print-cobranca-vales { width: 160mm !important; }
+  #print-cobranca-vales .order-statement {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
+/* O recibo de recebimentos da ordem usa a mesma largura do demonstrativo. */
+body .payment-receipt-order {
+  box-sizing: border-box;
+  width: 160mm;
+  max-width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: auto;
+  margin-right: auto;
+}
+@media print {
+  @page pagamento-ordem { size: A4 portrait; margin: 14mm 25mm; }
+  #print-payment-receipt:has(.payment-receipt-order) {
+    page: pagamento-ordem;
+    width: 160mm !important;
+  }
 }

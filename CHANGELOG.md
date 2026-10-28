@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.25 — 28/10/2026
+
+- Listagens de vales e ordens com acessos separados: Detalhes e Receber.
+- Recebimentos em painel compacto, com campos por forma de pagamento, lista editável e totais recalculados antes de salvar.
+- Lista consolidada em transação única, com proteção contra envio duplicado.
+- Seleção de bônus preenche o saldo disponível no campo de valor; banco e telefone removidos da tela de pagamento.
+- Restauração de vales e ordens cancelados com senha administrativa, preservação do histórico e recálculo dos saldos; reabertura de finalizados preservada.
+
 ## 1.40.24 — 28/10/2026
 
 - Demonstrativo atualizado da ordem de cobrança ampliado de 160 mm para 200 mm, compensando os 4 cm faltantes na horizontal.

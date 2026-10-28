@@ -46,8 +46,8 @@ export function PagamentoValesModal({ clienteId, clienteNome, clienteDocumento, 
     api.getCarteiraResumo(clienteId).then((resumo) => setSaldoBonus(Number(resumo.saldoBonus || 0))).catch(() => setSaldoBonus(0));
   }, [clienteId]);
   useEffect(() => {
-    if (formaPagamento === "bonus" && !bonusManual) setBonus(Math.min(Math.max(0, saldoBonus), Math.max(0, totalDivida)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  }, [formaPagamento, bonusManual, saldoBonus, totalDivida]);
+    if (formaPagamento === "bonus" && !bonusManual) setBonus(Math.max(0, saldoBonus - lista.filter(l => l.formaPagamento === 'bonus' && l.id !== editando).reduce((s,l) => s + l.valor, 0)).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+  }, [formaPagamento, bonusManual, saldoBonus, lista, editando]);
 
   const pagamentoTitulo = ehTituloPagamento(formaPagamento);
   const valorBase = parseBrazilianNumber(valor);

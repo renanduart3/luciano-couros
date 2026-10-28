@@ -68,6 +68,43 @@ async function main() {
     const criarOrdem = (vales, parcelas) => request('POST', '/ordens-cobranca', { clienteId: cliente.id, dataEmissao: '2026-09-08', vendaIds: vales.map(v => v.id), parcelas: parcelas.map((valor, i) => ({ valor, vencimento: new Date(Date.UTC(2099, 9 + i, 8)).toISOString().slice(0, 10) })) });
     const getOrdem = async (id) => (await request('GET', '/ordens-cobranca')).find(o => o.id === id);
 
+    const restauravel = await criarVale(100);
+    await pagar([{ vendaId: restauravel.id, valor: 40 }]);
+    await request('POST', `/vales/${restauravel.id}/cancelar`, { pin });
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin: 'incorreta' }, 403);
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin });
+    await conferirVale(restauravel.id,0,100);
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin },409);
+    const valeLoteNovo = await criarVale(100);
+    const linha = (valor,forma='pix') => ({data:'2026-09-08',formaPagamento:forma,valorRecebido:valor,bonusUtilizado:0,alocacoes:[{vendaId:valeLoteNovo.id,valor}]});
+    const loteUrl = `/clientes/${cliente.id}/carteira/recebimentos-lote`;
+    await request('POST',loteUrl,{chave:'teste-falha-atomica-001',pagamentos:[linha(40),linha(80)]},409);
+    await conferirVale(valeLoteNovo.id,0,100);
+    const dadosLote = {chave:'teste-sucesso-atomico-001',pagamentos:[linha(40),linha(60,'avista_dinheiro')]};
+    const salvo = await request('POST',loteUrl,dadosLote);
+    const repetido = await request('POST',loteUrl,dadosLote);
+    assert.deepEqual(repetido,salvo);
+    await conferirVale(valeLoteNovo.id,100,0);
+    const origemBonusLote = await criarVale(10);
+    await pagar([{vendaId:origemBonusLote.id,valor:10}],{valorRecebido:20});
+    const destinoBonusLote = await criarVale(100);
+    await request('POST',loteUrl,{chave:'teste-bonus-misto-atomico-001',pagamentos:[
+      {data:'2026-09-08',formaPagamento:'bonus',valorRecebido:0,bonusUtilizado:10,alocacoes:[{vendaId:destinoBonusLote.id,valor:10}]},
+      {data:'2026-09-08',formaPagamento:'pix',valorRecebido:90,bonusUtilizado:0,alocacoes:[{vendaId:destinoBonusLote.id,valor:90}]}
+    ]});
+    await conferirVale(destinoBonusLote.id,100,0);
+    const valeOrdemRestaurar = await criarVale(120);
+    const ordemRestaurar = await criarOrdem([valeOrdemRestaurar],[120]);
+    const planoCancelar = await previa('ordem',ordemRestaurar.id);
+    await request('POST',`/ordens-cobranca/${ordemRestaurar.id}/encerrar`,{pin,status:'cancelada',revisao:planoCancelar.revisao});
+    await pagar([{vendaId:valeOrdemRestaurar.id,valor:20}]);
+    await request('POST',`/ordens-cobranca/${ordemRestaurar.id}/restaurar`,{pin});
+    const restaurada = await getOrdem(ordemRestaurar.id);
+    assert.equal(restaurada.saldo,100);
+    assert.equal(restaurada.parcelas[0].saldo,100);
+    await request('POST',`/ordens-cobranca/${ordemRestaurar.id}/restaurar`,{pin},409);
+    console.log('OK: lote atômico e idempotente; vales e ordens cancelados restaurados com saldo atual.');
+
     // O vínculo guarda só o saldo cobrado; a interface recebe também o valor integral do vale.
     const originalA = await criarVale(2421.4);
     const originalB = await criarVale(431.8);

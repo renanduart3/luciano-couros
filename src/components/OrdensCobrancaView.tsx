@@ -235,7 +235,7 @@ function ConteudoOrdemDetalhes({ ordem, onClose, onChanged, recebimentoDestaque 
   return <>
   {novoPagamento && <PagamentoValesModal clienteId={ordem.clienteId} clienteNome={ordem.clienteNome} clienteDocumento={ordem.clienteDocumento} vales={[]} ordem={ordem} fecharAoSalvar onClose={() => setNovoPagamento(false)} onSaved={atualizarPagamentos}/>}
   {reabrirFinalizacao && <ReabrirFinalizacaoModal
-    tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)}
+    cancelado={ordem.status === "cancelada"} tipo="ordem" id={ordem.id} onClose={() => setReabrirFinalizacao(false)}
     onSaved={async () => {
       setAbaDetalhe("parcelas");
       setComprovanteAberto(false);
@@ -330,7 +330,7 @@ function ConteudoOrdemDetalhes({ ordem, onClose, onChanged, recebimentoDestaque 
         {feedback && <div className="flex items-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-black text-emerald-800"><CheckCircle2 size={17}/>{feedback}</div>}
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-sm font-black text-red-800"><AlertCircle size={17}/>{error}</div>}
       </div>
-      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{gerente && ordem.finalizadoAt && <button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white">Reabrir para editar</button>}{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button title="É necessário um pagamento registrado; títulos aguardando compensação são aceitos." disabled={saving || !(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicado > 0)} type="button" onClick={() => setFinalizacao(true)} className="order-last rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{podeGerenciar && !ordem.finalizadoAt && <button disabled={saving} type="button" onClick={abrirEncerramento} className="mr-auto order-first rounded-lg bg-red-700 px-3 py-2 text-xs font-black uppercase text-white">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
+      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-300 bg-white p-3">{gerente && (ordem.finalizadoAt || ordem.status === "cancelada") && <button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white">Reabrir para editar</button>}{!ordem.finalizadoAt && ["aberta", "quitada"].includes(ordem.status) && gerente && <button title="É necessário um pagamento registrado; títulos aguardando compensação são aceitos." disabled={saving || !(ordem.pagamentos || []).some(p => p.status === "ativo" && p.valorAplicado > 0)} type="button" onClick={() => setFinalizacao(true)} className="order-last rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black uppercase text-white">Finalizar ordem</button>}{podeGerenciar && !ordem.finalizadoAt && <button disabled={saving} type="button" onClick={abrirEncerramento} className="mr-auto order-first rounded-lg bg-red-700 px-3 py-2 text-xs font-black uppercase text-white">Cancelar ordem</button>}<button type="button" onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-black uppercase text-white">Fechar</button></footer>
     </div>
   </div></>;
 }

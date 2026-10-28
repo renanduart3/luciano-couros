@@ -195,7 +195,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
           </div>
           <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button vale-header-close"><X size={20}/></button>
         </header>
-        {reabrirFinalizacao && <ReabrirFinalizacaoModal tipo="vale" id={vale.id} onClose={() => setReabrirFinalizacao(false)} onSaved={atualizarPagamentos}/>}
+        {reabrirFinalizacao && <ReabrirFinalizacaoModal cancelado={vale.status === "cancelada"} tipo="vale" id={vale.id} onClose={() => setReabrirFinalizacao(false)} onSaved={atualizarPagamentos}/>}
 
         {aba === "itens" ? (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3 sm:p-5 print:hidden">
@@ -304,6 +304,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
             <VendaComprovante venda={vale} />
           </div>
         )}
+        {gerente && onUpdated && vale.status === "cancelada" && <footer className="border-t p-3"><button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-bold text-white">Reabrir para editar</button></footer>}
         {gerente && onUpdated && vale.status !== "cancelada" && (vale.finalizadoAt || !bloqueado) && <footer className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-300 bg-white p-3 print:hidden">
           {!bloqueado && <><button type="button" onClick={() => { setAba("itens"); setModo("cancelar"); setErro(""); setPin(""); }} className="mr-auto rounded-lg bg-red-700 px-4 py-2 text-xs font-black uppercase text-white">Cancelar vale</button><button type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white">Finalizar vale</button></>}
           {vale.finalizadoAt && <button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white">Reabrir para editar</button>}

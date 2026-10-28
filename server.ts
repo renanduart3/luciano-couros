@@ -4083,6 +4083,27 @@ app.put("/api/vales/:id", (req, res) => {
   }
 });
 
+// Restaurar recupera a dívida; recebimentos estornados continuam no histórico.
+app.post("/api/vales/:id/restaurar", exigirGerente, (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) return res.status(403).json({ error: "Senha administrativa inválida." });
+    const id = req.params.id;
+    runInTransaction(() => {
+      const venda = queryOne<any>("SELECT * FROM vendas WHERE id=? AND deletedAt IS NULL AND vencimento IS NOT NULL", [id]);
+      if (!venda) throw erroHttp("Vale não encontrado.", 404);
+      if (venda.status !== "cancelada") throw erroHttp("Somente vales cancelados podem ser restaurados.", 409);
+      exigirValeSemOrdemAberta(id);
+      const saldo = Math.max(0, Number(venda.totalLiquido) - transferidoVale(id));
+      execute("UPDATE vendas SET status=?, valorPago=0, saldoRestante=?, finalizadoAt=NULL, updatedAt=CURRENT_TIMESTAMP WHERE id=?", [saldo > 0.005 ? "pendente" : "paga", saldo, id]);
+      recalcularParcelasVale(id);
+      registrarAuditoria(administrador.id, "vale_restaurado", "venda", id, { saldo, motivo: String(req.body?.motivo || ""), pagamentosAnteriores: "Não reativados; créditos restituídos preservados" });
+      rebuildClienteProdutosHabituais(venda.clienteId);
+    });
+    res.json({ success: true });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
 app.post("/api/vales/:id/cancelar", (req, res) => {
   try {
     exigirValeSemOrdemAberta(req.params.id);
@@ -5084,6 +5105,39 @@ app.post("/api/ordens-cobranca/:id/encerrar", exigirGerente, (req, res) => {
   }
 });
 
+app.post("/api/ordens-cobranca/:id/restaurar", exigirGerente, (req,res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) throw erroHttp('Senha administrativa inválida.',403);
+    runInTransaction(() => {
+      const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id=? AND deletedAt IS NULL",[req.params.id]);
+      if (!ordem || ordem.status !== 'cancelada') throw erroHttp('Somente ordens canceladas podem ser restauradas.',409);
+      const vales = queryAll<any>('SELECT v.* FROM vendas v JOIN ordem_cobranca_vales ov ON ov.vendaId=v.id WHERE ov.ordemId=? AND ov.removidoAt IS NULL',[ordem.id]);
+      if (!vales.length) throw erroHttp('A ordem não possui vales.',409);
+      for (const vale of vales) {
+        if (vale.deletedAt || vale.status === 'cancelada' || vale.finalizadoAt) throw erroHttp(`Restaure ou reabra o vale #${vale.numeroSequencial} primeiro.`,409);
+        exigirValeSemOrdemAberta(vale.id);
+        // A dívida vigente prevalece sobre o saldo do agrupamento cancelado.
+        execute('UPDATE ordem_cobranca_vales SET valorVinculado=?, valorPago=0, saldo=?, ativo=? WHERE ordemId=? AND vendaId=? AND removidoAt IS NULL',[Number(vale.saldoRestante)+transferidoOrdem(ordem.id,vale.id),vale.saldoRestante,Number(vale.saldoRestante) > .005 ? 1 : 0,ordem.id,vale.id]);
+      }
+      const total = Math.round((vales.reduce((s,v) => s + Number(v.saldoRestante),0) + transferidoOrdem(ordem.id))*100)/100;
+      const parcelas = queryAll<any>('SELECT * FROM ordem_cobranca_parcelas WHERE ordemId=? AND deletedAt IS NULL ORDER BY numero',[ordem.id]);
+      const totalAnterior = parcelas.reduce((s,p) => s+Number(p.valor),0);
+      let restante = Math.round(total*100);
+      parcelas.forEach((p,i) => {
+        const centavos = i === parcelas.length-1 ? restante : Math.min(restante,Math.round(total*100*(totalAnterior ? Number(p.valor)/totalAnterior : 1/parcelas.length)));
+        restante -= centavos;
+        execute('UPDATE ordem_cobranca_parcelas SET valor=?, valorRenegociado=0 WHERE id=?',[centavos/100,p.id]);
+      });
+      execute('UPDATE ordens_cobranca SET totalOriginal=? WHERE id=?',[total,ordem.id]);
+      execute("UPDATE ordens_cobranca SET status='aberta', finalizadoAt=NULL, motivoEncerramento=NULL, updatedAt=CURRENT_TIMESTAMP WHERE id=?",[ordem.id]);
+      recalcularOrdemCobranca(ordem.id);
+      registrarAuditoria(administrador.id,'ordem_restaurada','ordem_cobranca',ordem.id,{ motivo:String(req.body?.motivo || ''), ordemAnterior:ordem, parcelasAnteriores:parcelas, novoTotal:total });
+    });
+    res.json({success:true});
+  } catch(error:any) { res.status(error.statusCode || 500).json({error:error.message}); }
+});
+
 function carregarComprovantesFinalizacao(tipo: 'vale' | 'ordem', id: string) {
   return queryAll<any>('SELECT * FROM comprovantes_finalizacao WHERE tipo=? AND documentoId=? ORDER BY data DESC, rowid DESC', [tipo, id])
     .map(c => ({ id: c.id, data: c.data, documento: JSON.parse(c.documento) }));
@@ -5358,13 +5412,12 @@ function validarAgrupamentoPagamento(alocacoes: Array<{ vendaId: string }>, orde
   for (const alocacao of alocacoes) exigirValeSemOrdemAberta(alocacao.vendaId);
 }
 
-app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
-  try {
+function registrarRecebimentoCliente(req: any, body = req.body) {
     const { id: clienteId } = req.params;
-    const { data, formaPagamento, observacao, alocacoes, parcelaOrdemId } = req.body;
-    const ordemCobrancaId = String(req.body?.ordemCobrancaId || '').trim();
-    const projecaoId = String(req.body?.projecaoId || '');
-    const gerenteProjecao = projecaoId ? validarPinAdministrador(req.body?.pin) : null;
+    const { data, formaPagamento, observacao, alocacoes, parcelaOrdemId } = body;
+    const ordemCobrancaId = String(body?.ordemCobrancaId || '').trim();
+    const projecaoId = String(body?.projecaoId || '');
+    const gerenteProjecao = projecaoId ? validarPinAdministrador(body?.pin) : null;
     if (projecaoId && !gerenteProjecao) throw erroHttp("Informe a senha do gerente para registrar a previsão.", 403);
     if (ordemCobrancaId && parcelaOrdemId) throw erroHttp('Selecione a ordem ou a parcela, não ambas.', 400);
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
@@ -5376,7 +5429,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     if (!FORMAS_PAGAMENTO_CLIENTE.has(forma)) {
       throw erroHttp("Informe uma forma de pagamento válida.", 400);
     }
-    const parcelasCartao = normalizarParcelasCartao(forma, req.body?.parcelasCartao);
+    const parcelasCartao = normalizarParcelasCartao(forma, body?.parcelasCartao);
 
     const cliente = queryOne<any>("SELECT id, nome, documento FROM clientes WHERE id = ? AND deletedAt IS NULL AND ativo = 1", [clienteId]);
     if (!cliente) throw erroHttp("Cliente não encontrado ou inativo.", 404);
@@ -5390,10 +5443,10 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
     }
     const listaAlocacoes = [...agrupadas].map(([vendaId, valor]) => ({ vendaId, valor }));
     const totalAplicado = arredondar(listaAlocacoes.reduce((total, item) => total + item.valor, 0));
-    const recebido = arredondar(req.body?.valorRecebido);
-    const valoresCredito = validarValoresCredito(forma, parcelasCartao, recebido, req.body?.valoresParcelasCartao);
-    const bonusUtilizado = arredondar(req.body?.bonusUtilizado);
-    const titulos = normalizarTitulosPagamento(forma, req.body?.titulos, req.body?.dadosCheque, cliente, recebido);
+    const recebido = arredondar(body?.valorRecebido);
+    const valoresCredito = validarValoresCredito(forma, parcelasCartao, recebido, body?.valoresParcelasCartao);
+    const bonusUtilizado = arredondar(body?.bonusUtilizado);
+    const titulos = normalizarTitulosPagamento(forma, body?.titulos, body?.dadosCheque, cliente, recebido);
     const parcelaOrdemIdTexto = String(parcelaOrdemId || "").trim();
     if (forma === "bonus" && recebido > 0.005) {
       throw erroHttp("Na forma Bônus, informe o valor somente como bônus utilizado.", 400);
@@ -5459,7 +5512,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       execute('UPDATE recebimentos_cliente SET ordemCobrancaId = ? WHERE id = ?', [ordemCobrancaId || null, recebimentoId]);
       if (projecaoId) {
         const projecao = queryOne<any>("SELECT * FROM ordem_pagamentos_projetados WHERE id = ? AND ordemId = ? AND estado = 'pendente'", [projecaoId, ordemCobrancaId]);
-        if (!projecao || crypto.createHash("sha256").update(projecao.dados).digest("hex") !== req.body?.projecaoRevisao) throw erroHttp("A previsão mudou ou já foi registrada. Atualize a ordem.", 409);
+        if (!projecao || crypto.createHash("sha256").update(projecao.dados).digest("hex") !== body?.projecaoRevisao) throw erroHttp("A previsão mudou ou já foi registrada. Atualize a ordem.", 409);
         const anteriores = JSON.parse(projecao.dados).titulos || [];
         for (const t of titulos as any[]) {
           const anterior = anteriores.find((a: any) => a.id === t.id);
@@ -5509,7 +5562,7 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       });
     });
 
-    res.status(201).json({
+    return {
       success: true,
       id: recebimentoId,
       valorRecebido: recebido,
@@ -5518,10 +5571,30 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
       bonusGerado,
       titulos,
       ordemAtualizada: ordemCobrancaId ? listarOrdensCobranca("AND oc.id = ?", [ordemCobrancaId])[0] : undefined
+    };
+}
+app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
+  try { res.status(201).json(registrarRecebimentoCliente(req)); }
+  catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+execute("CREATE TABLE IF NOT EXISTS recebimentos_lotes (id TEXT PRIMARY KEY, clienteId TEXT NOT NULL, assinatura TEXT NOT NULL, resultado TEXT NOT NULL)");
+app.post("/api/clientes/:id/carteira/recebimentos-lote", (req, res) => {
+  try {
+    const { pagamentos, chave } = req.body;
+    if (typeof chave !== 'string' || chave.length < 16 || chave.length > 100 || !Array.isArray(pagamentos) || !pagamentos.length || pagamentos.length > 50) throw erroHttp('Informe de 1 a 50 pagamentos.', 400);
+    const assinatura = crypto.createHash('sha256').update(JSON.stringify(pagamentos)).digest('hex');
+    const resultado = runInTransaction(() => {
+      const anterior = queryOne<any>('SELECT * FROM recebimentos_lotes WHERE id=?', [chave]);
+      if (anterior) {
+        if (anterior.clienteId !== req.params.id || anterior.assinatura !== assinatura) throw erroHttp('Este envio já foi utilizado com outros dados.',409);
+        return JSON.parse(anterior.resultado);
+      }
+      const recebimentos = pagamentos.map(body => registrarRecebimentoCliente(req, body));
+      execute('INSERT INTO recebimentos_lotes VALUES (?,?,?,?)', [chave, req.params.id, assinatura, JSON.stringify(recebimentos)]);
+      return recebimentos;
     });
-  } catch (error: any) {
-    res.status(error.statusCode || 500).json({ error: error.message });
-  }
+    res.status(201).json({ recebimentos: resultado });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
 function carregarRecebimentoGerenciavel(recebimentoId: string) {

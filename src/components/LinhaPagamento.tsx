@@ -13,9 +13,10 @@ type Situacao = "em_aberto" | "compensado" | "aguardando" | "recusado";
 const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "Confirmado", aguardando: "Aguardando", recusado: "Recusado" };
 const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
-export function LinhaPagamento({ children, mostrarAbatimento = false, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
+export function LinhaPagamento({ ocultarAcoes = false, children, mostrarAbatimento = false, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
   vendaIdContexto, onDetalhes, projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
+  ocultarAcoes?: boolean;
   mostrarAbatimento?: boolean;
   vendaIdContexto?: string;
   projecao?: ProjecaoPagamentoOrdem; onEstornar?: () => void; onExcluir?: () => void;
@@ -141,14 +142,14 @@ export function LinhaPagamento({ children, mostrarAbatimento = false, colunasAnt
         {!onEstornar && !novo && pagamento?.status === "ativo" && <option value="em_aberto">Em aberto</option>}
         {projecao && <option value="em_aberto">Planejado (não recebido)</option>}<option value="compensado">Confirmado</option>{titulo && <option value="aguardando">Aguardando</option>}{titulo && !novo && <option value="recusado">Recusado</option>}
       </select> : <span className={pagamento?.statusPagamento === "compensado" ? "text-emerald-800" : "text-amber-800"}>{pagamento ? nomes[pagamento.statusPagamento] : projecao ? "Planejado · não recebido" : statusSemPagamento || nomes.em_aberto}</span>}</td>
-      <td data-label="Ações" className="p-2"><div className="payment-actions">{editando ? <><button type="button" disabled={saving || revisando || concluido || (!projecao && situacao === "em_aberto" && (!plano || (!excluindo && !confirmado)))} onClick={() => void salvar()} className="rounded-lg bg-emerald-700 px-2 py-1 text-[10px] font-black text-white disabled:opacity-40">{saving ? "Salvando…" : excluindo ? "Confirmar exclusão" : projecao && situacao === "em_aberto" ? "Salvar previsão" : novo ? "Registrar" : "Salvar"}</button><button type="button" disabled={saving} onClick={() => { setEditando(false); setErro(""); setPin(""); onCancel?.(); }} className="rounded-lg border px-2 py-1 text-[10px] font-bold">Cancelar</button></> : <>
+      {!ocultarAcoes && <td data-label="Ações" className="p-2"><div className="payment-actions">{editando ? <><button type="button" disabled={saving || revisando || concluido || (!projecao && situacao === "em_aberto" && (!plano || (!excluindo && !confirmado)))} onClick={() => void salvar()} className="rounded-lg bg-emerald-700 px-2 py-1 text-[10px] font-black text-white disabled:opacity-40">{saving ? "Salvando…" : excluindo ? "Confirmar exclusão" : projecao && situacao === "em_aberto" ? "Salvar previsão" : novo ? "Registrar" : "Salvar"}</button><button type="button" disabled={saving} onClick={() => { setEditando(false); setErro(""); setPin(""); onCancel?.(); }} className="rounded-lg bg-red-700 px-2 py-1 text-[10px] font-bold text-white">Cancelar</button></> : <>
         {editavel && <button type="button" title="Editar" aria-label="Editar" onClick={() => iniciar()} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg border border-slate-300 px-2 py-1 text-[10px] font-black"><Pencil size={16}/></button>}
         {editavel && onEstornar && <button type="button" title="Estornar" aria-label="Estornar" onClick={onEstornar} className="rounded-lg border px-2 py-1 text-[10px] font-bold"><RotateCcw size={16}/></button>}
         {editavel && (onExcluir || pagamento) && <button type="button" title="Excluir" aria-label="Excluir" onClick={() => { if (onExcluir) onExcluir(); else { iniciar(); setExcluindo(true); void trocarStatus("em_aberto"); } }} className="rounded-lg border border-red-200 px-2 py-1 text-[10px] font-bold text-red-700"><Trash2 size={16}/></button>}
         {editavel && pagamento && saldo > 0.005 && <button type="button" onClick={() => iniciar(true)} className="rounded-lg border border-emerald-300 px-2 py-1 text-[10px] font-bold text-emerald-800">Receber saldo</button>}
         {pagamento && ehTituloPagamento(pagamento.formaPagamento) && onDetalhes && <button type="button" title="Ver títulos / boletos" aria-label="Ver títulos / boletos" onClick={() => onDetalhes(pagamento.id)} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800"><Banknote size={16}/></button>}
         {pagamento && onComprovante && <button type="button" title="Comprovante" aria-label="Comprovante" onClick={() => onComprovante(pagamento.id)} className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-lg px-2 py-1 text-[10px] font-bold text-blue-800"><FileText size={16}/></button>}
-      </>}</div></td>
+      </>}</div></td>}
     </tr>
     {editando && <tr className="payment-editor-row payment-compact bg-blue-50"><td colSpan={colunas} className="px-3 pb-3">
       {(projecao || situacao !== "em_aberto") && <div className="my-2 space-y-2 text-xs">

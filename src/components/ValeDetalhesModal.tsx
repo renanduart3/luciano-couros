@@ -233,18 +233,18 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
             <div className="grid items-start gap-4 lg:grid-cols-[210px_minmax(0,1fr)]">
               <ResumoFinanceiroFixo negociado={Math.max(0, Math.round((vale.totalLiquido - (financeiro.transferido || 0)) * 100) / 100)} financeiro={financeiro} rotuloTotal="Devedor" bonusGerado={Number(vale.bonusGeradoVenda || 0)} vertical/>
             <div className="min-w-0 overflow-x-auto rounded-xl border border-slate-300 bg-white">
-              <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento || Number(vale.saldoRestante) <= 0.005} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Adicionar pagamento</button>}</div>
+              <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2"><h3 className="text-xs font-black uppercase text-slate-700">Pagamentos</h3>{!bloqueado && onUpdated && vale.status !== "cancelada" && <button type="button" disabled={novoPagamento} onClick={() => setNovoPagamento(true)} className="rounded-lg bg-emerald-700 px-2 py-1 text-xs font-bold text-white disabled:opacity-40">Receber</button>}</div>
               <table className="payments-table w-full min-w-[720px] text-xs">
-                <thead className="bg-slate-50 text-left"><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Situação", "Ações"].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
+                <thead className="bg-slate-50 text-left"><tr>{["Data", "Valor", "Recebido", "Forma de pagamento", "Situação"].map(t => <th data-label={t} key={t} className="p-2">{t}</th>)}</tr></thead>
                 <tbody>{pagamentosPagina.map((pagamento) =>
-                  <LinhaPagamento key={pagamento?.id || vale.id} pagamento={pagamento} vendaIdContexto={legado ? undefined : vale.id} clienteId={vale.clienteId}
+                  <LinhaPagamento ocultarAcoes key={pagamento?.id || vale.id} pagamento={pagamento} vendaIdContexto={legado ? undefined : vale.id} clienteId={vale.clienteId}
                     clienteNome={vale.clienteNome || "Cliente"} clienteDocumento={vale.clienteDocumento}
                     saldo={0}
                     alocar={valor => [{ vendaId: vale.id, valor: Math.min(valor, Number(vale.saldoRestante)) }]}
                     referencia={`vale #${vale.numeroSequencial}`} onSaved={atualizarPagamentos}
                     somenteReabertura={Boolean(legado)} alvoReabertura={legado ? { tipo: "vale", id: vale.id } : undefined}
                     onDetalhes={legado ? undefined : setRecebimentoAberto}
-                    editavel={!bloqueado && Boolean(onUpdated) && vale.status !== "cancelada" && gerente}/>
+                    editavel={false}/>
                 )}
                 </tbody>
               </table>{pagamentosDoVale.length > 10 && <Pagination page={paginaPagamentos} pageSize={10} totalItems={pagamentosDoVale.length} onPageChange={setPaginaPagamentos}/>}</div>

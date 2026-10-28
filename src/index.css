@@ -1254,15 +1254,15 @@ body .order-statement tfoot td:last-child {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-/* A área útil do vale é 160 mm: A4 menos 25 mm de cada lado. */
+/* Demonstrativo com 200 mm de largura: acréscimo horizontal de 40 mm. */
 body .order-statement {
   box-sizing: border-box;
-  width: 160mm;
+  width: 200mm;
   max-width: 100%;
 }
 @media print {
-  @page cobranca { size: A4 portrait; margin: 10mm 25mm; }
-  #print-cobranca-vales { width: 160mm !important; }
+  @page cobranca { size: A4 portrait; margin: 10mm 5mm; }
+  #print-cobranca-vales { width: 200mm !important; }
   #print-cobranca-vales .order-statement {
     width: 100% !important;
     max-width: 100% !important;
@@ -1270,7 +1270,7 @@ body .order-statement {
     overflow: visible !important;
   }
 }
-/* O recibo de recebimentos da ordem usa a mesma largura do demonstrativo. */
+/* O recibo de recebimentos da ordem mantém sua largura de 160 mm. */
 body .payment-receipt-order {
   box-sizing: border-box;
   width: 160mm;

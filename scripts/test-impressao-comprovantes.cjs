@@ -69,7 +69,7 @@ async function main() {
           return !['rgb(255, 255, 255)', 'rgba(0, 0, 0, 0)'].includes(cor) && !(valor && cor === 'rgb(245, 245, 245)');
         }).map(e => ({tag:e.tagName,classe:e.className,cor:getComputedStyle(e).backgroundColor})));
         assert.deepEqual(fundos, [], `Fundo preenchido fora dos totais: ${f.nome} / ${media}`);
-        if (f.tipo === 'ordem') assert.ok(await page.locator('.order-statement').evaluate(e => Math.abs(e.getBoundingClientRect().width - 160*96/25.4) < 1), `Largura da ordem deve ser 160 mm: ${media}`);
+        if (f.tipo === 'ordem') assert.ok(await page.locator('.order-statement').evaluate(e => Math.abs(e.getBoundingClientRect().width - 200*96/25.4) < 1), `Largura da ordem deve ser 200 mm: ${media}`);
         if (f.nome === 'recibo-ordem-acumulado') assert.ok(await page.locator('.payment-receipt-order').evaluate(e => Math.abs(e.getBoundingClientRect().width - 160*96/25.4) < 1), `Largura do recibo da ordem: ${media}`);
       }
       await page.emulateMedia({media:'print'});

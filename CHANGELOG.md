@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.24 — 28/10/2026
+
+- Demonstrativo atualizado da ordem de cobrança ampliado de 160 mm para 200 mm, compensando os 4 cm faltantes na horizontal.
+- Margens laterais de impressão ajustadas para 5 mm no A4, preservando margens verticais e tamanho das letras.
+
 ## 1.40.23 — 27/10/2026
 
 - Fundos brancos nos comprovantes, vales e demonstrativos para economizar toner, com destaque cinza claro restrito aos totais.

@@ -1,0 +1,31 @@
+/* Tema isolado: remover o import e a classe restaura o visual anterior. */
+.recebimentos-classico { font-family: Tahoma, Arial, sans-serif; font-size: 12px; border: 1px solid #829fa9; border-radius: 4px; color: #173f50; }
+.recebimentos-classico > header { background: #58a3be; padding: 8px 12px; }
+.recebimentos-classico > header h2 { color: #ffdf72; font-size: 16px; font-style: italic; letter-spacing: 1px; }
+.recebimentos-classico > header p { color: white; font-weight: 400; }
+.recebimentos-classico > div { background: linear-gradient(110deg,#e5f2f7,#aed4e3); padding: 12px; }
+.recebimentos-classico :is(input,select) { min-height: 28px; height: 28px; border-radius: 2px; font: 12px Tahoma,Arial,sans-serif; padding: 3px 7px; background: #f7f7f7; color: #111; border-color: #b4b4b4; }
+.recebimentos-classico label { text-transform: none; font-size: 12px; font-weight: 400; color: #173f50; }
+.recebimentos-classico button { border-radius: 3px; font-size: 12px; text-transform: none; min-height: 28px; }
+.recebimentos-classico button[type=submit] { background: linear-gradient(#79ce72,#459c46); border: 1px solid #4e9748; }
+.recebimentos-classico > footer { background: #c1dfea; padding: 8px 12px; }
+.recebimentos-classico table { font-size: 12px; }
+.recebimentos-classico th { background: linear-gradient(#eee,#ccc); text-transform: none; }
+.recebimentos-classico tbody tr:nth-child(even) { background: #e2e2ff; }
+.recebimentos-resumo { display:grid; grid-template-columns:2fr 1fr 1fr; gap:8px; padding:12px; background:#d2e8f0; }
+.recebimentos-resumo > div { display:flex; align-items:center; border:1px solid #b5b5b5; border-radius:3px; background:#eee; }
+.recebimentos-resumo span { padding:5px; font-size:11px; }
+.recebimentos-resumo strong { flex:1; padding:5px; background:#d7d7d7; font-weight:400; }
+.recebimentos-resumo > div:nth-child(2) strong { background:#8ee6f7; font-weight:bold; }
+.recebimentos-resumo > div:nth-child(3) strong { background:#a9f0a1; font-weight:bold; }
+@media(max-width:700px) { .recebimentos-resumo { grid-template-columns:1fr; } }
+
+.recebimentos-entrada { display:grid; grid-template-columns:240px minmax(0,1fr); gap:12px; align-items:start; }
+.recebimentos-titulos { font-size:12px; }
+.recebimentos-titulos ul { margin-top:5px; background:#ffffcc; border:1px solid #b7b7b7; padding:8px; min-height:110px; max-height:180px; overflow:auto; }
+.recebimentos-titulos li { padding:3px 0; }
+.recebimentos-grade { border:1px solid #a5a5a5; background:#f7f7f7; min-height:110px; }
+.recebimentos-grade h3 { background:linear-gradient(#eee,#ccc); padding:5px 10px; letter-spacing:1px; }
+.recebimentos-grade :is(td,th) { text-align:left; padding:5px 10px; }
+.recebimentos-grade td:last-child { background:#008b16; color:white; font-weight:bold; }
+@media(max-width:850px) { .recebimentos-entrada { grid-template-columns:1fr; } }

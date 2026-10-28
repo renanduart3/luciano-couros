@@ -68,6 +68,16 @@ async function main() {
     const criarOrdem = (vales, parcelas) => request('POST', '/ordens-cobranca', { clienteId: cliente.id, dataEmissao: '2026-09-08', vendaIds: vales.map(v => v.id), parcelas: parcelas.map((valor, i) => ({ valor, vencimento: new Date(Date.UTC(2099, 9 + i, 8)).toISOString().slice(0, 10) })) });
     const getOrdem = async (id) => (await request('GET', '/ordens-cobranca')).find(o => o.id === id);
 
+    const restauravel = await criarVale(100);
+    await pagar([{ vendaId: restauravel.id, valor: 40 }]);
+    await request('POST', `/vales/${restauravel.id}/cancelar`, { pin });
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin: 'incorreta' }, 403);
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin });
+    await conferirVale(restauravel.id, 0, 100);
+    assert.equal(db.prepare('SELECT saldo FROM vale_parcelas WHERE vendaId=?').get(restauravel.id).saldo, 100);
+    await request('POST', `/vales/${restauravel.id}/restaurar`, { pin }, 409);
+    console.log('OK: restauração de vale cancelado sem duplicar pagamentos, com senha e proteção contra repetição.');
+
     // O vínculo guarda só o saldo cobrado; a interface recebe também o valor integral do vale.
     const originalA = await criarVale(2421.4);
     const originalB = await criarVale(431.8);

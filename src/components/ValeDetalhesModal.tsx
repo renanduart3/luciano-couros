@@ -108,7 +108,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
     setSalvando(true);
     setErro("");
     try {
-      await api.cancelarVale(vale.id, pin, motivo);
+      await (vale.status === "cancelada" ? api.restaurarVale(vale.id, pin, motivo) : api.cancelarVale(vale.id, pin, motivo));
       onUpdated?.(null);
     } catch (error: any) {
       setPin("");
@@ -220,9 +220,9 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
             </div>}
 
             {modo === "cancelar" && <div className="space-y-3 rounded-2xl border border-red-300 bg-red-50 p-4">
-              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-red-950">Cancelar vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-red-800">Sai da contabilidade e permanece no histórico.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-red-800"><X size={17} /></button></div>
+              <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-red-950">{vale.status === "cancelada" ? "Restaurar" : "Cancelar"} vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-red-800">{vale.status === "cancelada" ? "Reabre a dívida sem reativar pagamentos estornados. Bônus restituídos permanecem disponíveis." : "Sai da contabilidade e permanece no histórico."}</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-red-800"><X size={17} /></button></div>
               <input value={motivo} onChange={(event) => setMotivo(event.target.value)} placeholder="Motivo do cancelamento (opcional)" className="min-h-11 w-full rounded-xl border border-red-200 bg-white px-3 text-sm font-bold" />
-              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha do gerente" className="min-h-11 flex-1 rounded-xl border border-red-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={cancelarVale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Confirmar cancelamento</button></div>
+              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha do gerente" className="min-h-11 flex-1 rounded-xl border border-red-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={cancelarVale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> {vale.status === "cancelada" ? "Confirmar restauração" : "Confirmar cancelamento"}</button></div>
               {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
 
@@ -304,6 +304,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
             <VendaComprovante venda={vale} />
           </div>
         )}
+        {gerente && onUpdated && vale.status === "cancelada" && <footer className="p-3 border-t"><button type="button" onClick={() => { setAba("itens"); setModo("cancelar"); setErro(""); setPin(""); }} className="rounded bg-blue-700 px-4 py-2 text-white">Restaurar vale cancelado</button></footer>}
         {gerente && onUpdated && vale.status !== "cancelada" && (vale.finalizadoAt || !bloqueado) && <footer className="flex shrink-0 items-center justify-end gap-3 border-t border-slate-300 bg-white p-3 print:hidden">
           {!bloqueado && <><button type="button" onClick={() => { setAba("itens"); setModo("cancelar"); setErro(""); setPin(""); }} className="mr-auto rounded-lg bg-red-700 px-4 py-2 text-xs font-black uppercase text-white">Cancelar vale</button><button type="button" onClick={() => setFinalizacao(true)} className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-black uppercase text-white">Finalizar vale</button></>}
           {vale.finalizadoAt && <button type="button" onClick={() => setReabrirFinalizacao(true)} className="rounded-lg bg-amber-700 px-3 py-2 text-xs font-black text-white">Reabrir para editar</button>}

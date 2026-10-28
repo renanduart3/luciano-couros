@@ -526,6 +526,7 @@ export const api = {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dados)
   }).then(r => handleResponse<Venda>(r)),
+  restaurarVale: (id: string, pin: string, motivo?: string) => fetch(`${API_BASE}/vales/${id}/restaurar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pin, motivo }) }).then(r => handleResponse<{ success: boolean }>(r)),
   cancelarVale: (id: string, pin: string, motivo?: string) =>
     fetch(`${API_BASE}/vales/${id}/cancelar`, {
       method: "POST",

@@ -4083,6 +4083,27 @@ app.put("/api/vales/:id", (req, res) => {
   }
 });
 
+// Restaurar recupera a dívida; recebimentos estornados continuam no histórico.
+app.post("/api/vales/:id/restaurar", exigirGerente, (req, res) => {
+  try {
+    const administrador = validarPinAdministrador(req.body?.pin);
+    if (!administrador) return res.status(403).json({ error: "Senha administrativa inválida." });
+    const id = req.params.id;
+    runInTransaction(() => {
+      const venda = queryOne<any>("SELECT * FROM vendas WHERE id=? AND deletedAt IS NULL AND vencimento IS NOT NULL", [id]);
+      if (!venda) throw erroHttp("Vale não encontrado.", 404);
+      if (venda.status !== "cancelada") throw erroHttp("Somente vales cancelados podem ser restaurados.", 409);
+      exigirValeSemOrdemAberta(id);
+      const saldo = Math.max(0, Number(venda.totalLiquido) - transferidoVale(id));
+      execute("UPDATE vendas SET status=?, valorPago=0, saldoRestante=?, finalizadoAt=NULL, updatedAt=CURRENT_TIMESTAMP WHERE id=?", [saldo > 0.005 ? "pendente" : "paga", saldo, id]);
+      recalcularParcelasVale(id);
+      registrarAuditoria(administrador.id, "vale_restaurado", "venda", id, { saldo, motivo: String(req.body?.motivo || ""), pagamentosAnteriores: "Não reativados; créditos restituídos preservados" });
+      rebuildClienteProdutosHabituais(venda.clienteId);
+    });
+    res.json({ success: true });
+  } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
+});
+
 app.post("/api/vales/:id/cancelar", (req, res) => {
   try {
     exigirValeSemOrdemAberta(req.params.id);

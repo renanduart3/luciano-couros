@@ -1027,6 +1027,9 @@ export function initDatabase() {
     createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   )`).run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_movimentos_recebimento ON movimentacoes_financeiras(recebimentoId, createdAt)').run();
+  for (const campo of ['banco','telefone']) {
+    if (!(db.prepare('PRAGMA table_info(recebimento_titulos)').all() as any[]).some(c => c.name === campo)) db.prepare(`ALTER TABLE recebimento_titulos ADD COLUMN ${campo} TEXT`).run();
+  }
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'formaPagamentoPrevista')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN formaPagamentoPrevista TEXT').run();
   if (!(db.prepare('PRAGMA table_info(ordem_cobranca_parcelas)').all() as any[]).some(c => c.name === 'valorRenegociado')) db.prepare('ALTER TABLE ordem_cobranca_parcelas ADD COLUMN valorRenegociado REAL NOT NULL DEFAULT 0').run();
   try { db.prepare(`ALTER TABLE itens_orcamento ADD COLUMN faltante INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}

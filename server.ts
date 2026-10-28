@@ -671,7 +671,7 @@ function normalizarTitulosPagamento(formaPagamento: string, entrada: unknown, le
     const statusTitulo = ["aguardando", "compensado", "recusado"].includes(String(item?.status || "")) ? String(item.status) : undefined;
     const valorOriginal = Number(item?.valorOriginal ?? valor);
     if (!Number.isFinite(valorOriginal) || valorOriginal <= 0) throw erroHttp('Valor original do título inválido.', 400);
-    return { id: typeof item?.id === "string" ? item.id : undefined, tipo: formaPagamento, nomeTitular, documentoTitular, valor, valorOriginal, vencimento, numeroDocumento, observacao, status: statusTitulo, dataCompensacao: item?.dataCompensacao };
+    return { id: typeof item?.id === "string" ? item.id : undefined, tipo: formaPagamento, banco: String(item?.banco || "").slice(0,60), telefone: String(item?.telefone || "").slice(0,30), nomeTitular, documentoTitular, valor, valorOriginal, vencimento, numeroDocumento, observacao, status: statusTitulo, dataCompensacao: item?.dataCompensacao };
   });
   const totalTitulos = Math.round(titulos.reduce((total, titulo) => total + (titulo.status === "recusado" ? 0 : titulo.valor), 0) * 100) / 100;
   if (Math.abs(totalTitulos - valorRecebido) > 0.005) {
@@ -692,11 +692,11 @@ function inserirTitulosRecebimento(recebimentoId: string, clienteId: string, tit
     execute(
     `INSERT INTO recebimento_titulos
        (id, recebimentoId, clienteId, tipo, nomeTitular, documentoTitular, valor,
-        vencimento, numeroDocumento, status, dataCompensacao, motivoStatus, observacao, valorOriginal, compensacaoAutomatica)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        vencimento, numeroDocumento, status, dataCompensacao, motivoStatus, observacao, valorOriginal, compensacaoAutomatica, banco, telefone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ["rtit_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), recebimentoId, clienteId,
       titulo.tipo, titulo.nomeTitular, titulo.documentoTitular, titulo.valor,
-      titulo.vencimento, titulo.numeroDocumento, statusTitulo, compensacaoTitulo, motivoStatus || null, titulo.observacao || null, titulo.valorOriginal ?? titulo.valor, programado]
+      titulo.vencimento, titulo.numeroDocumento, statusTitulo, compensacaoTitulo, motivoStatus || null, titulo.observacao || null, titulo.valorOriginal ?? titulo.valor, programado, titulo.banco || null, titulo.telefone || null]
     );
   }
 }
@@ -704,7 +704,7 @@ function inserirTitulosRecebimento(recebimentoId: string, clienteId: string, tit
 function listarTitulosRecebimento(recebimentoId: string, incluirExcluidos = false) {
   return queryAll<any>(
     `SELECT id, tipo, nomeTitular, documentoTitular, valor, valorOriginal, vencimento, numeroDocumento,
-            status, dataCompensacao, motivoStatus, observacao, compensacaoAutomatica, createdAt, updatedAt
+            status, dataCompensacao, motivoStatus, observacao, compensacaoAutomatica, banco, telefone, createdAt, updatedAt
      FROM recebimento_titulos WHERE recebimentoId = ? ${incluirExcluidos ? "" : "AND deletedAt IS NULL"}
      ORDER BY createdAt ASC, rowid ASC`,
     [recebimentoId]

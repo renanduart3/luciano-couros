@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./components/gerenciar-recebimentos.css";
 
 @theme {
   --font-sans: "Segoe UI", ui-sans-serif, system-ui, sans-serif;

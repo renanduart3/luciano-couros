@@ -390,6 +390,8 @@ export interface PagamentoGerenciavel {
 }
 
 export interface TituloRecebimento {
+  banco?: string;
+  telefone?: string;
   compensacaoAutomatica?: number;
   valorOriginal?: number;
   valorManual?: boolean;

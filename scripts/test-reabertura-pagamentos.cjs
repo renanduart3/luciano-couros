@@ -105,6 +105,13 @@ async function main() {
     await request('POST',`/ordens-cobranca/${ordemRestaurar.id}/restaurar`,{pin},409);
     console.log('OK: lote atômico e idempotente; vales e ordens cancelados restaurados com saldo atual.');
 
+    const valeCamposTitulo = await criarVale(20);
+    const reciboCampos = await pagar([{vendaId:valeCamposTitulo.id,valor:20}],{formaPagamento:'cheque_terceiro',titulos:[{tipo:'cheque_terceiro',nomeTitular:'Titular teste',documentoTitular:'12345678901',valor:20,vencimento:'2099-12-20',numeroDocumento:'1234',banco:'341',telefone:'31999990000'}]});
+    const camposSalvos = await request('GET',`/recebimentos-cliente/${reciboCampos.id}/gerenciar`);
+    assert.equal(camposSalvos.titulos[0].banco,'341');
+    assert.equal(camposSalvos.titulos[0].telefone,'31999990000');
+    console.log('OK: banco e telefone do título persistidos e recuperados.');
+
     // O vínculo guarda só o saldo cobrado; a interface recebe também o valor integral do vale.
     const originalA = await criarVale(2421.4);
     const originalB = await criarVale(431.8);

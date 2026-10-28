@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.26 — 28/10/2026
+
+- Cobranças com colunas Nº e Origem, links compactos para vales e ordens e remoção do texto de transferência.
+- Listagem de ordens em tabela com número, status, cliente, quantidade de vales, negociado, pago, restante e ações Detalhes e Receber.
+- Cheques e boletos mostram vínculos da ordem ou do vale individual, evitando repetir os vales da ordem.
+- Correções de pagamentos concentradas em Receber; detalhes exibem pagamentos apenas para consulta.
+- Botões de edição padronizados como Salvar em verde e Cancelar em vermelho.
+
 ## 1.40.25 — 28/10/2026
 
 - Listagens de vales e ordens com acessos separados: Detalhes e Receber.

@@ -51,6 +51,61 @@ async function main() {
     const pagar=(v,cash,bonus,extra={})=>request('POST',`/clientes/${cliente.id}/carteira/recebimentos`,{data,valorRecebido:cash,bonusUtilizado:bonus,formaPagamento:'pix',alocacoes:[{vendaId:v.id,valor:cash+bonus}],...extra});
     const editar=(id,cash,bonus,extra={},expected)=>request('PUT',`/recebimentos-cliente/${id}`,{pin,data,status:'compensado',formaPagamento:'pix',valorRecebido:cash,bonusUtilizado:bonus,alocacoes:[],distribuicaoAutomatica:true,...extra},expected);
     const estornar=(id,expected)=>request('POST',`/recebimentos-cliente/${id}/cancelar`,{pin},expected);
+    // Diferença editável: desconto quita saldo sem aumentar o dinheiro recebido.
+    for (const desconto of [60,120]) {
+      const vd=await criar(520);
+      const rd=await pagar(vd,400,0,{descontoRecebimento:desconto,alocacoes:[{vendaId:vd.id,valor:400+desconto}]});
+      let atual=await get(vd.id);
+      assert.equal(atual.saldoRestante,120-desconto);
+      assert.equal(atual.financeiro.recebido,400);
+      assert.equal(atual.financeiro.restante,120-desconto);
+      await editar(rd.id,400,0);
+      assert.equal((await get(vd.id)).saldoRestante,120-desconto);
+      await estornar(rd.id);
+      assert.equal((await get(vd.id)).saldoRestante,520);
+    }
+    // Bônus excedente pode ser reduzido ou zerado e não reaparece na edição.
+    for (const dispensado of [5,10]) {
+      const ve=await criar(520);
+      const re=await pagar(ve,530,0,{bonusDispensado:dispensado,alocacoes:[{vendaId:ve.id,valor:520}]});
+      assert.equal(await saldo(),10-dispensado);
+      assert.equal((await get(ve.id)).financeiro.bonus,10-dispensado);
+      await editar(re.id,530,0);
+      assert.equal(await saldo(),10-dispensado);
+      await estornar(re.id);
+      assert.equal(await saldo(),0);
+    }
+    // Ordem: gravação em lote é atômica e repetir o envio não duplica o ajuste.
+    const vo=await criar(520);
+    const od=await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:data,vendaIds:[vo.id],parcelas:[]});
+    const lote={chave:require('node:crypto').randomUUID(),pagamentos:[{data,formaPagamento:'pix',valorRecebido:400,bonusUtilizado:0,descontoRecebimento:120,ordemCobrancaId:od.id,alocacoes:[{vendaId:vo.id,valor:520}]}]};
+    const lo=await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,lote);
+    const repetido=await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,lote);
+    assert.equal(repetido.recebimentos[0].id,lo.recebimentos[0].id);
+    assert.equal((await get(vo.id)).saldoRestante,0);
+    assert.equal((await get(vo.id)).financeiro.recebido,400);
+    await estornar(lo.recebimentos[0].id);
+    assert.equal((await get(vo.id)).saldoRestante,520);
+    const vm=await criar(520);
+    const om=await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:data,vendaIds:[vm.id],parcelas:[]});
+    const lm=await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,{chave:require('node:crypto').randomUUID(),pagamentos:[
+      {data,formaPagamento:'pix',valorRecebido:265,bonusDispensado:5,ordemCobrancaId:om.id,alocacoes:[{vendaId:vm.id,valor:260}]},
+      {data,formaPagamento:'avista_dinheiro',valorRecebido:265,bonusDispensado:5,ordemCobrancaId:om.id,alocacoes:[{vendaId:vm.id,valor:260}]}
+    ]});
+    assert.equal((await get(vm.id)).saldoRestante,0);assert.equal(await saldo(),0);
+    for (const r of lm.recebimentos) await estornar(r.id);
+    assert.equal((await get(vm.id)).saldoRestante,520);
+    // Recusa do cheque reabre também a diferença dispensada, sem crédito fantasma.
+    const vch=await criar(520);
+    const rch=await pagar(vch,400,0,{descontoRecebimento:120,formaPagamento:'cheque_terceiro',titulos:[{tipo:'cheque_terceiro',nomeTitular:'Maria da Silva',documentoTitular:'12345678901',numeroDocumento:'DIF-1',valor:400,vencimento:'2099-12-01',status:'aguardando'}],alocacoes:[{vendaId:vch.id,valor:520}]});
+    assert.equal((await get(vch.id)).financeiro.restantePresumido,0);
+    const tch=db.prepare('SELECT id FROM recebimento_titulos WHERE recebimentoId=? AND deletedAt IS NULL').get(rch.id);
+    await request('PUT',`/recebimento-titulos/${tch.id}/status`,{pin,status:'recusado',motivo:'Teste de diferença'});
+    assert.equal((await get(vch.id)).saldoRestante,520);
+    assert.equal((await get(vch.id)).financeiro.restante,520);
+    assert.equal(await saldo(),0);
+    const invalido=await criar(100);
+    await request('POST',`/clientes/${cliente.id}/carteira/recebimentos`,{data,formaPagamento:'pix',valorRecebido:80,descontoRecebimento:30,alocacoes:[{vendaId:invalido.id,valor:100}]},400);
     creditar(20);
     const v=await criar(100), r=await pagar(v,80,20);
     assert.equal(await saldo(),0); assert.equal((await get(v.id)).saldoRestante,0);

@@ -1,5 +1,16 @@
 # Histórico de versões
 
+## 1.40.27 — 29/10/2026
+
+- Recebimento ampliado, com margens externas e mais espaçamento no cabeçalho, campos e lista de pagamentos.
+- Compras organizado nas abas Orçamento, Compra, Histórico e Vales; Orçamentos abertos passa a ser uma subaba de Orçamento.
+- Formulários de orçamento e compra separados, com navegação para conferência preservando os itens do orçamento.
+- Lateral do recebimento simplificada para bônus/diferença, juros e total, com confirmação dos valores antes de salvar.
+- Diferença devedora e bônus excedente podem ser reduzidos ou zerados, com registro dos ajustes, preservação do dinheiro recebido e reversão no estorno.
+- Cheques e boletos na sequência nome, CPF/CNPJ, valor, vencimento e número; edição sem inclusão de novas linhas e nome do terceiro na lista.
+- Botão de adicionar pagamento com texto branco e lista com fonte mais legível.
+
+
 ## 1.40.26 — 28/10/2026
 
 - Cobranças com colunas Nº e Origem, links compactos para vales e ordens e remoção do texto de transferência.

@@ -856,6 +856,9 @@ export function initDatabase() {
   )`).run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_venda_origem ON vale_residual_origens(vendaOrigemId)').run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_ordem_origem ON vale_residual_origens(ordemOrigemId,vendaOrigemId)').run();
+  for (const coluna of ['descontoRecebimento', 'bonusDispensado']) {
+    if (!(db.prepare('PRAGMA table_info(recebimentos_cliente)').all() as any[]).some(c => c.name === coluna)) db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN ${coluna} REAL NOT NULL DEFAULT 0`).run();
+  }
   try { db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN parcelasCartao INTEGER`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoAntes REAL`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE recebimento_alocacoes ADD COLUMN saldoDepois REAL`).run(); } catch (e) {}

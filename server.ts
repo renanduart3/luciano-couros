@@ -5412,7 +5412,7 @@ function validarAgrupamentoPagamento(alocacoes: Array<{ vendaId: string }>, orde
   for (const alocacao of alocacoes) exigirValeSemOrdemAberta(alocacao.vendaId);
 }
 
-function registrarRecebimentoCliente(req: any, body = req.body) {
+function registrarRecebimentoCliente(req: any, body = req.body, ordemValidadaNoLote = false) {
     const { id: clienteId } = req.params;
     const { data, formaPagamento, observacao, alocacoes, parcelaOrdemId } = body;
     const ordemCobrancaId = String(body?.ordemCobrancaId || '').trim();
@@ -5446,6 +5446,10 @@ function registrarRecebimentoCliente(req: any, body = req.body) {
     const recebido = arredondar(body?.valorRecebido);
     const valoresCredito = validarValoresCredito(forma, parcelasCartao, recebido, body?.valoresParcelasCartao);
     const bonusUtilizado = arredondar(body?.bonusUtilizado);
+    const descontoRecebimento = arredondar(body?.descontoRecebimento);
+    const bonusDispensado = arredondar(body?.bonusDispensado);
+    if (![descontoRecebimento,bonusDispensado].every(v=>Number.isFinite(v) && v>=0) || (descontoRecebimento > 0 && bonusDispensado > 0)) throw erroHttp('Ajuste de diferença inválido.',400);
+    if (descontoRecebimento > 0 && Math.abs(totalAplicado - recebido - bonusUtilizado - descontoRecebimento) > .005) throw erroHttp('Desconto deve corresponder à diferença devedora.',400);
     const titulos = normalizarTitulosPagamento(forma, body?.titulos, body?.dadosCheque, cliente, recebido);
     const parcelaOrdemIdTexto = String(parcelaOrdemId || "").trim();
     if (forma === "bonus" && recebido > 0.005) {
@@ -5454,13 +5458,15 @@ function registrarRecebimentoCliente(req: any, body = req.body) {
     if (![recebido,bonusUtilizado,totalAplicado].every(Number.isFinite) || recebido < 0 || bonusUtilizado < 0) {
       throw erroHttp("Os valores do recebimento e do bônus não podem ser negativos.", 400);
     }
-    if (totalAplicado > arredondar(recebido + bonusUtilizado) + 0.005) {
+    if (totalAplicado > arredondar(recebido + bonusUtilizado + descontoRecebimento) + 0.005) {
       throw erroHttp("O valor abatido não pode ultrapassar o pagamento somado ao bônus utilizado.", 400);
     }
     if (bonusUtilizado > totalAplicado + 0.005) {
       throw erroHttp("O bônus utilizado não pode ultrapassar o valor abatido das dívidas.", 400);
     }
-    const bonusGerado = arredondar(Math.max(0, recebido + bonusUtilizado - totalAplicado));
+    const excedente = arredondar(Math.max(0, recebido + bonusUtilizado - totalAplicado));
+    if (bonusDispensado > excedente + .005) throw erroHttp('Bônus dispensado maior que o excedente.',400);
+    const bonusGerado = arredondar(excedente - bonusDispensado);
 
     if (totalAplicado <= 0) {
       throw erroHttp("Informe o valor pago em pelo menos uma dívida.", 400);
@@ -5471,7 +5477,7 @@ function registrarRecebimentoCliente(req: any, body = req.body) {
 
     runInTransaction(() => {
       validarAgrupamentoPagamento(listaAlocacoes, ordemCobrancaId, parcelaOrdemIdTexto);
-      if (ordemCobrancaId) validarPagamentoOrdem(clienteId, ordemCobrancaId, listaAlocacoes, recebido + bonusUtilizado);
+      if (ordemCobrancaId && !ordemValidadaNoLote) validarPagamentoOrdem(clienteId, ordemCobrancaId, listaAlocacoes, recebido + bonusUtilizado + descontoRecebimento);
       if (parcelaOrdemIdTexto) {
         validarPagamentoExclusivoParcela(clienteId, parcelaOrdemIdTexto, listaAlocacoes, arredondar(recebido + bonusUtilizado));
       }
@@ -5509,6 +5515,7 @@ function registrarRecebimentoCliente(req: any, body = req.body) {
         [recebimentoId, clienteId, data, recebido, totalAplicado, bonusUtilizado, bonusGerado, forma, parcelasCartao, observacao || null, pagamentoId]
       );
 
+      execute('UPDATE recebimentos_cliente SET descontoRecebimento = ?, bonusDispensado = ? WHERE id = ?', [descontoRecebimento, bonusDispensado, recebimentoId]);
       execute('UPDATE recebimentos_cliente SET ordemCobrancaId = ? WHERE id = ?', [ordemCobrancaId || null, recebimentoId]);
       if (projecaoId) {
         const projecao = queryOne<any>("SELECT * FROM ordem_pagamentos_projetados WHERE id = ? AND ordemId = ? AND estado = 'pendente'", [projecaoId, ordemCobrancaId]);
@@ -5557,7 +5564,7 @@ function registrarRecebimentoCliente(req: any, body = req.body) {
       execute('UPDATE recebimentos_cliente SET valoresParcelasCartao = ? WHERE id = ?', [valoresCredito, recebimentoId]);
       execute('UPDATE pagamentos SET valoresParcelasCartao = ? WHERE id = ?', [valoresCredito, pagamentoId]);
       registrarAuditoria(usuarioDaRequisicao(req)?.id || null, "registrar_recebimento", "recebimento_cliente", recebimentoId, {
-        clienteId, recebido, bonusUtilizado, formaPagamento: forma, parcelasCartao, totalAplicado, dividas: listaAlocacoes,
+        clienteId, recebido, bonusUtilizado, descontoRecebimento, bonusDispensado, formaPagamento: forma, parcelasCartao, totalAplicado, dividas: listaAlocacoes,
         parcelaNumero: parcelaOrdemId ? queryOne<any>('SELECT numero FROM ordem_cobranca_parcelas WHERE id = ?', [parcelaOrdemId])?.numero : undefined
       });
     });
@@ -5589,7 +5596,15 @@ app.post("/api/clientes/:id/carteira/recebimentos-lote", (req, res) => {
         if (anterior.clienteId !== req.params.id || anterior.assinatura !== assinatura) throw erroHttp('Este envio já foi utilizado com outros dados.',409);
         return JSON.parse(anterior.resultado);
       }
-      const recebimentos = pagamentos.map(body => registrarRecebimentoCliente(req, body));
+      // O rateio do excedente entre linhas deve ser validado pelo total da ordem.
+      for (const ordemId of new Set<string>(pagamentos.map(p=>String(p.ordemCobrancaId || '').trim()).filter(Boolean))) {
+        const linhas = pagamentos.filter(p=>String(p.ordemCobrancaId || '').trim() === ordemId);
+        const alocacoes = linhas.flatMap(p=>Array.isArray(p.alocacoes) ? p.alocacoes.map(a=>({vendaId:String(a.vendaId),valor:Number(a.valor)})) : []);
+        if (alocacoes.some(a=>!Number.isFinite(a.valor) || a.valor <= 0)) throw erroHttp('Alocação inválida.',400);
+        const total = linhas.reduce((s,p)=>s+Number(p.valorRecebido || 0)+Number(p.bonusUtilizado || 0)+Number(p.descontoRecebimento || 0),0);
+        validarPagamentoOrdem(req.params.id,ordemId,alocacoes,total);
+      }
+      const recebimentos = pagamentos.map(body => registrarRecebimentoCliente(req, body, true));
       execute('INSERT INTO recebimentos_lotes VALUES (?,?,?,?)', [chave, req.params.id, assinatura, JSON.stringify(recebimentos)]);
       return recebimentos;
     });
@@ -5742,7 +5757,7 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
   const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
   return runInTransaction(() => {
     const titulo = queryOne<any>(
-      `SELECT rt.*, rc.pagamentoId, rc.bonusUtilizado, rc.data AS dataRecebimento, rc.clienteId, rc.status AS recebimentoStatus
+      `SELECT rt.*, rc.pagamentoId, rc.bonusUtilizado, rc.descontoRecebimento, rc.bonusDispensado, rc.data AS dataRecebimento, rc.clienteId, rc.status AS recebimentoStatus
        FROM recebimento_titulos rt
        JOIN recebimentos_cliente rc ON rc.id = rt.recebimentoId
        WHERE rt.id = ? AND rt.deletedAt IS NULL AND rc.deletedAt IS NULL`,
@@ -5780,8 +5795,8 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
     )?.total || 0);
     const totalAplicadoAnterior = arredondar(alocacoesAtuais.reduce((total, item) => total + Number(item.valor), 0));
     const bonusUtilizado = Number(titulo.bonusUtilizado || 0);
-    const valorAplicado = arredondar(Math.min(valorRecebido + bonusUtilizado, totalAplicadoAnterior));
-    const bonusGerado = arredondar(Math.max(0, valorRecebido + bonusUtilizado - valorAplicado));
+    const valorAplicado = arredondar(Math.min(valorRecebido + bonusUtilizado + (valorRecebido > 0 ? Number(titulo.descontoRecebimento || 0) : 0), totalAplicadoAnterior));
+    const bonusGerado = arredondar(Math.max(0, valorRecebido + bonusUtilizado - valorAplicado - Number(titulo.bonusDispensado || 0)));
 
     for (const alocacao of alocacoesAtuais) {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
@@ -6118,7 +6133,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
         })).filter((vale) => vale.valor > 0.005));
       }
       validarAgrupamentoPagamento(alocacoesSolicitadas, ordemFlexivelId, parcelaOrdemExclusiva?.parcelaId);
-      let restanteParaDistribuir = valorInformado;
+      let restanteParaDistribuir = valorInformado + (status !== "recusado" ? Number(atual.descontoRecebimento || 0) : 0);
       if (parcelaOrdemExclusiva) {
         const destino = queryOne<any>('SELECT saldo FROM ordem_cobranca_parcelas WHERE id = ?', [parcelaOrdemExclusiva.parcelaId]);
         restanteParaDistribuir = Math.min(valorInformado, arredondar(Number(destino?.saldo || 0) + (atual.status === 'ativo' ? Number(parcelaOrdemExclusiva.valor || 0) : 0)));
@@ -6148,7 +6163,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
           true
         );
       }
-      if (ordemFlexivelId && status !== 'recusado') validarPagamentoOrdem(atual.clienteId, ordemFlexivelId, novasAlocacoes, valorInformado, atual.status === 'ativo' ? Number(atual.valorAplicado) : 0);
+      if (ordemFlexivelId && status !== 'recusado') validarPagamentoOrdem(atual.clienteId, ordemFlexivelId, novasAlocacoes, valorInformado + Number(atual.descontoRecebimento || 0), atual.status === 'ativo' ? Number(atual.valorAplicado) : 0);
       execute('UPDATE recebimentos_cliente SET ordemCobrancaId = ? WHERE id = ?', [ordemFlexivelId || null, recebimentoId]);
       const mapaAtual = new Map(alocacoesAtivas.map((item) => [item.vendaId, arredondar(item.valor)]));
       const mapaNovo = new Map(novasAlocacoes.map((item) => [item.vendaId, item.valor]));
@@ -6182,7 +6197,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
 
       let bonusGerado = Number(atual.bonusGerado || 0);
       if (financeiroMudou) {
-        bonusGerado = financeiroFicaraAtivo && !usandoBonus ? arredondar(Math.max(0, valorInformado - totalAplicado)) : 0;
+        bonusGerado = financeiroFicaraAtivo && !usandoBonus ? arredondar(Math.max(0, valorInformado - totalAplicado - Number(atual.bonusDispensado || 0))) : 0;
         if (financeiroFicaraAtivo) {
           if (bonusUtilizado > 0) {
             const saldoBonus = Number(queryOne<any>(

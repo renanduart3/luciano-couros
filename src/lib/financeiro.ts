@@ -54,9 +54,11 @@ export function recebidoDaLinha(p: PagamentoGerenciavel, vendaId?: string, ordem
   return Math.round(cents(recebido) * fator) / 100;
 }
 export function calcularFinanceiroVale(v: Venda): PosicaoFinanceira {
-  let recebido = 0, aguardando = 0, aplicado = 0, credito = 0;
+  let recebido = 0, aguardando = 0, aplicado = 0, credito = 0, desconto = 0, dispensado = 0;
   for (const p of v.recebimentos || []) {
     if (p.status !== "ativo") continue;
+    desconto += cents(parteNoVale(p,v.id,Number(p.descontoRecebimento || 0)));
+    dispensado += cents(parteNoVale(p,v.id,Number(p.bonusDispensado || 0)));
     const valores = valoresConfirmados(p);
     recebido += cents(parteNoVale(p,v.id,valores.recebido));
     aguardando += cents(parteNoVale(p,v.id,valores.aguardando));
@@ -72,19 +74,28 @@ export function calcularFinanceiroVale(v: Venda): PosicaoFinanceira {
   if (instrumento && ["aguardando","em_carteira"].includes(instrumento.status)) aguardando += valorInstrumento;
   else if (!instrumento || instrumento.status !== "recusado") recebido += valorInstrumento;
   const posicao = fecharPosicao(v.totalLiquido,recebido/100,aguardando/100,credito/100,v.valorTransferido);
+  posicao.restante = Math.max(0, posicao.restante - desconto/100);
+  posicao.restantePresumido = Math.max(0, posicao.restantePresumido - desconto/100);
+  posicao.bonus = Math.max(0,posicao.bonus - dispensado/100);
+  posicao.excedentePresumido = Math.max(0,posicao.excedentePresumido - dispensado/100);
   return v.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;
 }
 export const financeiroVale = (v: Venda) => v.financeiro || calcularFinanceiroVale(v);
 export function financeiroOrdem(o: OrdemCobranca): PosicaoFinanceira {
-  let recebido = 0, aguardando = 0, credito = 0;
+  let recebido = 0, aguardando = 0, credito = 0, desconto = 0, dispensado = 0;
   for (const p of o.pagamentos || []) {
     const v = valoresConfirmados(p);
     const fator = p.valorAplicadoOrdem === undefined || (Boolean(o.id) && p.ordemCobrancaId === o.id) ? 1
       : p.valorAplicado > 0 ? Math.min(1,p.valorAplicadoOrdem/p.valorAplicado) : 0;
+    if (p.status === 'ativo') { desconto += Math.round(cents(p.descontoRecebimento)*fator); dispensado += Math.round(cents(p.bonusDispensado)*fator); }
     recebido += Math.round(cents(v.recebido)*fator);
     aguardando += Math.round(cents(v.aguardando)*fator);
     credito += Math.round(cents(v.credito)*fator);
   }
   const posicao = fecharPosicao(o.totalOriginal,recebido/100,aguardando/100,credito/100,o.valorTransferido);
+  posicao.restante = Math.max(0, posicao.restante - desconto/100);
+  posicao.restantePresumido = Math.max(0, posicao.restantePresumido - desconto/100);
+  posicao.bonus = Math.max(0,posicao.bonus - dispensado/100);
+  posicao.excedentePresumido = Math.max(0,posicao.excedentePresumido - dispensado/100);
   return o.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;
 }

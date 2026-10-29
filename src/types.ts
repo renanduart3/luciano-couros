@@ -333,6 +333,8 @@ export interface RecebimentoCliente {
 }
 
 export interface PagamentoGerenciavel {
+  descontoRecebimento?: number;
+  bonusDispensado?: number;
   revisao?: string;
   ordemAtualizada?: OrdemCobranca;
   valorAplicadoOrdem?: number;

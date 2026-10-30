@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.30 — 30/10/2026
+
+- Restaurado o status Vencido/Vencida, mantendo os registros vencidos no filtro Em aberto.
+
+
 ## 1.40.29 — 30/10/2026
 
 - Vales com saldo continuam visíveis em Em aberto e Vencidos mesmo quando vinculados a uma ordem; recebimento segue direcionado à ordem.

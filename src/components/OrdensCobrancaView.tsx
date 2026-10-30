@@ -34,7 +34,7 @@ interface Props {
 
 const statusLabel: Record<ReturnType<typeof situacaoFinanceiraOrdem>, string> = {
   aberta: "EM ABERTO",
-  vencida: "EM ABERTO · VENCIDA",
+  vencida: "VENCIDA",
   quitada: "QUITADA",
   cancelada: "CANCELADA",
   renegociada: "RENEGOCIADA",

@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.40.29 — 30/10/2026
+
+- Vales com saldo continuam visíveis em Em aberto e Vencidos mesmo quando vinculados a uma ordem; recebimento segue direcionado à ordem.
+- Identificação Em aberto · vencido em cobranças, ordens, ficha do cliente e compras.
+- Filtros de atraso das cobranças consideram a próxima parcela pendente, sem classificar parcelas já pagas como vencidas.
+
+
 ## 1.40.28 — 30/10/2026
 
 - Bônus e dívida ajustáveis no recebimento; acréscimos rateados nos próprios vales, com registro da origem e reversão no estorno.

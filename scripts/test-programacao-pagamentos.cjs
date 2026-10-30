@@ -16,7 +16,7 @@ mod.filename = mod.id;
 mod.paths = module.paths;
 mod._compile(compiled.outputFiles[0].text, mod.filename);
 const { db, initDatabase, compensarPagamentosProgramados: processar, programacaoDoTitulo: programar,
-  dataFinanceiraValida, ordensAbertasPorVale, visivelPorVinculoOrdem } = mod.exports;
+  dataFinanceiraValida, ordensAbertasPorVale, correspondeStatusVale } = mod.exports;
 try {
   const agenda = mod.exports.situacaoAgendaOrdem;
   assert.equal(agenda({status: 'cancelada', pagamentos: [{titulos:[{status:'aguardando',vencimento:'2099-01-01'}]}]}).texto, 'Ordem cancelada');
@@ -55,9 +55,26 @@ try {
   assert.throws(() => processar('2028-03-01', () => { throw new Error('Falha simulada'); }), /Falha simulada/);
   assert.equal(db.prepare("SELECT status FROM recebimento_titulos WHERE id = 'futuro'").get().status, 'aguardando');
   const mapa = ordensAbertasPorVale([{ id:'a', status:'aberta', vales:[{ vendaId:'v1', saldo:0 }] }, { status:'quitada', vales:[{ vendaId:'v2' }] }]);
-  for (const filtro of ['abertos','vencidos','a_vencer','quitados','cancelados']) assert.equal(visivelPorVinculoOrdem('v1', filtro, mapa), false);
-  assert.equal(visivelPorVinculoOrdem('v1', 'todos', mapa), true);
-  assert.equal(visivelPorVinculoOrdem('v2', 'abertos', mapa), true);
+  assert.equal(mapa.has('v1'),true);
+  assert.equal(mapa.has('v2'),false);
+  const aberto={id:'v1',status:'pendente',vencimento:'2026-01-01',financeiro:{restantePresumido:100}};
+  for (const id of ['v1','v2']) {
+    assert.equal(correspondeStatusVale({...aberto,id},'abertos','2026-10-30'),true);
+    assert.equal(correspondeStatusVale({...aberto,id},'vencidos','2026-10-30'),true);
+    assert.equal(correspondeStatusVale({...aberto,id},'a_vencer','2026-10-30'),false);
+  }
+  for (const vencimento of ['2026-10-30','2026-11-01']) {
+    assert.equal(correspondeStatusVale({...aberto,vencimento},'abertos','2026-10-30'),true);
+    assert.equal(correspondeStatusVale({...aberto,vencimento},'vencidos','2026-10-30'),false);
+    assert.equal(correspondeStatusVale({...aberto,vencimento},'a_vencer','2026-10-30'),true);
+  }
+  for(const vale of [{...aberto,status:'cancelada'},{...aberto,finalizadoAt:'2026-10-29'},{...aberto,financeiro:{restantePresumido:0}}]) {
+    assert.equal(correspondeStatusVale(vale,'abertos','2026-10-30'),false);
+    assert.equal(correspondeStatusVale(vale,'vencidos','2026-10-30'),false);
+  }
+  const parcelado={...aberto,parcelas:[{status:'paga',saldo:0,vencimento:'2026-01-01'},{status:'pendente',saldo:100,vencimento:'2026-11-01'}]};
+  assert.equal(correspondeStatusVale(parcelado,'abertos','2026-10-30'),true);
+  assert.equal(correspondeStatusVale(parcelado,'vencidos','2026-10-30'),false);
   // Simula atualização de base antiga: a migração é universal, mas respeita intervenções.
   db.prepare("DROP INDEX idx_titulos_programados").run();
   db.prepare("ALTER TABLE recebimento_titulos DROP COLUMN compensacaoAutomatica").run();

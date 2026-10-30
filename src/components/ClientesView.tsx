@@ -619,7 +619,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                             <td className="p-3 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td>
                             <td className="p-3 text-right font-mono text-emerald-800">{formatCurrency(posicao.presumido)}</td>
                             <td className="p-3 text-right font-mono font-black text-amber-800">{formatCurrency(posicao.restantePresumido)}</td>
-                            <td className="p-3 text-center"><span className={`rounded-lg px-2 py-1 font-black uppercase ${vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{vencido ? "Vencido" : "A vencer"}</span></td>
+                            <td className="p-3 text-center"><span className={`rounded-lg px-2 py-1 font-black uppercase ${vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{vencido ? "Em aberto · vencido" : "A vencer"}</span></td>
                             <td className="p-3 text-center"><button type="button" onClick={() => onOpenVale?.(vale.id)} className="rounded-lg bg-slate-900 px-3 py-2 font-black text-white hover:bg-slate-700">Abrir vale</button></td>
                           </tr>;
                         })}

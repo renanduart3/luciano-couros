@@ -75,6 +75,79 @@ async function main() {
       await estornar(re.id);
       assert.equal(await saldo(),0);
     }
+    // Ajuste livre: bônus acima do excedente, inclusive com pagamento menor que a dívida.
+    for (const [cash, aplicado, desconto, dispensado, esperado] of [[530,520,-10,-40,50],[400,520,120,-50,50],[400,300,-100,100,0]]) {
+      const v=await criar(520);
+      const r=await pagar(v,cash,0,{descontoRecebimento:desconto,bonusDispensado:dispensado,alocacoes:[{vendaId:v.id,valor:aplicado}]});
+      assert.equal(await saldo(),esperado);
+      assert.equal((await get(v.id)).saldoRestante,520-aplicado);
+      assert.equal((await get(v.id)).financeiro.restante,520-aplicado);
+      assert.equal((await get(v.id)).financeiro.bonus,esperado);
+      await editar(r.id,cash,0);
+      assert.equal(await saldo(),esperado);
+      assert.equal((await get(v.id)).saldoRestante,520-aplicado);
+      await estornar(r.id);
+      assert.equal(await saldo(),0);
+      assert.equal((await get(v.id)).saldoRestante,520);
+    }
+    // Ordem com dois vales e duas formas: ajuste livre, saldo e reversão em conjunto.
+    for (const [aplicado, desconto, dispensado, bonusEsperado] of [[260,60,-25,50],[150,-50,50,0]]) {
+      const a=await criar(260), b=await criar(260);
+      const o=await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:data,vendaIds:[a.id,b.id],parcelas:[]});
+      const lote=await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,{chave:require('node:crypto').randomUUID(),pagamentos:[a,b].map(v=>({
+        data,formaPagamento:'pix',valorRecebido:200,descontoRecebimento:desconto,bonusDispensado:dispensado,ordemCobrancaId:o.id,alocacoes:[{vendaId:v.id,valor:aplicado}]
+      }))});
+      assert.equal(await saldo(),bonusEsperado);
+      for(const v of [a,b]) assert.equal((await get(v.id)).saldoRestante,260-aplicado);
+      for(const r of lote.recebimentos) await estornar(r.id);
+      assert.equal(await saldo(),0);
+      for(const v of [a,b]) assert.equal((await get(v.id)).saldoRestante,260);
+    }
+    // Dívida maior que a original: acréscimo nos próprios vales e reversão integral.
+    for (const emOrdem of [false,true]) {
+      const a=await criar(60), b=emOrdem ? await criar(40) : null;
+      const ids=b?[a,b]:[a];
+      const o=emOrdem ? await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:data,vendaIds:ids.map(v=>v.id),parcelas:[{vencimento:'2099-12-01',valor:100}]}) : null;
+      const pagamentos=[{data,formaPagamento:'pix',valorRecebido:80,ordemCobrancaId:o?.id,
+        acrescimosDivida:ids.map(v=>({vendaId:v.id,valor:v.id===a.id?120:80})),alocacoes:[{vendaId:a.id,valor:80}]}];
+      const chave=require('node:crypto').randomUUID();
+      const lote=await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,{chave,pagamentos});
+      await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,{chave,pagamentos});
+      assert.equal((await get(a.id)).totalLiquido,180);
+      assert.equal((await get(a.id)).saldoRestante,100);
+      assert.equal((await get(a.id)).financeiro.restante,100);
+      if(b) {
+        assert.equal((await get(b.id)).totalLiquido,120);
+        assert.equal((await get(b.id)).saldoRestante,120);
+        const ordem=db.prepare('SELECT * FROM ordens_cobranca WHERE id=?').get(o.id);
+        assert.equal(ordem.totalOriginal,300);assert.equal(ordem.saldo,220);
+        assert.equal(db.prepare('SELECT SUM(valor) total FROM ordem_cobranca_parcelas WHERE ordemId=?').get(o.id).total,300);
+      }
+      await editar(lote.recebimentos[0].id,80,0,{ordemCobrancaId:o?.id});
+      await estornar(lote.recebimentos[0].id);
+      assert.equal((await get(a.id)).totalLiquido,60);assert.equal((await get(a.id)).saldoRestante,60);
+      if(b) {
+        assert.equal((await get(b.id)).totalLiquido,40);assert.equal((await get(b.id)).saldoRestante,40);
+        assert.equal(db.prepare('SELECT saldo FROM ordens_cobranca WHERE id=?').get(o.id).saldo,100);
+        assert.equal(db.prepare('SELECT SUM(valor) total FROM ordem_cobranca_parcelas WHERE ordemId=?').get(o.id).total,100);
+      }
+      assert.equal(await saldo(),0);
+    }
+    // Falha posterior no lote não deixa acréscimo sem pagamento.
+    const vaa=await criar(100);
+    await request('POST',`/clientes/${cliente.id}/carteira/recebimentos-lote`,{chave:require('node:crypto').randomUUID(),pagamentos:[{
+      data,formaPagamento:'pix',valorRecebido:80,acrescimosDivida:[{vendaId:vaa.id,valor:200}],alocacoes:[{vendaId:vaa.id,valor:80}]
+    },{data,formaPagamento:'invalida',valorRecebido:1,alocacoes:[{vendaId:vaa.id,valor:1}]}]},400);
+    assert.equal((await get(vaa.id)).totalLiquido,100);assert.equal((await get(vaa.id)).saldoRestante,100);
+    // Números vazios ou só com espaços são rejeitados para ambas as famílias.
+    for (const forma of ['cheque_emitente','cheque_terceiro','duplicata_emitente','duplicata_terceiro']) {
+      const v=await criar(100);
+      for (const numeroDocumento of ['', '   ']) await request('POST',`/clientes/${cliente.id}/carteira/recebimentos`,{
+        data,formaPagamento:forma,valorRecebido:100,alocacoes:[{vendaId:v.id,valor:100}],
+        titulos:[{tipo:forma,nomeTitular:'Teste',documentoTitular:'12345678901',valor:100,vencimento:'2099-12-01',numeroDocumento}]
+      },400);
+      assert.equal((await get(v.id)).saldoRestante,100);
+    }
     // Ordem: gravação em lote é atômica e repetir o envio não duplica o ajuste.
     const vo=await criar(520);
     const od=await request('POST','/ordens-cobranca',{clienteId:cliente.id,dataEmissao:data,vendaIds:[vo.id],parcelas:[]});

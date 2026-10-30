@@ -253,7 +253,7 @@ export const api = {
     bonusGerado: number;
     titulos: TituloRecebimento[];
   }>(r)),
-  salvarRecebimentosLote: (clienteId: string, chave: string, pagamentos: Array<{ data: string; formaPagamento: string; valorRecebido: number; bonusUtilizado: number; descontoRecebimento?: number; bonusDispensado?: number; alocacoes: Array<{ vendaId: string; valor: number }> }>) => fetch(`${API_BASE}/clientes/${clienteId}/carteira/recebimentos-lote`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave, pagamentos }) }).then(r => handleResponse<{ recebimentos: Array<{ id: string }> }>(r)),
+  salvarRecebimentosLote: (clienteId: string, chave: string, pagamentos: Array<{ data: string; formaPagamento: string; valorRecebido: number; bonusUtilizado: number; descontoRecebimento?: number; bonusDispensado?: number; acrescimosDivida?: Array<{ vendaId: string; valor: number }>; alocacoes: Array<{ vendaId: string; valor: number }> }>) => fetch(`${API_BASE}/clientes/${clienteId}/carteira/recebimentos-lote`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave, pagamentos }) }).then(r => handleResponse<{ recebimentos: Array<{ id: string }> }>(r)),
   cancelarRecebimentoCliente: (id: string, pin: string) =>
     fetch(`${API_BASE}/recebimentos-cliente/${id}/cancelar`, {
       method: "POST",

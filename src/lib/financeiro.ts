@@ -74,8 +74,8 @@ export function calcularFinanceiroVale(v: Venda): PosicaoFinanceira {
   if (instrumento && ["aguardando","em_carteira"].includes(instrumento.status)) aguardando += valorInstrumento;
   else if (!instrumento || instrumento.status !== "recusado") recebido += valorInstrumento;
   const posicao = fecharPosicao(v.totalLiquido,recebido/100,aguardando/100,credito/100,v.valorTransferido);
-  posicao.restante = Math.max(0, posicao.restante - desconto/100);
-  posicao.restantePresumido = Math.max(0, posicao.restantePresumido - desconto/100);
+  posicao.restante = Math.max(0, posicao.negociado - posicao.recebido - (posicao.transferido || 0) - desconto/100);
+  posicao.restantePresumido = Math.max(0, posicao.negociado - posicao.presumido - (posicao.transferido || 0) - desconto/100);
   posicao.bonus = Math.max(0,posicao.bonus - dispensado/100);
   posicao.excedentePresumido = Math.max(0,posicao.excedentePresumido - dispensado/100);
   return v.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;
@@ -93,8 +93,8 @@ export function financeiroOrdem(o: OrdemCobranca): PosicaoFinanceira {
     credito += Math.round(cents(v.credito)*fator);
   }
   const posicao = fecharPosicao(o.totalOriginal,recebido/100,aguardando/100,credito/100,o.valorTransferido);
-  posicao.restante = Math.max(0, posicao.restante - desconto/100);
-  posicao.restantePresumido = Math.max(0, posicao.restantePresumido - desconto/100);
+  posicao.restante = Math.max(0, posicao.negociado - posicao.recebido - (posicao.transferido || 0) - desconto/100);
+  posicao.restantePresumido = Math.max(0, posicao.negociado - posicao.presumido - (posicao.transferido || 0) - desconto/100);
   posicao.bonus = Math.max(0,posicao.bonus - dispensado/100);
   posicao.excedentePresumido = Math.max(0,posicao.excedentePresumido - dispensado/100);
   return o.finalizadoAt ? { ...posicao, restante: 0, restantePresumido: 0 } : posicao;

@@ -11,6 +11,7 @@ export function criarGerenciadorReabertura(deps: {
   recalcularVale: (id: string) => void;
   reduzirParcelasVale: (id: string, valor: number) => void;
   estornarOrdens: (id: string) => void;
+  recalcularOrdem: (id: string) => void;
   auditar: (usuarioId: string, acao: string, entidade: string, id: string, detalhes: any) => void;
 }) {
   function preparar(tipo: Alvo, id: string) {
@@ -52,6 +53,7 @@ export function criarGerenciadorReabertura(deps: {
     if (tipo === 'vale') bonusLegados = queryAll<any>("SELECT * FROM cliente_bonus_movimentos WHERE vendaId=? AND recebimentoId IS NULL AND tipo='debito' AND deletedAt IS NULL AND observacao LIKE 'Crédito aplicado na venda #%' ORDER BY id",[id]);
     if (tipo !== "ordem" && !recebimentos.length && !legados.length && !bonusLegados.length) falha("Não há pagamentos ativos para estornar neste registro.");
     if (recebimentos.some(r => r.clienteId !== alvo.clienteId)) falha("Há um recebimento de outro cliente vinculado a este registro. Revise os vínculos antes de estornar.");
+    const acrescimos = recebimentos.flatMap(r => queryAll<any>('SELECT * FROM recebimento_acrescimos WHERE recebimentoId=? AND deletedAt IS NULL ORDER BY id',[r.id]));
     const alocacoes = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM recebimento_alocacoes WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
     const titulos = recebimentos.flatMap((r) => queryAll<any>("SELECT * FROM recebimento_titulos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
     const parcelas = recebimentos.flatMap((r) => queryAll<any>(`SELECT pr.*, p.numero, oc.numeroSequencial, oc.status AS statusOrdem
@@ -59,6 +61,7 @@ export function criarGerenciadorReabertura(deps: {
       JOIN ordens_cobranca oc ON oc.id = pr.ordemId WHERE pr.recebimentoId = ? AND pr.deletedAt IS NULL ORDER BY pr.id`, [r.id]));
     const valoresPorVale = new Map<string, number>();
     for (const item of [...alocacoes, ...legados, ...bonusLegados]) valoresPorVale.set(item.vendaId, dinheiro((valoresPorVale.get(item.vendaId) || 0) + Number(item.valor)));
+    for (const a of acrescimos) if (!valoresPorVale.has(a.vendaId)) valoresPorVale.set(a.vendaId,0);
     const vales = [...valoresPorVale].map(([vendaId, valor]) => {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL AND status != 'cancelada'", [vendaId]);
       if (!venda) falha("Um vale deste pagamento foi cancelado. Revise o histórico antes de estornar.");
@@ -81,7 +84,8 @@ export function criarGerenciadorReabertura(deps: {
         .reduce((s, c) => s + Number(c.valor), 0) + 0.005) {
         falha(`O bônus da devolução do vale #${venda.numeroSequencial} não possui crédito correspondente. Concilie a carteira antes do estorno.`);
       }
-      const totalDepois = dinheiro(Math.max(0, Number(venda.totalLiquido) - devolucoesLegadas.reduce((s, d) => s + Number(d.valorCredito), 0)));
+      const acrescimoEstornado = dinheiro(acrescimos.filter(a=>a.vendaId===vendaId).reduce((s,a)=>s+Number(a.valor),0));
+      const totalDepois = dinheiro(Math.max(0, Number(venda.totalLiquido) - acrescimoEstornado - devolucoesLegadas.reduce((s, d) => s + Number(d.valorCredito), 0)));
       if (aplicadoDepois < -0.005 || aplicadoDepois > totalDepois + 0.005) falha(`O vale #${venda.numeroSequencial} ainda possui pagamentos acima da dívida após este estorno. Concilie os outros lançamentos primeiro.`);
       if (Number(venda.valorPago) > Math.min(Number(venda.totalLiquido), aplicadoAntes) + 0.005) falha(`O vale #${venda.numeroSequencial} possui valor pago sem lançamento ativo correspondente. Concilie o histórico antes de estornar.`);
       if (Number(venda.valorPago) + 0.005 < Math.min(Number(venda.totalLiquido), aplicadoAntes) && !creditosVenda.length && !devolucoesLegadas.length) {
@@ -129,7 +133,7 @@ export function criarGerenciadorReabertura(deps: {
     const vinculosRecebimentos = recebimentos.flatMap(r => queryAll<any>("SELECT * FROM ordem_cobranca_recebimentos WHERE recebimentoId = ? AND deletedAt IS NULL ORDER BY id", [r.id]));
     const parcelasVales = vales.flatMap(v => queryAll<any>("SELECT * FROM vale_parcelas WHERE vendaId = ? AND deletedAt IS NULL ORDER BY id", [v.id]));
     const projecoes = tipo === "ordem" ? queryAll<any>("SELECT * FROM ordem_pagamentos_projetados WHERE ordemId = ? AND estado = 'pendente' ORDER BY id", [id]) : [];
-    const snapshot = { tipo, id, alvo, recebimentos, legados, bonusLegados, alocacoes, titulos, instrumentos, instrumentosLegados, parcelas, parcelasVales, ordens, vinculos, vinculosRecebimentos, projecoes, vales, movimentos, saldoBonus, lancamentos };
+    const snapshot = { tipo, id, alvo, acrescimos, recebimentos, legados, bonusLegados, alocacoes, titulos, instrumentos, instrumentosLegados, parcelas, parcelasVales, ordens, vinculos, vinculosRecebimentos, projecoes, vales, movimentos, saldoBonus, lancamentos };
     const revisao = crypto.createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
     const totalFinanceiro = dinheiro([...lancamentos, ...legados].reduce((total, p) => total + Number(p.valor), 0));
     const resumo = {
@@ -154,6 +158,15 @@ export function criarGerenciadorReabertura(deps: {
       const plano = preparar(tipo, id);
       if (!revisao || revisao !== plano.resumo.revisao) falha("Os pagamentos mudaram desde a conferência. Feche esta confirmação e abra novamente para revisar os valores.");
       const agora = new Date().toISOString();
+      for (const a of plano.acrescimos) {
+        if (a.valeParcelaId) execute('UPDATE vale_parcelas SET valor=ROUND(valor-?,2) WHERE id=? AND deletedAt IS NULL',[a.valor,a.valeParcelaId]);
+        if (a.ordemId) {
+          execute('UPDATE ordem_cobranca_vales SET valorVinculado=ROUND(valorVinculado-?,2) WHERE ordemId=? AND vendaId=? AND removidoAt IS NULL',[a.valor,a.ordemId,a.vendaId]);
+          execute('UPDATE ordens_cobranca SET totalOriginal=ROUND(totalOriginal-?,2) WHERE id=?',[a.valor,a.ordemId]);
+          if (a.ordemParcelaId) execute('UPDATE ordem_cobranca_parcelas SET valor=ROUND(valor-?,2) WHERE id=? AND deletedAt IS NULL',[a.valor,a.ordemParcelaId]);
+        }
+        execute('UPDATE recebimento_acrescimos SET deletedAt=? WHERE id=?',[agora,a.id]);
+      }
       for (const vale of plano.vales) {
         let totalAnterior = Number(vale.totalLiquido);
         for (const devolucao of vale.devolucoesLegadas) {
@@ -194,6 +207,7 @@ export function criarGerenciadorReabertura(deps: {
       for (const instrumento of plano.instrumentosLegados) {
         execute("UPDATE instrumentos_recebimento SET status = 'cancelado', deletedAt = ?, updatedAt = ? WHERE id = ?", [agora, agora, instrumento.id]);
       }
+      for (const ordemId of new Set<string>(plano.acrescimos.map(a=>a.ordemId).filter(Boolean))) deps.recalcularOrdem(ordemId);
       deps.auditar(usuarioId, "reabrir_pagamento", tipo, id, { motivo, ...plano.resumo });
       return { success: true, message: "Pagamentos estornados. Saldos dos vales, parcelas, carteira e lançamentos financeiros atualizados." };
     });

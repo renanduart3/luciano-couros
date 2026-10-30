@@ -856,6 +856,13 @@ export function initDatabase() {
   )`).run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_venda_origem ON vale_residual_origens(vendaOrigemId)').run();
   db.prepare('CREATE INDEX IF NOT EXISTS idx_residual_ordem_origem ON vale_residual_origens(ordemOrigemId,vendaOrigemId)').run();
+  db.prepare(`CREATE TABLE IF NOT EXISTS recebimento_acrescimos (
+    id TEXT PRIMARY KEY, recebimentoId TEXT NOT NULL REFERENCES recebimentos_cliente(id),
+    vendaId TEXT NOT NULL REFERENCES vendas(id), ordemId TEXT,
+    valeParcelaId TEXT, ordemParcelaId TEXT, valor REAL NOT NULL CHECK(valor > 0),
+    deletedAt TEXT, createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  db.prepare('CREATE INDEX IF NOT EXISTS idx_recebimento_acrescimos ON recebimento_acrescimos(recebimentoId)').run();
   for (const coluna of ['descontoRecebimento', 'bonusDispensado']) {
     if (!(db.prepare('PRAGMA table_info(recebimentos_cliente)').all() as any[]).some(c => c.name === coluna)) db.prepare(`ALTER TABLE recebimentos_cliente ADD COLUMN ${coluna} REAL NOT NULL DEFAULT 0`).run();
   }

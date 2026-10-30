@@ -13,9 +13,10 @@ type Situacao = "em_aberto" | "compensado" | "aguardando" | "recusado";
 const nomes: Record<Situacao, string> = { em_aberto: "Em aberto", compensado: "Confirmado", aguardando: "Aguardando", recusado: "Recusado" };
 const campo = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs disabled:bg-slate-100";
 
-export function LinhaPagamento({ ocultarAcoes = false, children, mostrarAbatimento = false, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
+export function LinhaPagamento({ listarTitulosSeparados = false, ocultarAcoes = false, children, mostrarAbatimento = false, colunasAntes = 0, pagamento, clienteId, clienteNome, clienteDocumento, saldo,
   vendaIdContexto, onDetalhes, projecao, onEstornar, onExcluir, alocar, parcelaOrdemId, ordemCobrancaId, referencia, onSaved, onComprovante, editavel = true, alvoReabertura, somenteReabertura = false, iniciarEditando = false, onCancel, statusSemPagamento, formaPagamentoPrevista, onEditingChange, onSavingChange,
 }: {
+  listarTitulosSeparados?: boolean;
   ocultarAcoes?: boolean;
   mostrarAbatimento?: boolean;
   vendaIdContexto?: string;
@@ -131,6 +132,28 @@ export function LinhaPagamento({ ocultarAcoes = false, children, mostrarAbatimen
     } catch (error: any) { setErro(error.message || "Não foi possível salvar o pagamento."); }
     finally { setSaving(false); }
   };
+  if (listarTitulosSeparados && !editando && existente && ehTituloPagamento(existente.formaPagamento) && existente.titulos.length) {
+    return <>{existente.titulos.map((t, indice) => <tr key={t.id || indice} data-recebimento-id={pagamento?.id} className="payment-row payment-compact bg-white">
+      {children}<td className="p-2">{formatDate(existente.data)}</td>
+      <td className="p-2 text-right font-mono font-bold">{formatCurrency(t.valor)}</td>
+      {mostrarAbatimento && <td className="p-2">—</td>}
+      <td className="p-2 text-right font-mono text-emerald-800">{pagamento ? formatCurrency(recebidoDaLinha({...pagamento,bonusUtilizado:0,titulos:[t]},vendaIdContexto,ordemCobrancaId)) : '—'}</td>
+      <td className="p-2">{FORMAS_PAGAMENTO.find(f=>f.value===existente.formaPagamento)?.label} · Nº {t.numeroDocumento}<br/>{t.nomeTitular} · Venc. {formatDate(t.vencimento)}</td>
+      <td className="p-2">{projecao ? 'Planejado · não recebido' : nomes[t.status || 'aguardando']}</td>
+      {!ocultarAcoes && <td className="p-2"><div className="payment-actions">
+        {editavel && <button type="button" onClick={()=>iniciar()} className="text-blue-700">Editar títulos</button>}
+        {editavel && indice===0 && onEstornar && <button type="button" onClick={onEstornar}>Estornar pagamento completo</button>}
+        {editavel && indice===0 && (onExcluir || pagamento) && <button type="button" className="text-red-700" onClick={()=>{if(onExcluir) onExcluir(); else {iniciar();setExcluindo(true);void trocarStatus('em_aberto');}}}>Excluir pagamento completo</button>}
+        {indice===0 && pagamento && onComprovante && <button type="button" onClick={()=>onComprovante(pagamento.id)}>Comprovante</button>}
+      </div></td>}
+    </tr>)}{Number(existente.bonusUtilizado)>0 && <tr className="payment-row payment-compact bg-white">
+      {children}<td className="p-2">{formatDate(existente.data)}</td><td className="p-2 text-right font-mono">{formatCurrency(existente.bonusUtilizado)}</td>
+      {mostrarAbatimento && <td className="p-2">—</td>}
+      <td className="p-2 text-right font-mono">{pagamento ? formatCurrency(recebidoDaLinha({...pagamento,valorRecebido:0,titulos:[]},vendaIdContexto,ordemCobrancaId)) : '—'}</td>
+      <td className="p-2">Bônus utilizado no pagamento</td><td className="p-2">{projecao ? 'Planejado · não recebido' : 'Confirmado'}</td>
+      {!ocultarAcoes && <td className="p-2">{editavel && <button type="button" onClick={()=>iniciar()}>Editar títulos</button>}</td>}
+    </tr>}</>;
+  }
   return <>
     <tr data-recebimento-id={pagamento?.id} tabIndex={-1} className={editando ? "payment-row payment-compact bg-blue-50" : "payment-row payment-compact bg-white"}>{children}
       <td data-label="Data" className="p-2">{editando ? <input aria-label={`Data ${referencia}`} type="date" value={data} disabled={saving || (!projecao && situacao === "em_aberto") || concluido} onChange={e => setData(e.target.value)} className={campo}/> : pagamento || projecao ? formatDate((pagamento || projecao!.dados).data) : "—"}</td>

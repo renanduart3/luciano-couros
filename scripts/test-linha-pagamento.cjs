@@ -58,3 +58,13 @@ for (const formaPagamento of ['pix', 'avista_dinheiro', 'cartao_credito']) {
  assert.ok(!semTitulos.includes('aria-label="Ver títulos / boletos"'));
  assert.ok(semTitulos.includes('aria-label="Comprovante"'));
 }
+
+for(const formaPagamento of ['cheque_emitente','duplicata_terceiro']) {
+ const titulos=[1,2,3,4].map((n)=>({id:'t'+n,tipo:formaPagamento,numeroDocumento:'DOC-'+n,nomeTitular:'Titular '+n,documentoTitular:'12345678901',vencimento:'2026-12-01',valor:25,status:n===1?'compensado':'aguardando'}));
+ const html=renderToStaticMarkup(React.createElement('table',null,React.createElement('tbody',null,React.createElement(LinhaPagamento,{listarTitulosSeparados:true,pagamento:{...p,formaPagamento,valorRecebido:100,valorAplicado:100,titulos},clienteId:'c',clienteNome:'Teste',saldo:0,alocar:()=>[],referencia:'vale',onSaved:async()=>{},onEstornar:()=>{}}))));
+ assert.equal((html.match(/<tr /g)||[]).length,4);
+ for(let n=1;n<=4;n++) assert.ok(html.includes('DOC-'+n));
+ assert.equal((html.match(/Editar títulos/g)||[]).length,4);
+ assert.equal((html.match(/Estornar pagamento completo/g)||[]).length,1);
+}
+console.log('OK: cheques e boletos registrados em linhas individuais com edição pela grade.');

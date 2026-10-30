@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.40.28 — 30/10/2026
+
+- Bônus e dívida ajustáveis no recebimento; acréscimos rateados nos próprios vales, com registro da origem e reversão no estorno.
+- Grade de até 12 cheques ou boletos com divisão automática ou valores manuais e número obrigatório em cada título.
+- Cheques e boletos listados individualmente, com número, titular, vencimento e valor; edição pela grade e remoção individual antes de salvar.
+- Tela de recebimento adaptada para ordens e vales individuais, com lateral simplificada e confirmação dos valores.
+
+
 ## 1.40.27 — 29/10/2026
 
 - Recebimento ampliado, com margens externas e mais espaçamento no cabeçalho, campos e lista de pagamentos.

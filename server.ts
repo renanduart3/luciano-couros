@@ -3894,10 +3894,12 @@ app.put("/api/vendas/:id", (req, res) => {
       const creditoDevolucoes = queryOne<{ total: number }>(
         "SELECT COALESCE(SUM(valorCredito), 0) AS total FROM devolucoes_venda WHERE vendaId = ? AND modalidade <> 'bonus_integral'", [vendaId]
       )?.total || 0;
-      const { subtotal, desconto, totalLiquido: novoTotal, creditoLinhaDevolucao } = totaisVenda(
+      const { subtotal, desconto, totalLiquido: totalItens, creditoLinhaDevolucao } = totaisVenda(
         resolvidos, Number(req.body?.desconto || 0), creditoDevolucoes
       );
-      validarTotalEsperado(req.body?.totalEsperado, novoTotal);
+      validarTotalEsperado(req.body?.totalEsperado, totalItens);
+      const acrescimo = Number(queryOne<any>('SELECT COALESCE(SUM(valor),0) total FROM recebimento_acrescimos WHERE vendaId=? AND deletedAt IS NULL',[vendaId])?.total || 0);
+      const novoTotal = Math.round((totalItens + acrescimo)*100)/100;
       const totalAnterior = Number(venda.totalLiquido);
       const pagoAnterior = Number(venda.valorPago);
       if (transferidoVale(venda.id) > 0 && novoTotal < pagoAnterior + transferidoVale(venda.id) - 0.005) throw erroHttp("O novo total é inferior ao valor pago e transferido. Use a devolução para gerar crédito ao cliente, ou corrija o recebimento antes de reduzir o total. A transferência histórica é preservada.", 409);
@@ -5446,10 +5448,11 @@ function registrarRecebimentoCliente(req: any, body = req.body, ordemValidadaNoL
     const recebido = arredondar(body?.valorRecebido);
     const valoresCredito = validarValoresCredito(forma, parcelasCartao, recebido, body?.valoresParcelasCartao);
     const bonusUtilizado = arredondar(body?.bonusUtilizado);
+    // Ajustes assinados: desconto negativo preserva dívida; bônus dispensado negativo concede crédito adicional.
     const descontoRecebimento = arredondar(body?.descontoRecebimento);
     const bonusDispensado = arredondar(body?.bonusDispensado);
-    if (![descontoRecebimento,bonusDispensado].every(v=>Number.isFinite(v) && v>=0) || (descontoRecebimento > 0 && bonusDispensado > 0)) throw erroHttp('Ajuste de diferença inválido.',400);
-    if (descontoRecebimento > 0 && Math.abs(totalAplicado - recebido - bonusUtilizado - descontoRecebimento) > .005) throw erroHttp('Desconto deve corresponder à diferença devedora.',400);
+    if (![descontoRecebimento,bonusDispensado].every(Number.isFinite)) throw erroHttp('Ajuste de diferença inválido.',400);
+    if (descontoRecebimento !== 0 && Math.abs(totalAplicado - recebido - bonusUtilizado - descontoRecebimento) > .005) throw erroHttp('Desconto deve corresponder à diferença devedora.',400);
     const titulos = normalizarTitulosPagamento(forma, body?.titulos, body?.dadosCheque, cliente, recebido);
     const parcelaOrdemIdTexto = String(parcelaOrdemId || "").trim();
     if (forma === "bonus" && recebido > 0.005) {
@@ -5585,6 +5588,41 @@ app.post("/api/clientes/:id/carteira/recebimentos", (req, res) => {
   catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 execute("CREATE TABLE IF NOT EXISTS recebimentos_lotes (id TEXT PRIMARY KEY, clienteId TEXT NOT NULL, assinatura TEXT NOT NULL, resultado TEXT NOT NULL)");
+// O acréscimo integra o próprio vale e conserva a origem para o estorno.
+function aplicarAcrescimosRecebimento(clienteId: string, pagamento: any) {
+  if (pagamento.acrescimosDivida === undefined) return [];
+  if (!Array.isArray(pagamento.acrescimosDivida) || pagamento.acrescimosDivida.length > 500) throw erroHttp('Acréscimos inválidos.',400);
+  const ordemId = String(pagamento.ordemCobrancaId || '');
+  const ids = new Set<string>();
+  const ajustes = pagamento.acrescimosDivida.map((item: any) => {
+    const vendaId = String(item.vendaId || '');
+    const valor = Math.round(Number(item.valor)*100)/100;
+    if (!Number.isFinite(valor) || valor <= 0 || ids.has(vendaId)) throw erroHttp('Acréscimo inválido ou repetido.',400);
+    ids.add(vendaId);
+    const vale = queryOne<any>("SELECT * FROM vendas WHERE id=? AND clienteId=? AND deletedAt IS NULL AND status='pendente' AND finalizadoAt IS NULL",[vendaId,clienteId]);
+    if (!vale) throw erroHttp('O vale do acréscimo não está mais em aberto.',409);
+    if (ordemId) {
+      if (!queryOne(`SELECT ov.id FROM ordem_cobranca_vales ov JOIN ordens_cobranca o ON o.id=ov.ordemId
+        WHERE ov.ordemId=? AND ov.vendaId=? AND ov.removidoAt IS NULL AND o.clienteId=? AND o.deletedAt IS NULL AND o.finalizadoAt IS NULL AND o.status='aberta'`,[ordemId,vendaId,clienteId])) throw erroHttp('O vale do acréscimo não pertence à ordem aberta.',409);
+    } else {
+      exigirValeSemOrdemAberta(vendaId);
+      if (ids.size > 1 || !pagamento.alocacoes?.some((a: any)=>a.vendaId===vendaId)) throw erroHttp('O acréscimo deve pertencer ao vale recebido.',400);
+    }
+    const valeParcelaId = queryOne<any>('SELECT id FROM vale_parcelas WHERE vendaId=? AND deletedAt IS NULL ORDER BY vencimento DESC,numero DESC LIMIT 1',[vendaId])?.id || null;
+    const ordemParcelaId = ordemId ? queryOne<any>('SELECT id FROM ordem_cobranca_parcelas WHERE ordemId=? AND deletedAt IS NULL ORDER BY numero DESC LIMIT 1',[ordemId])?.id || null : null;
+    execute('UPDATE vendas SET totalLiquido=ROUND(totalLiquido+?,2),saldoRestante=ROUND(saldoRestante+?,2),updatedAt=CURRENT_TIMESTAMP WHERE id=?',[valor,valor,vendaId]);
+    if (valeParcelaId) execute('UPDATE vale_parcelas SET valor=ROUND(valor+?,2) WHERE id=?',[valor,valeParcelaId]);
+    recalcularParcelasVale(vendaId);
+    if (ordemId) {
+      execute('UPDATE ordem_cobranca_vales SET valorVinculado=ROUND(valorVinculado+?,2) WHERE ordemId=? AND vendaId=? AND removidoAt IS NULL',[valor,ordemId,vendaId]);
+      execute('UPDATE ordens_cobranca SET totalOriginal=ROUND(totalOriginal+?,2) WHERE id=?',[valor,ordemId]);
+      if (ordemParcelaId) execute('UPDATE ordem_cobranca_parcelas SET valor=ROUND(valor+?,2) WHERE id=?',[valor,ordemParcelaId]);
+    }
+    return {vendaId,valor,ordemId:ordemId || null,valeParcelaId,ordemParcelaId};
+  });
+  if (ordemId) recalcularOrdemCobranca(ordemId);
+  return ajustes;
+}
 app.post("/api/clientes/:id/carteira/recebimentos-lote", (req, res) => {
   try {
     const { pagamentos, chave } = req.body;
@@ -5596,6 +5634,7 @@ app.post("/api/clientes/:id/carteira/recebimentos-lote", (req, res) => {
         if (anterior.clienteId !== req.params.id || anterior.assinatura !== assinatura) throw erroHttp('Este envio já foi utilizado com outros dados.',409);
         return JSON.parse(anterior.resultado);
       }
+      const acrescimos = pagamentos.map(p => aplicarAcrescimosRecebimento(req.params.id,p));
       // O rateio do excedente entre linhas deve ser validado pelo total da ordem.
       for (const ordemId of new Set<string>(pagamentos.map(p=>String(p.ordemCobrancaId || '').trim()).filter(Boolean))) {
         const linhas = pagamentos.filter(p=>String(p.ordemCobrancaId || '').trim() === ordemId);
@@ -5604,7 +5643,15 @@ app.post("/api/clientes/:id/carteira/recebimentos-lote", (req, res) => {
         const total = linhas.reduce((s,p)=>s+Number(p.valorRecebido || 0)+Number(p.bonusUtilizado || 0)+Number(p.descontoRecebimento || 0),0);
         validarPagamentoOrdem(req.params.id,ordemId,alocacoes,total);
       }
-      const recebimentos = pagamentos.map(body => registrarRecebimentoCliente(req, body, true));
+      const recebimentos = pagamentos.map((body,indice) => {
+        const recebido = registrarRecebimentoCliente(req, body, true);
+        for (const a of acrescimos[indice]) {
+          execute('INSERT INTO recebimento_acrescimos(id,recebimentoId,vendaId,ordemId,valeParcelaId,ordemParcelaId,valor) VALUES (?,?,?,?,?,?,?)',
+            [crypto.randomUUID(),recebido.id,a.vendaId,a.ordemId,a.valeParcelaId,a.ordemParcelaId,a.valor]);
+          registrarAuditoria(usuarioDaRequisicao(req)?.id || null,'acrescimo_divida_recebimento','venda',a.vendaId,{recebimentoId:recebido.id,valor:a.valor,ordemId:a.ordemId});
+        }
+        return recebido;
+      });
       execute('INSERT INTO recebimentos_lotes VALUES (?,?,?,?)', [chave, req.params.id, assinatura, JSON.stringify(recebimentos)]);
       return recebimentos;
     });
@@ -5795,8 +5842,8 @@ function recusarTituloIndividual(tituloId: string, motivo: string, administrador
     )?.total || 0);
     const totalAplicadoAnterior = arredondar(alocacoesAtuais.reduce((total, item) => total + Number(item.valor), 0));
     const bonusUtilizado = Number(titulo.bonusUtilizado || 0);
-    const valorAplicado = arredondar(Math.min(valorRecebido + bonusUtilizado + (valorRecebido > 0 ? Number(titulo.descontoRecebimento || 0) : 0), totalAplicadoAnterior));
-    const bonusGerado = arredondar(Math.max(0, valorRecebido + bonusUtilizado - valorAplicado - Number(titulo.bonusDispensado || 0)));
+    const valorAplicado = arredondar(Math.max(bonusUtilizado, Math.min(valorRecebido + bonusUtilizado + (valorRecebido > 0 ? Number(titulo.descontoRecebimento || 0) : 0), totalAplicadoAnterior)));
+    const bonusGerado = valorRecebido + bonusUtilizado > .005 ? arredondar(Math.max(0, valorRecebido + bonusUtilizado - valorAplicado - Number(titulo.bonusDispensado || 0))) : 0;
 
     for (const alocacao of alocacoesAtuais) {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id = ? AND deletedAt IS NULL", [alocacao.vendaId]);
@@ -6197,7 +6244,7 @@ function atualizarRecebimentoCliente(req: Request, res: Response) {
 
       let bonusGerado = Number(atual.bonusGerado || 0);
       if (financeiroMudou) {
-        bonusGerado = financeiroFicaraAtivo && !usandoBonus ? arredondar(Math.max(0, valorInformado - totalAplicado - Number(atual.bonusDispensado || 0))) : 0;
+        bonusGerado = financeiroFicaraAtivo ? arredondar(Math.max(0, valorInformado - totalAplicado - Number(atual.bonusDispensado || 0))) : 0;
         if (financeiroFicaraAtivo) {
           if (bonusUtilizado > 0) {
             const saldoBonus = Number(queryOne<any>(
@@ -6284,6 +6331,7 @@ const reabertura = criarGerenciadorReabertura({
   recalcularVale: recalcularParcelasVale,
   reduzirParcelasVale: reduzirParcelasValePorDevolucao,
   estornarOrdens: estornarRecebimentoEmOrdens,
+  recalcularOrdem: recalcularOrdemCobranca,
   auditar: registrarAuditoria,
 });
 

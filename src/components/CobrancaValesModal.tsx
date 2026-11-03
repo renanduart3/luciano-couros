@@ -21,6 +21,7 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, onClose, onS
   const [error, setError] = useState("");
   const [ordem, setOrdem] = useState<OrdemCobranca | null>(null);
   const total = vales.reduce((s, v) => s + Number(v.saldoRestante), 0);
+  const valesOrdenados = [...vales].sort((a, b) => Number(b.saldoRestante) - Number(a.saldoRestante));
   const registrar = async () => {
     if (saving) return;
     setSaving(true); setError("");
@@ -35,8 +36,12 @@ export function CobrancaValesModal({ clienteId, clienteNome, vales, onClose, onS
     <section role="dialog" aria-modal="true" aria-labelledby="criar-ordem-titulo" className="payment-compact flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
       <header className="flex items-center justify-between bg-slate-900 px-3 py-2 text-white"><h2 id="criar-ordem-titulo" className="text-sm font-bold">Criar ordem de cobrança</h2><button disabled={saving} onClick={onClose} type="button" aria-label="Fechar cobrança"><X size={18}/></button></header>
       <div className="space-y-3 overflow-y-auto p-3">
-        <div className="flex justify-between gap-3"><div><h3 className="font-bold">{clienteNome}</h3><p className="text-xs text-slate-500">{vales.length} vale(s) selecionado(s)</p></div><strong className="font-mono text-emerald-800">{formatCurrency(total)}</strong></div>
-        <table className="w-full text-left text-xs"><thead><tr><th>Vale</th><th>Emissão</th><th className="text-right">Saldo</th></tr></thead><tbody>{vales.map(v => <tr key={v.id} className="border-t border-slate-200"><td>#{v.numeroSequencial}</td><td>{formatDate(v.data)}</td><td className="text-right font-mono">{formatCurrency(v.saldoRestante)}</td></tr>)}</tbody></table>
+        <div><h3 className="font-bold">{clienteNome}</h3><p className="text-xs text-slate-500">{vales.length} vale(s) selecionado(s)</p></div>
+        <table className="w-full text-left text-xs">
+          <thead><tr><th>Vale</th><th>Emissão</th><th className="text-right">Saldo</th></tr></thead>
+          <tbody>{valesOrdenados.map(v => <tr key={v.id} className="border-t border-slate-200"><td>#{v.numeroSequencial}</td><td>{formatDate(v.data)}</td><td className="text-right font-mono">{formatCurrency(v.saldoRestante)}</td></tr>)}</tbody>
+          <tfoot className="border-t-2 border-slate-300 font-bold text-emerald-800"><tr><th scope="row" colSpan={2} className="pt-2">Total</th><td className="pt-2 text-right font-mono">{formatCurrency(total)}</td></tr></tfoot>
+        </table>
         <p className="text-xs text-slate-600">Registre os pagamentos depois.</p>
         <label className="block text-xs font-bold">Observação<textarea disabled={saving} value={observacao} onChange={e => setObservacao(e.target.value.slice(0, 300))} rows={2} className="mt-1 w-full rounded-md border border-slate-300 p-2"/></label>
         {error && <p role="alert" className="text-xs text-red-800">{error}</p>}

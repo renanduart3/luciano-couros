@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.32 — 03/11/2026
+
+- Criação de ordem de cobrança com vales ordenados do maior saldo para o menor.
+- Total abaixo dos valores dos vales, alinhado à coluna de saldo para facilitar a conferência da soma.
+
 ## 1.40.31 — 03/11/2026
 
 - Demonstrativo da ordem de cobrança com largura de impressão reduzida de 200 mm para 170 mm, centralizado no A4.

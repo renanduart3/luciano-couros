@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.40.31 — 03/11/2026
+
+- Demonstrativo da ordem de cobrança com largura de impressão reduzida de 200 mm para 170 mm, centralizado no A4.
+- Fonte de impressão aumentada para 7,2 pt, no tamanho base do comprovante de venda, com títulos e totais em 9 pt.
+
 ## 1.40.30 — 30/10/2026
 
 - Restaurado o status Vencido/Vencida, mantendo os registros vencidos no filtro Em aberto.

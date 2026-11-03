@@ -1270,6 +1270,26 @@ body .order-statement {
     height: auto !important;
     overflow: visible !important;
   }
+
+  /* Demonstrativo 30 mm mais estreito, com o corpo na escala do comprovante de venda. */
+  @page demonstrativo-ordem { size: A4 portrait; margin: 10mm 20mm; }
+  #print-cobranca-vales:has(.order-statement) {
+    page: demonstrativo-ordem;
+    width: 170mm !important;
+  }
+  #print-cobranca-vales .order-statement,
+  #print-cobranca-vales .order-statement :where(p, span, div, h3, table, th, td, strong, b) {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 7.2pt;
+  }
+  #print-cobranca-vales .order-statement > header strong,
+  #print-cobranca-vales .order-statement h3.text-base,
+  #print-cobranca-vales .order-statement footer strong {
+    font-size: 9pt;
+  }
+  #print-cobranca-vales .order-statement td {
+    overflow-wrap: anywhere;
+  }
 }
 /* O recibo de recebimentos da ordem mantém sua largura de 160 mm. */
 body .payment-receipt-order {

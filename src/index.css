@@ -1271,11 +1271,11 @@ body .order-statement {
     overflow: visible !important;
   }
 
-  /* Demonstrativo 30 mm mais estreito, com o corpo na escala do comprovante de venda. */
-  @page demonstrativo-ordem { size: A4 portrait; margin: 10mm 20mm; }
+  /* Demonstrativo de 185 mm, centralizado na folha A4. */
+  @page demonstrativo-ordem { size: A4 portrait; margin: 10mm 12.5mm; }
   #print-cobranca-vales:has(.order-statement) {
     page: demonstrativo-ordem;
-    width: 170mm !important;
+    width: 185mm !important;
   }
   #print-cobranca-vales .order-statement,
   #print-cobranca-vales .order-statement :where(p, span, div, h3, table, th, td, strong, b) {

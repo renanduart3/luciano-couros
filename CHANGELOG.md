@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.33 — 04/11/2026
+
+- Cabeçalhos e valores financeiros alinhados na grade de ordens, sem quebra dos valores monetários.
+- Botões de ações dos vales com espaço reservado para evitar sobreposição em resoluções menores.
+- Demonstrativo da ordem de cobrança ampliado de 170 para 185 mm na impressão, centralizado no A4.
+
 ## 1.40.32 — 03/11/2026
 
 - Criação de ordem de cobrança com vales ordenados do maior saldo para o menor.

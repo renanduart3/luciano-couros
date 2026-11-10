@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.40.34 — 10/11/2026
+
+- Campo Devedor dos comprovantes calculado pelo valor original dos vales menos o total pago, inclusive quando o saldo foi transferido para outro vale.
+
 ## 1.40.33 — 04/11/2026
 
 - Cabeçalhos e valores financeiros alinhados na grade de ordens, sem quebra dos valores monetários.

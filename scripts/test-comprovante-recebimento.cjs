@@ -124,5 +124,13 @@ const reaberto = mod.exports.render({...recibo,
   vales:[{vendaId:'reaberto',numeroSequencial:897,valorVale:23.47,valorTransferido:20,saldoAntes:3.47,saldoDepois:0}],
   pagamentosVale:[{...recibo.pagamentosVale[0],valorRecebido:3.47,valorAplicado:3.47,valorNoVale:3.47,alocacoes:[{vendaId:'reaberto',valor:3.47}]}]
 });
-conferirResumo(reaberto,'23,47','3,47','0,00','0,00');
+conferirResumo(reaberto,'23,47','3,47','20,00','0,00');
 assert.match(reaberto,/Valor já transferido para outro vale/);
+
+const vale1068 = mod.exports.render({ ...recibo, valorRecebido: 145, valorAplicado: 145,
+  vales: [{ numeroSequencial: 1068, valorVale: 580.75, saldoAntes: 580.75,
+    saldoDepois: 0, valorTransferido: 435.75, valeDevedor: 1075 }],
+  pagamentosVale: [{ ...recibo.pagamentosVale[0], valorRecebido: 145, valorNoVale: 145 }],
+});
+conferirResumo(vale1068, '580,75', '145,00', '435,75', '0,00');
+assert.match(vale1068, /Saldo devedor transferido para o vale #1075/);

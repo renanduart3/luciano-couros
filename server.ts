@@ -1427,7 +1427,7 @@ app.get("/api/dashboard", (req, res) => {
       `SELECT v.*, c.nome as clienteNome
        FROM vendas v
        JOIN clientes c ON v.clienteId = c.id
-       WHERE v.deletedAt IS NULL
+       WHERE v.deletedAt IS NULL AND COALESCE(v.contabilizaReceita, 1) = 1
        ORDER BY v.numeroSequencial DESC
        LIMIT 5`
     );

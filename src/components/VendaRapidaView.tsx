@@ -1,3 +1,4 @@
+import { ehVendaComercial } from "../lib/valesCliente";
 import { PrecoDevolucaoInput } from "./PrecoDevolucaoInput";
 import { formatarQuantidades, quantidadesPorUnidade } from "../lib/quantidades";
 import { SelecionarDevolucao } from "./SelecionarDevolucao";
@@ -595,7 +596,8 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
     (v) => v.status === "pendente" && !!v.vencimento && v.vencimento < hoje
   );
   const overdueDebt = overdueSales.reduce((total, venda) => total + Number(venda.saldoRestante || 0), 0);
-  const vendasFiltradasHistorico = (clienteHistorico?.vendas || []).filter((venda) =>
+  const vendasComerciais = (clienteHistorico?.vendas || []).filter(ehVendaComercial);
+  const vendasFiltradasHistorico = vendasComerciais.filter((venda) =>
     (!historicoDataInicial || venda.data >= historicoDataInicial) &&
     (!historicoDataFinal || venda.data <= historicoDataFinal)
   );
@@ -1517,7 +1519,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
           <div className="border-b border-slate-200 bg-white p-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div><p className="flex items-center gap-2 text-xs font-extrabold text-slate-800"><History size={16} className="text-emerald-600" /> Reaproveitar uma venda anterior</p><p className="mt-1 text-[11px] text-slate-500">Busque por período.</p></div>
-              <button type="button" disabled={!clienteSelecionado || (clienteHistorico?.vendas || []).length === 0} onClick={() => { setHistoricoPage(1); setVendaAnteriorId(""); setItensVendaAnteriorSelecionados([]); setHistoricoVendasOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white disabled:bg-slate-300"><CalendarRange size={16} /> Abrir histórico de vendas</button>
+              <button type="button" disabled={!clienteSelecionado || vendasComerciais.length === 0} onClick={() => { setHistoricoPage(1); setVendaAnteriorId(""); setItensVendaAnteriorSelecionados([]); setHistoricoVendasOpen(true); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-extrabold text-white disabled:bg-slate-300"><CalendarRange size={16} /> Abrir histórico de vendas</button>
             </div>
           </div>
           <div className="overflow-x-auto">

@@ -6,7 +6,7 @@ import { CarteiraResumo, Cliente, Venda, Pagamento, ProdutoHabitual, Orcamento }
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber, todayLocalIso } from "../lib/utils";
 import { financeiroVale } from "../lib/financeiro";
-import { listarValesPendentesCliente, vencimentoPendente } from "../lib/valesCliente";
+import { ehVendaComercial, resumoVendaComercial, listarValesPendentesCliente, vencimentoPendente } from "../lib/valesCliente";
 import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
@@ -212,10 +212,11 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
     (c.documento && c.documento.includes(busca))
   );
   const clientesPagina = paginate<Cliente>(filteredClientes, page, PAGE_SIZE);
-  const vendasHistorico = (activeHistory?.vendas || []) as Venda[];
+  const documentosCliente = (activeHistory?.vendas || []) as Venda[];
+  const vendasHistorico = documentosCliente.filter(ehVendaComercial);
   const vendasHistoricoPagina = paginate(vendasHistorico, historicoPage, PAGE_SIZE);
   const hoje = todayLocalIso();
-  const valesPendentes = listarValesPendentesCliente(vendasHistorico);
+  const valesPendentes = listarValesPendentesCliente(documentosCliente);
   const valesPendentesPagina = paginate(valesPendentes, valesPage, PAGE_SIZE);
   const devolucoesCliente = (activeHistory?.vendas || [])
     .flatMap((venda: Venda) => (venda.devolucoes || []).map((devolucao) => ({
@@ -743,12 +744,14 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
-                      {activeHistory.vendas.length === 0 ? (
+                      {vendasHistorico.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="p-4 text-center text-slate-400">Nenhuma compra cadastrada.</td>
                         </tr>
                       ) : (
-                        vendasHistoricoPagina.map((v: Venda) => (
+                        vendasHistoricoPagina.map((v: Venda) => {
+                          const resumo = resumoVendaComercial(v);
+                          return (
                           <tr key={v.id} className="hover:bg-slate-50/20">
                             <td className="p-3 text-center font-extrabold text-slate-900">#{v.numeroSequencial}</td>
                             <td className="p-3 font-mono">{formatDate(v.data)}</td>
@@ -756,19 +759,20 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                               {formatCurrency(v.totalLiquido)}
                               {(v.devolucoes || []).length > 0 && <span className="block text-[9px] font-black uppercase text-violet-700">Devolvido: {formatCurrency((v.devolucoes || []).reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0))}</span>}
                             </td>
-                            <td className="p-3 text-right font-mono text-emerald-700">{formatCurrency(v.valorPago)}</td>
+                            <td className="p-3 text-right font-mono text-emerald-700">{formatCurrency(resumo.pago)}</td>
                             <td className="p-3 text-right font-mono text-amber-600 font-bold">
-                              {v.saldoRestante > 0 ? formatCurrency(v.saldoRestante) : "-"}
+                              {resumo.restante > 0 ? formatCurrency(resumo.restante) : "-"}
                             </td>
                             <td className="p-3 text-center">
                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                v.status === "paga" ? "bg-emerald-100 text-emerald-800" : v.status === "pendente" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"
+                                resumo.status === "paga" ? "bg-emerald-100 text-emerald-800" : resumo.status === "pendente" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"
                               }`}>
-                                {v.status}
+                                {resumo.status}
                               </span>
                             </td>
                           </tr>
-                        ))
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

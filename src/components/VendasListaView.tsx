@@ -1,3 +1,4 @@
+import { ehVendaComercial, resumoVendaComercial } from "../lib/valesCliente";
 import React, { useState, useEffect } from "react";
 import { 
   Search, Trash2, Printer, Eye, Filter, FileText, Pencil, X, ShieldCheck
@@ -40,7 +41,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
     setLoading(true);
     setError(null);
     try {
-      const data = await api.getVendas();
+      const data = (await api.getVendas()).filter(ehVendaComercial);
       setVendas(data);
 
       // If there's an external selection from dashboard
@@ -74,7 +75,7 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
     
     const matchesStatus = 
       statusFiltro === "todas" || 
-      v.status === statusFiltro;
+      resumoVendaComercial(v).status === statusFiltro;
 
     return matchesBusca && matchesStatus;
   });
@@ -197,7 +198,9 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                     </td>
                   </tr>
                 ) : (
-                  vendasPagina.map((v) => (
+                  vendasPagina.map((v) => {
+                    const resumo = resumoVendaComercial(v);
+                    return (
                     <tr key={v.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="p-4 text-center">
                         <p className="font-extrabold text-slate-900">#{v.numeroSequencial}</p>
@@ -209,13 +212,13 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                       </td>
                       <td className="p-4 text-right font-mono font-extrabold text-slate-900"><span>{formatCurrency(v.totalLiquido)}</span><ResumoParcelamentoCartao formaPagamento={v.formaPagamento || ""} parcelasCartao={v.parcelasCartao} valorTotal={v.valorPago} className="mt-1 text-left font-sans" /></td>
                       <td className="p-4 text-center">
-                        {v.status === "paga" ? (
+                        {resumo.status === "paga" ? (
                           <span className="inline-block px-2.5 py-1 text-[10px] font-bold uppercase rounded-full bg-emerald-100 text-emerald-800">
                             Pago
                           </span>
-                        ) : v.status === "pendente" ? (
-                          <span className="inline-block px-2.5 py-1 text-[10px] font-bold uppercase rounded-full bg-amber-100 text-amber-800" title={`Falta faturar: ${formatCurrency(v.saldoRestante)}`}>
-                            A receber ({formatCurrency(v.saldoRestante)})
+                        ) : resumo.status === "pendente" ? (
+                          <span className="inline-block px-2.5 py-1 text-[10px] font-bold uppercase rounded-full bg-amber-100 text-amber-800" title={`Falta faturar: ${formatCurrency(resumo.restante)}`}>
+                            A receber ({formatCurrency(resumo.restante)})
                           </span>
                         ) : (
                           <span className="inline-block px-2.5 py-1 text-[10px] font-bold uppercase rounded-full bg-red-100 text-red-800">
@@ -231,7 +234,8 @@ export function VendasListaView({ onRefreshStats, selectedSaleId, onClearSelecte
                         </div>
                       </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -1,6 +1,16 @@
 import { financeiroVale } from "./financeiro";
 import type { Venda } from "../types";
 
+export const ehVendaComercial = (venda: Venda) => Number(venda.contabilizaReceita ?? 1) === 1;
+
+export function resumoVendaComercial(venda: Venda) {
+  if (!venda.vencimento || venda.status === "cancelada") {
+    return { pago: venda.valorPago, restante: venda.saldoRestante, status: venda.status };
+  }
+  const { presumido, restantePresumido } = financeiroVale(venda);
+  return { pago: presumido, restante: restantePresumido, status: restantePresumido > 0.005 ? "pendente" : "paga" };
+}
+
 export const vencimentoPendente = (vale: Venda) =>
   (vale.parcelas || [])
     .filter((parcela) => parcela.status === "pendente" && Number(parcela.saldo) > 0.005)

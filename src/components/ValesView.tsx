@@ -50,7 +50,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
   const [page, setPage] = useState(1);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [cobrancaAberta, setCobrancaAberta] = useState(false);
-  const [ordensRefreshKey, setOrdensRefreshKey] = useState(0);
+  const [chequesRefreshKey, setChequesRefreshKey] = useState(0);
   const [ordemDetalhada, setOrdemDetalhada] = useState<OrdemCobranca | null>(null);
   const [pageSize, setPageSize] = useState(20);
   const [ordenacao, setOrdenacao] = useState<OrdenacaoVales>("numero_desc");
@@ -69,47 +69,45 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
   }, [selectedValeId]);
   const atualizarFinanceiro = async (ordem?: OrdemCobranca) => {
     const versao = ++versaoCarga.current;
+    setError("");
     if (ordem) {
       setOrdens(atuais => atuais.map(item => item.id === ordem.id ? ordem : item));
       setOrdemDetalhada(atual => atual?.id === ordem.id ? ordem : atual);
     }
-    onRefreshStats?.();
     try {
-      const [vendas, listaOrdens, detalhe] = await Promise.all([api.getVendas(), api.getOrdensCobranca(), valeDetalhado ? api.getVenda(valeDetalhado.id) : Promise.resolve(null)]);
+      const [vendas, listaOrdens] = await Promise.all([api.getVendas(), api.getOrdensCobranca()]);
       if (versao !== versaoCarga.current) return;
-      const quitados = vendas.filter(v => v.status !== "cancelada" && !estaEmAberto(v) && vales.some(antes => antes.id === v.id && estaEmAberto(antes)));
+      const abertosAntes = new Set(vales.filter(estaEmAberto).map(vale => vale.id));
+      const quitados = vendas.filter(v => abertosAntes.has(v.id) && v.status !== "cancelada" && !estaEmAberto(v));
       if (quitados.length && ["abertos", "vencidos", "a_vencer"].includes(status)) setFeedbackPagamento(`Pagamento atualizado. Vales ${quitados.map(v => `#${v.numeroSequencial}`).join(", ")} estão quitados e saíram do filtro de abertos. Use Todos para consultar seus comprovantes.`);
       setVales(vendas.filter(venda => Boolean(venda.vencimento)));
       setOrdens(listaOrdens);
-      setValeDetalhado(atual => atual && detalhe?.id === atual.id ? detalhe : atual);
       setOrdemDetalhada(atual => atual ? listaOrdens.find(item => item.id === atual.id) || null : null);
     } catch (err: any) {
       if (versao === versaoCarga.current) setError(err.message || "Não foi possível atualizar os saldos.");
     }
   };
 
+  const financeiroAlterado = (ordem?: OrdemCobranca) => {
+    onRefreshStats?.();
+    setChequesRefreshKey(k => k + 1);
+    return atualizarFinanceiro(ordem);
+  };
+
+  const atualizarValeDetalhado = (atualizado: Venda | null) => {
+    setValeDetalhado(atualizado);
+    if (atualizado) {
+      setVales(atuais => atuais.map(vale => vale.id === atualizado.id ? atualizado : vale));
+    }
+    void financeiroAlterado();
+  };
+
   useEffect(() => {
-    let active = true;
-    const versao = ++versaoCarga.current;
-    setLoading(true);
-    Promise.all([api.getVendas(), api.getClientes(), api.getOrdensCobranca()])
-      .then(([vendas, listaClientes, listaOrdens]) => {
-        if (!active || versao !== versaoCarga.current) return;
-        setVales(
-          vendas
-            .filter((venda) => Boolean(venda.vencimento))
-            .sort((a, b) =>
-              b.data.localeCompare(a.data)
-              || Number(b.numeroSequencial) - Number(a.numeroSequencial)
-              || String(b.createdAt || "").localeCompare(String(a.createdAt || ""))
-            )
-        );
-        setClientes(listaClientes);
-        setOrdens(listaOrdens);
-      })
-      .catch((err) => active && setError(err.message || "Não foi possível carregar os vales."))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
+    let ativo = true;
+    api.getClientes().then(lista => { if (ativo) setClientes(lista); })
+      .catch(err => { if (ativo) setError(err.message); });
+    void atualizarFinanceiro().finally(() => { if (ativo) setLoading(false); });
+    return () => { ativo = false; versaoCarga.current++; };
   }, []);
 
   useEffect(() => {
@@ -146,7 +144,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
     return Number(b.numeroSequencial) - Number(a.numeroSequencial);
   }), [valesFiltrados, ordenacao]);
   const valesPagina = paginate<Venda>(valesOrdenados, page, pageSize);
-  const valesSelecionados = useMemo(() => valesFiltrados.filter((vale) => selecionados.has(vale.id) && !ordemAtivaPorVale.has(vale.id)), [valesFiltrados, selecionados, ordemAtivaPorVale]);
+  const valesSelecionados = useMemo(() => valesFiltrados.filter((vale) => selecionados.has(vale.id) && estaEmAberto(vale) && Number(vale.saldoRestante) > 0.005 && !ordemAtivaPorVale.has(vale.id)), [valesFiltrados, selecionados, ordemAtivaPorVale]);
   const clienteSelecionado = clientesFiltro.find((cliente) => cliente.id === clienteId);
   const valesDoCliente = useMemo(() => clienteId ? vales.filter((vale) => vale.clienteId === clienteId) : [], [vales, clienteId]);
 
@@ -196,6 +194,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
     setError('');
     try {
       const atual = await api.getVenda(vale.id);
+      setVales(lista => lista.map(item => item.id === atual.id ? atual : item));
       const listaOrdens = await api.getOrdensCobranca(vale.clienteId);
       const vinculada = ordensAbertasPorVale(listaOrdens).get(vale.id);
       if (vinculada) { setPagamentoDireto({ordem:vinculada}); return; }
@@ -225,17 +224,17 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
 
   return (
     <section id="vales-view" className="space-y-5">
-      {pagamentoDireto && <PagamentoValesModal clienteId={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteId} clienteNome={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteNome || 'Cliente'} clienteDocumento={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteDocumento} vales={pagamentoDireto.vale ? [pagamentoDireto.vale] : []} ordem={pagamentoDireto.ordem} onClose={()=>setPagamentoDireto(null)} onSaved={()=>atualizarFinanceiro()}/>}
+      {pagamentoDireto && <PagamentoValesModal clienteId={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteId} clienteNome={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteNome || 'Cliente'} clienteDocumento={(pagamentoDireto.ordem || pagamentoDireto.vale)!.clienteDocumento} vales={pagamentoDireto.vale ? [pagamentoDireto.vale] : []} ordem={pagamentoDireto.ordem} onClose={()=>setPagamentoDireto(null)} onSaved={() => financeiroAlterado()}/>}
       {feedbackPagamento && <div role="status" className="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950">{feedbackPagamento}<button type="button" onClick={() => { setStatus("todos"); setFeedbackPagamento(""); }} className="ml-3 font-bold underline">Mostrar todos</button></div>}
-      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={(atualizado) => { if (atualizado) { if (atualizado.status !== "cancelada" && !estaEmAberto(atualizado) && ["abertos", "vencidos", "a_vencer"].includes(status)) setFeedbackPagamento(`O vale #${atualizado.numeroSequencial} está quitado e saiu do filtro de abertos. Continua disponível em Quitados ou Todos, com seus comprovantes.`); setVales((atuais) => atuais.map((vale) => vale.id === atualizado.id ? atualizado : vale)); setValeDetalhado(atualizado); Promise.all([api.getVendas(), api.getOrdensCobranca()]).then(([vendas, listaOrdens]) => { setVales(vendas.filter((venda) => Boolean(venda.vencimento))); setOrdens(listaOrdens); setOrdensRefreshKey((atual) => atual + 1); }).catch((erro) => setError(erro.message)); } else { setVales((atuais) => atuais.map((vale) => vale.id === valeDetalhado.id ? { ...vale, status: "cancelada", saldoRestante: 0 } : vale)); setValeDetalhado(null); } onRefreshStats?.(); }} />}
+      {valeDetalhado && <ValeDetalhesModal vale={valeDetalhado} ordemCobranca={ordemAtivaPorVale.get(valeDetalhado.id)} onOpenOrdem={() => { const ordem = ordemAtivaPorVale.get(valeDetalhado.id); if (ordem) { setValeDetalhado(null); setOrdemDetalhada(ordem); } }} onClose={() => setValeDetalhado(null)} onUpdated={atualizarValeDetalhado} />}
       {ordemDetalhada && (
         <OrdemCobrancaDetalhesModal
           ordem={ordemDetalhada}
           onClose={() => setOrdemDetalhada(null)}
-          onChanged={atualizarFinanceiro}
+          onChanged={financeiroAlterado}
         />
       )}
-      {cobrancaAberta && clienteSelecionado && <CobrancaValesModal onOpenOrdem={(ordem) => { setCobrancaAberta(false); setSelecionados(new Set()); setOrdemDetalhada(ordem); }} clienteId={clienteSelecionado.id} clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => { setCobrancaAberta(false); setSelecionados(new Set()); }} onSaved={(ordem) => { setOrdens((atuais) => [ordem, ...atuais]); setOrdensRefreshKey((atual) => atual + 1); }} />}
+      {cobrancaAberta && clienteSelecionado && <CobrancaValesModal onOpenOrdem={(ordem) => { setCobrancaAberta(false); setSelecionados(new Set()); setOrdemDetalhada(ordem); }} clienteId={clienteSelecionado.id} clienteNome={clienteSelecionado.nome} vales={valesSelecionados} valesDoCliente={valesDoCliente} onClose={() => { setCobrancaAberta(false); setSelecionados(new Set()); }} onSaved={(ordem) => { setOrdens(atuais => [ordem, ...atuais]); void financeiroAlterado(ordem); }} />}
       <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">Vales</h1>
       <div className="flex flex-wrap items-end justify-start gap-3">
       <div className="w-full max-w-xs rounded-xl border border-slate-300 bg-white p-2.5 shadow-sm sm:w-72">
@@ -248,16 +247,16 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
       </div>
       <nav aria-label="Abas de vales" className="min-w-0 border-b border-slate-200 pb-1">
         <div className="grid w-full grid-cols-3 gap-1.5 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:w-fit sm:gap-2">
-          <button type="button" onClick={() => setTab("abertos")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={16} /> Cobranças</button>
-          <button type="button" onClick={() => setTab("ordens")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={16} /> Ordens</button>
+          <button type="button" onClick={() => { setTab("abertos"); void atualizarFinanceiro(); }} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "abertos" ? "module-tab-active" : ""}`}><WalletCards size={16} /> Cobranças</button>
+          <button type="button" onClick={() => { setTab("ordens"); void atualizarFinanceiro(); }} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "ordens" ? "module-tab-active" : ""}`}><FileClock size={16} /> Ordens</button>
           <button type="button" onClick={() => setTab("cheques")} className={`module-tab min-w-0 !gap-1 !px-2 !text-[11px] sm:!gap-2 sm:!px-3 sm:!text-sm ${tab === "cheques" ? "module-tab-active" : ""}`}><Landmark size={16} /> Cheques e boletos</button>
         </div>
       </nav>
       </div>
       {tab === "ordens" ? (
-        <OrdensCobrancaView clienteFiltro={clienteId} refreshKey={ordensRefreshKey} onChanged={atualizarFinanceiro} />
+        <OrdensCobrancaView clienteFiltro={clienteId} ordens={ordens} loading={loading} error={error} onChanged={financeiroAlterado} onRefresh={atualizarFinanceiro} />
       ) : tab === "cheques" ? (
-        <ChequesView clienteFiltro={clienteId}
+        <ChequesView refreshKey={chequesRefreshKey} clienteFiltro={clienteId}
           onOpenVale={(vendaId) => {
             const vale = vales.find((item) => item.id === vendaId);
             if (vale) void abrirDetalhesVale(vale);
@@ -266,7 +265,7 @@ export function ValesView({ onRefreshStats, selectedValeId, onClearSelectedValeI
             const ordem = ordens.find((item) => item.id === ordemId);
             if (ordem) setOrdemDetalhada(ordem);
           }}
-          onChanged={() => { void atualizarFinanceiro(); }}
+          onChanged={() => { onRefreshStats?.(); void atualizarFinanceiro(); }}
         />
       ) : (
         <>

@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.40.35 — 11/11/2026
+
+- Busca por número da ordem e por número do vale vinculado na aba Ordens.
+- Atualização de saldos e situações nas listas após recebimentos, sem recarregar a página.
+- Vales de saldo devedor aparecem em Cobranças e ficam fora dos históricos de vendas comerciais.
+
 ## 1.40.34 — 10/11/2026
 
 - Campo Devedor dos comprovantes calculado pelo valor original dos vales menos o total pago, inclusive quando o saldo foi transferido para outro vale.

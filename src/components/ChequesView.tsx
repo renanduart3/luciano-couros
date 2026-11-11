@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Banknote, FileText, CheckCircle2, RefreshCw, Search } from "lucide-react";
 import { api } from "../lib/api";
 import { formatCurrency, formatDate, todayLocalIso } from "../lib/utils";
@@ -28,10 +28,11 @@ const textoStatus = (cheque: ChequeGerencial) => {
   return "AGUARDANDO";
 };
 
-export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro = "" }: {
+export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, refreshKey, clienteFiltro = "" }: {
   clienteFiltro?: string;
   onOpenVale: (vendaId: string) => void;
   onOpenOrdem: (ordemId: string) => void;
+  refreshKey?: number;
   onChanged?: () => void;
 }) {
   const [cheques, setCheques] = useState<ChequeGerencial[]>([]);
@@ -46,15 +47,20 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro 
   const [comprovante, setComprovante] = useState<ComprovanteRecebimento | null>(null);
   const [carregandoComprovanteId, setCarregandoComprovanteId] = useState<string | null>(null);
 
+  const cargaVersao = useRef(0);
   const carregar = async () => {
+    const versao = ++cargaVersao.current;
     setLoading(true);
     setErro("");
-    try { setCheques(await api.getCheques()); }
-    catch (error: any) { setErro(error.message || "Não foi possível carregar os cheques."); }
-    finally { setLoading(false); }
+    try {
+      const lista = await api.getCheques();
+      if (versao === cargaVersao.current) setCheques(lista);
+    }
+    catch (error: any) { if (versao === cargaVersao.current) setErro(error.message || "Não foi possível carregar os cheques."); }
+    finally { if (versao === cargaVersao.current) setLoading(false); }
   };
 
-  useEffect(() => { void carregar(); }, []);
+  useEffect(() => { void carregar(); }, [refreshKey]);
   useEffect(() => { setPage(1); }, [clienteFiltro, filtro, busca, vencimentoInicio, vencimentoFim]);
 
   const chequesCliente = useMemo(() => cheques.filter(c => !clienteFiltro || c.clienteId === clienteFiltro), [cheques, clienteFiltro]);
@@ -86,7 +92,7 @@ export function ChequesView({ onOpenVale, onOpenOrdem, onChanged, clienteFiltro 
     };
   }, [chequesCliente]);
 
-  const atualizarEditado = async () => { setCheques(await api.getCheques()); onChanged?.(); };
+  const atualizarEditado = async () => { onChanged?.(); await carregar(); };
   const abrirComprovante = async (recebimentoId: string) => {
     setCarregandoComprovanteId(recebimentoId);
     setErro("");

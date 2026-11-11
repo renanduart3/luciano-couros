@@ -1,3 +1,4 @@
+import { ehVendaComercial } from "../lib/valesCliente";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight, ClipboardList, Eye, FileText, History, KeyRound, ListChecks, Pencil,
@@ -145,7 +146,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
       .then(setProdutosCliente)
       .catch(() => setProdutosCliente([]));
     api.getClienteHistorico(cliente.id)
-      .then((historico) => setHistoricoVendas(historico.vendas || []))
+      .then((historico) => setHistoricoVendas((historico.vendas || []).filter(ehVendaComercial)))
       .catch(() => setHistoricoVendas([]));
   }, [cliente]);
 

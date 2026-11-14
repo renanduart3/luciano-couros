@@ -62,6 +62,30 @@ async function main() {
       assert.ok(await page.locator(target).isVisible(),f.nome);
       for (const media of ['screen', 'print']) {
         await page.emulateMedia({media});
+        if (f.nome === 'venda-referencia-layout') {
+          for (const faixa of await page.locator('.receipt-payment-summary').all()) {
+            const medidas = await faixa.evaluate(el => {
+              const via = el.closest('.receipt-copy');
+              const medir = () => {
+                const rect = no => no.getBoundingClientRect().toJSON();
+                return {
+                  fixos: [via, via.querySelector('.receipt-items-table'), el, via.querySelector('.receipt-footer')].map(rect),
+                  valor: rect(el.children[1]), obs: rect(el.children[2])
+                };
+              };
+              const atual = medir();
+              el.style.gridTemplateColumns = 'minmax(0, 1.15fr) max-content minmax(0, 1.35fr)';
+              const anterior = medir();
+              el.style.removeProperty('grid-template-columns');
+              return {atual, anterior};
+            });
+            const {atual, anterior} = medidas;
+            assert.deepEqual(atual.fixos, anterior.fixos, 'Dimensões e posição da via, tabela, faixa e rodapé em ' + media);
+            assert.ok(atual.valor.left < anterior.valor.left && atual.obs.left < anterior.obs.left);
+            assert.ok(atual.obs.width > anterior.obs.width);
+            assert.ok(Math.abs(atual.obs.right - anterior.obs.right) <= 1 / 64);
+          }
+        }
         const fundos = await page.locator(`${target} :is(.receipt-copy, .payment-receipt-paper, .order-statement), ${target} :is(.receipt-copy, .payment-receipt-paper, .order-statement) *`).evaluateAll(es => es.filter(e => {
           if (!e.getClientRects().length) return false;
           const cor = getComputedStyle(e).backgroundColor;

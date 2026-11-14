@@ -555,7 +555,7 @@ textarea {
 }
 
 .receipt-pages[data-items-per-sheet="15"] .receipt-payment-summary {
-  grid-template-columns: minmax(0, 1.15fr) max-content minmax(0, 1.35fr);
+  grid-template-columns: minmax(0, 0.85fr) max-content minmax(0, 1.65fr);
 }
 
 .receipt-pages[data-items-per-sheet="15"] .receipt-payment-adjustments {

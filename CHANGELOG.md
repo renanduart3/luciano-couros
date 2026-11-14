@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 1.41.1 — 14/11/2026
+
+- Valor recebido e observação deslocados para a esquerda no comprovante de venda/vale, com mais espaço para o texto e as mesmas dimensões de impressão.
+
 ## 1.41.0 — 14/11/2026
 
 - Acesso às planilhas no menu do gerente.

@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.41.0 — 14/11/2026
+
+- Acesso a Planilhas liberado no menu do gerente, no computador e no celular.
+- Mantido o protótipo existente com fórmulas, formatação monetária e colagem de células; os dados são temporários, sem abertura ou gravação de arquivos Excel.
+
 ## 1.40.35 — 11/11/2026
 
 - Busca por número da ordem e por número do vale vinculado na aba Ordens.

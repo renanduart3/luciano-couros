@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   BarChart3, FileClock,
-  LockKeyhole, Menu, Package, Settings, ShoppingBag, ShoppingCart, Truck, Users, X
+  LockKeyhole, Menu, Package, Settings, Sheet, ShoppingBag, ShoppingCart, Truck, Users, X
 } from "lucide-react";
 import logo from "../img/logo.png";
 import { APP_VERSION } from "../lib/version";
@@ -31,6 +31,7 @@ const menuItems: MenuItem[] = [
   { id: "vales", label: "Vales", compactLabel: "Vales", icon: FileClock },
   { id: "produtos", label: "Produtos e materiais", compactLabel: "Produtos", icon: Package },
   { id: "relatorios", label: "Relatórios", compactLabel: "Relatórios", icon: BarChart3 },
+  { id: "planilhas", label: "Planilhas", compactLabel: "Planilhas", icon: Sheet },
   { id: "config", label: "Configurações", compactLabel: "Config.", icon: Settings },
 ];
 

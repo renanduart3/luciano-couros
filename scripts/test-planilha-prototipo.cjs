@@ -27,5 +27,5 @@ assert.equal(avaliarCelula(cadeia, 'A1').n, 2n ** 39n);
 const tela = fs.readFileSync('src/components/PlanilhasPrototipoView.tsx', 'utf8');
 const menu = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
 assert.doesNotMatch(tela, /localStorage|sessionStorage|fetch\(|\bapi\.|indexedDB/);
-assert.doesNotMatch(menu, /id:\s*["']planilhas["']/);
+assert.match(menu, /id:\s*["']planilhas["']/);
 console.log('OK: operações decimais exatas, arredondamento, referências, soma, recálculo e erros controlados.');

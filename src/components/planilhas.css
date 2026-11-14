@@ -1,0 +1,15 @@
+.planilhas-grade { height:60vh; }
+.planilhas-grade table { table-layout:fixed; }
+.planilhas-grade thead th { height:32px!important; padding:0!important; }
+.planilhas-grade tbody tr:not(.planilhas-espaco),
+.planilhas-grade tbody tr:not(.planilhas-espaco) > :is(td,th) { height:36px!important; max-height:36px!important; padding:0!important; }
+.planilhas-grade tbody td > :is(button,input) { height:35px!important; min-height:35px!important; max-height:35px!important; margin:0!important; border-radius:0!important; }
+.planilhas-grade .planilhas-espaco > td { padding:0!important; border:0!important; }
+
+.planilhas-grade tbody td > :is(button,input) {
+  color:var(--planilha-cor, #000000)!important;
+  font-weight:var(--planilha-peso, 400)!important;
+}
+
+.planilhas-grade .planilhas-selecionada { background:#d1fae5!important; }
+.planilhas-grade [data-celula] { user-select:none; }

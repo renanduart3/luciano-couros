@@ -9,7 +9,7 @@ import { VendaModuleView } from "./components/VendaModuleView";
 import { FornecedoresModuleView } from "./components/FornecedoresModuleView";
 import { ValesView } from "./components/ValesView";
 import { ComprasView } from "./components/ComprasView";
-import { PlanilhasPrototipoView } from "./components/PlanilhasPrototipoView";
+import { PlanilhasView } from "./components/PlanilhasView";
 import { AlterarSenhaObrigatoria, LoginView } from "./components/LoginView";
 import { api } from "./lib/api";
 import { UsuarioSistema } from "./types";
@@ -53,7 +53,12 @@ export default function App() {
     return () => { active = false; window.clearInterval(timer); };
   }, [usuario, statsKey]);
 
+  const permitirSaida = () => new Promise<boolean>(resolve => {
+    if (currentView !== 'planilhas' || window.dispatchEvent(new CustomEvent('planilhas-before-leave', { cancelable: true, detail: resolve }))) resolve(true);
+  });
+
   const bloquearSessao = async () => {
+    if (!(await permitirSaida())) return;
     try { await api.logout(); } catch { /* o bloqueio local deve ocorrer mesmo sem resposta */ }
     setUsuario(null);
     setCurrentView("venda");
@@ -64,8 +69,9 @@ export default function App() {
     setStatsKey(prev => prev + 1);
   };
 
-  const navegarParaView = (view: string) => {
+  const navegarParaView = async (view: string) => {
     if (usuario?.perfil !== "administrador" && view !== "venda") return;
+    if (view !== currentView && !(await permitirSaida())) return;
     setCurrentView(view);
     if (view !== "venda") setSelectedSaleId(null);
   };
@@ -113,7 +119,7 @@ export default function App() {
           <RelatoriosView />
         );
       case "planilhas":
-        return <PlanilhasPrototipoView />;
+        return <PlanilhasView />;
       case "config":
         return (
           <BackupConfigView

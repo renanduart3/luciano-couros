@@ -1,4 +1,5 @@
 import { ultimoPrecoDevolucao, itensElegiveisDevolucao, resolverLinhaDevolucao, devolvidoEmOutraVendaSql, ajustarCreditoLinhas, protegerCompraDevolvida } from "./server/devolucoesItens.js";
+import { rotasPlanilhas } from "./server/planilhas.js";
 import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
 import { totalItemVenda, totaisVenda, validarTotalEsperado } from "./src/lib/totaisVenda.js";
 import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
@@ -34,6 +35,7 @@ const SYSTEM_VERSION = (() => {
 })();
 const SERVER_STARTED_AT = new Date().toISOString();
 
+app.use('/api/planilhas', express.json({ limit: '20mb' }));
 app.use(express.json());
 
 app.get("/pwa-icon.png", (_req, res) => {
@@ -1116,7 +1118,7 @@ app.use("/api", exigirAutenticacao);
 // passam pela reabertura explícita, que reconcilia a dívida antes de liberar a edição.
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) return next();
-  if (req.method === 'PUT' && /^\/(vales|ordens-cobranca)\/[^/]+\/anotacao$/.test(req.path)) return next();
+  if (req.method === 'PUT' && /^\/(vales|ordens-cobranca)\/[^/]+\/(anotacao|observacao-pagamento)$/.test(req.path)) return next();
   try {
     const documento = req.path.match(/^\/(vendas|vales|ordens-cobranca)\/([^/]+)/);
     if (documento) exigirDocumentoNaoFinalizado(documento[1] === 'ordens-cobranca' ? 'ordem' : 'vale', decodeURIComponent(documento[2]));
@@ -1146,6 +1148,7 @@ app.use("/api", (req, res, next) => {
   next();
 });
 app.use(["/api/backups", "/api/usuarios"], exigirGerente);
+app.use('/api/planilhas', exigirGerente, rotasPlanilhas(validarPinAdministrador, registrarAuditoria));
 app.use("/api", (req, res, next) => {
   const operacaoGerencial = req.method === "DELETE"
     || /\/(cancelar|devolucoes)(\/|$)/.test(req.path);
@@ -4008,24 +4011,34 @@ app.put("/api/vendas/:id", (req, res) => {
 
 // Notes change no balances, payments or document status; completed documents can be annotated.
 for (const tipo of ['vales', 'ordens-cobranca'] as const) {
-  app.put('/api/' + tipo + '/:id/anotacao', (req, res) => {
+  app.get('/api/' + tipo + '/:id/observacao-pagamento', (req, res) => {
+    try {
+      const tabela = tipo === 'vales' ? 'vendas' : 'ordens_cobranca';
+      const documento = queryOne<any>('SELECT observacaoPagamento FROM ' + tabela + ' WHERE id = ? AND deletedAt IS NULL', [req.params.id]);
+      if (!documento) return res.status(404).json({ error: 'Documento não encontrado.' });
+      res.json(documento);
+    } catch (error: any) { res.status(500).json({ error: error.message }); }
+  });
+ for (const finalidade of ['anotacao', 'observacao-pagamento'] as const) {
+  app.put('/api/' + tipo + '/:id/' + finalidade, (req, res) => {
     try {
       const { texto, anterior } = req.body || {};
       if (typeof texto !== 'string' || typeof anterior !== 'string' || texto.length > 2000) return res.status(400).json({ error: 'Informe uma anotação de até 2.000 caracteres.' });
       const tabela = tipo === 'vales' ? 'vendas' : 'ordens_cobranca';
-      const campo = tipo === 'vales' ? 'observacoes' : 'observacao';
+      const campo = finalidade === 'observacao-pagamento' ? 'observacaoPagamento' : tipo === 'vales' ? 'observacoes' : 'observacao';
       runInTransaction(() => {
         const atual = queryOne<any>('SELECT * FROM ' + tabela + ' WHERE id = ? AND deletedAt IS NULL', [req.params.id]);
         if (!atual) throw erroHttp('Documento não encontrado.', 404);
         if (String(atual[campo] || '') !== anterior) throw erroHttp('Outra pessoa alterou a anotação. Reabra o documento antes de salvar.', 409);
         execute('UPDATE ' + tabela + ' SET ' + campo + ' = ?, updatedAt = ? WHERE id = ?', [texto.trim() || null, new Date().toISOString(), req.params.id]);
-        registrarAuditoria(usuarioDaRequisicao(req)!.id, 'anotacao_alterada', tipo === 'vales' ? 'venda' : 'ordem_cobranca', req.params.id, { anterior, texto: texto.trim() });
+        registrarAuditoria(usuarioDaRequisicao(req)!.id, finalidade === 'observacao-pagamento' ? 'observacao_pagamento_alterada' : 'anotacao_alterada', tipo === 'vales' ? 'venda' : 'ordem_cobranca', req.params.id, { anterior, texto: texto.trim() });
       });
       if (tipo === 'ordens-cobranca') return res.json(listarOrdensCobranca('AND oc.id = ?', [req.params.id])[0]);
       const venda = queryOne<any>('SELECT v.*, c.nome AS clienteNome, c.documento AS clienteDocumento, c.telefone AS clienteTelefone, c.endereco AS clienteEndereco FROM vendas v JOIN clientes c ON c.id = v.clienteId WHERE v.id = ?', [req.params.id]);
       res.json(carregarDetalhesVenda(venda));
     } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
   });
+ }
 }
 
 app.put("/api/vales/:id", (req, res) => {

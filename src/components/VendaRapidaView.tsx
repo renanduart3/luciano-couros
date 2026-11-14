@@ -485,12 +485,13 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
   });
 
   // Calculations for added items
-  const subtotalItens = itensVenda.reduce((acc, item) => {
+  const subtotalItens = arredondarDinheiro(itensVenda.reduce((acc, item) => {
     const qty = parseBrazilianNumber(item.quantidade);
+    if (qty === 0) return acc;
     const preco = parseBrazilianNumber(item.precoUnitario);
     const desc = parseBrazilianNumber(item.desconto);
     return acc + arredondarDinheiro((qty * preco) - desc);
-  }, 0);
+  }, 0));
   const quantidadeItensPreenchidos = itensVenda.filter((item) => parseBrazilianNumber(item.quantidade) !== 0).length;
 
   const subtotalPositivo = itensVenda.filter(i=>parseBrazilianNumber(i.quantidade)>0).reduce((s,i)=>s+arredondarDinheiro(parseBrazilianNumber(i.quantidade)*parseBrazilianNumber(i.precoUnitario)-parseBrazilianNumber(i.desconto)),0);

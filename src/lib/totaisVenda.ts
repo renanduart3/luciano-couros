@@ -1,6 +1,12 @@
 const erroCalculo = (mensagem: string) => Object.assign(new Error(mensagem), { statusCode: 400 });
 
-export const arredondarDinheiro = (valor: number) => Math.round((valor + Number.EPSILON) * 100) / 100;
+// Devoluções usam o mesmo centavo da venda, com o sinal invertido.
+// Math.round diretamente no negativo arredonda meio centavo em direção ao zero.
+export const arredondarDinheiro = (valor: number) => {
+  const magnitude = Math.abs(valor);
+  const absoluto = Math.round((magnitude + Number.EPSILON * Math.max(1, magnitude)) * 100) / 100;
+  return valor < 0 && absoluto !== 0 ? -absoluto : absoluto;
+};
 
 export function validarTotalEsperado(esperado: unknown, calculado: number) {
   if (esperado !== undefined && (typeof esperado !== 'number' || !Number.isFinite(esperado) || Math.abs(esperado - calculado) > 0.005)) {

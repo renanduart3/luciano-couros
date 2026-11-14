@@ -69,15 +69,15 @@ export function OrcamentoCompraComprovante({ orcamento, fornecedor }: Props) {
           <div className="receipt-client-grid">
             <span className="receipt-field receipt-client-name"><b>Fornecedor:</b> {fornecedor.nome}</span>
             <span className="receipt-field"><b>Tel:</b> {fornecedor.telefone || ""}</span>
-            <span className="receipt-field receipt-client-address"><b>Referência:</b> {fornecedor.referencia || ""}</span>
+            <span className="receipt-field receipt-client-address"><b>Referência:</b> {fornecedor.referencia?.trim() || "##"}</span>
             <span className="receipt-field"><b>Documento:</b> {fornecedor.documento || ""}</span>
           </div>
 
           <table className="receipt-items-table">
-            <thead><tr><th className="receipt-ref">REF.</th><th>PRODUTO / MATERIAL</th><th className="receipt-qty">QUANTIDADE</th><th className="receipt-qty">UNIDADE</th></tr></thead>
+            <thead><tr><th className="receipt-ref">REF.</th><th className="receipt-supplier-ref">FORN.</th><th>PRODUTO / MATERIAL</th><th className="receipt-qty">QUANTIDADE</th><th className="receipt-qty">UNIDADE</th></tr></thead>
             <tbody>
-              {itens.map((item, index) => <tr key={item.id || index}><td>{item.produtoCodigo || ""}</td><td><strong>{item.produtoNome || "Produto"}</strong></td><td className="receipt-number"><strong>{formatDecimal(item.quantidade)}</strong></td><td>{item.unidade}</td></tr>)}
-              {vazias.map((_, index) => <tr key={`vazia-${index}`} aria-hidden="true"><td>&nbsp;</td><td></td><td></td><td></td></tr>)}
+              {itens.map((item, index) => <tr key={item.id || index}><td>{item.produtoCodigo?.trim() || "##"}</td><td className="receipt-supplier-code">{fornecedor.referencia?.trim() || "##"}</td><td><strong>{item.produtoNome || "Produto"}</strong></td><td className="receipt-number"><strong>{formatDecimal(item.quantidade)}</strong></td><td>{item.unidade}</td></tr>)}
+              {vazias.map((_, index) => <tr key={`vazia-${index}`} aria-hidden="true"><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>)}
             </tbody>
           </table>
 

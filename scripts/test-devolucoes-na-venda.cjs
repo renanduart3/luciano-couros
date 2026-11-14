@@ -46,7 +46,7 @@ async function main() {
     const linha = (p,q,preco,extras={})=>({produtoId:p.id,quantidade:q,unidade:p.unidade,precoUnitario:preco,desconto:0,...extras});
     const criar = (items,extras={},expected)=>request('POST','/vendas',{clienteId:cliente.id,data:'2026-09-08',formaPagamento:'vale',valorPago:0,descontoGeral:0,vencimento:'2099-10-08',autorizacaoPreco:{pin},items,...extras},expected);
     const get = id=>request('GET',`/vendas/${id}`);
-    const editar = (v,items,expected)=>request('PUT',`/vendas/${v.id}`,{pin,data:v.data,desconto:0,items:items.map((i,n)=>({...i,id:i.id || `novo-${n}`}))},expected);
+    const editar = (v,items,expected,extras={})=>request('PUT',`/vendas/${v.id}`,{pin,data:v.data,desconto:0,items:items.map((i,n)=>({...i,id:i.id || `novo-${n}`})),...extras},expected);
     const compra = await criar([linha(produto,2,10)]);
     const ultima = await criar([linha(produto,1,12)]);
     const outro = await request('POST','/clientes',{nome:'Outro cliente',documento:'98765432100',ativo:1});
@@ -129,6 +129,23 @@ async function main() {
     assert.equal(linhasTroca.length,2);
     assert.equal(linhasTroca.reduce((s,i)=>s+i.valorVendaLiquido,0),15.5);
     assert.equal(relatorio.itensVendidos.find(i=>i.vendaId===final.id).valorVendaLiquido,-9);
+    // Regressão da loja: devoluções com meio centavo devem coincidir com a tela.
+    const fly1 = await request('POST','/produtos',{nome:'FLY amarelo',unidade:'metro',precoVendaPadrao:79.9,custoPadrao:30,ativo:1});
+    const fly2 = await request('POST','/produtos',{nome:'FLY laranja',unidade:'metro',precoVendaPadrao:79.9,custoPadrao:30,ativo:1});
+    const origemFly = await criar([linha(fly1,10,79.9),linha(fly2,10,79.9)]);
+    const devolucoesFly = [linha(fly1,-2.17,79.9,{itemOrigemId:origemFly.items[0].id}),linha(fly2,-1.65,79.9,{itemOrigemId:origemFly.items[1].id})];
+    const novaComDevolucao = await criar([linha(produtoNovo,1,1200),...devolucoesFly],{totalEsperado:894.78});
+    assert.equal(novaComDevolucao.totalLiquido,894.78);
+    assert.deepEqual(novaComDevolucao.items.filter(i=>i.quantidade<0).map(i=>i.total),[-173.38,-131.84]);
+    const vendaParaEditar = await criar([linha(produtoNovo,1,1200)]);
+    const editadaFly = await editar(vendaParaEditar,[...vendaParaEditar.items,...devolucoesFly],undefined,{totalEsperado:894.78});
+    assert.equal(editadaFly.totalLiquido,894.78);assert.equal(editadaFly.saldoRestante,894.78);
+    const ajustadaFly = await editar(editadaFly,editadaFly.items.map(i=>i.produtoId===fly1.id?{...i,quantidade:-2.15}:i.produtoId===fly2.id?{...i,precoUnitario:80.5,precoDevolucaoAlterado:true}:i),undefined,{desconto:120,totalEsperado:775.38});
+    assert.equal(ajustadaFly.totalLiquido,775.38);assert.equal(ajustadaFly.desconto,120);
+    assert.equal(ajustadaFly.saldoRestante,775.38);
+    await editar(ajustadaFly,ajustadaFly.items,400,{desconto:120,totalEsperado:775.39});
+    assert.equal((await get(ajustadaFly.id)).totalLiquido,775.38);
+    console.log('OK: caso FLY com 2,17 m e 1,65 m a R$ 79,90, criação/edição, ajuste de quantidade/preço/desconto e saldo persistido.');
     console.log('OK: último preço do cliente, canceladas excluídas, venda/vale com devolução, edição, crédito, consumo protegido, repetição e rollback.');
   } catch (error) { console.error(logs.slice(-4000)); throw error; }
   finally { db?.close(); child.kill(); }

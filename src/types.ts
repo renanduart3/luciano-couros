@@ -1,3 +1,17 @@
+import type { FormatoCelula } from './lib/planilhas';
+
+export interface PlanilhaResumo {
+  id: string;
+  nome: string;
+  versao: number;
+  updatedAt: string;
+}
+export interface Planilha extends PlanilhaResumo {
+  celulas: Record<string, string>;
+  moedas: string[];
+  formatos?: Record<string, FormatoCelula>;
+}
+
 export interface Cliente {
   id: string;
   nome: string;
@@ -155,6 +169,7 @@ export interface DevolucaoVenda {
 export interface ComprovanteFinalizacao<T> { id: string; data: string; documento: T; }
 
 export interface Venda {
+  observacaoPagamento?: string;
   comprovantesFinalizacao?: ComprovanteFinalizacao<Venda>[];
   historicoMovimentacoes?: Array<{ descricao?: string | null; id: string; acao: string; createdAt: string; usuarioNome?: string; ordemId?: string; numeroOrdem?: number; detalhes: Record<string, any> }>;
 
@@ -563,6 +578,7 @@ export interface OrdemCobrancaVale {
 export interface ProjecaoPagamentoOrdem { id: string; revisao: string; dados: PagamentoGerenciavel; }
 export type ItemAcaoPagamentoOrdem = { tipo: "recebimento" | "projecao"; id: string };
 export interface OrdemCobranca {
+  observacaoPagamento?: string;
   comprovantesFinalizacao?: ComprovanteFinalizacao<OrdemCobranca>[];
   valorTransferido?: number;
   saldoDevedorAtual?: number;

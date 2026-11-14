@@ -2,8 +2,18 @@
 
 ## 1.41.0 — 14/11/2026
 
-- Acesso a Planilhas liberado no menu do gerente, no computador e no celular.
-- Mantido o protótipo existente com fórmulas, formatação monetária e colagem de células; os dados são temporários, sem abertura ou gravação de arquivos Excel.
+- Acesso às planilhas no menu do gerente.
+- Fórmulas de soma, média e mediana por seleção de uma linha ou coluna, com resultado na célula escolhida.
+- Ao sair com alterações pendentes, opções para salvar, descartar ou continuar editando.
+
+- Seleção de intervalos nas planilhas por arraste, Shift + clique e Shift + setas, com média, soma, mínimo, máximo e contagem de números na barra junto às abas.
+- Formatação por célula nas planilhas com negrito, sem negrito e cores de texto preto, vermelho, verde e amarelo, preservada ao salvar e reabrir.
+- Planilhas com salvamento no banco, até três documentos de 1.000 linhas por 10 colunas, proteção contra conflitos de edição e grade com renderização das linhas visíveis.
+- Criação e troca de planilhas, edição de nome e confirmação com senha do gerente para limpar ou excluir; removidos exemplos e avisos de protótipo.
+- Corrigido arredondamento de meio centavo em devoluções que causava divergência entre o total exibido e o total ao salvar, inclusive ao editar vendas com ajustes de quantidade, preço e desconto.
+- Referência do fornecedor sempre visível nos produtos do orçamento; códigos de produto e fornecedor ausentes representados por `##`, inclusive no orçamento de compra e na impressão.
+- Aba de observação de pagamento na gestão de recebimentos, salva para todo o vale ou ordem, separada das anotações da venda e dos lançamentos individuais.
+- Filtro de produto por digitação no histórico do cliente, sem distinção entre acentos e maiúsculas, com contagens das categorias e exportação dos itens filtrados.
 
 ## 1.40.35 — 11/11/2026
 

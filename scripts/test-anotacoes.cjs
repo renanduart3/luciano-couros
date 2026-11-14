@@ -67,6 +67,23 @@ async function main() {
     assert.equal((await get(vale.id)).observacoes,'Cliente retirou');
     const lista=await request('GET','/ordens-cobranca');assert.equal(lista.find(o=>o.id===ordem.id).observacao,null);
     await request('PUT','/vales/inexistente/anotacao',{texto:'teste',anterior:''},404);
+    for (const [tipo, id, campoGeral, notaGeral] of [['vales',vale.id,'observacoes','Cliente retirou'],['ordens-cobranca',ordem.id,'observacao',null]]) {
+      const url = '/' + tipo + '/' + id + '/observacao-pagamento';
+      const salvo = await request('PUT', url, {texto:'  Combinar pagamento na sexta.\nConfirmar por telefone.  ',anterior:''});
+      assert.equal(salvo.observacaoPagamento,'Combinar pagamento na sexta.\nConfirmar por telefone.');
+      assert.equal(salvo[campoGeral],notaGeral);
+      assert.equal(salvo.valorPago,0);
+      assert.equal(salvo.saldoRestante ?? salvo.saldo,100);
+      const tabela = tipo === 'vales' ? 'vendas' : 'ordens_cobranca';
+      assert.equal(db.prepare('SELECT observacaoPagamento FROM '+tabela+' WHERE id=?').get(id).observacaoPagamento,salvo.observacaoPagamento);
+      assert.equal((await request('GET',url)).observacaoPagamento,salvo.observacaoPagamento);
+      await request('PUT',url,{texto:'Conflito',anterior:''},409);
+      await request('PUT',url,{texto:'x'.repeat(2001),anterior:salvo.observacaoPagamento},400);
+      const apagado = await request('PUT',url,{texto:'',anterior:salvo.observacaoPagamento});
+      assert.equal(apagado.observacaoPagamento,null);
+    }
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM pagamentos').get().n,0);
+    console.log('OK: observações de pagamento persistem separadamente das anotações, sem criar pagamentos ou alterar saldos.');
     console.log('OK: anotações de vale e ordem persistidas, histórico preservado, conflito detectado, limite validado e saldos inalterados em documentos vinculados/finalizados.');
   } catch (error) { console.error(logs.slice(-4000)); throw error; }
   finally { db?.close(); child.kill(); }

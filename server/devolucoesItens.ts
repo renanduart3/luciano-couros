@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { execute, queryAll, queryOne } from './db.js';
+import { arredondarDinheiro as dinheiro } from '../src/lib/totaisVenda.js';
 const erro = (s: string): never => { throw Object.assign(new Error(s), { statusCode: 409 }); };
-const dinheiro = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 export const devolvidoEmOutraVendaSql = (alias: string) => `COALESCE((SELECT SUM(-r.quantidade) FROM itens_venda r JOIN vendas vr ON vr.id=r.vendaId WHERE r.itemOrigemId=${alias}.id AND r.quantidade<0 AND vr.deletedAt IS NULL AND vr.status<>'cancelada'),0)`;
 export function ultimoPrecoDevolucao(clienteId: string, produtoId: string, unidade: string, excluirVenda = '') {
   const item = queryOne<any>(`SELECT i.*, v.data dataUltimaVenda, v.desconto descontoGeral,

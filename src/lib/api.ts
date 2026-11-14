@@ -1,5 +1,5 @@
 import {
-  Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel, ChequeGerencial, TituloRecebimento, ComprovanteRecebimento
+  Planilha, PlanilhaResumo, Cliente, Fornecedor, FornecedorProduto, Produto, ProdutoHabitual, OrcamentoPadraoClienteItem, Venda, Orcamento, Pagamento, Compra, OrcamentoCompra, PagamentoCompra, DashboardStats, Config, SegurancaStatus, SystemInfo, CarteiraCliente, CarteiraResumo, UsuarioSistema, AuthStatus, OrdemCobranca, PagamentoGerenciavel, ChequeGerencial, TituloRecebimento, ComprovanteRecebimento
 } from "../types";
 
 const API_BASE = "/api";
@@ -124,6 +124,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates)
     }).then(r => handleResponse<{ success: boolean; message: string }>(r)),
+
+  getPlanilhas: () => fetch(API_BASE + '/planilhas').then(r => handleResponse<PlanilhaResumo[]>(r)),
+  getPlanilha: (id: string) => fetch(API_BASE + '/planilhas/' + id).then(r => handleResponse<Planilha>(r)),
+  createPlanilha: (nome: string) => fetch(API_BASE + '/planilhas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome }) }).then(r => handleResponse<Planilha>(r)),
+  savePlanilha: (planilha: Planilha) => fetch(API_BASE + '/planilhas/' + planilha.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(planilha) }).then(r => handleResponse<Planilha>(r)),
+  limparPlanilha: (id: string, versao: number, senha: string) => fetch(API_BASE + '/planilhas/' + id + '/limpar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versao, senha }) }).then(r => handleResponse<Planilha>(r)),
+  excluirPlanilha: (id: string, versao: number, senha: string) => fetch(API_BASE + '/planilhas/' + id + '/excluir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versao, senha }) }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // SEGURANÇA LOCAL
   getSegurancaStatus: () =>
@@ -324,6 +331,8 @@ export const api = {
   updateProjecaoOrdem: (id: string, projecaoId: string, dados: { pin: string; revisao: string; data: string; formaPagamento: string; valorRecebido: number; bonusUtilizado?: number; parcelasCartao?: number; valoresParcelasCartao?: number[]; titulos?: TituloRecebimento[] }) =>
     fetch(`${API_BASE}/ordens-cobranca/${id}/projecoes/${projecaoId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dados) })
       .then(r => handleResponse<OrdemCobranca>(r)),
+  getObservacaoPagamento: (tipo: 'vale' | 'ordem', id: string) => fetch(API_BASE + (tipo === 'vale' ? '/vales/' : '/ordens-cobranca/') + id + '/observacao-pagamento').then(r => handleResponse<{ observacaoPagamento?: string }>(r)),
+  saveObservacaoPagamento: (tipo: 'vale' | 'ordem', id: string, texto: string, anterior: string) => fetch(API_BASE + (tipo === 'vale' ? '/vales/' : '/ordens-cobranca/') + id + '/observacao-pagamento', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, anterior }) }).then(r => handleResponse<Venda | OrdemCobranca>(r)),
   saveAnotacaoVale: (id: string, texto: string, anterior: string) => fetch(API_BASE + '/vales/' + id + '/anotacao', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, anterior }) }).then(r => handleResponse<Venda>(r)),
   saveAnotacaoOrdem: (id: string, texto: string, anterior: string) => fetch(API_BASE + '/ordens-cobranca/' + id + '/anotacao', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, anterior }) }).then(r => handleResponse<OrdemCobranca>(r)),
   // ORDENS DE COBRANÇA

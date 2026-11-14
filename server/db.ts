@@ -53,6 +53,16 @@ export const db = new Proxy({}, {
 }) as any;
 
 export function initDatabase() {
+  db.exec(`CREATE TABLE IF NOT EXISTS planilhas (
+    id TEXT PRIMARY KEY, nome TEXT NOT NULL,
+    celulas TEXT NOT NULL DEFAULT '{}', moedas TEXT NOT NULL DEFAULT '[]', formatos TEXT NOT NULL DEFAULT '{}',
+    versao INTEGER NOT NULL DEFAULT 1,
+    createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`);
+  if (!(db.prepare('PRAGMA table_info(planilhas)').all() as Array<{ name: string }>).some(coluna => coluna.name === 'formatos')) {
+    db.exec("ALTER TABLE planilhas ADD COLUMN formatos TEXT NOT NULL DEFAULT '{}'");
+  }
   // Create tables inside a transaction
   db.transaction(() => {
     // 1. Clientes
@@ -816,6 +826,10 @@ export function initDatabase() {
   })();
 
   // Dynamic migrations for existing databases to support WhatsApp and product unit conversion fields
+  for (const tabela of ['vendas', 'ordens_cobranca']) {
+    const colunas = db.prepare(`PRAGMA table_info(${tabela})`).all() as Array<{ name: string }>;
+    if (!colunas.some(coluna => coluna.name === 'observacaoPagamento')) db.prepare(`ALTER TABLE ${tabela} ADD COLUMN observacaoPagamento TEXT`).run();
+  }
   try { db.prepare(`ALTER TABLE clientes ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN isWhatsapp INTEGER DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE fornecedores ADD COLUMN referencia TEXT`).run(); } catch (e) {}

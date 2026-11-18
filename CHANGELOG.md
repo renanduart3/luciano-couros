@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 1.42.0 — 17/11/2026
+
+- Datas e outros textos iniciados por números preservados nas células; operações exigem `=`. Agregações ignoram textos e datas literais.
+- Cópia de intervalos completos em TSV compatível com Excel e colagem com suporte a células vazias, aspas, tabulações e quebras de linha internas.
+- Cor, negrito e formato de moeda aplicados a todas as células selecionadas, preservando as demais propriedades.
+- Demonstração reversível de impressão da seleção das planilhas, com prévia isolada, orientação A4 e impressão/PDF apenas das células selecionadas, inclusive fora da tela.
+- Ajuste de largura das colunas das planilhas por arraste no cabeçalho, teclado ou dois cliques para adequar ao conteúdo de todas as linhas. Larguras salvas por planilha e preservadas ao limpar as células.
+
 ## 1.41.1 — 14/11/2026
 
 - Valor recebido e observação deslocados para a esquerda no comprovante de venda/vale, com mais espaço para o texto e as mesmas dimensões de impressão.

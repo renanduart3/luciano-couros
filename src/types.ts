@@ -10,6 +10,7 @@ export interface Planilha extends PlanilhaResumo {
   celulas: Record<string, string>;
   moedas: string[];
   formatos?: Record<string, FormatoCelula>;
+  larguras?: Record<string, number>;
 }
 
 export interface Cliente {

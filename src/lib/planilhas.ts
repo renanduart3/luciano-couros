@@ -6,6 +6,10 @@ export const CORES_CELULA = { preto: '#000000', vermelho: '#dc2626', verde: '#15
 export type FormatoCelula = { negrito?: boolean; cor?: keyof typeof CORES_CELULA };
 export const enderecoValido = (id: string) => /^[A-J][1-9]\d{0,3}$/.test(id) && Number(id.slice(1)) <= LINHAS;
 export const COLUNAS = 10;
+export const LARGURA_COLUNA_MIN = 60;
+export const LARGURA_COLUNA_MAX = 800;
+export const larguraColuna = (coluna: number, larguras?: Record<string, number>) => larguras?.[String.fromCharCode(65 + coluna)] ?? (coluna === 0 ? 260 : 140);
+export const limitarLarguraColuna = (largura: number) => Math.max(LARGURA_COLUNA_MIN, Math.min(LARGURA_COLUNA_MAX, Math.round(largura)));
 export type Celulas = Record<string, string>;
 type LimiteCalculo = { restante: number };
 type Decimal = { n: bigint; d: bigint };
@@ -25,6 +29,10 @@ function literal(valor: string): Decimal {
   if (!/^[+-]?\d+(\.\d+)?$/.test(texto) || texto.length > 30) throw new Error("#VALOR!");
   const casas = texto.split(".")[1]?.length || 0;
   return numero(BigInt(texto.replace(".", "")), 10n ** BigInt(casas));
+}
+function numeroLiteral(valor: string): boolean {
+  try { literal(valor.trim().endsWith('%') ? valor.trim().slice(0, -1) : valor); return true; }
+  catch { return false; }
 }
 export function endereco(linha: number, coluna: number) { return `${String.fromCharCode(65 + coluna)}${linha + 1}`; }
 export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<string>(), cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }): Decimal {
@@ -70,7 +78,7 @@ export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<st
             const ref = endereco(l, c), conteudo = (celulas[ref] || "").trim();
             // Como em uma soma de planilha, rótulos em intervalos são ignorados.
             if (!conteudo) continue;
-            if (!conteudo.startsWith("=") && !/^(R\$\s*)?[+-]?\d/.test(conteudo)) continue;
+            if (!conteudo.startsWith("=") && !numeroLiteral(conteudo)) continue;
             incluir(referencia(ref));
           }
         } else incluir(expressao());
@@ -127,7 +135,7 @@ function formatarDecimal({ n, d }: Decimal, moeda = false) {
 export function apresentarCelula(celulas: Celulas, id: string, moeda: boolean, cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }): ExibicaoCelula {
   const original = celulas[id] || "";
   if (!original.trim()) return { texto: "", erro: false, numerico: false };
-  if (!original.startsWith("=") && !/^(R\$\s*)?[+-]?\d/.test(original.trim())) return { texto: original, erro: false, numerico: false };
+  if (!original.startsWith("=") && !numeroLiteral(original)) return { texto: original, erro: false, numerico: false };
   try {
     const valor = avaliarCelula(celulas, id, new Set(), cache, limite);
     const texto = !original.startsWith("=") && original.trim().endsWith("%") ? original.trim() : formatarDecimal(valor, moeda);

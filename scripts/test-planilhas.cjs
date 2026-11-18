@@ -7,6 +7,11 @@ const mod = new Module(path.resolve('scripts/planilha-runtime.cjs'));
 mod._compile(compiled.outputFiles[0].text, mod.id);
 const { avaliarCelula, apresentarCelula, calcularPlanilha, resumirSelecao, limitesSelecao, LINHAS, COLUNAS } = mod.exports;
 const mostrar = (formula) => apresentarCelula({ A1: formula }, 'A1', true).texto;
+for (const texto of ['25/10/2026', '25-10-2026', '2+3', '12/4', '123 produto']) {
+  assert.deepEqual(apresentarCelula({A1:texto},'A1',true),{texto,erro:false,numerico:false});
+}
+assert.equal(mostrar('=12/4'),'R$ 3,00');
+assert.equal(apresentarCelula({A1:'25/10/2026',A2:'10',A3:'=SOMA(A1:A2)'},'A3',false).texto,'10');
 assert.deepEqual(avaliarCelula({ A1: '=0,1+0,2' }, 'A1'), { n: 3n, d: 10n });
 assert.equal(mostrar('=1/3*3'), 'R$ 1,00');
 assert.equal(mostrar('=1,005'), 'R$ 1,01');

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { execute, queryAll, queryOne, runInTransaction } from './db.js';
-import { CORES_CELULA, COLUNAS, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, enderecoValido, type FormatoCelula } from '../src/lib/planilhas.js';
+import { CORES_CELULA, COLUNAS, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, LARGURA_COLUNA_MIN, LARGURA_COLUNA_MAX, enderecoValido, type FormatoCelula } from '../src/lib/planilhas.js';
 
 const falhar = (mensagem: string, statusCode = 400): never => { throw Object.assign(new Error(mensagem), { statusCode }); };
 const nomeValido = (nome: unknown) => {
@@ -13,7 +13,7 @@ const carregar = (id: string) => {
   if (!registro) falhar('Planilha não encontrada.', 404);
   return registro;
 };
-const apresentar = (registro: any) => ({ ...registro, celulas: JSON.parse(registro.celulas), moedas: JSON.parse(registro.moedas), formatos: JSON.parse(registro.formatos) });
+const apresentar = (registro: any) => ({ ...registro, celulas: JSON.parse(registro.celulas), moedas: JSON.parse(registro.moedas), formatos: JSON.parse(registro.formatos), larguras: JSON.parse(registro.larguras) });
 const conferirVersao = (registro: any, versao: unknown) => {
   if (!Number.isInteger(versao) || registro.versao !== versao) falhar('Esta planilha foi alterada em outra sessão. Suas alterações foram mantidas na tela; confira a versão salva antes de substituir os dados.', 409);
 };
@@ -43,7 +43,7 @@ export function rotasPlanilhas(validarSenha: (senha: unknown) => { id: string } 
   });
   router.put('/:id', (req, res) => {
     try {
-      const { celulas, moedas, versao, formatos } = req.body || {};
+      const { celulas, moedas, versao, formatos, larguras } = req.body || {};
       const nome = nomeValido(req.body?.nome);
       if (!celulas || typeof celulas !== 'object' || Array.isArray(celulas) || Object.keys(celulas).length > LINHAS * COLUNAS) falhar('Células inválidas.');
       const limpas: Record<string, string> = {};
@@ -63,11 +63,17 @@ export function rotasPlanilhas(validarSenha: (senha: unknown) => { id: string } 
           formatosValidos[id] = { ...formato };
         }
       }
+      if (larguras !== undefined) {
+        if (!larguras || typeof larguras !== 'object' || Array.isArray(larguras) || Object.keys(larguras).length > COLUNAS) falhar('Larguras de colunas inválidas.');
+        for (const [coluna, largura] of Object.entries(larguras)) {
+          if (!/^[A-J]$/.test(coluna) || typeof largura !== 'number' || !Number.isInteger(largura) || largura < LARGURA_COLUNA_MIN || largura > LARGURA_COLUNA_MAX) falhar('Largura inválida: ' + coluna);
+        }
+      }
       const registro = runInTransaction(() => {
         const atual = carregar(req.params.id);
         conferirVersao(atual, versao);
-        execute('UPDATE planilhas SET nome=?,celulas=?,moedas=?,formatos=?,versao=versao+1,updatedAt=? WHERE id=?',
-          [nome, JSON.stringify(limpas), JSON.stringify([...new Set(moedas)]), formatos === undefined ? atual.formatos : JSON.stringify(formatosValidos), new Date().toISOString(), req.params.id]);
+        execute('UPDATE planilhas SET nome=?,celulas=?,moedas=?,formatos=?,larguras=?,versao=versao+1,updatedAt=? WHERE id=?',
+          [nome, JSON.stringify(limpas), JSON.stringify([...new Set(moedas)]), formatos === undefined ? atual.formatos : JSON.stringify(formatosValidos), larguras === undefined ? atual.larguras : JSON.stringify(larguras), new Date().toISOString(), req.params.id]);
         return carregar(req.params.id);
       });
       res.json(apresentar(registro));

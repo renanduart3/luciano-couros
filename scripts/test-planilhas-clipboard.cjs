@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict');
+const { buildSync } = require('esbuild');
+const mod = {exports:{}};
+new Function('module','exports',buildSync({entryPoints:['src/lib/clipboardPlanilha.ts'],bundle:true,platform:'node',format:'cjs',write:false}).outputFiles[0].text)(mod,mod.exports);
+const {escreverTSV,lerTSV}=mod.exports;
+const valores=[['25/10/2026','12,50',''],['texto\tcom tab','duas\nlinhas','"aspas"'],['','=A1*2','fim']];
+assert.deepEqual(lerTSV(escreverTSV(valores)),valores);
+assert.deepEqual(lerTSV('Data\tValor\r\n25/10/2026\t12,50\r\n'),[['Data','Valor'],['25/10/2026','12,50']]);
+assert.deepEqual(lerTSV('a\t\r\n\t'),[['a',''],['','']]);
+assert.deepEqual(lerTSV(''),[['']]);
+assert.throws(()=>lerTSV('"sem fechamento'));
+console.log('OK: TSV compatível com Excel, datas, fórmulas, células vazias, aspas, tabulações e quebras internas.');

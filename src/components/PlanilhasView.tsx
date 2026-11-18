@@ -4,6 +4,10 @@ import { calcularPlanilha, limitesSelecao, resumirSelecao, CORES_CELULA, type Fo
 import { api } from "../lib/api";
 import { Planilha, PlanilhaResumo } from "../types";
 import "./planilhas.css";
+import { escreverTSV, lerTSV } from "../lib/clipboardPlanilha";
+import { IMPRESSAO_PLANILHAS_PREVIEW } from '../lib/recursosPreview';
+import { PlanilhaImpressaoPreview } from './PlanilhaImpressaoPreview';
+import { larguraColuna, limitarLarguraColuna, LARGURA_COLUNA_MIN, LARGURA_COLUNA_MAX, type ExibicaoCelula } from '../lib/planilhas';
 
 const vazia = { texto: "", erro: false, numerico: false };
 const intervaloPendente = /^=([A-J]\d+:[A-J]\d+)$/i;
@@ -22,6 +26,7 @@ export function PlanilhasView() {
   const [ocupado, setOcupado] = useState(false);
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
+  const [impressao, setImpressao] = useState<{ planilha: Planilha; inicio: string; fim: string } | null>(null);
   const [selecionada, setSelecionada] = useState("A1");
   const [ancora, setAncora] = useState("A1");
   const [editando, setEditando] = useState<string | null>(null);
@@ -36,6 +41,7 @@ export function PlanilhasView() {
     if (editando && naBarra) barraFormula.current?.focus({ preventScroll: true });
   }, [editando, naBarra]);
   const grade = useRef<HTMLDivElement>(null);
+  const redimensionando = useRef<{ pointerId: number; coluna: number; x: number; largura: number } | null>(null);
   const ignorarBlur = useRef(false);
   const ignorarClique = useRef(false);
   const arrastando = useRef<{ pointerId: number; x: number; y: number; fim: string; referenciar?: (fim: string) => void; concluir?: (fim: string) => void } | null>(null);
@@ -47,7 +53,7 @@ export function PlanilhasView() {
     resolverSaida.current = null;
   };
   const pendente = alterada || (editando !== null && texto !== (rascunho?.celulas[editando] || ""));
-  const exibicao = useMemo(() => rascunho ? calcularPlanilha(rascunho.celulas, rascunho.moedas) : {}, [rascunho?.celulas, rascunho?.moedas]);
+  const exibicao = useMemo<Record<string, ExibicaoCelula>>(() => rascunho ? calcularPlanilha(rascunho.celulas, rascunho.moedas) : {}, [rascunho?.celulas, rascunho?.moedas]);
   const limites = useMemo(() => limitesSelecao(ancora, selecionada), [ancora, selecionada]);
   const resumoSelecao = useMemo(() => resumirSelecao(exibicao, ancora, selecionada), [exibicao, ancora, selecionada]);
   useEffect(() => {
@@ -203,10 +209,56 @@ export function PlanilhasView() {
     if (valor !== '') celulas[id] = valor.slice(0, MAX_TEXTO_CELULA); else delete celulas[id];
     return { ...anterior, celulas };
   });
-  const formatar = (formato: FormatoCelula) => mudar(anterior => ({
-    ...anterior,
-    formatos: { ...anterior.formatos, [selecionada]: { ...anterior.formatos?.[selecionada], ...formato } }
-  }));
+  const ajustarLargura = (coluna: number, valor: number) => {
+    const largura = limitarLarguraColuna(valor);
+    if (!rascunho || larguraColuna(coluna, rascunho.larguras) === largura) return;
+    mudar(anterior => ({ ...anterior, larguras: { ...anterior.larguras, [String.fromCharCode(65 + coluna)]: largura } }));
+  };
+  const ajustarAoConteudo = (coluna: number) => {
+    const contexto = document.createElement('canvas').getContext('2d');
+    if (!contexto || !rascunho) return;
+    const letra = String.fromCharCode(65 + coluna);
+    const amostra = grade.current?.querySelector<HTMLElement>('[data-celula]');
+    if (!amostra) return;
+    const estilo = getComputedStyle(amostra);
+    const numerica = grade.current?.querySelector<HTMLElement>('.font-mono');
+    const fonteNumerica = numerica ? getComputedStyle(numerica).fontFamily : 'monospace';
+    let largura = LARGURA_COLUNA_MIN;
+    // Usa todas as linhas, inclusive as que estão fora da janela virtualizada.
+    for (const [id, valor] of Object.entries<ExibicaoCelula>(exibicao)) {
+      if (!id.startsWith(letra)) continue;
+      contexto.font = `${rascunho.formatos?.[id]?.negrito ? 700 : 400} ${estilo.fontSize} ${valor.numerico ? fonteNumerica : estilo.fontFamily}`;
+      const textoVisivel = estilo.textTransform === 'uppercase' ? valor.texto.toUpperCase() : valor.texto;
+      largura = Math.max(largura, Math.ceil(contexto.measureText(textoVisivel).width) + 28);
+    }
+    ajustarLargura(coluna, largura);
+  };
+  const idsSelecionados = () => {
+    const ids: string[] = [];
+    for (let l = limites.primeiraLinha; l <= limites.ultimaLinha; l++) for (let c = limites.primeiraColuna; c <= limites.ultimaColuna; c++) ids.push(endereco(l, c));
+    return ids;
+  };
+  const formatar = (formato: FormatoCelula) => mudar(anterior => {
+    const formatos = { ...anterior.formatos };
+    for (const id of idsSelecionados()) formatos[id] = { ...formatos[id], ...formato };
+    return { ...anterior, formatos };
+  });
+  const formatarMoeda = (ativar: boolean) => mudar(anterior => {
+    const moedas = new Set(anterior.moedas);
+    for (const id of idsSelecionados()) { if (ativar) moedas.add(id); else moedas.delete(id); }
+    return { ...anterior, moedas: [...moedas] };
+  });
+  const copiar = (event: React.ClipboardEvent) => {
+    if (!rascunho) return;
+    event.preventDefault();
+    const linhas: string[][] = [];
+    for (let l = limites.primeiraLinha; l <= limites.ultimaLinha; l++) {
+      const linha: string[] = [];
+      for (let c = limites.primeiraColuna; c <= limites.ultimaColuna; c++) linha.push(rascunho.celulas[endereco(l, c)] || '');
+      linhas.push(linha);
+    }
+    event.clipboardData.setData('text/plain', escreverTSV(linhas));
+  };
   const confirmar = () => { if (ignorarBlur.current) { ignorarBlur.current = false; return; } if (editando && texto !== (rascunho?.celulas[editando] || '')) escrever(editando, textoDaFormula(texto)); setEditando(null); };
   const salvar = async () => {
     if (!rascunho || ocupado) return;
@@ -233,12 +285,13 @@ export function PlanilhasView() {
     event.preventDefault();
     const conteudo = event.clipboardData.getData('text/plain');
     if (conteudo.length > 3100000) { setErro('O conteúdo excede a capacidade da planilha.'); return; }
-    const linhas = conteudo.replace(/\r/g, '').replace(/\n$/, '').split('\n');
+    let linhas: string[][];
+    try { linhas = lerTSV(conteudo); } catch (e: any) { setErro(e.message); return; }
     const l0 = Number(id.slice(1)) - 1, c0 = id.charCodeAt(0) - 65;
-    if (linhas.length > LINHAS - l0 || linhas.some(l => l.split('\t').length > COLUNAS - c0)) { setErro('A colagem excede o espaço disponível. Selecione outra célula ou reduza os dados.'); return; }
+    if (linhas.length > LINHAS - l0 || linhas.some(l => l.length > COLUNAS - c0)) { setErro('A colagem excede o espaço disponível. Selecione outra célula ou reduza os dados.'); return; }
     const novos: Record<string, string> = {};
     for (let l = 0; l < linhas.length; l++) {
-      const valores = linhas[l].split('\t');
+      const valores = linhas[l];
       for (let c = 0; c < valores.length; c++) {
         if (valores[c].length > MAX_TEXTO_CELULA) { setErro(`Cada célula aceita até ${MAX_TEXTO_CELULA} caracteres.`); return; }
         novos[endereco(l0 + l, c0 + c)] = valores[c];
@@ -285,6 +338,7 @@ export function PlanilhasView() {
   const intervalo = endereco(limites.primeiraLinha, limites.primeiraColuna) + ':' + endereco(limites.ultimaLinha, limites.ultimaColuna);
   const fim = Math.min(LINHAS, janela.inicio + janela.quantidade);
   return <section className="mx-auto flex max-w-[1600px] flex-col gap-4">
+    {IMPRESSAO_PLANILHAS_PREVIEW && impressao && <PlanilhaImpressaoPreview {...impressao} fechar={() => setImpressao(null)}/>}
     <dialog ref={dialogoSaida} role="alertdialog" aria-labelledby="titulo-saida-planilha" onCancel={e => { e.preventDefault(); if (!ocupado) concluirSaida(false); }} className="m-auto max-w-md rounded-xl p-5 shadow-xl backdrop:bg-slate-950/70">
       <h2 id="titulo-saida-planilha" className="font-bold">Salvar alterações em {rascunho?.nome}?</h2>
       <p className="my-3 text-sm">Se descartar, as alterações feitas desde o último salvamento serão perdidas.</p>
@@ -305,11 +359,16 @@ export function PlanilhasView() {
     {erro && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
     {carregando ? <p role="status">Carregando planilhas…</p> : !rascunho ? <div className="rounded-xl border bg-white p-8 text-center text-slate-600"><p>Crie uma planilha para começar.</p></div> : <fieldset disabled={ocupado || Boolean(acao)} className="min-w-0 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><label className="flex items-center gap-2 text-emerald-800"><Table2 size={19}/><input aria-label="Nome da planilha" maxLength={60} value={rascunho.nome} onChange={e => mudar(a => ({ ...a, nome: e.target.value }))} className="w-52 rounded border px-2 py-1 font-bold text-slate-800" /></label><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-slate-500">{LINHAS.toLocaleString('pt-BR')} linhas × {COLUNAS} colunas</span><button type="button" aria-label="Recarregar planilha" onClick={() => void abrir(rascunho.id)} className="rounded border p-2"><RefreshCw size={15}/></button><button type="button" onClick={() => pedirAcao('limpar')} className="flex items-center gap-1 rounded border px-3 py-2 text-xs font-bold"><Eraser size={15}/>Limpar planilha</button><button type="button" onClick={() => pedirAcao('excluir')} className="flex items-center gap-1 rounded border border-red-200 px-3 py-2 text-xs font-bold text-red-700"><Trash2 size={15}/>Excluir planilha</button></div></div>
-      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs"><span>Formato da célula</span><button type="button" aria-pressed={!moeda} onClick={() => mudar(a => ({ ...a, moedas: a.moedas.filter(id => id !== selecionada) }))} className={`rounded border px-3 py-1.5 ${!moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>Número / texto</button><button type="button" aria-pressed={moeda} onClick={() => mudar(a => ({ ...a, moedas: [...new Set([...a.moedas, selecionada])] }))} className={`rounded border px-3 py-1.5 ${moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>R$ Moeda</button><span className="mx-1 h-6 border-l border-slate-300" aria-hidden="true"/>
+      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs"><span>Formato da seleção</span><button type="button" aria-pressed={!moeda} onClick={() => formatarMoeda(false)} className={`rounded border px-3 py-1.5 ${!moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>Número / texto</button><button type="button" aria-pressed={moeda} onClick={() => formatarMoeda(true)} className={`rounded border px-3 py-1.5 ${moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>R$ Moeda</button><span className="mx-1 h-6 border-l border-slate-300" aria-hidden="true"/>
         <button type="button" aria-pressed={Boolean(formatoSelecionado.negrito)} onClick={() => formatar({ negrito: true })} className={`rounded border px-3 py-1.5 font-bold ${formatoSelecionado.negrito ? 'bg-emerald-100 text-emerald-900' : 'bg-white'}`}>Negrito</button>
         <button type="button" aria-pressed={!formatoSelecionado.negrito} onClick={() => formatar({ negrito: false })} className={`rounded border px-3 py-1.5 ${!formatoSelecionado.negrito ? 'bg-emerald-100 text-emerald-900' : 'bg-white'}`}>Sem negrito</button>
         <span className="ml-1">Cor do texto</span>
         {(Object.keys(CORES_CELULA) as Array<keyof typeof CORES_CELULA>).map(cor => <button key={cor} type="button" aria-label={`Cor do texto: ${cor}`} aria-pressed={(formatoSelecionado.cor || 'preto') === cor} onClick={() => formatar({ cor })} className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${(formatoSelecionado.cor || 'preto') === cor ? 'border-emerald-600 bg-white font-bold' : 'border-slate-300 bg-white'}`}><span aria-hidden="true" className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: CORES_CELULA[cor] }}/>{cor === 'preto' ? 'Preto' : cor === 'vermelho' ? 'Vermelho' : cor === 'verde' ? 'Verde' : 'Amarelo'}</button>)}
+        {IMPRESSAO_PLANILHAS_PREVIEW && <button type="button" onClick={() => {
+          const documento = editando ? { ...rascunho, celulas: { ...rascunho.celulas, [editando]: textoDaFormula(texto) } } : rascunho;
+          confirmar();
+          setImpressao({ planilha: documento, inicio: endereco(limites.primeiraLinha, limites.primeiraColuna), fim: endereco(limites.ultimaLinha, limites.ultimaColuna) });
+        }} className="rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800">Imprimir seleção · prévia</button>}
         <span className="ml-auto hidden items-center gap-1 text-slate-400 lg:flex"><ArrowDownToLine size={13}/>Cole linhas e colunas de outra planilha</span></div>
       <div className="flex items-center gap-3 border-b px-3 py-2"><span className="w-16 shrink-0 rounded border bg-slate-50 p-2 text-center font-mono text-xs font-bold">{selecionada}</span><FunctionSquare size={18} className="shrink-0 text-slate-400"/><input ref={barraFormula} aria-label={`Conteúdo de ${selecionada}`} placeholder="Digite um valor ou uma fórmula, como =MÉDIA(A1:A5)" value={editando === selecionada ? texto : rascunho.celulas[selecionada] || ''} onFocus={() => { if (!editando || !naBarra) iniciar(selecionada, undefined, true); }} onChange={e => { setTexto(e.target.value.slice(0, MAX_TEXTO_CELULA)); setEditando(selecionada); }} onBlur={confirmar} onKeyDown={e => { if (e.key === 'Enter') { confirmar(); focar(selecionada); } if (e.key === 'Escape') { ignorarBlur.current = true; setEditando(null); focar(selecionada); } }} className="min-w-0 flex-1 rounded p-2 font-mono text-sm outline-none focus:bg-emerald-50"/>
 {editando && intervaloPendente.test(texto) && <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">
@@ -321,7 +380,31 @@ export function PlanilhasView() {
       </div>}
       </div>
       <div ref={grade} onScroll={atualizarJanela} className="planilhas-grade max-h-[60vh] min-h-[340px] overflow-auto overscroll-contain" aria-label="Células da planilha" tabIndex={-1}>
-        <table className="w-max table-fixed border-separate border-spacing-0 text-xs"><thead className="sticky top-0 z-20"><tr><th className="sticky left-0 z-30 w-11 min-w-11 border-b border-r bg-slate-100 text-slate-400">◢</th>{Array.from({ length: COLUNAS }, (_, c) => <th key={c} className={`border-b border-r font-semibold ${selecionada.charCodeAt(0) - 65 === c ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-500'}`} style={{ width: c === 0 ? 260 : 140, minWidth: c === 0 ? 260 : 140 }}>{String.fromCharCode(65 + c)}</th>)}</tr></thead><tbody>
+        <table className="table-fixed border-separate border-spacing-0 text-xs" style={{ width: 44 + Array.from({ length: COLUNAS }, (_, c) => larguraColuna(c, rascunho.larguras)).reduce((a, b) => a + b, 0) }}>
+          <colgroup><col style={{ width: 44 }}/>{Array.from({ length: COLUNAS }, (_, c) => <col key={c} style={{ width: larguraColuna(c, rascunho.larguras) }}/>)}</colgroup>
+          <thead className="sticky top-0 z-20"><tr><th className="sticky left-0 z-30 border-b border-r bg-slate-100 text-slate-400">◢</th>{Array.from({ length: COLUNAS }, (_, c) => <th key={c} className={`relative border-b border-r font-semibold ${selecionada.charCodeAt(0) - 65 === c ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-500'}`}>
+            {String.fromCharCode(65 + c)}
+            <button type="button" role="separator" aria-orientation="vertical" aria-label={`Largura da coluna ${String.fromCharCode(65 + c)}`} aria-valuemin={LARGURA_COLUNA_MIN} aria-valuemax={LARGURA_COLUNA_MAX} aria-valuenow={larguraColuna(c, rascunho.larguras)} title="Arraste para ajustar; dois cliques para ajustar ao conteúdo. Use as setas para mudar a largura." className="planilhas-ajustar-coluna"
+              onPointerDown={e => {
+                if (e.button !== 0) return;
+                e.preventDefault(); confirmar(); e.currentTarget.focus();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                redimensionando.current = { pointerId: e.pointerId, coluna: c, x: e.clientX, largura: larguraColuna(c, rascunho.larguras) };
+              }}
+              onPointerMove={e => {
+                const arraste = redimensionando.current;
+                if (arraste?.pointerId === e.pointerId) ajustarLargura(arraste.coluna, arraste.largura + e.clientX - arraste.x);
+              }}
+              onPointerUp={e => { redimensionando.current = null; if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
+              onPointerCancel={() => { redimensionando.current = null; }}
+              onLostPointerCapture={() => { redimensionando.current = null; }}
+              onDoubleClick={() => ajustarAoConteudo(c)}
+              onKeyDown={e => {
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); ajustarLargura(c, larguraColuna(c, rascunho.larguras) + (e.key === 'ArrowLeft' ? -10 : 10)); }
+                else if (e.key === 'Enter') { e.preventDefault(); ajustarAoConteudo(c); }
+                else if (e.key === 'Home') { e.preventDefault(); ajustarLargura(c, larguraColuna(c)); }
+              }}/>
+          </th>)}</tr></thead><tbody>
           {janela.inicio > 0 && <tr aria-hidden="true" className="planilhas-espaco"><td colSpan={COLUNAS + 1} style={{ height: janela.inicio * ALTURA_LINHA }}/></tr>}
           {Array.from({ length: fim - janela.inicio }, (_, indice) => { const l = janela.inicio + indice; return <tr key={l} data-linha={l + 1}><th className={`sticky left-0 z-10 border-b border-r font-mono font-normal ${Number(selecionada.slice(1)) === l + 1 ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-50 text-slate-500'}`}>{l + 1}</th>{Array.from({ length: COLUNAS }, (_, c) => {
             const id = endereco(l, c), conteudo = exibicao[id] || vazia, ativo = selecionada === id;
@@ -329,13 +412,13 @@ export function PlanilhasView() {
             const noIntervalo = l >= limites.primeiraLinha && l <= limites.ultimaLinha && c >= limites.primeiraColuna && c <= limites.ultimaColuna;
             return <td key={id} style={{ '--planilha-cor': formato?.cor ? CORES_CELULA[formato.cor] : conteudo.erro ? '#dc2626' : CORES_CELULA.preto, '--planilha-peso': formato?.negrito ? 700 : 400 } as React.CSSProperties} className={`relative border-b border-r border-slate-200 ${noIntervalo ? 'planilhas-selecionada' : 'bg-white'} ${ativo ? 'z-[1] ring-2 ring-inset ring-emerald-600' : ''}`}>
               {editando === id && !naBarra ? <input autoFocus aria-label={`Editar ${id}`} value={texto} onChange={e => setTexto(e.target.value.slice(0, MAX_TEXTO_CELULA))} onBlur={confirmar} onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); confirmar(); mover(id, e.key === 'Enter' ? 1 : 0, e.key === 'Tab' ? e.shiftKey ? -1 : 1 : 0); } if (e.key === 'Escape') { ignorarBlur.current = true; setEditando(null); focar(id); } }} className="absolute inset-0 w-full bg-white px-3 font-mono outline-none ring-2 ring-inset ring-emerald-600"/>
-                : <button type="button" data-celula={id} aria-pressed={noIntervalo} tabIndex={ativo ? 0 : -1} aria-label={`${id}: ${conteudo.texto || 'vazia'}`} title={rascunho.celulas[id] || id} onFocus={() => { if (!editando) setSelecionada(id); }} onPointerDown={e => iniciarSelecao(e, id)} onClick={e => { if (ignorarClique.current) { ignorarClique.current = false; return; } selecionar(id, e.shiftKey); }} onDoubleClick={() => iniciar(id)} onPaste={e => colar(e, id)} onCopy={e => { e.preventDefault(); e.clipboardData.setData('text/plain', rascunho.celulas[id] || ''); }} onKeyDown={e => {
+                : <button type="button" data-celula={id} aria-pressed={noIntervalo} tabIndex={ativo ? 0 : -1} aria-label={`${id}: ${conteudo.texto || 'vazia'}`} title={rascunho.celulas[id] || id} onFocus={() => { if (!editando) setSelecionada(id); }} onPointerDown={e => iniciarSelecao(e, id)} onClick={e => { if (ignorarClique.current) { ignorarClique.current = false; return; } selecionar(id, e.shiftKey); }} onDoubleClick={() => iniciar(id)} onPaste={e => colar(e, endereco(limites.primeiraLinha, limites.primeiraColuna))} onCopy={copiar} onKeyDown={e => {
                   const direcoes: Record<string, [number, number]> = { ArrowDown: [1, 0], ArrowUp: [-1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1], Tab: [0, e.shiftKey ? -1 : 1] };
                   if (direcoes[e.key]) { e.preventDefault(); mover(selecionada, direcoes[e.key][0], direcoes[e.key][1], e.shiftKey && e.key !== 'Tab'); }
                   else if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); iniciar(selecionada); }
                   else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); escrever(selecionada, ''); }
                   else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); iniciar(selecionada, e.key); }
-                }} className={`block w-full overflow-hidden whitespace-nowrap px-3 outline-none ${conteudo.erro ? 'text-left font-bold text-red-700' : conteudo.numerico ? 'text-right font-mono tabular-nums' : 'text-left text-slate-700'}`} style={{ maxWidth: c === 0 ? 260 : 140 }}>{editando === id && naBarra ? texto : conteudo.texto}</button>}
+                }} className={`block w-full overflow-hidden whitespace-nowrap px-3 outline-none ${conteudo.erro ? 'text-left font-bold text-red-700' : conteudo.numerico ? 'text-right font-mono tabular-nums' : 'text-left text-slate-700'}`} style={{ maxWidth: larguraColuna(c, rascunho.larguras) }}>{editando === id && naBarra ? texto : conteudo.texto}</button>}
             </td>;
           })}</tr>; })}
           {fim < LINHAS && <tr aria-hidden="true" className="planilhas-espaco"><td colSpan={COLUNAS + 1} style={{ height: (LINHAS - fim) * ALTURA_LINHA }}/></tr>}
@@ -354,6 +437,6 @@ export function PlanilhasView() {
       </div>}
       </footer>
     </fieldset>}
-    {rascunho && <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500"><p>Arraste para selecionar um intervalo ou use Shift + clique / setas. Dê dois cliques para editar. Fórmulas: <code>=B4*C4</code> · <code>=SOMA(D4:D6)</code></p><p role="status" className="flex items-center gap-1">{!pendente && <Check size={14}/>}{pendente ? 'Alterações não salvas' : aviso || 'Salvo'}</p></div>}
+    {rascunho && <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500"><p>Arraste a borda do cabeçalho para ajustar a coluna; dois cliques ajustam ao conteúdo. Arraste as células para selecionar um intervalo ou use Shift + clique / setas. Dê dois cliques para editar. Fórmulas: <code>=B4*C4</code> · <code>=SOMA(D4:D6)</code></p><p role="status" className="flex items-center gap-1">{!pendente && <Check size={14}/>}{pendente ? 'Alterações não salvas' : aviso || 'Salvo'}</p></div>}
   </section>;
 }

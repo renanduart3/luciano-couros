@@ -64,6 +64,9 @@ export function initDatabase() {
     db.exec("ALTER TABLE planilhas ADD COLUMN formatos TEXT NOT NULL DEFAULT '{}'");
   }
   // Create tables inside a transaction
+  if (!(db.prepare('PRAGMA table_info(planilhas)').all() as Array<{ name: string }>).some(coluna => coluna.name === 'larguras')) {
+    db.exec("ALTER TABLE planilhas ADD COLUMN larguras TEXT NOT NULL DEFAULT '{}'");
+  }
   db.transaction(() => {
     // 1. Clientes
     db.prepare(`

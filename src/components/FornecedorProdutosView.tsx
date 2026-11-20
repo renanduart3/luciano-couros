@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { formatCurrency, formatDate, parseBrazilianNumber } from "../lib/utils";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 
 export function FornecedorProdutosView() {
   const confirmacao = useConfirmacao();
@@ -187,7 +188,7 @@ export function FornecedorProdutosView() {
               <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Custo *</span><input required inputMode="decimal" value={edicaoCusto} onChange={(event) => { setEdicaoCusto(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
               <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">Preço-base *</span><input required inputMode="decimal" value={edicaoPrecoVenda} onChange={(event) => { setEdicaoPrecoVenda(event.target.value); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
               <label className="lg:col-span-4"><span className="mb-1 block text-xs font-extrabold text-blue-950">Observação</span><input value={edicaoObservacao} onChange={(event) => setEdicaoObservacao(event.target.value)} className="w-full rounded-xl border border-blue-200 bg-white px-3 py-3 text-sm font-bold" /></label>
-              <label className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">PIN administrador *</span><input required type="password" autoComplete="off" value={edicaoPin} onChange={(event) => { setEdicaoPin(event.target.value.slice(0, 64)); setErroEdicao(""); }} className="w-full rounded-xl border border-blue-300 bg-white px-3 py-3 text-center text-sm font-black tracking-widest" /></label>
+              <div className="lg:col-span-2"><span className="mb-1 block text-xs font-extrabold text-blue-950">PIN do administrador *</span><PinAdministrativoInput required value={edicaoPin} onChange={value => { setEdicaoPin(value); setErroEdicao(""); }} label="PIN do administrador" className="w-full rounded-xl border border-blue-300 bg-white px-3 py-3 text-center text-sm font-black tracking-widest" /></div>
               <button disabled={saving || !edicaoPin} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-800 px-4 text-xs font-black text-white disabled:opacity-40 lg:col-span-2"><ShieldCheck size={16} /> {saving ? "Validando" : "Validar e salvar"}</button>
             </div>
             {erroEdicao && <p className="mt-3 rounded-xl border border-red-200 bg-white p-3 text-xs font-bold text-red-800">{erroEdicao}</p>}

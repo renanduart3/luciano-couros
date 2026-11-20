@@ -2177,6 +2177,7 @@ app.get("/api/fornecedores/:id/produtos", (req, res) => {
        JOIN produtos p ON p.id = fp.produtoId
        JOIN fornecedores f ON f.id = fp.fornecedorId
        WHERE fp.fornecedorId = ? AND fp.ativo = 1 AND p.deletedAt IS NULL
+         ${req.query.somenteAtivos === "1" ? "AND p.ativo = 1" : ""}
        ORDER BY p.nome ASC`,
       [req.params.id]
     );
@@ -4286,7 +4287,7 @@ function arredondarCompra(valor: number) {
   return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
-function resolverItensCompraFornecedor(fornecedorId: string, items: any[], campoCusto: "custoEstimado" | "custoUnitario") {
+function resolverItensCompraFornecedor(fornecedorId: string, items: any[], campoCusto: "custoEstimado" | "custoUnitario", orcamentoId?: string) {
   if (!fornecedorId || !Array.isArray(items) || items.length === 0) {
     throw erroHttp("Informe o fornecedor e pelo menos um produto.", 400);
   }
@@ -4306,9 +4307,18 @@ function resolverItensCompraFornecedor(fornecedorId: string, items: any[], campo
     ids
   );
   const porId = new Map(catalogo.map((produto) => [produto.id, produto]));
+  const produtosDoOrcamento = campoCusto === "custoEstimado" ? new Set(queryAll<{ produtoId: string }>(
+    `SELECT produtoId FROM fornecedor_produtos WHERE fornecedorId = ? AND ativo = 1
+     UNION
+     SELECT produtoId FROM itens_orcamento_compra WHERE orcamentoCompraId = ?`,
+    [fornecedorId, orcamentoId || null]
+  ).map((item) => item.produtoId)) : null;
   return items.map((item) => {
     const produto = porId.get(String(item.produtoId));
     if (!produto) throw erroHttp("A lista contém um produto inexistente ou inativo.", 400);
+    if (produtosDoOrcamento && !produtosDoOrcamento.has(produto.id)) {
+      throw erroHttp(`O produto ${produto.nome} não está vinculado a este fornecedor.`, 400);
+    }
     const quantidade = Number(item.quantidade);
     const custo = Number(item[campoCusto]);
     if (item.unidade && item.unidade !== produto.unidade) {
@@ -4353,11 +4363,11 @@ function listarCompras(donde = "", params: any[] = []) {
   return compras;
 }
 
-function listarOrcamentosCompra() {
+function listarOrcamentosCompra(filtro = "", params: string[] = []) {
   const documentos = queryAll<any>(
     `SELECT o.*, f.nome AS fornecedorNome, f.telefone AS fornecedorTelefone
      FROM orcamentos_compra o JOIN fornecedores f ON f.id = o.fornecedorId
-     WHERE o.deletedAt IS NULL ORDER BY o.data DESC, o.numeroSequencial DESC`
+     WHERE o.deletedAt IS NULL ${filtro} ORDER BY o.data DESC, o.numeroSequencial DESC`, params
   );
   if (documentos.length === 0) return documentos;
   const ids = documentos.map((item) => item.id);
@@ -4386,28 +4396,35 @@ function recalcularCustoFornecedorProduto(fornecedorId: string, produtoId: strin
   );
 }
 
-app.get("/api/orcamentos-compra", (_req, res) => {
-  try { res.json(listarOrcamentosCompra()); }
+app.get("/api/orcamentos-compra", (req, res) => {
+  const fornecedorId = typeof req.query.fornecedorId === "string" ? req.query.fornecedorId : "";
+  try { res.json(fornecedorId ? listarOrcamentosCompra("AND o.fornecedorId = ?", [fornecedorId]) : listarOrcamentosCompra()); }
   catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
 app.post("/api/orcamentos-compra", (req, res) => {
   try {
-    const { fornecedorId, data, validade, observacao } = req.body;
+    const { data, validade, observacao } = req.body;
+    const fornecedorId = String(req.body.fornecedorId || "");
     if (!dataFinanceiraValida(String(data || ""))) return res.status(400).json({ error: "Informe uma data válida." });
-    const resolvidos = resolverItensCompraFornecedor(String(fornecedorId || ""), req.body.items, "custoEstimado");
-    const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
-    const desconto = arredondarCompra(Number(req.body.desconto || 0));
-    if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal) return res.status(400).json({ error: "Desconto inválido." });
     const idInformado = req.body.id ? String(req.body.id) : null;
-    const id = idInformado || "orc_comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
-    runInTransaction(() => {
-      if (idInformado) {
-        const atual = queryOne<any>("SELECT * FROM orcamentos_compra WHERE id = ? AND status = 'aberto' AND deletedAt IS NULL", [id]);
-        if (!atual) throw erroHttp("Orçamento de compra não encontrado ou já encerrado.", 409);
+    const { id, criado } = runInTransaction(() => {
+      const atual = queryOne<{ id: string }>(
+        `SELECT id FROM orcamentos_compra WHERE fornecedorId = ? AND status = 'aberto' AND deletedAt IS NULL`,
+        [fornecedorId]
+      );
+      if (idInformado && atual?.id !== idInformado) {
+        throw erroHttp("O orçamento informado não está aberto para este fornecedor.", 409);
+      }
+      const resolvidos = resolverItensCompraFornecedor(fornecedorId, req.body.items, "custoEstimado", atual?.id);
+      const subtotal = arredondarCompra(resolvidos.reduce((soma, item) => soma + item.total, 0));
+      const desconto = arredondarCompra(Number(req.body.desconto || 0));
+      if (!Number.isFinite(desconto) || desconto < 0 || desconto > subtotal) throw erroHttp("Desconto inválido.", 400);
+      const id = atual?.id || "orc_comp_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16);
+      if (atual) {
         execute(
-          `UPDATE orcamentos_compra SET fornecedorId = ?, data = ?, validade = ?, subtotal = ?, desconto = ?, total = ?, observacao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-          [fornecedorId, data, validade || null, subtotal, desconto, arredondarCompra(subtotal - desconto), observacao || null, id]
+          `UPDATE orcamentos_compra SET data = ?, validade = ?, subtotal = ?, desconto = ?, total = ?, observacao = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+          [data, validade || null, subtotal, desconto, arredondarCompra(subtotal - desconto), observacao || null, id]
         );
         execute("DELETE FROM itens_orcamento_compra WHERE orcamentoCompraId = ?", [id]);
       } else {
@@ -4422,8 +4439,9 @@ app.post("/api/orcamentos-compra", (req, res) => {
         `INSERT INTO itens_orcamento_compra (id, orcamentoCompraId, produtoId, quantidade, unidade, custoEstimado, total) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         ["ioc_" + crypto.randomUUID().replace(/-/g, "").substring(0, 16), id, item.produtoId, item.quantidade, item.unidade, item.custo, item.total]
       );
+      return { id, criado: !atual };
     });
-    res.status(idInformado ? 200 : 201).json(listarOrcamentosCompra().find((item) => item.id === id));
+    res.status(criado ? 201 : 200).json(listarOrcamentosCompra("AND o.id = ?", [id])[0]);
   } catch (error: any) {
     const mensagem = String(error.message || "");
     res.status(error.statusCode || 500).json({ error: mensagem });
@@ -4438,8 +4456,9 @@ app.post("/api/orcamentos-compra/:id/cancelar", (req, res) => {
   } catch (error: any) { res.status(500).json({ error: error.message }); }
 });
 
-app.get("/api/compras", (_req, res) => {
-  try { res.json(listarCompras()); }
+app.get("/api/compras", (req, res) => {
+  const fornecedorId = typeof req.query.fornecedorId === "string" ? req.query.fornecedorId : "";
+  try { res.json(fornecedorId ? listarCompras("AND c.fornecedorId = ?", [fornecedorId]) : listarCompras()); }
   catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
 });
 
@@ -7165,8 +7184,8 @@ app.post("/api/backups/selecionar-pasta", async (req, res) => {
   try { res.json({ folder: await folderPicker.selectFolder(process.cwd(), IS_PRODUCTION) }); }
   catch (error: any) { res.status(400).json({ error: error.message }); }
 });
-app.get("/api/backups/config", (_req, res) => {
-  try { res.json(getBackupSettings()); }
+app.get("/api/backups/config", (req, res) => {
+  try { res.json({ ...getBackupSettings(), nativePickerAvailable: origemEhServidor(req) }); }
   catch (error: any) { res.status(400).json({ error: error.message }); }
 });
 app.put("/api/backups/config", (req, res) => {

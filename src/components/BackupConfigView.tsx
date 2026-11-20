@@ -20,6 +20,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
   const [storeMobile, setStoreMobile] = useState("");
   const [storeEmail, setStoreEmail] = useState("");
   const [selectingFolder, setSelectingFolder] = useState(false);
+  const [nativePickerAvailable, setNativePickerAvailable] = useState(false);
   const [backupStatus, setBackupStatus] = useState<Awaited<ReturnType<typeof api.getBackupStatus>> | null>(null);
   const [backupFolder, setBackupFolder] = useState("");
   const [localBackupFolder, setLocalBackupFolder] = useState("");
@@ -61,6 +62,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
       setStoreMobile(config.store_mobile || "98800-5778 e 98719-4108");
       setStoreEmail(config.store_email || "lucianocouros@hotmail.com");
       setBackupFolder(backupSettings.folder);
+      setNativePickerAvailable(backupSettings.nativePickerAvailable);
       setLocalBackupFolder(backupSettings.localFolder);
       setBackupTime(backupSettings.time);
       setBackups(backupList);
@@ -365,21 +367,22 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
               <h4 className="font-bold">Backup diário</h4>
               <p className="text-xs text-slate-600">Local: <span className="break-all">{localBackupFolder}</span></p>
               <label className="block text-sm">Pasta do Google Drive (opcional)
-                <input readOnly className="block w-full border rounded-lg p-2 mt-1 bg-white" value={backupFolder} placeholder="Sem cópia para o Drive" />
+                <input type="text" autoComplete="off" spellCheck={false} disabled={savingBackup || selectingFolder} className="block w-full border rounded-lg p-2 mt-1 bg-white" value={backupFolder} onChange={e => { setBackupFolder(e.target.value); setBackupFeedback(""); }} placeholder="C:\ProgramData\LucianoCouros\copia-drive\backups" />
               </label>
-              <button type="button" disabled={selectingFolder || savingBackup} className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {
+              <p className="text-xs text-slate-600">Digite ou cole o caminho completo de uma pasta existente no computador servidor.</p>
+              {nativePickerAvailable && <button type="button" disabled={selectingFolder || savingBackup} className="border rounded-lg px-4 py-2 text-sm" onClick={async () => {
                 setSelectingFolder(true); setBackupFeedback("");
                 try { const result = await api.selectBackupFolder(); if (result.folder) setBackupFolder(result.folder); }
                 catch (err: any) { setBackupFeedback(err.message || "Erro ao selecionar pasta."); }
                 finally { setSelectingFolder(false); }
-              }}>{selectingFolder ? "Aguardando seleção no Windows..." : "Selecionar pasta..."}</button>
+              }}>{selectingFolder ? "Aguardando seleção no Windows..." : "Selecionar pasta..."}</button>}
               {backupFolder && <button type="button" disabled={savingBackup || selectingFolder} onClick={() => setBackupFolder("")} className="ml-2 text-xs underline">Desativar cópia para o Drive</button>}
               <p className="text-xs text-slate-600">O backup local é copiado para esta pasta. Retenção: 7 dias nos dois destinos.</p>
               <label className="block text-sm">Horário diário (servidor)
                 <input required type="time" className="block border rounded-lg p-2 mt-1" value={backupTime} onChange={e => setBackupTime(e.target.value)} />
               </label>
               <p className="text-xs text-slate-600">Deixe o computador ligado e o sistema em execução. Horários perdidos são recuperados ao iniciar.</p>
-              <button disabled={savingBackup} className="bg-slate-900 text-white rounded-lg px-4 py-2">{savingBackup ? "Salvando..." : "Salvar backup diário"}</button>
+              <button disabled={savingBackup || selectingFolder} className="bg-slate-900 text-white rounded-lg px-4 py-2">{savingBackup ? "Salvando..." : "Salvar backup diário"}</button>
               {backupStatus?.lastError && <p role="alert" className="text-xs text-red-700">Backup local: {backupStatus.lastError}</p>}
               {backupStatus?.cleanupError && <p role="alert" className="text-xs text-red-700">Limpeza local: {backupStatus.cleanupError}</p>}
               {backupStatus?.cloud.lastError && <p role="alert" className="text-xs text-red-700">Pasta do Drive: {backupStatus.cloud.lastError} Nova tentativa: {backupStatus.cloud.nextRetry ? new Date(backupStatus.cloud.nextRetry).toLocaleString("pt-BR") : "aguardando"}.</p>}

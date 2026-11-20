@@ -7,6 +7,7 @@ import { Cliente, Fornecedor, Produto, SegurancaStatus, Venda } from "../types";
 import { formatCurrency, formatDate, formatDecimal } from "../lib/utils";
 import { ValeDetalhesModal } from "./ValeDetalhesModal";
 import { Pagination, paginate } from "./Pagination";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 
 type AbaRelatorio = "geral" | "vendas" | "clientes" | "materiais_cliente" | "fornecedores" | "vales";
 type CategoriaItemCliente = "metros" | "unidades";
@@ -428,15 +429,17 @@ export function RelatoriosView() {
       csv += "CÓD. VENDA;CLIENTE;VALOR TOTAL;M;R$ METRO;UN;R$ UN;CUSTO;LUCRO;DATA\n";
       linhasVendas.forEach((item: any) => { csv += `${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.totalLiquido};${item.metragem};${item.valorMetros};${item.unidades};${item.valorUnidades};${item.custo};${item.lucro};${item.data}\n`; });
     } else if (aba === "clientes") {
-      csv += dadosClienteLiberados
-        ? "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO;VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE;FORNECEDOR\n"
-        : "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;PREÇO UNITÁRIO\n";
+      csv += "DATA;VENDA;CLIENTE;QUANTIDADE;UNIDADE;MATERIAL;FORNECEDOR;PREÇO UNITÁRIO";
+      if (dadosClienteLiberados) csv += ";VALOR DA VENDA;CUSTO;LUCRO;LUCRO POR QUANTIDADE";
+      csv += "\n";
       itensClienteOrdenados.forEach((item: any) => {
-        const lucro = Number(item.valorVendaLiquido) - Number(item.custoTotal);
-        const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
-        csv += dadosClienteLiberados
-          ? `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario};${item.valorVendaLiquido};${item.custoTotal};${lucro};${lucroPorQuantidade};${csvCelula(item.fornecedorNome)}\n`
-          : `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${item.precoUnitario}\n`;
+        csv += `${item.data};${item.numeroSequencial};${csvCelula(item.clienteNome)};${item.quantidade};${csvCelula(item.unidade)};${csvCelula(item.descricao)};${csvCelula(item.fornecedorNome || "Não identificado")};${item.precoUnitario}`;
+        if (dadosClienteLiberados) {
+          const lucro = Number(item.valorVendaLiquido) - Number(item.custoTotal);
+          const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
+          csv += `;${item.valorVendaLiquido};${item.custoTotal};${lucro};${lucroPorQuantidade}`;
+        }
+        csv += "\n";
       });
       csv += `\nTOTAL DE VENDAS;${analiseCliente.totalVendas}\nITENS DE VENDA;${analiseCliente.totalItensVenda}\nMETROS VENDIDOS;${analiseCliente.quantidadeMetros}\nUNIDADES / OUTROS;${analiseCliente.quantidadeUnidades}\nVALOR BRUTO;${analiseCliente.valorBruto}\nDESCONTO;${analiseCliente.desconto}\nVALOR LÍQUIDO;${analiseCliente.valorLiquido}\n`;
     } else if (aba === "materiais_cliente") {
@@ -500,11 +503,11 @@ export function RelatoriosView() {
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur-sm">
           <form onSubmit={desbloquearAnaliseCliente} role="dialog" aria-modal="true" aria-labelledby="pin-relatorio-cliente" className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 p-5">
-              <div className="flex gap-3"><span className="rounded-xl bg-slate-900 p-2 text-white"><KeyRound size={19} /></span><div><h3 id="pin-relatorio-cliente" className="font-black">Dados administrativos</h3><p className="mt-1 text-xs text-slate-500">Custo, lucro, fornecedor e margem.</p></div></div>
+              <div className="flex gap-3"><span className="rounded-xl bg-slate-900 p-2 text-white"><KeyRound size={19} /></span><div><h3 id="pin-relatorio-cliente" className="font-black">Dados administrativos</h3><p className="mt-1 text-xs text-slate-500">Custo, lucro e margem.</p></div></div>
               <button type="button" aria-label="Fechar PIN" onClick={() => setPinOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-white"><X size={18} /></button>
             </div>
             <div className="space-y-3 p-5">
-              {seguranca?.pinConfigurado ? <input type="password" autoFocus value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setPinErro(""); }} aria-label="Senha do gerente para o relatório de cliente" placeholder="Digite a senha do gerente" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /> : <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure a senha do gerente em Configurações.</p>}
+              {seguranca?.pinConfigurado ? <PinAdministrativoInput autoFocus value={pin} onChange={value => { setPin(value); setPinErro(""); }} label="PIN administrativo para o relatório de cliente" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /> : <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure a senha do gerente em Configurações.</p>}
               {pinErro && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{pinErro}</p>}
             </div>
             <div className="flex gap-3 border-t border-slate-200 bg-slate-50 p-4"><button type="button" onClick={() => setPinOpen(false)} className="flex-1 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black">Cancelar</button>{seguranca?.pinConfigurado && <button type="submit" className="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white">Desbloquear</button>}</div>
@@ -681,14 +684,14 @@ function TabelaVendas({ linhas }: { linhas: any[] }) {
 }
 
 function TabelaItensCliente({ linhas, liberado }: { linhas: any[]; liberado: boolean }) {
-  const colunas = liberado ? 12 : 6;
-  return <div className="overflow-x-auto"><table className={`w-full text-xs ${liberado ? "min-w-[1180px]" : "min-w-[720px]"}`}><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-2.5 text-left">Data</th><th className="p-2.5 text-left">Venda</th><th className="p-2.5 text-right">Qtd.</th><th className="p-2.5 text-left">Unid.</th><th className="p-2.5 text-left">Artigo / material</th><th className="p-2.5 text-right">V. unitário</th>{liberado && <><th className="p-2.5 text-right">V. venda</th><th className="bg-slate-100 p-2.5 text-right">Custo</th><th className="bg-slate-100 p-2.5 text-right">Lucro</th><th className="bg-slate-100 p-2.5 text-right">Lucro / qtd.</th><th className="bg-slate-100 p-2.5 text-left">Fornecedor</th><th className="bg-slate-100 p-2.5 text-right">Margem</th></>}</tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
+  const colunas = liberado ? 12 : 7;
+  return <div className="overflow-x-auto"><table className={`w-full text-xs ${liberado ? "min-w-[1180px]" : "min-w-[800px]"}`}><thead className="bg-white font-black uppercase text-slate-500"><tr><th className="p-2.5 text-left">Data</th><th className="p-2.5 text-left">Venda</th><th className="p-2.5 text-right">Qtd.</th><th className="p-2.5 text-left">Unid.</th><th className="p-2.5 text-left">Artigo / material</th><th className="p-2.5 text-left">Fornecedor</th><th className="p-2.5 text-right">V. unitário</th>{liberado && <><th className="p-2.5 text-right">V. venda</th><th className="bg-slate-100 p-2.5 text-right">Custo</th><th className="bg-slate-100 p-2.5 text-right">Lucro</th><th className="bg-slate-100 p-2.5 text-right">Lucro / qtd.</th><th className="bg-slate-100 p-2.5 text-right">Margem</th></>}</tr></thead><tbody className="divide-y divide-slate-200">{linhas.length ? linhas.map((item) => {
     const valorVenda = Number(item.valorVendaLiquido || 0);
     const custo = Number(item.custoTotal || 0);
     const lucro = valorVenda - custo;
     const lucroPorQuantidade = Number(item.quantidade) > 0 ? lucro / Number(item.quantidade) : 0;
     const margem = valorVenda > 0 ? lucro / valorVenda * 100 : 0;
-    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-2.5 font-mono">{formatDate(item.data)}</td><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-2.5 font-bold">{item.unidade}</td><td className="p-2.5 font-black text-slate-900">{item.descricao}</td><td className="p-2.5 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>{liberado && <><td className="p-2.5 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-2.5 text-right font-mono">{formatCurrency(custo)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{formatCurrency(lucro)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black text-emerald-800">{formatCurrency(lucroPorQuantidade)}</td><td className="bg-slate-50 p-2.5 font-bold">{item.fornecedorNome || "Sem compra registrada"}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{margem.toFixed(1)}%</td></>}</tr>;
+    return <tr key={item.id} className="hover:bg-amber-50/50"><td className="p-2.5 font-mono">{formatDate(item.data)}</td><td className="p-2.5 font-mono font-black">#{item.numeroSequencial}</td><td className="p-2.5 text-right font-mono font-black">{Number(item.quantidade).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td><td className="p-2.5 font-bold">{item.unidade}</td><td className="p-2.5 font-black text-slate-900">{item.descricao}</td><td className="p-2.5 font-bold">{item.fornecedorNome || "Não identificado"}</td><td className="p-2.5 text-right font-mono">{formatCurrency(item.precoUnitario)}</td>{liberado && <><td className="p-2.5 text-right font-mono font-black">{formatCurrency(valorVenda)}</td><td className="bg-slate-50 p-2.5 text-right font-mono">{formatCurrency(custo)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{formatCurrency(lucro)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black text-emerald-800">{formatCurrency(lucroPorQuantidade)}</td><td className="bg-slate-50 p-2.5 text-right font-mono font-black">{margem.toFixed(1)}%</td></>}</tr>;
   }) : <tr><td colSpan={colunas} className="p-12 text-center font-bold text-slate-500">Nenhum item encontrado para os filtros selecionados.</td></tr>}</tbody></table></div>;
 }
 

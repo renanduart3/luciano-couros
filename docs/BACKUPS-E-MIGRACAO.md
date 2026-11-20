@@ -29,7 +29,7 @@ O backup anterior à atualização permanece **local**, mesmo com o Drive indisp
 1. Atualize a aplicação pelo procedimento habitual e reinicie o serviço. Não distribua bancos, `installation-paths.json`, `.runtime`, `.git`, `node_modules` ou dados desta máquina no pacote.
 2. Em **Configurações e Backups > Sistema**, confira o caminho local e defina o horário diário.
 3. Crie uma pasta local dedicada, por exemplo `C:\ProgramData\LucianoCouros\copia-drive\backups`. No Google Drive para computador, configure a sincronização **somente dessa pasta `backups`**.
-4. Selecione essa pasta na plataforma e salve. A pasta do Drive é opcional; desativá-la mantém o backup local.
+4. Digite ou cole o caminho completo dessa pasta na plataforma e salve. Se o navegador estiver conectado por `localhost` no servidor, também é possível usar o seletor do Windows. A pasta do Drive é opcional; desativá-la mantém o backup local.
 5. Use **Criar Backup Agora**. Confira o mesmo nome de arquivo no destino local e na pasta do Drive, sem avisos de cópia ou limpeza. Confira também o arquivo no site do Drive.
 
 Não sincronize o banco ativo, a pasta `data` inteira ou `.backup-staging`. Não coloque o banco numa unidade virtual do Drive. Use uma pasta local sincronizada: uma unidade mapeada na sessão do usuário pode não estar disponível para a conta do serviço. [Referência Microsoft sobre serviços e unidades mapeadas](https://learn.microsoft.com/en-us/windows/win32/services/services-and-redirected-drives).

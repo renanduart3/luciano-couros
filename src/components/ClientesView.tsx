@@ -9,6 +9,7 @@ import { financeiroVale } from "../lib/financeiro";
 import { ehVendaComercial, resumoVendaComercial, listarValesPendentesCliente, vencimentoPendente } from "../lib/valesCliente";
 import { paginate, Pagination } from "./Pagination";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
 import { SaldoClienteModal } from "./SaldoClienteModal";
@@ -286,8 +287,8 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               <p className="mt-1 text-xs font-bold text-red-800">Remover {produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. ${produtoRemocao.fornecedorReferencia}` : ""} deste cliente?</p>
             </div>
             <div className="space-y-3 p-5">
-              <label className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</label>
-              <input type="password" autoComplete="off" autoFocus value={pinRemocao} onChange={(event) => { setPinRemocao(event.target.value.slice(0, 64)); setErroRemocao(""); }} placeholder="Senha do gerente" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-widest outline-none" />
+              <span className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</span>
+              <PinAdministrativoInput autoFocus value={pinRemocao} onChange={value => { setPinRemocao(value); setErroRemocao(""); }} label="PIN administrativo" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-widest outline-none" />
               {erroRemocao && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{erroRemocao}</p>}
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">

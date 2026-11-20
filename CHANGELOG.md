@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 1.43.0 — 20/11/2026
+
+- Seleção do fornecedor antes de acessar Orçamento, Compra, Histórico e Vales. As quatro abas exibem apenas os registros do fornecedor selecionado.
+- Um orçamento de compra aberto por fornecedor, reaberto automaticamente. A busca oferece apenas produtos do catálogo desse fornecedor e o orçamento pode ser levado para a conferência da compra.
+- Se houver orçamentos abertos duplicados, o mais recente continua vigente e os anteriores ficam registrados como cancelados.
+- Histórico de compras do cliente com fornecedor por produto na tela, na impressão e no CSV.
+- Campos de PIN administrativo limitados a quatro dígitos, com opção de usar a senha do gerente. Campo de quantidade ampliado na venda.
+- Caminho da pasta do Google Drive editável diretamente nas configurações de backup. O seletor do Windows continua disponível no navegador local do servidor.
+
 ## 1.42.0 — 17/11/2026
 
 - Datas e outros textos iniciados por números preservados nas células; operações exigem `=`. Agregações ignoram textos e datas literais.

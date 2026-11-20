@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, KeyRound, LockKeyhole, X } from "lucide-react";
 import { api } from "../lib/api";
 import { parseBrazilianNumber } from "../lib/utils";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 
 interface PrecoAutorizadoInputProps {
   clienteId: string;
@@ -145,37 +146,30 @@ export function PrecoAutorizadoInput({
             <LockKeyhole size={13} />
           </button>
         )}
-        {etapa === "pin" && (
-          <>
-            <span className="shrink-0 text-amber-700" title="PIN necessário"><KeyRound size={13} /></span>
-            <input
-              type="password"
-              inputMode="numeric"
-              autoComplete="off"
-              autoFocus
-              value={pin}
-              onChange={(event) => setPin(event.target.value.slice(0, 64))}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  validarPin();
-                }
-              }}
-              placeholder="PIN"
-              aria-label={`PIN para autorizar preço de ${ariaLabel}`}
-              className="w-16 shrink-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-center text-xs font-black outline-none focus:border-amber-600"
-            />
-            <button type="button" disabled={validando} onClick={validarPin} title="Validar PIN" className="shrink-0 rounded-md bg-amber-600 p-1.5 text-white disabled:opacity-50">
-              <Check size={13} />
-            </button>
-            <button type="button" onClick={fecharEdicao} title="Cancelar alteração" className="shrink-0 rounded-md border border-slate-300 bg-white p-1.5 text-slate-600"><X size={13} /></button>
-          </>
-        )}
         {etapa === "editando" && <>
           <button type="button" disabled={validando} onClick={salvarPreco} title="Salvar novo preço" className="shrink-0 rounded-md bg-emerald-700 p-1.5 text-white disabled:opacity-50"><Check size={13} /></button>
           <button type="button" onClick={fecharEdicao} title="Cancelar alteração" className="shrink-0 rounded-md border border-slate-300 bg-white p-1.5 text-slate-600"><X size={13} /></button>
         </>}
       </div>
+      {etapa === "pin" && (
+        <div className="mt-1 flex flex-wrap items-start gap-1">
+          <span className="shrink-0 text-amber-700" title="PIN necessário"><KeyRound size={13} /></span>
+          <div className="min-w-20 flex-1">
+            <PinAdministrativoInput
+              autoFocus
+              value={pin}
+              onChange={setPin}
+              onEnter={validarPin}
+              label={`PIN para autorizar preço de ${ariaLabel}`}
+              className="w-full rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1 text-center text-xs font-black outline-none focus:border-amber-600"
+            />
+          </div>
+          <button type="button" disabled={validando} onClick={validarPin} title="Validar PIN" className="shrink-0 rounded-md bg-amber-600 p-1.5 text-white disabled:opacity-50">
+            <Check size={13} />
+          </button>
+          <button type="button" onClick={fecharEdicao} title="Cancelar alteração" className="shrink-0 rounded-md border border-slate-300 bg-white p-1.5 text-slate-600"><X size={13} /></button>
+        </div>
+      )}
       {erro && <p className="mt-1 text-right text-[9px] font-bold text-red-700">{erro}</p>}
     </div>
   );

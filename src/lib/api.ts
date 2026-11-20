@@ -409,8 +409,8 @@ export const api = {
     }).then(r => handleResponse<Fornecedor>(r)),
   deleteFornecedor: (id: string) => 
     fetch(`${API_BASE}/fornecedores/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
-  getFornecedorProdutos: (id: string) =>
-    fetch(`${API_BASE}/fornecedores/${id}/produtos`).then(r => handleResponse<FornecedorProduto[]>(r)),
+  getFornecedorProdutos: (id: string, somenteAtivos = false) =>
+    fetch(`${API_BASE}/fornecedores/${encodeURIComponent(id)}/produtos${somenteAtivos ? "?somenteAtivos=1" : ""}`).then(r => handleResponse<FornecedorProduto[]>(r)),
   vincularFornecedorProduto: (fornecedorId: string, dados: {
     produtoId: string;
     custoFornecedor: number;
@@ -594,8 +594,8 @@ export const api = {
     fetch(`${API_BASE}/orcamentos/${id}`, { method: "DELETE" }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // COMPRAS
-  getCompras: () => fetch(`${API_BASE}/compras`).then(r => handleResponse<Compra[]>(r)),
-  getOrcamentosCompra: () => fetch(`${API_BASE}/orcamentos-compra`).then(r => handleResponse<OrcamentoCompra[]>(r)),
+  getCompras: (fornecedorId?: string) => fetch(`${API_BASE}/compras${fornecedorId ? `?fornecedorId=${encodeURIComponent(fornecedorId)}` : ""}`).then(r => handleResponse<Compra[]>(r)),
+  getOrcamentosCompra: (fornecedorId?: string) => fetch(`${API_BASE}/orcamentos-compra${fornecedorId ? `?fornecedorId=${encodeURIComponent(fornecedorId)}` : ""}`).then(r => handleResponse<OrcamentoCompra[]>(r)),
   saveOrcamentoCompra: (dados: {
     id?: string;
     fornecedorId: string;
@@ -714,7 +714,7 @@ export const api = {
   // BACKUPS
   getBackupStatus: () => fetch(`${API_BASE}/backups/status`).then(r => handleResponse<{ alert: boolean; failures: number; lastError: string | null; lastSuccess: string | null; nextRetry: string | null; cleanupError: string | null; localFolder: string; cloud: { enabled: boolean; failures: number; lastSuccess: string | null; lastError: string | null; nextRetry: string | null } }>(r)),
   selectBackupFolder: () => fetch(`${API_BASE}/backups/selecionar-pasta`, { method: "POST" }).then(r => handleResponse<{ folder: string | null }>(r)),
-  getBackupSettings: () => fetch(`${API_BASE}/backups/config`).then(r => handleResponse<{ folder: string; time: string; localFolder: string }>(r)),
+  getBackupSettings: () => fetch(`${API_BASE}/backups/config`).then(r => handleResponse<{ folder: string; time: string; localFolder: string; nativePickerAvailable: boolean }>(r)),
   saveBackupSettings: (settings: { folder: string; time: string }) => fetch(`${API_BASE}/backups/config`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings)
   }).then(r => handleResponse<{ folder: string; time: string; localFolder: string }>(r)),

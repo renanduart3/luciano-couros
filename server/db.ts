@@ -335,9 +335,23 @@ export function initDatabase() {
     `).run();
     db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_compra_seq ON orcamentos_compra (numeroSequencial)`).run();
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_orcamentos_compra_fornecedor ON orcamentos_compra (fornecedorId, status, data DESC)`).run();
-    // Diferentemente das vendas, um fornecedor pode possuir vários pedidos de
-    // orçamento abertos ao mesmo tempo.
-    db.prepare(`DROP INDEX IF EXISTS idx_orcamentos_compra_vigente`).run();
+    // Mantém o pedido mais recente de cada fornecedor como vigente.
+    db.prepare(`
+      UPDATE orcamentos_compra
+      SET status = 'cancelado', updatedAt = CURRENT_TIMESTAMP
+      WHERE status = 'aberto' AND deletedAt IS NULL
+        AND numeroSequencial NOT IN (
+          SELECT MAX(numeroSequencial)
+          FROM orcamentos_compra
+          WHERE status = 'aberto' AND deletedAt IS NULL
+          GROUP BY fornecedorId
+        )
+    `).run();
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_orcamentos_compra_vigente
+      ON orcamentos_compra (fornecedorId)
+      WHERE status = 'aberto' AND deletedAt IS NULL
+    `).run();
 
     db.prepare(`
       CREATE TABLE IF NOT EXISTS itens_orcamento_compra (

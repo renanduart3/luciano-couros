@@ -6,6 +6,7 @@ import { arredondarDinheiro } from "../lib/totaisVenda";
 import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 import { 
   Plus, Trash2, Printer, Save, X, Sparkles, Check, UserPlus, FileText,
   TrendingUp, DollarSign, Award, AlertCircle, CheckCircle2, Zap, MessageSquare, KeyRound, ShieldCheck,
@@ -1251,15 +1252,11 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                 <>
                   <div className="space-y-1.5">
                     <label className="block text-xs font-extrabold uppercase tracking-wider text-slate-500">PIN de {seguranca.nome}</label>
-                    <input
-                      type="password"
-                      inputMode="numeric"
-                      autoComplete="off"
+                    <PinAdministrativoInput
                       autoFocus
                       value={adminPin}
-                      onChange={(e) => setAdminPin(e.target.value.slice(0, 64))}
-                      placeholder="••••"
-                      aria-label="PIN administrativo"
+                      onChange={setAdminPin}
+                      label="PIN administrativo"
                       className="w-full rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-xl font-black tracking-[0.5em] text-slate-950 outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
                     />
                   </div>
@@ -1784,14 +1781,14 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
         <div className="max-h-[72vh] min-h-[260px] overflow-auto rounded-xl border border-slate-200 shadow-sm">
           <table className={`${compact ? "min-w-[700px] xl:min-w-0 xl:table-fixed" : "min-w-[820px]"} w-full text-xs text-left`}>
             <colgroup>
-              <col className="w-[8%]" /><col className="w-[28%]" /><col className="w-[10%]" />
-              <col className="w-[10%]" /><col className="w-[18%]" /><col className="w-[16%]" /><col className="w-[10%]" />
+              <col className="w-[8%]" /><col className="w-[25%]" /><col className="w-[16%]" />
+              <col className="w-[10%]" /><col className="w-[17%]" /><col className="w-[15%]" /><col className="w-[9%]" />
             </colgroup>
             <thead>
               <tr className="bg-slate-100 text-slate-600 font-black text-[10px] uppercase border-b border-slate-200">
                 <th className="px-2 py-1.5 w-16">CÓD.</th>
                 <th className="px-2 py-1.5">MATERIAL</th>
-                <th className="px-2 py-1.5 text-center w-28">QTD.</th>
+                <th className="px-2 py-1.5 text-center w-32">QTD.</th>
                 <th className="px-2 py-1.5 text-center w-24">UN.</th>
                 <th className="px-2 py-1.5 text-right w-32">PREÇO</th>
                 <th className="px-2 py-1.5 text-right w-28">TOTAL</th>
@@ -1828,7 +1825,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                     document.body
                   )}
                 </td>
-                <td className="px-2 py-2"><input ref={quantidadeRef} type="text" inputMode="decimal" aria-label="Quantidade do material" title="Aceita frações: 0,50 m = meio metro; 0,20 m = 20 cm" value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /></td>
+                <td className="px-2 py-2"><input ref={quantidadeRef} type="text" inputMode="decimal" aria-label="Quantidade do material" title="Aceita frações: 0,50 m = meio metro; 0,20 m = 20 cm" value={itemQtd} onChange={(event) => setItemQtd(event.target.value)} onKeyDown={(event) => handleKeyDown(event, precoUnitarioRef)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right font-mono text-sm font-black outline-none focus:border-emerald-500" /></td>
                 <td className="px-2 py-2 text-center text-xs font-bold text-slate-600">{itemUnidade || "—"}</td>
                 <td className="px-2 py-2">{clienteSelecionado && produtoSelecionado ? <PrecoAutorizadoInput clienteId={clienteSelecionado.id} produtoId={produtoSelecionado.id} fornecedorId={fornecedorSelecionado?.fornecedorId} value={itemPreco} precoAutorizado={Number(encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.precoAutorizado ?? encontrarPrecoCliente(produtosCliente, produtoSelecionado.id, fornecedorSelecionado?.fornecedorId)?.ultimoPreco ?? produtoSelecionado.precoVendaPadrao)} origem="venda" ariaLabel={`Preço de ${produtoSelecionado.nome} na venda`} onAuthorized={(valorFormatado, valor) => { setItemPreco(valorFormatado); registrarPrecoAutorizadoLocal(produtoSelecionado.id, fornecedorSelecionado?.fornecedorId, valor); }} className="w-full min-w-16 rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" /> : <input ref={precoUnitarioRef} value={itemPreco} onChange={(event) => setItemPreco(event.target.value)} placeholder="0,00" className="w-full rounded-md border border-emerald-200 bg-white px-2 py-1.5 text-right text-xs font-black outline-none focus:border-emerald-500" />}</td>
                 <td className="px-2 py-2 text-right font-mono text-xs font-black">{formatCurrency(parseBrazilianNumber(itemQtd) * parseBrazilianNumber(itemPreco))}</td>
@@ -1860,7 +1857,7 @@ export function VendaRapidaView({ onSaleSaved, onNavigateToView, orcamentoInicia
                           placeholder="0"
                           aria-label={`Quantidade de ${it.nome}`}
                           title="Aceita frações: 0,50 m = meio metro; 0,20 m = 20 cm"
-                          className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-1.5 py-1.5 text-right text-xs font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                          className="w-full min-w-0 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-right font-mono text-sm font-black text-slate-900 outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
                         />
                       </td>
                       <td className="p-2 text-center">

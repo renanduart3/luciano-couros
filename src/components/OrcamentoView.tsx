@@ -10,6 +10,7 @@ import { formatCurrency, formatDate, formatDecimal, parseBrazilianNumber } from 
 import { Pagination, paginate } from "./Pagination";
 import { OrcamentoComprovante } from "./OrcamentoComprovante";
 import { PrecoAutorizadoInput } from "./PrecoAutorizadoInput";
+import { PinAdministrativoInput } from "./PinAdministrativoInput";
 import { useKeyboardListNavigation } from "../hooks/useKeyboardListNavigation";
 import { useConfirmacao } from "./ConfirmacaoDialog";
 import { useEhGerente } from "../auth/AuthContext";
@@ -750,7 +751,7 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
             </div>
             <div className="space-y-4 p-5">
               {seguranca?.pinConfigurado ? (
-                <label><span className="mb-1 block text-xs font-black uppercase text-slate-600">PIN administrativo</span><input type="password" inputMode="numeric" autoFocus value={adminPin} onChange={(event) => { setAdminPin(event.target.value); setPinErro(""); }} placeholder="Digite o PIN" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" /></label>
+                <div><span className="mb-1 block text-xs font-black uppercase text-slate-600">PIN administrativo</span><PinAdministrativoInput autoFocus value={adminPin} onChange={value => { setAdminPin(value); setPinErro(""); }} label="PIN administrativo" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" /></div>
               ) : (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure o PIN administrativo em Configurações.</p>
               )}

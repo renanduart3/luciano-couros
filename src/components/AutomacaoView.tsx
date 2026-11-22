@@ -20,6 +20,8 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
   const [painel, setPainel] = useState<PainelAutomacao>();
   const [mensagem, setMensagem] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [contatoId, setContatoId] = useState("");
+  const [editandoId, setEditandoId] = useState("");
   const [novoContato, setNovoContato] = useState("");
   const [teste, setTeste] = useState("");
   const [formato, setFormato] = useState("pdf");
@@ -53,6 +55,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
   if (!painel) return <p role="status">{mensagem || "Carregando automação…"}</p>;
   const { central, vendedores = [], excecoes = {} } = painel;
   const disponiveis = (painel.usuariosDisponiveis ?? []).filter(p => !vendedores.some(v => v.id === p.id));
+  const contato = vendedores.find(p => p.id === contatoId) ?? vendedores[0];
   function mudar(p: PainelAutomacao) {
     setPainel(p);
     setAlterado(true);
@@ -188,37 +191,52 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
               </select>
               <button type="button" className={botao} disabled={!novoContato} onClick={()=>{
                 const pessoa = disponiveis.find(p=>p.id===novoContato);
-                if (pessoa) mudar({...painel, vendedores:[...vendedores,pessoa]});
+                if (!pessoa) return;
+                mudar({...painel, vendedores:[...vendedores,pessoa]});
+                setContatoId(pessoa.id);
+                setEditandoId("");
                 setNovoContato("");
               }}>Adicionar contato</button>
             </div>
-            {vendedores.map((v) => (
-              <div key={v.id} className="grid items-center gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
-                <span>{v.nome}</span>
-                {canais.map((c) => (
-                  <label key={c} className="grid text-xs">
-                    {c === "waha" ? "WhatsApp com DDI e DDD" : "ID do chat privado no Telegram"}
-                    <input
-                      className={controle}
-                      inputMode="numeric"
-                      value={v[c]}
-                      onChange={(e) =>
-                        mudar({
-                          ...painel,
-                          vendedores: vendedores.map((item) =>
-                            item.id === v.id ? { ...item, [c]: e.target.value.trim() } : item,
-                          ),
-                        })
-                      }
-                    />
+            {contato ? (
+              <div className="space-y-3 border-t border-slate-200 pt-3">
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="grid gap-1 text-sm">
+                    Contato cadastrado
+                    <select className={controle} value={contato.id} onChange={e => {
+                      setContatoId(e.target.value);
+                      setEditandoId("");
+                    }}>
+                      {vendedores.map(v => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                    </select>
                   </label>
-                ))}
-                <button type="button" className={botao} aria-label={`Remover ${v.nome} dos contatos para envio`} onClick={()=>{
-                  mudar({...painel, vendedores:vendedores.filter(p=>p.id!==v.id)});
-                  if (teste===v.id) setTeste("");
-                }}>Remover</button>
+                  <button type="button" className={botao} disabled={editandoId === contato.id}
+                    onClick={() => setEditandoId(contato.id)}>Editar contato</button>
+                  <button type="button" className={botao} onClick={() => {
+                    const restantes = vendedores.filter(p => p.id !== contato.id);
+                    mudar({...painel, vendedores: restantes});
+                    setContatoId(restantes[0]?.id ?? "");
+                    setEditandoId("");
+                    if (teste === contato.id) setTeste("");
+                  }}>Remover contato</button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {canais.map(c => (
+                    <label key={c} className="grid gap-1 text-xs">
+                      {c === "waha" ? "WhatsApp com DDI e DDD" : "ID do chat privado no Telegram"}
+                      <input className={controle} inputMode="numeric" disabled={editandoId !== contato.id}
+                        value={contato[c]} onChange={e => {
+                          const atualizado = {...contato, [c]:e.target.value.trim()};
+                          mudar({...painel,
+                            vendedores:vendedores.map(v => v.id === contato.id ? atualizado : v),
+                            usuariosDisponiveis:painel.usuariosDisponiveis?.map(v => v.id === contato.id ? atualizado : v),
+                          });
+                        }}/>
+                    </label>
+                  ))}
+                </div>
               </div>
-            ))}
+            ) : <p className="text-sm text-slate-600">Nenhum contato cadastrado.</p>}
           </div>
         )}
         <button
@@ -237,6 +255,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                     },
               );
               setPainel(p);
+              setEditandoId("");
               setAlterado(false);
               setMensagem("Configurações salvas.");
             })

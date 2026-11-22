@@ -16,8 +16,8 @@ Abra Configurações → Automação com o usuário gerente. Mantenha o envio au
 
 ## Regras e retomada
 
-O gerente escolhe um canal para os envios automáticos. A periodicidade conta dias corridos desde o último relatório enviado daquele cliente ao vendedor daquela venda. O horário segue o relógio do servidor. Ao voltar a funcionar, o serviço verifica os saldos atuais. Há no máximo um relatório por cliente e vendedor no dia.
+O gerente escolhe um canal para os envios automáticos. A periodicidade conta dias corridos desde o último relatório enviado daquele cliente a cada destinatário selecionado. O horário segue o relógio do servidor. Ao voltar a funcionar, o serviço verifica os saldos atuais. Cada destinatário recebe no máximo um relatório por cliente no dia. O administrador vem selecionado por padrão. Na ficha do cliente, marque ou desmarque administradores e vendedores. Uma lista vazia suspende os avisos desse cliente.
 
-O relatório considera parcelas de vales em aberto, fora de ordem de cobrança ativa. “Mais de 40 dias” inclui o 41º dia. O valor mínimo é aplicado à soma das parcelas elegíveis do mesmo vendedor e cliente. Na ficha, marcar Personalizar grava apenas aquele campo. Uma orientação personalizada vazia suprime a orientação geral. Desmarcar Personalizar restaura a herança.
+O relatório considera parcelas de vales em aberto, fora de ordem de cobrança ativa. “Mais de 40 dias” inclui o 41º dia. O valor mínimo é aplicado à soma das parcelas elegíveis do cliente. Na ficha, marcar Personalizar grava apenas aquele campo. Uma orientação personalizada vazia suprime a orientação geral. Desmarcar Personalizar restaura a herança.
 
-Veja a prévia antes de ativar. Vales sem vendedor identificado ou sem destino cadastrado aparecem na prévia. Se o serviço perder a confirmação do envio, confira o celular do vendedor e marque o recebimento ou libere uma nova tentativa pelo histórico.
+Veja a prévia antes de ativar. A prévia indica os destinatários sem contato cadastrado para o canal. Se o serviço perder a confirmação do envio, confira o celular do vendedor e marque o recebimento ou libere uma nova tentativa pelo histórico.

@@ -13,7 +13,7 @@ export const regrasIniciais: Regras = { periodicidade: 7, atraso: 0, minimo: 0, 
 export const camposRegras = {
   periodicidade: "Intervalo entre avisos (dias)",
   atraso: "Cobrar após mais de quantos dias de atraso?",
-  minimo: "Saldo vencido mínimo por vendedor e cliente (R$)",
+  minimo: "Saldo vencido mínimo por cliente (R$)",
   observacao: "Orientação ao vendedor (opcional)",
 } satisfies Record<keyof Regras, string>;
 
@@ -26,7 +26,7 @@ export const destinatarioSchema = z
     telegram: z.string().regex(/^(?:[1-9]\d{0,15})?$/),
   })
   .strict();
-export type Destinatario = z.infer<typeof destinatarioSchema> & { nome: string };
+export type Destinatario = z.infer<typeof destinatarioSchema> & { nome: string; perfil: string };
 export const centralSchema = z
   .object({
     ativo: z.boolean(),
@@ -46,6 +46,8 @@ export interface PainelAutomacao {
   central: Central;
   excecoes?: Partial<Regras>;
   vendedores?: Destinatario[];
+  destinatarios?: string[] | null;
+  administradorPadrao?: string;
   historico?: {
     id: number;
     dia: string;

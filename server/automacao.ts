@@ -30,8 +30,19 @@ function regrasAtuais(salvas: Partial<Regras> = {}): Partial<Regras> {
 }
 const excecoes = (id: string) => regrasAtuais(config<Partial<Regras>>("cliente/" + id, {}));
 const vendedores = () =>
-  queryAll<Destinatario>(`SELECT u.id,u.nome,coalesce(d.waha,'') waha,coalesce(d.telegram,'') telegram
- FROM usuarios u LEFT JOIN automacao_destinos d ON d.id=u.id WHERE u.ativo=1 ORDER BY u.nome`);
+  queryAll<Destinatario>(`SELECT u.id,u.nome,u.perfil,coalesce(d.waha,'') waha,coalesce(d.telegram,'') telegram
+ FROM usuarios u LEFT JOIN automacao_destinos d ON d.id=u.id WHERE u.ativo=1 AND u.perfil IN ('administrador','vendedor') ORDER BY u.createdAt,u.id`);
+const listaCliente = (id: string) => config<string[] | null>("destinatarios/" + id, null);
+const administrador = (pessoas: Destinatario[]) => pessoas.find(p => p.perfil === "administrador")?.id;
+function ficha(id: string) {
+  const pessoas = vendedores();
+  const lista = listaCliente(id);
+  return {
+    central: central(), excecoes: excecoes(id), vendedores: pessoas,
+    destinatarios: lista === null ? null : lista.filter(id => pessoas.some(p => p.id === id)),
+    administradorPadrao: administrador(pessoas),
+  };
+}
 function painel(): PainelAutomacao {
   return {
     central: central(),
@@ -45,7 +56,6 @@ function painel(): PainelAutomacao {
 interface Linha {
   clienteId: string;
   cliente: string;
-  vendedorId: string;
   vale: number;
   parcela: number;
   vencimento: string;
@@ -53,7 +63,7 @@ interface Linha {
 }
 function parcelas(dia: string) {
   return queryAll<Linha>(
-    `SELECT c.id clienteId,c.nome cliente,v.vendedorId,v.numeroSequencial vale,
+    `SELECT c.id clienteId,c.nome cliente,v.numeroSequencial vale,
     p.numero parcela,p.vencimento,p.saldo FROM vale_parcelas p JOIN vendas v ON v.id=p.vendaId
     JOIN clientes c ON c.id=v.clienteId
     WHERE c.ativo=1 AND c.deletedAt IS NULL AND v.deletedAt IS NULL AND v.status<>'cancelada'
@@ -76,13 +86,22 @@ export function agruparPendencias(
     const regras = porCliente.get(linha.clienteId) || { ...padrao, ...individuais(linha.clienteId) };
     porCliente.set(linha.clienteId, regras);
     if (!(diasEntre(linha.vencimento, dia) > regras.atraso)) continue;
-    const chave = JSON.stringify([linha.clienteId, linha.vendedorId]);
+    const chave = linha.clienteId;
     const grupo = grupos.get(chave) || { itens: [], regras, centavos: 0 };
     grupo.itens.push(linha);
     grupo.centavos += Math.round(linha.saldo * 100);
     grupos.set(chave, grupo);
   }
   return [...grupos.values()].filter((g) => g.centavos >= Math.round(g.regras.minimo * 100));
+}
+function entregasPrevistas(dia: string, cfg: Central) {
+  const pessoas = vendedores();
+  const ativos = new Map(pessoas.map(p => [p.id, p]));
+  const padrao = administrador(pessoas);
+  return agruparPendencias(parcelas(dia), dia, cfg.regras, excecoes).flatMap(grupo => {
+    const ids = listaCliente(grupo.itens[0].clienteId) ?? (padrao ? [padrao] : []);
+    return ids.map(id => ({grupo, pessoa: ativos.get(id)}));
+  });
 }
 function relogio() {
   const agora = new Date();
@@ -104,11 +123,11 @@ export async function executarAutomacao() {
     const cfg = central();
     const { dia, hora } = relogio();
     if (!cfg.ativo || hora < cfg.horario) return;
-    const destinos = new Map(vendedores().map((v) => [v.id, v]));
-    const grupos = agruparPendencias(parcelas(dia), dia, cfg.regras, excecoes);
-    for (const grupo of grupos) {
-      const { cliente, clienteId, vendedorId } = grupo.itens[0];
-      const destino = destinos.get(vendedorId)?.[cfg.canal];
+    for (const {grupo, pessoa} of entregasPrevistas(dia, cfg)) {
+      if (!pessoa) continue;
+      const { cliente, clienteId } = grupo.itens[0];
+      const vendedorId = pessoa.id;
+      const destino = pessoa[cfg.canal];
       if (!destino || situacao(clienteId, vendedorId, dia, grupo.regras.periodicidade)) continue;
       // Apenas um envio por ciclo. O próximo ciclo relê baixas, regras e destinatários.
       const linhas = grupo.itens.map(
@@ -182,30 +201,36 @@ export function rotasAutomacao() {
     next();
   });
   router.get("/clientes/:id", (req, res) =>
-    res.json({ central: central(), excecoes: excecoes(req.params.id) }),
+    res.json(ficha(req.params.id)),
   );
   router.put("/clientes/:id", (req, res) => {
-    const dados = regrasSchema.partial().safeParse(req.body);
+    const dados = regrasSchema.partial().extend({destinatarios: z.array(z.string().min(1)).nullable().optional()}).safeParse(req.body);
     if (!dados.success)
       return res.status(400).json({ error: "Confira o intervalo, o atraso, o saldo e a orientação." });
-    gravar("cliente/" + req.params.id, dados.data);
-    res.json({ central: central(), excecoes: dados.data });
+    const {destinatarios, ...regras} = dados.data;
+    const ativos = new Set(vendedores().map(p => p.id));
+    if (destinatarios?.some(id => !ativos.has(id)))
+      return res.status(409).json({error:"A lista de usuários ativos mudou. Reabra a ficha."});
+    runInTransaction(() => {
+      gravar("cliente/" + req.params.id, regras);
+      if (destinatarios !== undefined)
+        gravar("destinatarios/" + req.params.id, destinatarios === null ? null : [...new Set(destinatarios)]);
+    });
+    res.json(ficha(req.params.id));
   });
   router.get("/previa", (_req, res) => {
     const c = central(),
-      { dia } = relogio(),
-      destinos = vendedores();
+      { dia } = relogio();
     res.json(
-      agruparPendencias(parcelas(dia), dia, c.regras, excecoes).map((g) => {
-        const i = g.itens[0],
-          vendedor = destinos.find((v) => v.id === i.vendedorId);
+      entregasPrevistas(dia, c).map(({grupo:g, pessoa:vendedor}) => {
+        const i = g.itens[0];
         return {
           cliente: i.cliente,
           vendedor: vendedor?.nome || "Sem vendedor ativo",
           total: moeda(g.centavos / 100),
           situacao: !vendedor?.[c.canal]
             ? "Sem destino"
-            : situacao(i.clienteId, i.vendedorId, dia, g.regras.periodicidade)
+            : situacao(i.clienteId, vendedor.id, dia, g.regras.periodicidade)
               ? "Aguardando intervalo ou revisão"
               : "Elegível",
         };

@@ -109,8 +109,25 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         <p className="text-sm text-slate-600">
           {clienteId
             ? "Marque apenas os campos que devem ter uma regra própria. Os demais acompanham o padrão geral."
-            : "Padrão para todos os clientes. O relatório reúne as parcelas de vales vencidas e em aberto de cada cliente por vendedor. Vales em ordem de cobrança ativa ficam fora."}
+            : "Padrão para todos os clientes. O relatório reúne as parcelas de vales vencidas e em aberto de cada cliente. Vales em ordem de cobrança ativa ficam fora."}
         </p>
+        {clienteId && (
+          <fieldset className="space-y-2 rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 font-bold">Quem recebe os avisos deste cliente</legend>
+            {vendedores.map(pessoa => {
+              const selecionados = painel.destinatarios ?? (painel.administradorPadrao ? [painel.administradorPadrao] : []);
+              return <label key={pessoa.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={selecionados.includes(pessoa.id)}
+                  onChange={e => mudar({...painel, destinatarios: e.target.checked
+                    ? [...selecionados, pessoa.id] : selecionados.filter(id => id !== pessoa.id)})}/>
+                {pessoa.nome} · {pessoa.perfil === "administrador" ? "Administrador" : "Vendedor"}
+              </label>;
+            })}
+            {painel.destinatarios == null ? <p className="text-xs text-slate-600">Padrão do cliente: administrador.</p> :
+              <button type="button" className={botao} onClick={() => mudar({...painel, destinatarios:null})}>Restaurar administrador padrão</button>}
+            {painel.destinatarios?.length === 0 && <p className="text-sm">Nenhum destinatário. Os avisos deste cliente ficam suspensos.</p>}
+          </fieldset>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           {campos.map((campo) => {
             const individual = Object.hasOwn(excecoes, campo);
@@ -158,7 +175,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         </div>
         {!clienteId && (
           <div className="space-y-3">
-            <h4 className="font-bold">Destinos dos vendedores</h4>
+            <h4 className="font-bold">Contatos para envio</h4>
             <p className="text-sm text-slate-600">
               Use o telefone com DDI e DDD. No Telegram, o vendedor deve iniciar o bot antes do teste. Informe
               o ID da conversa privada.
@@ -197,7 +214,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                 rota,
                 "PUT",
                 clienteId
-                  ? excecoes
+                  ? { ...excecoes, destinatarios: painel.destinatarios }
                   : {
                       central,
                       vendedores: vendedores.map(({ id, waha, telegram }) => ({ id, waha, telegram })),

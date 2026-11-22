@@ -1,3 +1,4 @@
+import { rotasAutomacao, executarAutomacao } from "./server/automacao.js";
 import { ultimoPrecoDevolucao, itensElegiveisDevolucao, resolverLinhaDevolucao, devolvidoEmOutraVendaSql, ajustarCreditoLinhas, protegerCompraDevolvida } from "./server/devolucoesItens.js";
 import { rotasPlanilhas } from "./server/planilhas.js";
 import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
@@ -1147,6 +1148,7 @@ app.use("/api", (req, res, next) => {
   }
   next();
 });
+app.use("/api/automacao", exigirGerente, rotasAutomacao());
 app.use(["/api/backups", "/api/usuarios"], exigirGerente);
 app.use('/api/planilhas', exigirGerente, rotasPlanilhas(validarPinAdministrador, registrarAuditoria));
 app.use("/api", (req, res, next) => {
@@ -7329,6 +7331,16 @@ async function startServer() {
 
   // Start listening
   app.listen(PORT, "0.0.0.0", () => {
+    async function ciclo() {
+      let proximo = 60000;
+      try {
+        if (await executarAutomacao()) proximo = 1000;
+      } catch {
+        console.error("Falha no ciclo da automação de cobrança.");
+      }
+      setTimeout(ciclo, proximo).unref();
+    }
+    void ciclo();
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

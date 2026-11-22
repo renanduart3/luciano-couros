@@ -53,6 +53,14 @@ export const db = new Proxy({}, {
 }) as any;
 
 export function initDatabase() {
+  db.exec(`
+ CREATE TABLE IF NOT EXISTS automacao_config (chave TEXT PRIMARY KEY, dados TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS automacao_destinos (id TEXT PRIMARY KEY, waha TEXT NOT NULL, telegram TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS automacao_envios (id INTEGER PRIMARY KEY, dia TEXT NOT NULL, clienteId TEXT NOT NULL,
+ vendedorId TEXT NOT NULL, canal TEXT NOT NULL, estado TEXT NOT NULL, detalhe TEXT NOT NULL DEFAULT '',
+ UNIQUE(dia, clienteId, vendedorId));
+ CREATE INDEX IF NOT EXISTS idx_automacao_periodo ON automacao_envios(clienteId,vendedorId,estado,dia);
+`);
   db.exec(`CREATE TABLE IF NOT EXISTS planilhas (
     id TEXT PRIMARY KEY, nome TEXT NOT NULL,
     celulas TEXT NOT NULL DEFAULT '{}', moedas TEXT NOT NULL DEFAULT '[]', formatos TEXT NOT NULL DEFAULT '{}',

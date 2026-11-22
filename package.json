@@ -1,7 +1,7 @@
 {
   "name": "luciano-couros",
   "private": true,
-  "version": "1.43.0",
+  "version": "1.44.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -9,6 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "node -e \"const fs=require('node:fs'); for (const path of ['dist','server.js']) fs.rmSync(path,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
+    "test:automacao": "tsx scripts/testar-automacao.ts",
     "test:financeiro": "node scripts/verificar-financeiro.cjs",
     "conciliar:financeiro": "node scripts/conciliar-financeiro.cjs",
     "version:patch": "npm version patch --no-git-tag-version",
@@ -25,6 +26,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdfkit": "^0.21.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.9.2",

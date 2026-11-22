@@ -1,3 +1,4 @@
+import { AutomacaoView } from "./AutomacaoView";
 import React, { useState, useEffect } from "react";
 import { 
   Database, RefreshCw, ShieldAlert, CheckCircle2, ChevronRight, Save, Store, Archive, KeyRound
@@ -12,7 +13,7 @@ interface BackupConfigViewProps {
 }
 
 export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: BackupConfigViewProps) {
-  const [activeTab, setActiveTab] = useState<"loja" | "usuarios" | "sistema">(initialTab);
+  const [activeTab, setActiveTab] = useState<"loja" | "usuarios" | "sistema" | "automacao">(initialTab);
   useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
   const [storeName, setStoreName] = useState("");
   const [storeAddress, setStoreAddress] = useState("");
@@ -214,6 +215,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
         <button type="button" onClick={() => setActiveTab("usuarios")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "usuarios" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
           Usuários e acessos
         </button>
+        <button type="button" onClick={() => setActiveTab("automacao")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold ${activeTab === "automacao" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Automação</button>
         <button type="button" onClick={() => setActiveTab("sistema")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-extrabold transition-colors ${activeTab === "sistema" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
           Sistema, PIN e backups
         </button>
@@ -255,7 +257,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
           </div>
           <div className="mt-6 flex justify-end"><button type="submit" disabled={savingConfig} className="flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 py-3 text-xs font-bold text-white shadow-md hover:bg-emerald-700 disabled:opacity-50"><Save size={15} /> {savingConfig ? "Salvando..." : "Salvar informações da loja"}</button></div>
         </form>
-      ) : activeTab === "usuarios" ? (
+      ) : activeTab === "automacao" ? <AutomacaoView /> : activeTab === "usuarios" ? (
         <UsuariosConfigView />
       ) : (
         

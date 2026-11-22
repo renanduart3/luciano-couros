@@ -1,3 +1,4 @@
+import { AutomacaoView } from "./AutomacaoView";
 import React, { useState, useEffect } from "react";
 import { 
   Search, Plus, Edit2, Trash2, X, Eye, Phone, FileText, TrendingUp, AlertCircle, MessageCircle, WalletCards, ShieldCheck, RotateCcw
@@ -568,6 +569,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
             {/* Scrollable history body */}
             <div className="flex-1 p-6 overflow-y-auto space-y-6">
               
+              {gerente && <details key={activeHistory.cliente.id} className="rounded-xl border p-4"><summary className="cursor-pointer font-bold">Automação de cobrança</summary><AutomacaoView clienteId={activeHistory.cliente.id} /></details>}
               {/* Profile statistics cards */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 

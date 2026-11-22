@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.44.0 — 22/11/2026
+
+- Aba de automação para o gerente definir periodicidade, atraso, saldo mínimo e orientação ao vendedor. A ficha de cada cliente permite personalizar cada campo.
+- Relatórios das parcelas de vales em aberto por cliente e vendedor, com envio programado por WhatsApp via WAHA + NOWEB ou por Telegram. Inclui prévia, histórico e teste de PDF ou imagem.
+
 ## 1.43.0 — 20/11/2026
 
 - Seleção do fornecedor antes de acessar Orçamento, Compra, Histórico e Vales. As quatro abas exibem apenas os registros do fornecedor selecionado.

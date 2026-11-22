@@ -51,6 +51,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
   // Customer History Modal State
   const [clienteDemonstrativo, setClienteDemonstrativo] = useState<Cliente | null>(null);
   const [activeHistory, setActiveHistory] = useState<any | null>(null);
+  const [abaFicha, setAbaFicha] = useState<"resumo" | "automacao">("resumo");
   const [historicoPage, setHistoricoPage] = useState(1);
   const [valesPage, setValesPage] = useState(1);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -170,6 +171,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
         api.getClienteOrcamentoVigente(cli.id),
         api.getCarteiraResumo(cli.id)
       ]);
+      setAbaFicha("resumo");
       setActiveHistory(data);
       setProdutosCliente(produtosHabituais);
       setOrcamentoVigente(orcamentoCliente);
@@ -566,10 +568,23 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               </button>
             </div>
 
-            {/* Scrollable history body */}
-            <div className="flex-1 p-6 overflow-y-auto space-y-6">
-              
-              {gerente && <details key={activeHistory.cliente.id} className="rounded-xl border p-4"><summary className="cursor-pointer font-bold">Automação de cobrança</summary><AutomacaoView clienteId={activeHistory.cliente.id} /></details>}
+            {gerente && (
+              <nav aria-label="Seções da ficha do cliente" className="flex gap-2 border-b border-slate-200 px-5">
+                {(["resumo", "automacao"] as const).map(aba => (
+                  <button key={aba} type="button" aria-current={abaFicha === aba ? "page" : undefined}
+                    onClick={() => setAbaFicha(aba)}
+                    className={`border-b-2 px-3 py-3 text-sm font-bold ${abaFicha === aba ? "border-emerald-700 text-emerald-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+                    {aba === "resumo" ? "Resumo e histórico" : "Automação de cobrança"}
+                  </button>
+                ))}
+              </nav>
+            )}
+            {gerente && (
+              <div key={activeHistory.cliente.id} hidden={abaFicha !== "automacao"} className="flex-1 overflow-y-auto p-4">
+                <AutomacaoView clienteId={activeHistory.cliente.id} />
+              </div>
+            )}
+            <div hidden={gerente && abaFicha !== "resumo"} className="flex-1 p-6 overflow-y-auto space-y-6">
               {/* Profile statistics cards */}
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 

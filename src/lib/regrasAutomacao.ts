@@ -46,6 +46,7 @@ export interface PainelAutomacao {
   central: Central;
   excecoes?: Partial<Regras>;
   vendedores?: Destinatario[];
+  usuariosDisponiveis?: Destinatario[];
   destinatarios?: string[] | null;
   administradorPadrao?: string;
   historico?: {

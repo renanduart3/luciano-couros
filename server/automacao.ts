@@ -29,11 +29,23 @@ function regrasAtuais(salvas: Partial<Regras> = {}): Partial<Regras> {
   return Object.fromEntries(Object.entries(salvas).filter(([campo]) => Object.hasOwn(regrasSchema.shape, campo)));
 }
 const excecoes = (id: string) => regrasAtuais(config<Partial<Regras>>("cliente/" + id, {}));
-const vendedores = () =>
+const usuariosAtivos = () =>
   queryAll<Destinatario>(`SELECT u.id,u.nome,u.perfil,coalesce(d.waha,'') waha,coalesce(d.telegram,'') telegram
  FROM usuarios u LEFT JOIN automacao_destinos d ON d.id=u.id WHERE u.ativo=1 AND u.perfil IN ('administrador','vendedor') ORDER BY u.createdAt,u.id`);
 const listaCliente = (id: string) => config<string[] | null>("destinatarios/" + id, null);
 const administrador = (pessoas: Destinatario[]) => pessoas.find(p => p.perfil === "administrador")?.id;
+function vendedores(usuarios = usuariosAtivos()) {
+  const ids = config<string[] | null>("contatosElegiveis", null);
+  if (ids !== null) {
+    const habilitados = new Set(ids);
+    return usuarios.filter(p => habilitados.has(p.id));
+  }
+  // Primeira abertura da versão: preservar contatos e seleções individuais anteriores.
+  const anteriores = queryAll<{id:string}>(`SELECT DISTINCT j.value id FROM automacao_config c,
+    json_each(c.dados) j WHERE c.chave LIKE 'destinatarios/%' AND j.type='text'`);
+  const selecionados = new Set(anteriores.map(p => p.id));
+  return usuarios.filter(p => p.id === administrador(usuarios) || p.waha || p.telegram || selecionados.has(p.id));
+}
 function ficha(id: string) {
   const pessoas = vendedores();
   const lista = listaCliente(id);
@@ -44,9 +56,11 @@ function ficha(id: string) {
   };
 }
 function painel(): PainelAutomacao {
+  const usuarios = usuariosAtivos();
   return {
     central: central(),
-    vendedores: vendedores(),
+    vendedores: vendedores(usuarios),
+    usuariosDisponiveis: usuarios,
     historico: queryAll(`SELECT e.id,e.dia,c.nome cliente,u.nome vendedor,e.canal,e.estado,e.detalhe
     FROM automacao_envios e LEFT JOIN clientes c ON c.id=e.clienteId LEFT JOIN usuarios u ON u.id=e.vendedorId
     ORDER BY e.id DESC LIMIT 100`),
@@ -100,7 +114,7 @@ function entregasPrevistas(dia: string, cfg: Central) {
   const padrao = administrador(pessoas);
   return agruparPendencias(parcelas(dia), dia, cfg.regras, excecoes).flatMap(grupo => {
     const ids = listaCliente(grupo.itens[0].clienteId) ?? (padrao ? [padrao] : []);
-    return ids.map(id => ({grupo, pessoa: ativos.get(id)}));
+    return ids.filter(id => ativos.has(id)).map(id => ({grupo, pessoa: ativos.get(id)!}));
   });
 }
 function relogio() {
@@ -179,10 +193,12 @@ export function rotasAutomacao() {
         .json({
           error: "Confira os parâmetros e destinos. Use apenas dígitos para telefone e chat privado.",
         });
-    const ativos = new Set(vendedores().map((v) => v.id));
+    const ativos = new Set(usuariosAtivos().map((v) => v.id));
     const contatos = dados.data.vendedores;
     if (contatos.some((v) => !ativos.has(v.id)))
       return res.status(409).json({ error: "A lista de usuários mudou. Reabra a aba." });
+    const idsElegiveis = new Set(contatos.map(p => p.id));
+    if (idsElegiveis.size !== contatos.length) return res.status(400).json({error:"Contato repetido."});
     for (const canal of ["waha", "telegram"] as const) {
       const ids = contatos.map((v) => v[canal]).filter(Boolean);
       if (ids.length !== new Set(ids).size)
@@ -190,6 +206,15 @@ export function rotasAutomacao() {
     }
     runInTransaction(() => {
       gravar("central", dados.data.central);
+      gravar("contatosElegiveis", [...idsElegiveis]);
+      const listas = queryAll<{chave:string; dados:string}>(
+        "SELECT chave,dados FROM automacao_config WHERE chave LIKE 'destinatarios/%' AND json_type(dados)='array'"
+      );
+      for (const lista of listas) {
+        const antes: string[] = JSON.parse(lista.dados);
+        const depois = antes.filter(id => idsElegiveis.has(id));
+        if (antes.length !== depois.length) gravar(lista.chave, depois);
+      }
       for (const v of contatos)
         execute("INSERT OR REPLACE INTO automacao_destinos VALUES(?,?,?)", [v.id, v.waha, v.telegram]);
     });

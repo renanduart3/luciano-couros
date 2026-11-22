@@ -60,7 +60,8 @@ try {
     horario: "00:00",
     regras: { ...centralInicial.regras, observacao: "Ligar à tarde" },
   };
-  const destinos = [{ id: "vend-test", waha: "5511999999999", telegram: "12345" }];
+  assert.deepEqual((await api("/")).vendedores.map(p=>p.id), ["usuario_admin"]);
+  const destinos = [{id:"usuario_admin",waha:"",telegram:""}, { id: "vend-test", waha: "5511999999999", telegram: "12345" }];
   await api("/", "PUT", { central: cfg, vendedores: destinos });
   await api("/clientes/cliente-test", "PUT", { atraso: 40, observacao: "" });
   assert.equal((await api("/previa"))[0].vendedor, "Administrador");
@@ -105,6 +106,12 @@ try {
   await api("/testar", "POST", { canal: "telegram", id: "vend-test", formato: "pdf" });
   assert.ok(requisicoes.at(-1).url.endsWith("/sendDocument"));
   assert.equal(queryOne<{ n: number }>("SELECT count(*) n FROM automacao_envios").n, 2);
+  await api("/", "PUT", {central:cfg, vendedores:[]});
+  assert.equal((await api("/previa")).length,0);
+  assert.deepEqual((await api(ficha)).vendedores,[]);
+  assert.equal((await fetchLocal(base+"/testar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:"vend-test",canal:"telegram"})})).status,400);
+  await api("/", "PUT", {central:cfg, vendedores:destinos});
+  assert.deepEqual((await api(ficha)).destinatarios,[]);
   execute("UPDATE vale_parcelas SET status='paga',saldo=0");
   assert.equal((await api("/previa")).length, 0);
   console.log(

@@ -20,6 +20,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
   const [painel, setPainel] = useState<PainelAutomacao>();
   const [mensagem, setMensagem] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const [novoContato, setNovoContato] = useState("");
   const [teste, setTeste] = useState("");
   const [formato, setFormato] = useState("pdf");
   const [canalTeste, setCanalTeste] = useState<Canal>("waha");
@@ -51,6 +52,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
   }
   if (!painel) return <p role="status">{mensagem || "Carregando automação…"}</p>;
   const { central, vendedores = [], excecoes = {} } = painel;
+  const disponiveis = (painel.usuariosDisponiveis ?? []).filter(p => !vendedores.some(v => v.id === p.id));
   function mudar(p: PainelAutomacao) {
     setPainel(p);
     setAlterado(true);
@@ -123,7 +125,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                 {pessoa.nome} · {pessoa.perfil === "administrador" ? "Administrador" : "Vendedor"}
               </label>;
             })}
-            {painel.destinatarios == null ? <p className="text-xs text-slate-600">Padrão do cliente: administrador.</p> :
+            {painel.destinatarios == null ? <p className="text-xs text-slate-600">{painel.administradorPadrao ? "Padrão do cliente: administrador." : "Sem administrador habilitado. Selecione um contato ou adicione o administrador na configuração geral."}</p> :
               <button type="button" className={botao} onClick={() => mudar({...painel, destinatarios:null})}>Restaurar administrador padrão</button>}
             {painel.destinatarios?.length === 0 && <p className="text-sm">Nenhum destinatário. Os avisos deste cliente ficam suspensos.</p>}
           </fieldset>
@@ -177,15 +179,25 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
           <div className="space-y-3">
             <h4 className="font-medium">Contatos para envio</h4>
             <p className="text-sm text-slate-600">
-              Use o telefone com DDI e DDD. No Telegram, o vendedor deve iniciar o bot antes do teste. Informe
-              o ID da conversa privada.
+              Adicione quem poderá receber os avisos. Remover um contato também retira a pessoa das seleções individuais.
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select aria-label="Pessoa para adicionar" className={controle} value={novoContato} onChange={e=>setNovoContato(e.target.value)}>
+                <option value="">{disponiveis.length ? "Selecione uma pessoa" : "Todos os usuários ativos já estão na lista"}</option>
+                {disponiveis.map(p=><option key={p.id} value={p.id}>{p.nome}</option>)}
+              </select>
+              <button type="button" className={botao} disabled={!novoContato} onClick={()=>{
+                const pessoa = disponiveis.find(p=>p.id===novoContato);
+                if (pessoa) mudar({...painel, vendedores:[...vendedores,pessoa]});
+                setNovoContato("");
+              }}>Adicionar contato</button>
+            </div>
             {vendedores.map((v) => (
-              <div key={v.id} className="grid items-center gap-2 sm:grid-cols-3">
+              <div key={v.id} className="grid items-center gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
                 <span>{v.nome}</span>
                 {canais.map((c) => (
                   <label key={c} className="grid text-xs">
-                    {c === "waha" ? "Telefone WhatsApp" : "ID do chat Telegram"}
+                    {c === "waha" ? "WhatsApp com DDI e DDD" : "ID do chat privado no Telegram"}
                     <input
                       className={controle}
                       inputMode="numeric"
@@ -201,6 +213,10 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                     />
                   </label>
                 ))}
+                <button type="button" className={botao} aria-label={`Remover ${v.nome} dos contatos para envio`} onClick={()=>{
+                  mudar({...painel, vendedores:vendedores.filter(p=>p.id!==v.id)});
+                  if (teste===v.id) setTeste("");
+                }}>Remover</button>
               </div>
             ))}
           </div>

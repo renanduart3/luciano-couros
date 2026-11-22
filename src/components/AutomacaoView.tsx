@@ -4,7 +4,7 @@ import { camposRegras, canais, type Canal, type PainelAutomacao, type Regras } f
 
 const controle =
   "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500";
-const botao = "rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50";
+const botao = "rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal disabled:opacity-50";
 const nomes = { waha: "WhatsApp (WAHA + NOWEB)", telegram: "Telegram" };
 const campos = Object.keys(camposRegras) as (keyof Regras)[];
 const chamar = <T,>(rota: string, method = "GET", dados?: unknown) =>
@@ -65,8 +65,8 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
     } else mudar({ ...painel, central: { ...central, regras: { ...central.regras, [campo]: valor } } });
   }
   return (
-    <section className="space-y-4 rounded-xl bg-white p-4">
-      <h3 className="text-lg font-bold">{clienteId ? "Regras deste cliente" : "Automação de cobrança"}</h3>
+    <section className="automacao-cobranca space-y-4 rounded-xl bg-white p-4">
+      <h3 className="text-lg font-medium">{clienteId ? "Regras deste cliente" : "Automação de cobrança"}</h3>
       <fieldset disabled={ocupado} className="space-y-4">
         {!clienteId && (
           <div className="flex flex-wrap items-center gap-4">
@@ -113,7 +113,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         </p>
         {clienteId && (
           <fieldset className="space-y-2 rounded-lg border border-slate-200 p-3">
-            <legend className="px-1 font-bold">Quem recebe os avisos deste cliente</legend>
+            <legend className="px-1 font-medium">Quem recebe os avisos deste cliente</legend>
             {vendedores.map(pessoa => {
               const selecionados = painel.destinatarios ?? (painel.administradorPadrao ? [painel.administradorPadrao] : []);
               return <label key={pessoa.id} className="flex items-center gap-2 text-sm">
@@ -134,7 +134,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
             const valor = individual ? excecoes[campo] : central.regras[campo];
             return (
               <div key={campo} className="flex flex-col gap-1">
-                <label htmlFor={rota + campo} className="text-sm font-semibold">
+                <label htmlFor={rota + campo} className="text-sm font-normal">
                   {camposRegras[campo]}
                 </label>
                 {clienteId && (
@@ -175,14 +175,14 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         </div>
         {!clienteId && (
           <div className="space-y-3">
-            <h4 className="font-bold">Contatos para envio</h4>
+            <h4 className="font-medium">Contatos para envio</h4>
             <p className="text-sm text-slate-600">
               Use o telefone com DDI e DDD. No Telegram, o vendedor deve iniciar o bot antes do teste. Informe
               o ID da conversa privada.
             </p>
             {vendedores.map((v) => (
               <div key={v.id} className="grid items-center gap-2 sm:grid-cols-3">
-                <strong>{v.nome}</strong>
+                <span>{v.nome}</span>
                 {canais.map((c) => (
                   <label key={c} className="grid text-xs">
                     {c === "waha" ? "Telefone WhatsApp" : "ID do chat Telegram"}
@@ -206,7 +206,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
           </div>
         )}
         <button
-          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+          className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           disabled={!alterado}
           onClick={() =>
             agir(async () => {
@@ -230,7 +230,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         </button>
         {!clienteId && (
           <div className="space-y-3 border-t pt-3">
-            <h4 className="font-bold">Teste de envio</h4>
+            <h4 className="font-medium">Teste de envio</h4>
             <div className="flex flex-wrap gap-2">
               <select
                 aria-label="Canal de teste"
@@ -297,7 +297,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                     ))}
               </div>
             )}
-            <h4 className="font-bold">Últimos envios</h4>
+            <h4 className="font-medium">Últimos envios</h4>
             <button
               className={botao}
               disabled={alterado}
@@ -332,7 +332,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
         )}
       </fieldset>
       {mensagem && (
-        <p role="status" className="text-sm font-semibold">
+        <p role="status" className="text-sm font-normal">
           {mensagem}
         </p>
       )}

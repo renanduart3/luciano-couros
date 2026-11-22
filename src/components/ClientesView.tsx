@@ -552,7 +552,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
       {/* Customer Full History Modal ("Ficha do Cliente") */}
       {activeHistory && (
         <div className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl w-full max-w-6xl border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
+          <div className="ficha-cliente bg-white rounded-2xl w-full max-w-6xl border border-slate-100 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-fade-in">
             
             {/* Header */}
             <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
@@ -560,9 +560,9 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                 <span className="p-1.5 bg-emerald-600 text-white rounded-lg">
                   <FileText size={16} />
                 </span>
-                <h3 className="font-extrabold text-slate-900 text-base">Ficha de Perfil: {activeHistory.cliente.nome}</h3>
+                <h3 className="font-medium text-slate-900 text-base">Ficha de Perfil: {activeHistory.cliente.nome}</h3>
               </div>
-              <button onClick={() => setClienteDemonstrativo(activeHistory.cliente)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white">Saldo devedor / PDF</button>
+              <button onClick={() => setClienteDemonstrativo(activeHistory.cliente)} className="rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-normal text-white">Saldo devedor / PDF</button>
               <button onClick={() => setActiveHistory(null)} className="p-1.5 hover:bg-slate-200 text-slate-400 rounded-lg">
                 <X size={18} />
               </button>
@@ -573,7 +573,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                 {(["resumo", "automacao"] as const).map(aba => (
                   <button key={aba} type="button" aria-current={abaFicha === aba ? "page" : undefined}
                     onClick={() => setAbaFicha(aba)}
-                    className={`border-b-2 px-3 py-3 text-sm font-bold ${abaFicha === aba ? "border-emerald-700 text-emerald-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+                    className={`border-b-2 px-3 py-3 text-sm font-normal ${abaFicha === aba ? "border-emerald-700 text-emerald-800" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
                     {aba === "resumo" ? "Resumo e histórico" : "Automação de cobrança"}
                   </button>
                 ))}
@@ -589,57 +589,57 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                 
                 <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">COMPRADO</p>
-                  <p className="mt-1 text-sm font-extrabold text-slate-900">{formatCurrency(activeHistory.estatisticas.totalComprado)}</p>
+                  <p className="text-[11px] font-normal text-slate-400">Comprado</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{formatCurrency(activeHistory.estatisticas.totalComprado)}</p>
                 </div>
 
                 <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">DESDE</p>
-                  <p className="mt-1 text-sm font-extrabold text-slate-900">{formatDate(activeHistory.cliente.createdAt)}</p>
+                  <p className="text-[11px] font-normal text-slate-400">Desde</p>
+                  <p className="mt-1 text-sm font-medium text-slate-900">{formatDate(activeHistory.cliente.createdAt)}</p>
                 </div>
 
                 <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">PAGO</p>
-                  <p className="mt-1 text-sm font-extrabold text-emerald-700">{formatCurrency(activeHistory.estatisticas.totalPago)}</p>
+                  <p className="text-[11px] font-normal text-slate-400">Pago</p>
+                  <p className="mt-1 text-sm font-medium text-emerald-700">{formatCurrency(activeHistory.estatisticas.totalPago)}</p>
                 </div>
 
                 <div className="rounded-xl border border-slate-100/60 bg-slate-50 p-3 text-center">
-                  <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">PENDENTE</p>
-                  <p className={`mt-1 text-sm font-extrabold ${activeHistory.estatisticas.saldoPendente > 0 ? "text-amber-600" : "text-slate-500"}`}>
+                  <p className="text-[11px] font-normal text-slate-400">Pendente</p>
+                  <p className={`mt-1 text-sm font-medium ${activeHistory.estatisticas.saldoPendente > 0 ? "text-amber-600" : "text-slate-500"}`}>
                     {formatCurrency(activeHistory.estatisticas.saldoPendente)}
                   </p>
                 </div>
 
                 <div className="rounded-xl border border-violet-200 bg-violet-50 p-3 text-center">
-                  <p className="flex items-center justify-center gap-1 text-[9px] font-bold uppercase tracking-wider text-violet-700"><WalletCards size={11} /> BÔNUS</p>
-                  <p className="mt-1 text-sm font-extrabold text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
+                  <p className="flex items-center justify-center gap-1 text-[11px] font-normal text-violet-700"><WalletCards size={11} /> Bônus</p>
+                  <p className="mt-1 text-sm font-medium text-violet-950">{formatCurrency(carteiraCliente?.saldoBonus || 0)}</p>
                 </div>
 
               </div>
 
               <div className="space-y-3">
-                <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                <h4 className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                   <FileText size={14} /> Vales em aberto e vencidos ({valesPendentes.length})
                 </h4>
                 <div className="overflow-hidden rounded-xl border border-slate-200">
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[760px] text-left text-xs">
-                      <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase text-slate-500"><tr>
+                      <thead className="border-b border-slate-200 bg-slate-50 font-normal text-slate-500"><tr>
                         <th className="p-3">Vale</th><th className="p-3">Vencimento</th><th className="p-3 text-right">Devedor</th><th className="p-3 text-right">Pago</th><th className="p-3 text-right">Restante</th><th className="p-3 text-center">Situação</th><th className="p-3 text-center">Ação</th>
                       </tr></thead>
                       <tbody className="divide-y divide-slate-100">
-                        {valesPendentesPagina.length === 0 ? <tr><td colSpan={7} className="p-6 text-center font-semibold text-slate-500">Este cliente não possui vales com saldo em aberto.</td></tr> : valesPendentesPagina.map((vale) => {
+                        {valesPendentesPagina.length === 0 ? <tr><td colSpan={7} className="p-6 text-center font-normal text-slate-500">Este cliente não possui vales com saldo em aberto.</td></tr> : valesPendentesPagina.map((vale) => {
                           const posicao = financeiroVale(vale);
                           const proximoVencimento = vencimentoPendente(vale);
                           const vencido = proximoVencimento < hoje;
                           return <tr key={vale.id} className="hover:bg-slate-50">
-                            <td className="p-3 font-mono font-black text-slate-900">#{vale.numeroSequencial}</td>
+                            <td className="p-3 font-mono font-medium text-slate-900">#{vale.numeroSequencial}</td>
                             <td className="p-3 font-mono">{formatDate(proximoVencimento)}</td>
-                            <td className="p-3 text-right font-mono font-bold">{formatCurrency(vale.totalLiquido)}</td>
+                            <td className="p-3 text-right font-mono font-normal">{formatCurrency(vale.totalLiquido)}</td>
                             <td className="p-3 text-right font-mono text-emerald-800">{formatCurrency(posicao.presumido)}</td>
-                            <td className="p-3 text-right font-mono font-black text-amber-800">{formatCurrency(posicao.restantePresumido)}</td>
-                            <td className="p-3 text-center"><span className={`rounded-lg px-2 py-1 font-black uppercase ${vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{vencido ? "Vencido" : "A vencer"}</span></td>
-                            <td className="p-3 text-center"><button type="button" onClick={() => onOpenVale?.(vale.id)} className="rounded-lg bg-slate-900 px-3 py-2 font-black text-white hover:bg-slate-700">Abrir vale</button></td>
+                            <td className="p-3 text-right font-mono font-medium text-amber-800">{formatCurrency(posicao.restantePresumido)}</td>
+                            <td className="p-3 text-center"><span className={`rounded-lg px-2 py-1 font-medium ${vencido ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"}`}>{vencido ? "Vencido" : "A vencer"}</span></td>
+                            <td className="p-3 text-center"><button type="button" onClick={() => onOpenVale?.(vale.id)} className="rounded-lg bg-slate-900 px-3 py-2 font-medium text-white hover:bg-slate-700">Abrir vale</button></td>
                           </tr>;
                         })}
                       </tbody>
@@ -652,23 +652,23 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               {/* Current customer budget */}
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  <h4 className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                     <FileText size={14} />
                     Orçamento vigente
                   </h4>
-                  {gerente && orcamentoVigente && <button type="button" onClick={apagarOrcamentoVigente} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 size={14} /> Apagar orçamento</button>}
+                  {gerente && orcamentoVigente && <button type="button" onClick={apagarOrcamentoVigente} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-normal text-red-700 hover:bg-red-50"><Trash2 size={14} /> Apagar orçamento</button>}
                 </div>
                 {!orcamentoVigente ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-xs font-semibold text-slate-400">Nenhum orçamento vigente para este cliente.</div>
+                  <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center text-xs font-normal text-slate-400">Nenhum orçamento vigente para este cliente.</div>
                 ) : (
                   <div className="overflow-x-auto rounded-xl border border-blue-200">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-100 bg-blue-50 px-4 py-3 text-xs">
                       <strong className="text-blue-900">Orçamento #{orcamentoVigente.numeroSequencial}</strong>
-                      <span className="font-mono font-black text-blue-800">{formatCurrency(orcamentoVigente.totalLiquido)}</span>
+                      <span className="font-mono font-medium text-blue-800">{formatCurrency(orcamentoVigente.totalLiquido)}</span>
                     </div>
                     <table className="w-full min-w-[620px] text-left text-xs">
-                      <thead><tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-500"><th className="p-3">Material</th><th className="p-3 text-right">Quantidade</th><th className="p-3">Unidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Total</th></tr></thead>
-                      <tbody className="divide-y divide-slate-100">{orcamentoVigente.items.map((item) => <tr key={item.id}><td className="p-3 font-bold text-slate-900">{item.descricao}</td><td className="p-3 text-right font-mono">{item.quantidade}</td><td className="p-3 font-bold">{item.unidade}</td><td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td><td className="p-3 text-right font-mono font-black">{formatCurrency(item.total)}</td></tr>)}</tbody>
+                      <thead><tr className="border-b border-slate-200 bg-slate-50 font-normal text-slate-500"><th className="p-3">Material</th><th className="p-3 text-right">Quantidade</th><th className="p-3">Unidade</th><th className="p-3 text-right">Preço</th><th className="p-3 text-right">Total</th></tr></thead>
+                      <tbody className="divide-y divide-slate-100">{orcamentoVigente.items.map((item) => <tr key={item.id}><td className="p-3 font-normal text-slate-900">{item.descricao}</td><td className="p-3 text-right font-mono">{item.quantidade}</td><td className="p-3 font-normal">{item.unidade}</td><td className="p-3 text-right font-mono">{formatCurrency(item.precoUnitario)}</td><td className="p-3 text-right font-mono font-medium">{formatCurrency(item.total)}</td></tr>)}</tbody>
                     </table>
                   </div>
                 )}
@@ -677,7 +677,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               {/* Customer-specific pricing */}
               <div className="space-y-3">
                 <div>
-                  <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-500">
+                  <h4 className="flex items-center gap-1.5 text-xs font-medium text-slate-500">
                     <TrendingUp size={14} />
                     Preços praticados para este cliente
                   </h4>
@@ -685,9 +685,9 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                 </div>
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="w-full min-w-[920px] text-left text-xs">
-                    <thead><tr className="border-b border-slate-200 bg-slate-50 font-bold text-slate-500"><th className="p-3">Produto</th><th className="p-3 text-right">Preço-base</th><th className="p-3 text-right">Último praticado</th><th className="p-3 text-right">Custo atual</th><th className="p-3 text-right">Preço do cliente</th><th className="p-3 text-right">Lucro unit.</th><th className="p-3 text-right">Margem</th><th className="p-3 text-center">Ações</th></tr></thead>
+                    <thead><tr className="border-b border-slate-200 bg-slate-50 font-normal text-slate-500"><th className="p-3">Produto</th><th className="p-3 text-right">Preço-base</th><th className="p-3 text-right">Último praticado</th><th className="p-3 text-right">Custo atual</th><th className="p-3 text-right">Preço do cliente</th><th className="p-3 text-right">Lucro unit.</th><th className="p-3 text-right">Margem</th><th className="p-3 text-center">Ações</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
-                      {produtosCliente.length === 0 ? <tr><td colSpan={8} className="p-8 text-center font-semibold text-slate-400">Este cliente ainda não possui produtos no histórico.</td></tr> :
+                      {produtosCliente.length === 0 ? <tr><td colSpan={8} className="p-8 text-center font-normal text-slate-400">Este cliente ainda não possui produtos no histórico.</td></tr> :
                       produtosCliente.map((produto) => {
                         const chaveProduto = chavePrecoCliente(produto.produtoId, produto.fornecedorId);
                         const precoPraticado = Number(produto.precoAutorizado ?? produto.ultimoPreco);
@@ -695,14 +695,14 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                         const lucro = precoPraticado - custo;
                         const margem = precoPraticado > 0 ? (lucro / precoPraticado) * 100 : 0;
                         return <tr key={chaveProduto} className="bg-white">
-                          <td className="p-3"><p className="font-extrabold text-slate-900">{produto.nome}</p>{produto.fornecedorReferencia && <p className="font-mono text-[10px] font-black text-blue-700">REF. FORNECEDOR: {produto.fornecedorReferencia}</p>}<p className="text-[10px] text-slate-500">{produto.vezesComprado > 0 ? `${produto.vezesComprado} compra(s) • última em ${formatDate(produto.ultimaCompraEm)}` : "Adicionado ao orçamento do cliente"}</p></td>
-                          <td className="p-3 text-right font-mono font-bold">{formatCurrency(produto.precoVendaPadrao)}</td>
+                          <td className="p-3"><p className="font-medium text-slate-900">{produto.nome}</p>{produto.fornecedorReferencia && <p className="font-mono text-[10px] font-medium text-blue-700">REF. FORNECEDOR: {produto.fornecedorReferencia}</p>}<p className="text-[10px] text-slate-500">{produto.vezesComprado > 0 ? `${produto.vezesComprado} compra(s) • última em ${formatDate(produto.ultimaCompraEm)}` : "Adicionado ao orçamento do cliente"}</p></td>
+                          <td className="p-3 text-right font-mono font-normal">{formatCurrency(produto.precoVendaPadrao)}</td>
                           <td className="p-3 text-right font-mono">{formatCurrency(produto.ultimoPreco)}</td>
                           <td className="p-3 text-right font-mono text-slate-600">{formatCurrency(custo)}</td>
-                          <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} fornecedorId={produto.fornecedorId} value={precosCliente[chaveProduto] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => chavePrecoCliente(item.produtoId, item.fornecedorId) === chaveProduto ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-black text-emerald-900 outline-none focus:border-emerald-600" /></td>
-                          <td className={`p-3 text-right font-mono font-black ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
-                          <td className={`p-3 text-right font-mono font-black ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
-                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-bold text-slate-600">Usar base</button>{gerente && <button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button>}</div></td>
+                          <td className="p-3"><PrecoAutorizadoInput clienteId={activeHistory.cliente.id} produtoId={produto.produtoId} fornecedorId={produto.fornecedorId} value={precosCliente[chaveProduto] || ""} precoAutorizado={Number(produto.precoAutorizado ?? produto.ultimoPreco ?? produto.precoVendaPadrao)} origem="cadastro_cliente" ariaLabel={`Preço de ${produto.nome} para o cliente`} onAuthorized={(valorFormatado, valor) => { setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: valorFormatado })); setProdutosCliente((atuais) => atuais.map((item) => chavePrecoCliente(item.produtoId, item.fornecedorId) === chaveProduto ? { ...item, precoAutorizado: valor } : item)); }} className="ml-auto block w-28 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-2 text-right font-mono font-medium text-emerald-900 outline-none focus:border-emerald-600" /></td>
+                          <td className={`p-3 text-right font-mono font-medium ${lucro >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(lucro)}</td>
+                          <td className={`p-3 text-right font-mono font-medium ${margem >= 15 ? "text-emerald-700" : "text-amber-700"}`}>{margem.toFixed(1)}%</td>
+                          <td className="p-3"><div className="flex justify-center gap-1"><button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => setPrecosCliente((atuais) => ({ ...atuais, [chaveProduto]: Number(produto.precoVendaPadrao).toFixed(2).replace(".", ",") }))} className="rounded-lg border border-slate-300 px-2.5 py-2 font-normal text-slate-600">Usar base</button>{gerente && <button disabled={salvandoPrecoProduto === chaveProduto} onClick={() => removerProdutoCliente(produto)} title="Remover produto deste cliente" className="rounded-lg border border-red-200 p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 size={14} /></button>}</div></td>
                         </tr>;
                       })}
                     </tbody>
@@ -712,14 +712,14 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
 
               {/* Products Ranking */}
               <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <h4 className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <TrendingUp size={14} className="text-slate-500" />
                   Produtos preferidos por valor
                 </h4>
                 <div className="border border-slate-100 rounded-xl overflow-hidden">
                   <table className="w-full text-xs text-left">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100">
+                      <tr className="bg-slate-50 text-slate-400 font-normal border-b border-slate-100">
                         <th className="p-3">Material</th>
                         <th className="p-3 text-right">Valor Total</th>
                       </tr>
@@ -732,8 +732,8 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                       ) : (
                         activeHistory.produtosMaisComprados.map((p: any, idx: number) => (
                           <tr key={idx} className="hover:bg-slate-50/20">
-                            <td className="p-3 font-semibold text-slate-800">{p.descricao}</td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900">{formatCurrency(p.totalValor)}</td>
+                            <td className="p-3 font-normal text-slate-800">{p.descricao}</td>
+                            <td className="p-3 text-right font-mono font-normal text-slate-900">{formatCurrency(p.totalValor)}</td>
                           </tr>
                         ))
                       )}
@@ -744,7 +744,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
 
               {/* Full History of Sales */}
               <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <h4 className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <FileText size={14} className="text-slate-500" />
                   Histórico de Vendas
                 </h4>
@@ -752,7 +752,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                   <div className="max-h-[250px] overflow-x-auto overflow-y-auto">
                   <table className="w-full text-xs text-left">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 sticky top-0">
+                      <tr className="bg-slate-50 text-slate-400 font-normal border-b border-slate-100 sticky top-0">
                         <th className="p-3 text-center">Venda</th>
                         <th className="p-3">Data</th>
                         <th className="p-3 text-right">Total Líquido</th>
@@ -771,18 +771,18 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                           const resumo = resumoVendaComercial(v);
                           return (
                           <tr key={v.id} className="hover:bg-slate-50/20">
-                            <td className="p-3 text-center font-extrabold text-slate-900">#{v.numeroSequencial}</td>
+                            <td className="p-3 text-center font-medium text-slate-900">#{v.numeroSequencial}</td>
                             <td className="p-3 font-mono">{formatDate(v.data)}</td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900">
+                            <td className="p-3 text-right font-mono font-normal text-slate-900">
                               {formatCurrency(v.totalLiquido)}
-                              {(v.devolucoes || []).length > 0 && <span className="block text-[9px] font-black uppercase text-violet-700">Devolvido: {formatCurrency((v.devolucoes || []).reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0))}</span>}
+                              {(v.devolucoes || []).length > 0 && <span className="block text-[9px] font-medium text-violet-700">Devolvido: {formatCurrency((v.devolucoes || []).reduce((total, devolucao) => total + Number(devolucao.valorCredito), 0))}</span>}
                             </td>
                             <td className="p-3 text-right font-mono text-emerald-700">{formatCurrency(resumo.pago)}</td>
-                            <td className="p-3 text-right font-mono text-amber-600 font-bold">
+                            <td className="p-3 text-right font-mono text-amber-600 font-normal">
                               {resumo.restante > 0 ? formatCurrency(resumo.restante) : "-"}
                             </td>
                             <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-normal ${
                                 resumo.status === "paga" ? "bg-emerald-100 text-emerald-800" : resumo.status === "pendente" ? "bg-amber-100 text-amber-800" : "bg-red-100 text-red-800"
                               }`}>
                                 {resumo.status}
@@ -801,26 +801,26 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
 
               {/* Full History of Returns */}
               <div className="space-y-3">
-                <h4 className="flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-400">
+                <h4 className="flex items-center gap-1.5 text-xs font-medium text-slate-400">
                   <RotateCcw size={14} className="text-violet-600" />
                   Histórico de Devoluções
                 </h4>
                 <div className="max-h-[280px] overflow-y-auto rounded-xl border border-violet-200 bg-white">
                   {devolucoesCliente.length === 0 ? (
-                    <p className="p-6 text-center text-xs font-semibold text-slate-400">Nenhuma devolução registrada para este cliente.</p>
+                    <p className="p-6 text-center text-xs font-normal text-slate-400">Nenhuma devolução registrada para este cliente.</p>
                   ) : (
                     <div className="divide-y divide-violet-100">
                       {devolucoesCliente.map((devolucao: any) => (
                         <article key={devolucao.id} className="space-y-2 p-3 text-xs">
                           <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div><p className="font-black text-slate-950">VENDA #{devolucao.numeroSequencial}</p><p className="font-mono text-slate-500">{formatDate(devolucao.data)}</p></div>
+                            <div><p className="font-medium text-slate-950">VENDA #{devolucao.numeroSequencial}</p><p className="font-mono text-slate-500">{formatDate(devolucao.data)}</p></div>
                             <strong className="font-mono text-sm text-violet-800">{formatCurrency(devolucao.valorCredito)}</strong>
                           </div>
-                          <div className="flex flex-wrap gap-2 font-black uppercase">
+                          <div className="flex flex-wrap gap-2 font-medium">
                             <span className="rounded-lg bg-amber-50 px-2 py-1 text-[9px] text-amber-800">Dívida abatida: {formatCurrency(devolucao.abatimentoVale || 0)}</span>
                             <span className="rounded-lg bg-emerald-50 px-2 py-1 text-[9px] text-emerald-800">Bônus gerado: {formatCurrency(devolucao.bonusGerado || 0)}</span>
                           </div>
-                          <p className="font-bold text-slate-700">{(devolucao.items || []).map((item: any) => `${item.quantidade} ${item.unidade || ""} de ${item.descricao || "item"}`).join(" • ")}</p>
+                          <p className="font-normal text-slate-700">{(devolucao.items || []).map((item: any) => `${item.quantidade} ${item.unidade || ""} de ${item.descricao || "item"}`).join(" • ")}</p>
                           {devolucao.observacoes && <p className="text-slate-500">{devolucao.observacoes}</p>}
                         </article>
                       ))}
@@ -831,7 +831,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
 
               {/* Full History of Payments */}
               <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <h4 className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
                   <AlertCircle size={14} className="text-slate-500" />
                   Histórico de Pagamentos ({activeHistory.pagamentosPaginacao?.totalItems ?? activeHistory.pagamentos.length})
                 </h4>
@@ -839,7 +839,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                   <div className={`max-h-[250px] overflow-y-auto transition-opacity ${loadingPagamentosHistory ? "pointer-events-none opacity-50" : ""}`}>
                     <table className="w-full text-xs text-left">
                     <thead>
-                      <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 sticky top-0">
+                      <tr className="bg-slate-50 text-slate-400 font-normal border-b border-slate-100 sticky top-0">
                         <th className="p-3">Data</th>
                         <th className="p-3 text-right">Valor Pago</th>
                         <th className="p-3">Forma</th>
@@ -856,11 +856,11 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
                         activeHistory.pagamentos.map((p: Pagamento) => (
                           <tr key={p.id} className="hover:bg-slate-50/20">
                             <td className="p-3 font-mono">{formatDate(p.data)}</td>
-                            <td className="p-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(p.valor)}</td>
-                            <td className="p-3 font-bold text-slate-700 uppercase"><span>{p.formaPagamento.replaceAll("_", " ")}</span><ResumoParcelamentoCartao formaPagamento={p.formaPagamento} parcelasCartao={p.parcelasCartao} valorTotal={p.valor} className="mt-1 normal-case" /></td>
+                            <td className="p-3 text-right font-mono font-normal text-emerald-700">{formatCurrency(p.valor)}</td>
+                            <td className="p-3 font-normal text-slate-700"><span>{p.formaPagamento.replaceAll("_", " ")}</span><ResumoParcelamentoCartao formaPagamento={p.formaPagamento} parcelasCartao={p.parcelasCartao} valorTotal={p.valor} className="mt-1 normal-case" /></td>
                             <td className="p-3">
                               {p.vendaSequencial ? (
-                                <span className="font-semibold text-slate-500">Venda #{p.vendaSequencial}</span>
+                                <span className="font-normal text-slate-500">Venda #{p.vendaSequencial}</span>
                               ) : (
                                 <span className="text-slate-400">Amortização de Saldo</span>
                               )}
@@ -887,7 +887,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
             <div className="p-5 border-t border-slate-100 flex justify-end bg-slate-50">
               <button 
                 onClick={() => setActiveHistory(null)}
-                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors"
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-normal rounded-xl text-xs transition-colors"
               >
                 Fechar Ficha
               </button>

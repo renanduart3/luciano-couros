@@ -157,7 +157,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
       setPinAtual("");
       setNovoPin("");
       setConfirmarPin("");
-      setPinFeedback({ type: "success", text: "Senha do gerente salva. Use-a só para entrar no sistema como gerente." });
+      setPinFeedback({ type: "success", text: "Senha do gerente salva." });
     } catch (err: any) {
       setPinFeedback({ type: "error", text: err.message || "Erro ao salvar a senha do gerente." });
     } finally {
@@ -281,11 +281,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 </span>
               </div>
 
-              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-950">
-                <p><strong>Senha geral do gerente.</strong> Usada só para entrar no sistema como gerente e ver tudo: relatórios, custos, lucros e configurações.</p>
-                <p>Não digite esta senha nas vendas. Para liberar preço, cancelar ou reabrir, use a <strong>senha de operação</strong>, em Usuários e senha de operação. As duas senhas precisam ser diferentes.</p>
-                <p>Esqueceu? No computador servidor, abra <code className="break-all rounded bg-white px-1 font-bold">{"scripts\\recuperacao\\senha-gerente\\RESETAR SENHA DO GERENTE.cmd"}</code>. A senha volta a ser <strong>Altinopolis</strong> e o sistema pede uma nova no próximo acesso.</p>
-              </div>
+              <p className="text-xs text-slate-500">Para entrar no sistema como gerente. Precisa ser diferente da senha de operação.</p>
 
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-400 uppercase">Responsável</label>
@@ -352,8 +348,12 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 disabled={savingPin}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition-colors disabled:opacity-50"
               >
-                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.senhaGerenteConfigurada ? "Alterar senha do gerente" : "Configurar senha do gerente"}
+                <KeyRound size={14} /> {savingPin ? "Salvando..." : seguranca?.senhaGerenteConfigurada ? "Alterar senha do gerente" : "Configurar senha do gerente"}
               </button>
+              <details className="text-[11px] text-slate-500">
+                <summary className="cursor-pointer font-bold">Esqueceu a senha?</summary>
+                <p className="mt-1">No computador servidor, abra <code className="break-all rounded bg-slate-100 px-1 font-bold">{"scripts\\recuperacao\\senha-gerente\\RESETAR SENHA DO GERENTE.cmd"}</code>. A senha volta para <strong>Altinopolis</strong>.</p>
+              </details>
             </form>
 
             <form className="bg-slate-50 rounded-2xl p-6 space-y-3" onSubmit={async e => {

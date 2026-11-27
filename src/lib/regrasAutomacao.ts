@@ -31,6 +31,8 @@ export const centralSchema = z
   .object({
     ativo: z.boolean(),
     canal: z.enum(canais),
+    // Quando o canal principal está fora do ar, envia pelo outro canal cadastrado.
+    reserva: z.boolean(),
     horario: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
     regras: regrasSchema,
   })
@@ -39,6 +41,7 @@ export type Central = z.infer<typeof centralSchema>;
 export const centralInicial: Central = {
   ativo: false,
   canal: "waha",
+  reserva: true,
   horario: "09:00",
   regras: regrasIniciais,
 };

@@ -1,4 +1,5 @@
 import { rotasAutomacao, executarAutomacao } from "./server/automacao.js";
+import { whatsapp } from "./server/whatsapp.js";
 import { ultimoPrecoDevolucao, itensElegiveisDevolucao, resolverLinhaDevolucao, devolvidoEmOutraVendaSql, ajustarCreditoLinhas, protegerCompraDevolvida } from "./server/devolucoesItens.js";
 import { rotasPlanilhas } from "./server/planilhas.js";
 import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
@@ -7331,6 +7332,8 @@ async function startServer() {
 
   // Start listening
   app.listen(PORT, "0.0.0.0", () => {
+    // Processo separado: só reconecta sozinho se já houver um celular pareado.
+    whatsapp.iniciar();
     async function ciclo() {
       let proximo = 60000;
       try {

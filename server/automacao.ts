@@ -12,7 +12,9 @@ import {
   type PainelAutomacao,
   type Regras,
 } from "../src/lib/regrasAutomacao.js";
-import { enviarArquivo, FalhaCanal, relatorioPdf } from "./canaisAutomacao.js";
+import { enviarArquivo, enviarTextoTelegram, FalhaCanal, relatorioPdf } from "./canaisAutomacao.js";
+import { whatsapp } from "./whatsapp.js";
+import type { Canal } from "../src/lib/regrasAutomacao.js";
 
 function config<T>(chave: string, inicial: T): T {
   const row = queryOne<{ dados: string }>("SELECT dados FROM automacao_config WHERE chave=?", [chave]);
@@ -129,6 +131,27 @@ function situacao(cliente: string, vendedor: string, dia: string, intervalo: num
   );
 }
 const moeda = (valor: number) => valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const canalOnline = (canal: Canal) => canal === "telegram" || whatsapp.conectado();
+function canalDisponivel(cfg: Central, pessoa: Destinatario): Canal | undefined {
+  const outro: Canal = cfg.canal === "waha" ? "telegram" : "waha";
+  const ordem = cfg.reserva ? [cfg.canal, outro] : [cfg.canal];
+  return ordem.find((canal) => pessoa[canal] && canalOnline(canal));
+}
+const PRAZO_ALERTA = 30 * 60000;
+let quedaAvisada = "";
+async function alertarQuedaWhatsApp(cfg: Central) {
+  const { estado, desde } = whatsapp.situacao();
+  const usaWhatsApp = cfg.ativo && cfg.canal === "waha";
+  if (!usaWhatsApp || estado === "conectado" || quedaAvisada === desde) return;
+  if (Date.now() - Date.parse(desde) < PRAZO_ALERTA) return;
+  quedaAvisada = desde;
+  const administradores = vendedores().filter((p) => p.perfil === "administrador" && p.telegram);
+  for (const adm of administradores)
+    await enviarTextoTelegram(
+      adm.telegram,
+      "O WhatsApp da automação de cobrança está desconectado há mais de 30 minutos. Abra Configurações → Automação para reconectar.",
+    ).catch(() => undefined);
+}
 let trabalhando = false;
 export async function executarAutomacao() {
   if (trabalhando || isMockModeEnabled()) return;
@@ -136,13 +159,16 @@ export async function executarAutomacao() {
   try {
     const cfg = central();
     const { dia, hora } = relogio();
+    await alertarQuedaWhatsApp(cfg);
     if (!cfg.ativo || hora < cfg.horario) return;
     for (const {grupo, pessoa} of entregasPrevistas(dia, cfg)) {
       if (!pessoa) continue;
       const { cliente, clienteId } = grupo.itens[0];
       const vendedorId = pessoa.id;
-      const destino = pessoa[cfg.canal];
-      if (!destino || situacao(clienteId, vendedorId, dia, grupo.regras.periodicidade)) continue;
+      const canal = canalDisponivel(cfg, pessoa);
+      // Sem canal no ar, o relatório espera o próximo ciclo em vez de registrar falha.
+      if (!canal || situacao(clienteId, vendedorId, dia, grupo.regras.periodicidade)) continue;
+      const destino = pessoa[canal];
       // Apenas um envio por ciclo. O próximo ciclo relê baixas, regras e destinatários.
       const linhas = grupo.itens.map(
         (i) =>
@@ -154,14 +180,14 @@ export async function executarAutomacao() {
       if (isMockModeEnabled()) return;
       const registro = execute(
         `INSERT OR IGNORE INTO automacao_envios(dia,clienteId,vendedorId,canal,estado) VALUES(?,?,?,?,'em envio')`,
-        [dia, clienteId, vendedorId, cfg.canal],
+        [dia, clienteId, vendedorId, canal],
       );
       if (!registro.changes) continue;
       // Captura o banco original mesmo se o usuário mudar para o modo de demonstração durante o POST.
       const atualizar = db.prepare("UPDATE automacao_envios SET estado=?, detalhe=? WHERE id=?");
       try {
         await enviarArquivo(
-          cfg.canal,
+          canal,
           destino,
           "Confira as pendências de " + cliente + " no relatório.",
           arquivo,
@@ -183,6 +209,15 @@ export async function executarAutomacao() {
 export function rotasAutomacao() {
   const router = Router();
   router.get("/", (_req, res) => res.json(painel()));
+  router.get("/whatsapp", (_req, res) => res.json(whatsapp.situacao()));
+  router.post("/whatsapp/:acao", (req, res) => {
+    const acao = req.params.acao;
+    if (acao === "conectar") whatsapp.conectar();
+    else if (acao === "reconectar") whatsapp.reconectar();
+    else if (acao === "limpar") whatsapp.limpar();
+    else return res.status(404).json({ error: "Ação desconhecida." });
+    res.json(whatsapp.situacao());
+  });
   router.put("/", (req, res) => {
     const dados = z
       .object({ central: centralSchema, vendedores: z.array(destinatarioSchema) })
@@ -249,15 +284,16 @@ export function rotasAutomacao() {
     res.json(
       entregasPrevistas(dia, c).map(({grupo:g, pessoa:vendedor}) => {
         const i = g.itens[0];
+        const canal = canalDisponivel(c, vendedor);
         return {
           cliente: i.cliente,
           vendedor: vendedor?.nome || "Sem vendedor ativo",
           total: moeda(g.centavos / 100),
-          situacao: !vendedor?.[c.canal]
-            ? "Sem destino"
+          situacao: !canal
+            ? vendedor[c.canal] ? "Canal desconectado" : "Sem destino"
             : situacao(i.clienteId, vendedor.id, dia, g.regras.periodicidade)
               ? "Aguardando intervalo ou revisão"
-              : "Elegível",
+              : canal === c.canal ? "Elegível" : "Elegível pelo canal reserva",
         };
       }),
     );

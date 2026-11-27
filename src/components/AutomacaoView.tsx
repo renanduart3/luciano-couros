@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { handleResponse } from "../lib/api";
+import { ConexaoWhatsApp } from "./ConexaoWhatsApp";
 import { camposRegras, canais, type Canal, type PainelAutomacao, type Regras } from "../lib/regrasAutomacao";
 
 const controle =
   "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500";
 const botao = "rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal disabled:opacity-50";
-const nomes = { waha: "WhatsApp (WAHA + NOWEB)", telegram: "Telegram" };
+const nomes = { waha: "WhatsApp", telegram: "Telegram" };
 const campos = Object.keys(camposRegras) as (keyof Regras)[];
 const chamar = <T,>(rota: string, method = "GET", dados?: unknown) =>
   fetch("/api/automacao" + rota, {
@@ -99,6 +100,14 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
                 ))}
               </select>
             </label>
+            <label title="Se o canal principal estiver fora do ar, o relatório sai pelo outro canal cadastrado do contato.">
+              <input
+                type="checkbox"
+                checked={central.reserva}
+                onChange={(e) => mudar({ ...painel, central: { ...central, reserva: e.target.checked } })}
+              />{" "}
+              Usar {nomes[central.canal === "waha" ? "telegram" : "waha"]} como reserva
+            </label>
             <label>
               Enviar a partir de{" "}
               <input
@@ -111,6 +120,7 @@ export function AutomacaoView({ clienteId }: { clienteId?: string }) {
             </label>
           </div>
         )}
+        {!clienteId && <ConexaoWhatsApp />}
         <p className="text-sm text-slate-600">
           {clienteId
             ? "Marque apenas os campos que devem ter uma regra própria. Os demais acompanham o padrão geral."

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import PDFDocument from "pdfkit";
 import type { Canal } from "../src/lib/regrasAutomacao.js";
+import { FalhaWhatsApp, whatsapp } from "./whatsapp.js";
 
 export type Anexo = { nome: string; tipo: string; dados: Buffer };
 export async function relatorioPdf(titulo: string, linhas: string[]): Promise<Anexo> {
@@ -46,27 +47,21 @@ export async function enviarArquivo(canal: Canal, destino: string, legenda: stri
     );
     return;
   }
-  const base = (process.env.WAHA_URL || "http://127.0.0.1:3001").replace(/\/$/, "");
-  const session = process.env.WAHA_SESSION || "default";
-  const headers = { "Content-Type": "application/json", "X-Api-Key": process.env.WAHA_API_KEY || "" };
-  const contato = await chamada(
-    base + "/api/contacts/check-exists?" + new URLSearchParams({ session, phone: destino }),
-    { headers },
-    false,
-  );
-  if (!contato.numberExists || !contato.chatId) throw new FalhaCanal("Número não encontrado no WhatsApp.");
+  // O canal "waha" manteve o nome por compatibilidade com as configurações salvas.
+  try {
+    await whatsapp.enviar(destino, legenda, arquivo);
+  } catch (e) {
+    if (e instanceof FalhaWhatsApp) throw new FalhaCanal(e.message, e.incerta);
+    throw new FalhaCanal("Sem confirmação do WhatsApp.", true);
+  }
+}
+
+export async function enviarTextoTelegram(destino: string, texto: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new FalhaCanal("Configure TELEGRAM_BOT_TOKEN no servidor.");
   await chamada(
-    base + (foto ? "/api/sendImage" : "/api/sendFile"),
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        session,
-        chatId: contato.chatId,
-        caption: legenda,
-        file: { filename: arquivo.nome, mimetype: arquivo.tipo, data: arquivo.dados.toString("base64") },
-      }),
-    },
+    "https://api.telegram.org/bot" + token + "/sendMessage",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: destino, text: texto }) },
     true,
   );
 }

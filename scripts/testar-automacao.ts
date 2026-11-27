@@ -11,6 +11,14 @@ process.env.BACKUP_DIR = path.join(process.env.DATA_DIR, "backups");
 process.env.TELEGRAM_BOT_TOKEN = "token-ficticio";
 const { initDatabase, execute, queryOne } = await import("../server/db.js");
 const { executarAutomacao, rotasAutomacao } = await import("../server/automacao.js");
+const { whatsapp } = await import("../server/whatsapp.js");
+// O processo real do WhatsApp não sobe no teste; o envio é simulado.
+const enviadosWhatsApp: { numero: string; dados: Buffer }[] = [];
+let whatsappOnline = true;
+whatsapp.conectado = () => whatsappOnline;
+whatsapp.enviar = async (numero, _legenda, arquivo) => {
+  enviadosWhatsApp.push({ numero, dados: arquivo.dados });
+};
 initDatabase();
 execute("INSERT INTO clientes (id,nome) VALUES ('cliente-test','Cliente de teste')");
 execute("INSERT INTO usuarios (id,nome,perfil) VALUES ('vend-test','Vendedor de teste','vendedor')");
@@ -37,9 +45,7 @@ const fetchLocal = fetch;
 const requisicoes: { url: string; body: RequestInit["body"] }[] = [];
 globalThis.fetch = async (url, opcoes) => {
   requisicoes.push({ url: String(url), body: opcoes?.body });
-  if (String(url).includes("check-exists"))
-    return Response.json({ numberExists: true, chatId: "5511999999999@c.us" });
-  return Response.json({ ok: true, id: "id-ficticio" });
+  return Response.json({ ok: true, result: {} });
 };
 try {
   await new Promise<void>((resolve) => http.once("listening", resolve));
@@ -69,6 +75,7 @@ try {
   await api(ficha,"PUT",{destinatarios:[], atraso:40});
   await executarAutomacao();
   assert.equal(requisicoes.length,0);
+  assert.equal(enviadosWhatsApp.length,0);
   assert.equal((await api("/previa")).length,0);
   await api(ficha,"PUT",{destinatarios:["usuario_admin","vend-test","vend-test"], atraso:40});
   assert.deepEqual((await api("/previa")).map(p=>p.vendedor),["Administrador","Vendedor de teste"]);
@@ -86,18 +93,52 @@ try {
   await api("/clientes/cliente-test", "PUT", {});
   assert.match((await api("/previa"))[0].total, /200,00/);
   await executarAutomacao();
-  assert.equal(requisicoes.length, 2);
-  const arquivo = JSON.parse(requisicoes[1].body as string);
-  assert.equal(arquivo.chatId, "5511999999999@c.us");
-  assert.equal(Buffer.from(arquivo.file.data, "base64").subarray(0, 5).toString(), "%PDF-");
+  assert.equal(enviadosWhatsApp.length, 1);
+  assert.equal(enviadosWhatsApp[0].numero, "5511999999999");
+  assert.equal(enviadosWhatsApp[0].dados.subarray(0, 5).toString(), "%PDF-");
   await executarAutomacao();
-  assert.equal(requisicoes.length, 2);
+  assert.equal(enviadosWhatsApp.length, 1);
   execute("UPDATE automacao_envios SET dia=?", [diasAtras(6)]);
   await executarAutomacao();
-  assert.equal(requisicoes.length, 2);
+  assert.equal(enviadosWhatsApp.length, 1);
   execute("UPDATE automacao_envios SET dia=?", [diasAtras(7)]);
   await executarAutomacao();
-  assert.equal(requisicoes.length, 4);
+  assert.equal(enviadosWhatsApp.length, 2);
+  assert.equal(requisicoes.length, 0);
+  // WhatsApp fora do ar: com reserva, o relatório sai pelo Telegram do mesmo contato.
+  whatsappOnline = false;
+  execute("DELETE FROM automacao_envios");
+  assert.equal((await api("/previa"))[0].situacao, "Elegível pelo canal reserva");
+  await executarAutomacao();
+  assert.ok(requisicoes.at(-1).url.endsWith("/sendDocument"));
+  assert.equal((requisicoes.at(-1).body as FormData).get("chat_id"), "12345");
+  assert.equal(queryOne<{ canal: string }>("SELECT canal FROM automacao_envios").canal, "telegram");
+  // Sem reserva, o relatório espera a conexão voltar e nada é registrado.
+  execute("DELETE FROM automacao_envios");
+  await api("/", "PUT", { central: { ...cfg, reserva: false }, vendedores: destinos });
+  assert.equal((await api("/previa"))[0].situacao, "Canal desconectado");
+  const antesSemReserva = requisicoes.length;
+  await executarAutomacao();
+  assert.equal(requisicoes.length, antesSemReserva);
+  assert.equal(queryOne<{ n: number }>("SELECT count(*) n FROM automacao_envios").n, 0);
+  // Queda longa: avisa uma vez o administrador pelo Telegram.
+  const situacaoReal = whatsapp.situacao;
+  const queda = { estado: "desconectado" as const, desde: new Date(Date.now() - 31 * 60000).toISOString() };
+  whatsapp.situacao = () => queda;
+  const comAdmin = [{ ...destinos[0], telegram: "999" }, destinos[1]];
+  await api("/", "PUT", { central: { ...cfg, reserva: false }, vendedores: comAdmin });
+  await executarAutomacao();
+  await executarAutomacao();
+  const alertas = requisicoes.filter((r) => r.url.endsWith("/sendMessage"));
+  assert.equal(alertas.length, 1);
+  assert.equal(JSON.parse(alertas[0].body as string).chat_id, "999");
+  whatsapp.situacao = situacaoReal;
+  whatsappOnline = true;
+  await api("/", "PUT", { central: cfg, vendedores: destinos });
+  execute("DELETE FROM automacao_envios");
+  await executarAutomacao();
+  execute("UPDATE automacao_envios SET dia=?", [diasAtras(7)]);
+  await executarAutomacao();
   await api("/testar", "POST", { canal: "telegram", id: "vend-test", formato: "imagem" });
   assert.ok(requisicoes.at(-1).url.endsWith("/sendPhoto"));
   const form = requisicoes.at(-1).body as FormData;
@@ -115,7 +156,7 @@ try {
   execute("UPDATE vale_parcelas SET status='paga',saldo=0");
   assert.equal((await api("/previa")).length, 0);
   console.log(
-    "OK: herança, remoção de exceções, atraso estrito, saldo mínimo, periodicidade, PDF, imagem, destinos e baixas.",
+    "OK: herança, remoção de exceções, atraso estrito, saldo mínimo, periodicidade, PDF, imagem, destinos, baixas, canal reserva e aviso de queda.",
   );
 } finally {
   globalThis.fetch = fetchLocal;

@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 1.48.0 — 27/11/2026
+
+- Duas senhas diferentes. **Senha de operação**, em Configurações → Usuários e senha de operação: usada nas vendas para liberar preço, cancelar, devolver, reabrir e estornar; pode ser digitada por quem o gerente autorizar. **Senha do gerente**, em Configurações → Sistema, senha do gerente e backups: entra no sistema como gerente e dá acesso a tudo. O sistema não aceita as duas iguais.
+- Ao atualizar, a senha que a loja já usava vira a senha de operação, e o gerente precisa criar uma senha nova, só dele, no próximo login.
+- O comando de recuperação da senha do gerente mudou de lugar: `scripts\recuperacao\senha-gerente\RESETAR SENHA DO GERENTE.cmd`. Ele volta a senha do gerente para `Altinopolis` e não mexe na senha de operação.
+- Planilhas: botões **AutoSoma** e **Média** no topo, como no Excel. Selecione os valores e clique: o resultado vai para a célula logo abaixo (ou à direita, se a seleção for uma linha). Com uma célula vazia selecionada, usa os valores logo acima.
+- Planilhas: datas como `10/11/2026` são reconhecidas. A Média de datas mostra a data média, e a barra de baixo mostra data média, primeira e última ao selecionar datas.
+- Planilhas: barra de ferramentas em uma linha só e grade mais alta, ocupando a tela. Limpar, excluir e recarregar ficam no botão "…".
+
 ## 1.47.0 — 27/11/2026
 
 - Planilhas com 500 linhas e 15 colunas (A a O), no lugar de 1.000 linhas e 10 colunas. Digitação, rolagem e cálculos continuam rápidos.

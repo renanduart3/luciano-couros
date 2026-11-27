@@ -1,6 +1,6 @@
 import { financeiroOrdem, valoresConfirmados } from "./financeiro";
 import { OrdemCobranca } from "../types";
-import { FORMAS_PAGAMENTO } from "./pagamentos";
+import { FORMAS_PAGAMENTO, ehTituloTerceiro } from "./pagamentos";
 
 const centavos = (v: number) => Math.round(Number(v || 0) * 100);
 export function totaisValesOrdem(ordem: OrdemCobranca) {
@@ -30,14 +30,17 @@ export function demonstrativoOrdem(ordem: OrdemCobranca) {
     };
     const documentos = p.titulos.length ? p.titulos.map((t, i) => ({
       id: `${p.id}-${t.id || i}`, data: t.vencimento || p.data, forma,
-      referencia: t.numeroDocumento || String(i + 1), titular: t.nomeTitular?.trim() || "", valor: ratear(t.valor, t.status || "aguardando"),
+      referencia: t.numeroDocumento || String(i + 1), titular: t.nomeTitular?.trim() || "",
+      // Cheque e duplicata de terceiro identificam quem responde pelo título.
+      documentoTitular: ehTituloTerceiro(t.tipo || p.formaPagamento) ? t.documentoTitular?.trim() || "" : "",
+      valor: ratear(t.valor, t.status || "aguardando"),
       status: t.status || "aguardando", titulo: true,
     })) : p.valorRecebido > 0 ? [{
       id: p.id, data: p.data, forma: forma + (p.formaPagamento === "cartao_credito" ? ` · ${p.parcelasCartao || 1}x` : ""),
-      referencia: "", titular: "", valor: ratear(p.valorRecebido, p.statusPagamento), status: p.statusPagamento, titulo: false,
+      referencia: "", titular: "", documentoTitular: "", valor: ratear(p.valorRecebido, p.statusPagamento), status: p.statusPagamento, titulo: false,
     }] : [];
     if (p.bonusUtilizado > 0 && p.status === "ativo") documentos.push({
-      id: `${p.id}-bonus`, data: p.data, forma: "Bônus utilizado", referencia: "", titular: "",
+      id: `${p.id}-bonus`, data: p.data, forma: "Bônus utilizado", referencia: "", titular: "", documentoTitular: "",
       valor: ratear(p.bonusUtilizado, "bonus"), status: "compensado", titulo: false,
     });
     return documentos;

@@ -33,6 +33,10 @@ for (const formaPagamento of ['cheque_emitente', 'cheque_terceiro', 'duplicata_e
   const pagamento = { ...boleto, formaPagamento, titulos: [{ ...boleto.titulos[0], nomeTitular: '  Tiago Rosa  ' }] };
   assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [pagamento] }).linhas[0].titular, 'Tiago Rosa');
 }
+for (const [formaPagamento, esperado] of [['cheque_emitente', ''], ['cheque_terceiro', '12.345.678/0001-90'], ['duplicata_emitente', ''], ['duplicata_terceiro', '12.345.678/0001-90']]) {
+  const pagamento = { ...boleto, formaPagamento, titulos: [{ ...boleto.titulos[0], documentoTitular: ' 12.345.678/0001-90 ' }] };
+  assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [pagamento] }).linhas[0].documentoTitular, esperado);
+}
 for (const formaPagamento of ['pix', 'avista_debito', 'cartao_credito']) {
   for (const data of ['2026-09-10', '2099-12-20']) {
     assert.equal(demonstrativoOrdem({ ...ordem, pagamentos: [{ ...pix, formaPagamento, data }] }).linhas[0].data, data);

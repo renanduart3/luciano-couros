@@ -1,10 +1,10 @@
-import { FORMAS_PAGAMENTO } from "./pagamentos";
+import { FORMAS_PAGAMENTO, ehTituloTerceiro } from "./pagamentos";
 import { formatCurrency } from "./utils";
 import type { ComprovanteRecebimento } from "../types";
 import { parteNoVale, valoresConfirmados } from "./financeiro";
 
 type PagamentoAcumulado = NonNullable<ComprovanteRecebimento["pagamentosVale"]>[number];
-export type LinhaAcumulada = { id: string; forma: string; titular?: string; numero: string; data: string; situacao: string; valor: number; detalhe?: string };
+export type LinhaAcumulada = { id: string; forma: string; titular?: string; documentoTitular?: string; numero: string; data: string; situacao: string; valor: number; detalhe?: string };
 export const centavos = (valor: number) => Math.round(Number(valor || 0) * 100);
 const siglasTitulo: Record<string, string> = {
   cheque_emitente: "CQ", cheque_terceiro: "CQ-TER",
@@ -45,6 +45,8 @@ export function linhasDoPagamento(pagamento: PagamentoAcumulado, descricaoCartao
       id: `${pagamento.id}-${titulo.id || indice}`,
       forma: siglasTitulo[titulo.tipo] || forma,
       titular: titulo.nomeTitular?.trim() || undefined,
+      // Só títulos de terceiro mostram o documento; no do emitente ele repete o do cliente.
+      documentoTitular: ehTituloTerceiro(titulo.tipo) ? titulo.documentoTitular?.trim() || undefined : undefined,
       numero: titulo.numeroDocumento || "—",
       data: titulo.dataCompensacao || titulo.vencimento || pagamento.data,
       situacao: titulo.status === "recusado" ? "RECUSADO" : titulo.status === "aguardando" ? "A COMPENSAR" : "RECEBIDO",

@@ -67,10 +67,10 @@ export function DemonstrativoOrdemConteudo({ ordem }: { ordem: OrdemCobranca }) 
             <div className="border-t-2 border-slate-900 p-3">
               <h3 className="mb-2 text-xs font-semibold">Pagamentos registrados</h3>
               <div className="overflow-x-auto"><table className="w-full min-w-[550px] table-fixed text-xs print:min-w-0">
-                <thead className="bg-white"><tr><th className="w-24 p-2 text-left">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-left">Situação</th><th className="w-28 p-2 text-right">Valor</th></tr></thead>
+                <thead className="bg-white"><tr><th className="w-32 whitespace-nowrap px-1.5 py-2 text-left text-[10px]">Data / vencimento</th><th className="p-2 text-left">Forma / documento</th><th className="w-28 p-2 text-left">Situação</th><th className="w-28 p-2 text-right">Valor</th></tr></thead>
                 <tbody>{resumo.linhas.map(l => <tr key={l.id} className="border-t border-slate-200">
-                  <td className="p-2 whitespace-nowrap">{formatDate(l.data)}</td>
-                  <td className="p-2">{l.forma}{l.referencia && ` · #${l.referencia}`}{l.titular && ` - ${l.titular}`}</td>
+                  <td className="whitespace-nowrap px-1.5 py-2 text-[10px]">{formatDate(l.data)}</td>
+                  <td className="p-2 break-words">{l.forma}{l.referencia && ` · #${l.referencia}`}{l.titular && ` - ${l.titular}`}{l.documentoTitular && ` · CPF/CNPJ: ${l.documentoTitular}`}</td>
                   <td className={`p-2 ${l.status === 'compensado' ? 'text-emerald-800' : 'text-amber-900'}`}>{l.status === 'compensado' ? 'Pago' : l.status === 'recusado' ? 'Recusado' : 'Aguardando'}</td>
                   <td className="p-2 text-right font-mono whitespace-nowrap">{formatCurrency(l.valor)}</td>
                 </tr>)}</tbody>

@@ -109,7 +109,7 @@ export function ComprovanteRecebimentoModal({ comprovante, onClose, embedded = f
           <section className="payment-receipt-section">
             <h3>PAGAMENTOS</h3>
             <table className="payment-receipt-methods"><thead><tr><th>FORMA DE PAGAMENTO</th><th>Nº CHEQUE / BOLETO</th><th>DATA</th><th>SITUAÇÃO</th><th className="number">VALOR</th></tr></thead>
-              <tbody>{linhasAcumuladas.map(linha => <tr key={linha.id}><td>{linha.forma}{linha.titular && ` · ${linha.titular}`}{linha.detalhe && <small>{linha.detalhe}</small>}</td><td>{linha.numero}</td><td>{formatDate(linha.data)}</td><td>{linha.situacao}</td><td className="number strong">{formatCurrency(linha.valor)}</td></tr>)}</tbody>
+              <tbody>{linhasAcumuladas.map(linha => <tr key={linha.id}><td>{linha.forma}{linha.titular && ` · ${linha.titular}`}{linha.documentoTitular && ` · CPF/CNPJ: ${linha.documentoTitular}`}{linha.detalhe && <small>{linha.detalhe}</small>}</td><td>{linha.numero}</td><td>{formatDate(linha.data)}</td><td>{linha.situacao}</td><td className="number strong">{formatCurrency(linha.valor)}</td></tr>)}</tbody>
               <tfoot><tr><td colSpan={4}>TOTAL PAGAMENTOS</td><td className="number">{formatCurrency(totalPagoVale)}</td></tr></tfoot>
             </table>
             <dl className="payment-receipt-balance">

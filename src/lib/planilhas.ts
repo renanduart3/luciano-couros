@@ -1,11 +1,14 @@
 // Aritmética racional: mantém casas decimais exatas até a apresentação em centavos.
-export const LINHAS = 1000;
-export const MAX_PLANILHAS = 3;
+export const LINHAS = 500;
+export const MAX_PLANILHAS = 5;
 export const MAX_TEXTO_CELULA = 300;
 export const CORES_CELULA = { preto: '#000000', vermelho: '#dc2626', verde: '#15803d', amarelo: '#ca8a04' } as const;
 export type FormatoCelula = { negrito?: boolean; cor?: keyof typeof CORES_CELULA };
-export const enderecoValido = (id: string) => /^[A-J][1-9]\d{0,3}$/.test(id) && Number(id.slice(1)) <= LINHAS;
-export const COLUNAS = 10;
+export const COLUNAS = 15;
+// Colunas de uma letra só (A até O); o código assume um caractere por coluna.
+export const ULTIMA_COLUNA = String.fromCharCode(64 + COLUNAS);
+export const colunaValida = (letra: string) => letra.length === 1 && letra >= 'A' && letra <= ULTIMA_COLUNA;
+export const enderecoValido = (id: string) => /^[A-Z][1-9]\d{0,3}$/.test(id) && colunaValida(id[0]) && Number(id.slice(1)) <= LINHAS;
 export const LARGURA_COLUNA_MIN = 60;
 export const LARGURA_COLUNA_MAX = 800;
 export const larguraColuna = (coluna: number, larguras?: Record<string, number>) => larguras?.[String.fromCharCode(65 + coluna)] ?? (coluna === 0 ? 260 : 140);

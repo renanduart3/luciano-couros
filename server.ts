@@ -1,7 +1,7 @@
 import { rotasAutomacao, executarAutomacao } from "./server/automacao.js";
 import { whatsapp } from "./server/whatsapp.js";
 import { ultimoPrecoDevolucao, itensElegiveisDevolucao, resolverLinhaDevolucao, devolvidoEmOutraVendaSql, ajustarCreditoLinhas, protegerCompraDevolvida } from "./server/devolucoesItens.js";
-import { rotasPlanilhas } from "./server/planilhas.js";
+import { ajustarPlanilhasAoLimite, rotasPlanilhas } from "./server/planilhas.js";
 import { anexarFinanceiroVales, pagamentosConfirmadosSql } from "./server/posicaoFinanceira.js";
 import { totalItemVenda, totaisVenda, validarTotalEsperado } from "./src/lib/totaisVenda.js";
 import { valorItemRelatorioSql } from "./server/valorItemRelatorio.js";
@@ -1152,6 +1152,7 @@ app.use("/api", (req, res, next) => {
 });
 app.use("/api/automacao", exigirGerente, rotasAutomacao());
 app.use(["/api/backups", "/api/usuarios"], exigirGerente);
+ajustarPlanilhasAoLimite(registrarAuditoria);
 app.use('/api/planilhas', exigirGerente, rotasPlanilhas(validarPinAdministrador, registrarAuditoria));
 app.use("/api", (req, res, next) => {
   const operacaoGerencial = req.method === "DELETE"

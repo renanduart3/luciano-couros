@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { execute, queryAll, queryOne, runInTransaction } from './db.js';
-import { CORES_CELULA, COLUNAS, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, LARGURA_COLUNA_MIN, LARGURA_COLUNA_MAX, enderecoValido, type FormatoCelula } from '../src/lib/planilhas.js';
+import { CORES_CELULA, COLUNAS, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, LARGURA_COLUNA_MIN, LARGURA_COLUNA_MAX, colunaValida, enderecoValido, type FormatoCelula } from '../src/lib/planilhas.js';
 
 const falhar = (mensagem: string, statusCode = 400): never => { throw Object.assign(new Error(mensagem), { statusCode }); };
 const nomeValido = (nome: unknown) => {
@@ -18,6 +18,28 @@ const conferirVersao = (registro: any, versao: unknown) => {
   if (!Number.isInteger(versao) || registro.versao !== versao) falhar('Esta planilha foi alterada em outra sessão. Suas alterações foram mantidas na tela; confira a versão salva antes de substituir os dados.', 409);
 };
 
+// Quando o tamanho da grade diminui, apaga o que ficou fora dela (linhas além de LINHAS ou colunas além da última),
+// para que as planilhas antigas continuem abrindo e salvando. Roda na inicialização e só altera quem tem excesso.
+export function ajustarPlanilhasAoLimite(auditar: (usuarioId: string | null, acao: string, entidade: string, id: string, detalhes: Record<string, unknown>) => void) {
+  runInTransaction(() => {
+    for (const registro of queryAll<any>('SELECT * FROM planilhas')) {
+      const celulas: Record<string, string> = JSON.parse(registro.celulas), formatos: Record<string, FormatoCelula> = JSON.parse(registro.formatos);
+      const moedas: string[] = JSON.parse(registro.moedas), larguras: Record<string, number> = JSON.parse(registro.larguras);
+      const foraCelulas = Object.keys(celulas).filter(id => !enderecoValido(id));
+      const foraFormatos = Object.keys(formatos).filter(id => !enderecoValido(id));
+      const foraMoedas = moedas.filter(id => !enderecoValido(id));
+      const foraLarguras = Object.keys(larguras).filter(coluna => !colunaValida(coluna));
+      if (!foraCelulas.length && !foraFormatos.length && !foraMoedas.length && !foraLarguras.length) continue;
+      for (const id of foraCelulas) delete celulas[id];
+      for (const id of foraFormatos) delete formatos[id];
+      for (const coluna of foraLarguras) delete larguras[coluna];
+      execute('UPDATE planilhas SET celulas=?,moedas=?,formatos=?,larguras=?,versao=versao+1,updatedAt=? WHERE id=?',
+        [JSON.stringify(celulas), JSON.stringify(moedas.filter(enderecoValido)), JSON.stringify(formatos), JSON.stringify(larguras), new Date().toISOString(), registro.id]);
+      auditar(null, 'planilha_ajustada_ao_limite', 'planilha', registro.id, { nome: registro.nome, celulasRemovidas: foraCelulas.length, linhas: LINHAS, colunas: COLUNAS });
+    }
+  });
+}
+
 export function rotasPlanilhas(validarSenha: (senha: unknown) => { id: string } | null,
   auditar: (usuarioId: string, acao: string, entidade: string, id: string, detalhes: Record<string, unknown>) => void) {
   const router = Router();
@@ -33,7 +55,7 @@ export function rotasPlanilhas(validarSenha: (senha: unknown) => { id: string } 
     try {
       const nome = nomeValido(req.body?.nome);
       const registro = runInTransaction(() => {
-        if (Number(queryOne<any>('SELECT COUNT(*) total FROM planilhas')?.total) >= MAX_PLANILHAS) falhar('O limite é de três planilhas. Exclua uma antes de criar outra.', 409);
+        if (Number(queryOne<any>('SELECT COUNT(*) total FROM planilhas')?.total) >= MAX_PLANILHAS) falhar(`O limite é de ${MAX_PLANILHAS} planilhas. Exclua uma antes de criar outra.`, 409);
         const id = crypto.randomUUID();
         execute('INSERT INTO planilhas (id,nome) VALUES (?,?)', [id, nome]);
         return carregar(id);
@@ -66,7 +88,7 @@ export function rotasPlanilhas(validarSenha: (senha: unknown) => { id: string } 
       if (larguras !== undefined) {
         if (!larguras || typeof larguras !== 'object' || Array.isArray(larguras) || Object.keys(larguras).length > COLUNAS) falhar('Larguras de colunas inválidas.');
         for (const [coluna, largura] of Object.entries(larguras)) {
-          if (!/^[A-J]$/.test(coluna) || typeof largura !== 'number' || !Number.isInteger(largura) || largura < LARGURA_COLUNA_MIN || largura > LARGURA_COLUNA_MAX) falhar('Largura inválida: ' + coluna);
+          if (!colunaValida(coluna) || typeof largura !== 'number' || !Number.isInteger(largura) || largura < LARGURA_COLUNA_MIN || largura > LARGURA_COLUNA_MAX) falhar('Largura inválida: ' + coluna);
         }
       }
       const registro = runInTransaction(() => {

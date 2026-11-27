@@ -12,7 +12,7 @@ async function main(){
     const id=parts[2],action=parts[3];const body=req.method()==='GET'?{}:req.postDataJSON();
     if(!id&&req.method()==='GET')data=[...docs.values()].map(({id,nome,versao,updatedAt})=>({id,nome,versao,updatedAt}));
     else if(!id&&req.method()==='POST'){
-     if(docs.size>=3){status=409;data={error:'Limite de três planilhas.'};}
+     if(docs.size>=5){status=409;data={error:'Limite de cinco planilhas.'};}
      else{data={id:'p'+(++seq),nome:body.nome,versao:1,updatedAt:'2026-11-14',celulas:{},moedas:[]};docs.set(data.id,data);}
     }else if(req.method()==='GET')data=docs.get(id);
     else if(action){
@@ -134,13 +134,13 @@ async function main(){
   // Escape não deve gravar o texto descartado pela barra de fórmulas.
   await p.locator('[data-celula="A1"]').click();bar=p.getByRole('textbox',{name:'Conteúdo de A1',exact:true});await bar.fill('999');await bar.press('Escape');await p.locator('[data-celula="B1"]').click();assert.equal(await p.locator('[data-celula="A1"]').innerText(),'12,50');
   await p.getByRole('button',{name:'Nova planilha',exact:true}).click();await p.getByRole('textbox',{name:'Nome da planilha',exact:true}).waitFor();
-  await p.getByRole('button',{name:'Nova planilha',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha 3',exact:true}).waitFor();assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isDisabled());
+  for(const n of [3,4,5]){await p.getByRole('button',{name:'Nova planilha',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha '+n,exact:true}).waitFor();}assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isDisabled());
   await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Controle de materiais',exact:true}).click();await p.getByRole('button',{name:'B1: 25',exact:true}).waitFor();
-  // Colagem cheia, fórmulas até J1000 e virtualização: somente linhas visíveis no DOM.
-  const rows=Array.from({length:1000},(_,i)=>Array.from({length:10},(_,c)=>c===9?`=SOMA(A${i+1}:I${i+1})`:String(i+1)).join('\t')).join('\n');
+  // Colagem cheia, fórmulas até O500 e virtualização: somente linhas visíveis no DOM.
+  const rows=Array.from({length:500},(_,i)=>Array.from({length:15},(_,c)=>c===14?`=SOMA(A${i+1}:N${i+1})`:String(i+1)).join('\t')).join('\n');
   const inicio=performance.now();
   await p.locator('[data-celula="A1"]').evaluate((e,text)=>{const clipboardData=new DataTransfer();clipboardData.setData('text/plain',text);e.dispatchEvent(new ClipboardEvent('paste',{clipboardData,bubbles:true,cancelable:true}));},rows);
-  await p.getByRole('button',{name:'J1: 9',exact:true}).waitFor();console.log('Colagem/recálculo/atualização de 10.000 células no navegador: '+(performance.now()-inicio).toFixed(0)+' ms.');
+  await p.getByRole('button',{name:'O1: 14',exact:true}).waitFor();console.log('Colagem/recálculo/atualização de 7.500 células no navegador: '+(performance.now()-inicio).toFixed(0)+' ms.');
   assert.ok(await p.locator('tr[data-linha]').count()<50);
   await p.locator('[data-celula="A1"]').click();await p.locator('[data-celula="B2"]').click({modifiers:['Shift']});
   assert.match(await resumo.textContent(),/A1:B2/);assert.match(await resumo.textContent(),/Números: 4/);assert.match(await resumo.textContent(),/Média: 1,50/);assert.match(await resumo.textContent(),/Soma: 6/);assert.match(await resumo.textContent(),/Mín.: 1/);assert.match(await resumo.textContent(),/Máx.: 2/);
@@ -154,13 +154,13 @@ async function main(){
   await p.getByRole('button',{name:'Salvar',exact:true}).click();await p.getByText('Planilha salva.',{exact:true}).waitFor();
   fs.mkdirSync('output',{recursive:true});await p.screenshot({path:'output/planilhas-producao-desktop.png',fullPage:true});
   await p.locator('.planilhas-grade').evaluate(e=>e.scrollTop=e.scrollHeight);
-  await p.getByRole('button',{name:'J1000: 9.000',exact:true}).waitFor();assert.ok(await p.locator('tr[data-linha]').count()<50);
-  await p.locator('[data-celula="J1000"]').click({modifiers:['Shift']});assert.match(await resumo.textContent(),/C2:J1000/);
-  await p.locator('[data-celula="J1000"]').click();await p.keyboard.press('ArrowUp');await p.waitForFunction(()=>document.activeElement?.getAttribute('data-celula')==='J999');
-  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();let dialog=p.getByRole('alertdialog');await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();assert.equal(Object.keys(docs.get('p1').celulas).length,10000);
-  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('errada');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,10000);
+  await p.getByRole('button',{name:'O500: 7.000',exact:true}).waitFor();assert.ok(await p.locator('tr[data-linha]').count()<50);
+  await p.locator('[data-celula="O500"]').click({modifiers:['Shift']});assert.match(await resumo.textContent(),/C2:O500/);
+  await p.locator('[data-celula="O500"]').click();await p.keyboard.press('ArrowUp');await p.waitForFunction(()=>document.activeElement?.getAttribute('data-celula')==='O499');
+  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();let dialog=p.getByRole('alertdialog');await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
+  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('errada');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
   await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await p.getByRole('button',{name:'A1: vazia',exact:true}).waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,0);assert.deepEqual(docs.get('p1').formatos,{});
-  await p.getByRole('button',{name:'Excluir planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar exclusão',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha 2',exact:true}).waitFor();assert.equal(docs.size,2);assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isEnabled());
+  await p.getByRole('button',{name:'Excluir planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar exclusão',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha 2',exact:true}).waitFor();assert.equal(docs.size,4);assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isEnabled());
   // Alterações locais permanecem na tela se outra sessão salvou antes.
   const input=p.getByRole('textbox',{name:'Conteúdo de A1',exact:true});await input.fill('Meu ajuste');await input.press('Enter');docs.get('p2').versao++;
   await p.getByRole('button',{name:'Salvar',exact:true}).click();await p.getByRole('alert').waitFor();assert.equal(await p.locator('[data-celula="A1"]').textContent(),'Meu ajuste');
@@ -205,7 +205,7 @@ async function main(){
   assert.equal(docs.get('p3').celulas.E5,'=2+3');assert.deepEqual(docs.get('p3').moedas,[]);
   await p.setViewportSize({width:390,height:844});assert.ok(await p.locator('body').evaluate(e=>e.scrollWidth<=innerWidth+1));
   fs.mkdirSync('output',{recursive:true});await p.screenshot({path:'output/planilhas-producao-mobile.png',fullPage:true});assert.deepEqual(errors,[]);
-  console.log('OK: criação, edição, fórmulas, gravação/reabertura, três abas, colagem cheia, navegação na linha 1000, senha/cancelamento, conflitos, proteção de alterações e layout móvel.');
+  console.log('OK: criação, edição, fórmulas, gravação/reabertura, cinco abas, colagem cheia, navegação na linha 500, senha/cancelamento, conflitos, proteção de alterações e layout móvel.');
  }finally{await browser.close();}
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

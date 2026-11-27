@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, Check, Copy, FunctionSquare, Send, Plus, Save, Sheet, Table2, Trash2, Eraser, RefreshCw } from "lucide-react";
-import { calcularPlanilha, limitesSelecao, resumirSelecao, CORES_CELULA, type FormatoCelula, COLUNAS, endereco, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA } from "../lib/planilhas";
+import { calcularPlanilha, limitesSelecao, resumirSelecao, CORES_CELULA, type FormatoCelula, COLUNAS, endereco, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, ULTIMA_COLUNA } from "../lib/planilhas";
 import { api } from "../lib/api";
 import { Planilha, PlanilhaResumo } from "../types";
 import "./planilhas.css";
@@ -12,10 +12,12 @@ import { baixarImagem, copiarImagemParaAreaDeTransferencia, desenharSelecaoPlani
 import { EnviarImagemPlanilha } from './EnviarImagemPlanilha';
 
 const vazia = { texto: "", erro: false, numerico: false };
-const intervaloPendente = /^=([A-J]\d+:[A-J]\d+)$/i;
+const referenciaIntervalo = `[A-${ULTIMA_COLUNA}]\\d+:[A-${ULTIMA_COLUNA}]\\d+`;
+const intervaloPendente = new RegExp(`^=(${referenciaIntervalo})$`, 'i');
+const intervaloComFuncao = new RegExp(`^=(${referenciaIntervalo})\\s*(SOMA|M[ÉE]DIA|MEDIANA)$`, 'i');
 function textoDaFormula(entrada: string) {
   if (intervaloPendente.test(entrada)) return `=SOMA(${entrada.slice(1)})`;
-  const partes = /^=([A-J]\d+:[A-J]\d+)\s*(SOMA|M[ÉE]DIA|MEDIANA)$/i.exec(entrada);
+  const partes = intervaloComFuncao.exec(entrada);
   return partes ? `=${partes[2].toUpperCase()}(${partes[1]})` : entrada.slice(0, MAX_TEXTO_CELULA);
 }
 const ALTURA_LINHA = 36;

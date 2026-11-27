@@ -1,7 +1,7 @@
 # Planilhas
 
-- Até três planilhas compartilhadas entre os gerentes.
-- Cada planilha tem 1.000 linhas e dez colunas (A a J): 10.000 células.
+- Até cinco planilhas compartilhadas entre os gerentes.
+- Cada planilha tem 500 linhas e 15 colunas (A a O): 7.500 células. Na versão 1.47.0 a grade passou de 1.000 × 10 para 500 × 15; ao iniciar, o servidor apaga o que ficou fora da grade (linhas acima de 500), aumenta a versão da planilha e registra `planilha_ajustada_ao_limite` na auditoria. As constantes ficam em `src/lib/planilhas.ts` e o código assume colunas de uma letra (no máximo 26).
 - Cada célula aceita até 300 caracteres. A colagem que ultrapassa a grade é recusada por inteiro, sem descartar dados silenciosamente.
 - O botão Salvar grava nome, conteúdo e formatação no banco SQLite ativo. Os backups do banco incluem as planilhas.
 - Limpar apaga células e formatações, mantendo o nome. Excluir remove o documento. As duas ações pedem confirmação e senha do gerente, conferidas no servidor, com auditoria.

@@ -10,9 +10,9 @@ async function main() {
   const browser = await chromium.launch({headless:true, executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe'});
   try {
     const p = await browser.newPage();
-    const planilha = { nome: '<script>invalido</script>', celulas: { A1: 'EXCLUIDO', B900: '=A1', A2:'12,50', B901:'=A2*2', C900:'<img src=x onerror=alert(1)>', C901:'Texto longo '.repeat(20) }, moedas:['B901'], formatos:{B901:{negrito:true,cor:'verde'}}, larguras:{B:200,C:400} };
-    planilha.celulas.B900='Último trecho';
-    await p.setContent(documentoImpressaoPlanilha(planilha,'C901','B900'));
+    const planilha = { nome: '<script>invalido</script>', celulas: { A1: 'EXCLUIDO', B400: '=A1', A2:'12,50', B401:'=A2*2', C400:'<img src=x onerror=alert(1)>', C401:'Texto longo '.repeat(20) }, moedas:['B401'], formatos:{B401:{negrito:true,cor:'verde'}}, larguras:{B:200,C:400} };
+    planilha.celulas.B400='Último trecho';
+    await p.setContent(documentoImpressaoPlanilha(planilha,'C401','B400'));
     assert.equal(await p.locator('td').count(),4);
     assert.equal(await p.locator('img,script').count(),0);
     assert.doesNotMatch(await p.locator('body').innerText(),/EXCLUIDO/);

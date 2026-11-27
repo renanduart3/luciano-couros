@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 1.47.0 — 27/11/2026
+
+- Planilhas com 500 linhas e 15 colunas (A a O), no lugar de 1.000 linhas e 10 colunas. Digitação, rolagem e cálculos continuam rápidos.
+- Até cinco planilhas, no lugar de três.
+- Ao atualizar, o conteúdo que estava depois da linha 500 é apagado e o ajuste fica registrado na auditoria.
+
 ## 1.46.0 — 27/11/2026
 
 - Planilhas: botão "Copiar como imagem" gera uma imagem das células selecionadas, com valores, negrito, cores e larguras das colunas, como no Excel, pronta para colar com Ctrl+V no WhatsApp ou no e-mail. Quando o navegador não permite copiar, a imagem é baixada.

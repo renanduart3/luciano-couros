@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.45.0 — 26/11/2026
+
+- WhatsApp da automação de cobrança roda dentro do próprio sistema, sem Docker nem mensalidade. O celular é pareado pelo QR na aba Automação.
+- Situação da conexão na tela, com opções para reconectar e para desconectar e limpar a sessão. O WhatsApp roda num processo separado e reinicia sozinho se parar, sem afetar o restante do sistema.
+- Telegram como canal reserva quando o WhatsApp estiver fora do ar. Sem canal disponível, o relatório espera a conexão voltar.
+- Aviso pelo Telegram aos administradores quando o WhatsApp fica mais de 30 minutos desconectado.
+
 ## 1.44.0 — 26/11/2026
 
 - CPF/CNPJ do titular exibido nos cheques e duplicatas de terceiro, no demonstrativo da ordem e no comprovante de pagamento do vale. Descrições longas quebram linha e a data de vencimento usa fonte menor para caber sem quebra.

@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 1.48.1 — 27/11/2026
+
+- Configurações → Usuários e senha de operação mais simples: trocar a senha de operação é só digitar a nova duas vezes e salvar. Menos texto na tela.
+- Nova senha de vendedor e desativar usuário agora são feitos na própria tela, sem as caixas do navegador. O botão "Remover", que fazia o mesmo que "Desativar", saiu.
+- A troca da senha do gerente fica só em Sistema, senha do gerente e backups. O caminho do script de recuperação aparece em "Esqueceu a senha?".
+- Estornar recebimento na carteira do cliente pede a senha de operação numa janela do sistema, com a senha escondida.
+
 ## 1.48.0 — 27/11/2026
 
 - Duas senhas diferentes. **Senha de operação**, em Configurações → Usuários e senha de operação: usada nas vendas para liberar preço, cancelar, devolver, reabrir e estornar; pode ser digitada por quem o gerente autorizar. **Senha do gerente**, em Configurações → Sistema, senha do gerente e backups: entra no sistema como gerente e dá acesso a tudo. O sistema não aceita as duas iguais.

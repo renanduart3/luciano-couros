@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 1.46.0 — 27/11/2026
+
+- Planilhas: botão "Copiar como imagem" gera uma imagem das células selecionadas, com valores, negrito, cores e larguras das colunas, como no Excel, pronta para colar com Ctrl+V no WhatsApp ou no e-mail. Quando o navegador não permite copiar, a imagem é baixada.
+- Planilhas: botão "Enviar imagem no WhatsApp" mostra a prévia e envia a seleção, com legenda, a um contato com número salvo na Automação, pelo WhatsApp conectado ao sistema.
+
 ## 1.45.0 — 26/11/2026
 
 - WhatsApp da automação de cobrança roda dentro do próprio sistema, sem Docker nem mensalidade. O celular é pareado pelo QR na aba Automação.

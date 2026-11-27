@@ -38,6 +38,7 @@ const SYSTEM_VERSION = (() => {
 const SERVER_STARTED_AT = new Date().toISOString();
 
 app.use('/api/planilhas', express.json({ limit: '20mb' }));
+app.use('/api/automacao/enviar-imagem', express.json({ limit: '12mb' }));
 app.use(express.json());
 
 app.get("/pwa-icon.png", (_req, res) => {

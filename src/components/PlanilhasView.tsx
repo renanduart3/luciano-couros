@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, Check, FunctionSquare, Plus, Save, Sheet, Table2, Trash2, Eraser, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, Check, Copy, FunctionSquare, Send, Plus, Save, Sheet, Table2, Trash2, Eraser, RefreshCw } from "lucide-react";
 import { calcularPlanilha, limitesSelecao, resumirSelecao, CORES_CELULA, type FormatoCelula, COLUNAS, endereco, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA } from "../lib/planilhas";
 import { api } from "../lib/api";
 import { Planilha, PlanilhaResumo } from "../types";
@@ -8,6 +8,8 @@ import { escreverTSV, lerTSV } from "../lib/clipboardPlanilha";
 import { IMPRESSAO_PLANILHAS_PREVIEW } from '../lib/recursosPreview';
 import { PlanilhaImpressaoPreview } from './PlanilhaImpressaoPreview';
 import { larguraColuna, limitarLarguraColuna, LARGURA_COLUNA_MIN, LARGURA_COLUNA_MAX, type ExibicaoCelula } from '../lib/planilhas';
+import { baixarImagem, copiarImagemParaAreaDeTransferencia, desenharSelecaoPlanilha, nomeArquivoImagem, pngDoCanvas } from '../lib/imagemPlanilha';
+import { EnviarImagemPlanilha } from './EnviarImagemPlanilha';
 
 const vazia = { texto: "", erro: false, numerico: false };
 const intervaloPendente = /^=([A-J]\d+:[A-J]\d+)$/i;
@@ -27,6 +29,8 @@ export function PlanilhasView() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("");
   const [impressao, setImpressao] = useState<{ planilha: Planilha; inicio: string; fim: string } | null>(null);
+  const [envioImagem, setEnvioImagem] = useState<{ imagem: Blob; nome: string; legenda: string } | null>(null);
+  const [avisoImagem, setAvisoImagem] = useState("");
   const [selecionada, setSelecionada] = useState("A1");
   const [ancora, setAncora] = useState("A1");
   const [editando, setEditando] = useState<string | null>(null);
@@ -56,6 +60,7 @@ export function PlanilhasView() {
   const exibicao = useMemo<Record<string, ExibicaoCelula>>(() => rascunho ? calcularPlanilha(rascunho.celulas, rascunho.moedas) : {}, [rascunho?.celulas, rascunho?.moedas]);
   const limites = useMemo(() => limitesSelecao(ancora, selecionada), [ancora, selecionada]);
   const resumoSelecao = useMemo(() => resumirSelecao(exibicao, ancora, selecionada), [exibicao, ancora, selecionada]);
+  useEffect(() => setAvisoImagem(''), [ancora, selecionada, rascunho?.id]);
   useEffect(() => {
     let frame = 0;
     const atualizar = () => {
@@ -336,9 +341,39 @@ export function PlanilhasView() {
     }
   }
   const intervalo = endereco(limites.primeiraLinha, limites.primeiraColuna) + ':' + endereco(limites.ultimaLinha, limites.ultimaColuna);
+  // Gera o PNG da seleção atual, incluindo o que está sendo digitado e ainda não foi salvo.
+  const imagemDaSelecao = () => {
+    if (!rascunho) return null;
+    const documento = editando ? { ...rascunho, celulas: { ...rascunho.celulas, [editando]: textoDaFormula(texto) } } : rascunho;
+    confirmar();
+    const inicio = endereco(limites.primeiraLinha, limites.primeiraColuna), final = endereco(limites.ultimaLinha, limites.ultimaColuna);
+    try {
+      const png = pngDoCanvas(desenharSelecaoPlanilha(documento, inicio, final));
+      return { png, nome: nomeArquivoImagem(documento, inicio, final), legenda: `${documento.nome} · ${inicio === final ? inicio : inicio + ':' + final}` };
+    } catch (e: any) { setErro(e.message); return null; }
+  };
+  const copiarImagem = async () => {
+    setAvisoImagem(''); setErro('');
+    const gerada = imagemDaSelecao();
+    if (!gerada) return;
+    try {
+      if (await copiarImagemParaAreaDeTransferencia(gerada.png)) { setAvisoImagem('Imagem copiada. Cole com Ctrl+V no WhatsApp ou no e-mail.'); return; }
+    } catch { /* Sem permissão de área de transferência: cai no download. */ }
+    try {
+      baixarImagem(await gerada.png, gerada.nome);
+      setAvisoImagem('O navegador não permitiu copiar a imagem; ela foi baixada como arquivo.');
+    } catch (e: any) { setErro(e.message); }
+  };
+  const enviarImagem = async () => {
+    setAvisoImagem(''); setErro('');
+    const gerada = imagemDaSelecao();
+    if (!gerada) return;
+    try { setEnvioImagem({ imagem: await gerada.png, nome: gerada.nome, legenda: gerada.legenda }); } catch (e: any) { setErro(e.message); }
+  };
   const fim = Math.min(LINHAS, janela.inicio + janela.quantidade);
   return <section className="mx-auto flex max-w-[1600px] flex-col gap-4">
     {IMPRESSAO_PLANILHAS_PREVIEW && impressao && <PlanilhaImpressaoPreview {...impressao} fechar={() => setImpressao(null)}/>}
+    {envioImagem && <EnviarImagemPlanilha imagem={envioImagem.imagem} nome={envioImagem.nome} legendaInicial={envioImagem.legenda} fechar={() => setEnvioImagem(null)}/>}
     <dialog ref={dialogoSaida} role="alertdialog" aria-labelledby="titulo-saida-planilha" onCancel={e => { e.preventDefault(); if (!ocupado) concluirSaida(false); }} className="m-auto max-w-md rounded-xl p-5 shadow-xl backdrop:bg-slate-950/70">
       <h2 id="titulo-saida-planilha" className="font-bold">Salvar alterações em {rascunho?.nome}?</h2>
       <p className="my-3 text-sm">Se descartar, as alterações feitas desde o último salvamento serão perdidas.</p>
@@ -369,6 +404,9 @@ export function PlanilhasView() {
           confirmar();
           setImpressao({ planilha: documento, inicio: endereco(limites.primeiraLinha, limites.primeiraColuna), fim: endereco(limites.ultimaLinha, limites.ultimaColuna) });
         }} className="rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800">Imprimir seleção · prévia</button>}
+        <button type="button" onClick={() => void copiarImagem()} title="Copia as células selecionadas como imagem, para colar no WhatsApp ou no e-mail" className="flex items-center gap-1.5 rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800"><Copy size={14}/>Copiar como imagem</button>
+        <button type="button" onClick={() => void enviarImagem()} title="Envia as células selecionadas como imagem pelo WhatsApp da Automação" className="flex items-center gap-1.5 rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800"><Send size={14}/>Enviar imagem no WhatsApp</button>
+        {avisoImagem && <span role="status" className="font-bold text-emerald-800">{avisoImagem}</span>}
         <span className="ml-auto hidden items-center gap-1 text-slate-400 lg:flex"><ArrowDownToLine size={13}/>Cole linhas e colunas de outra planilha</span></div>
       <div className="flex items-center gap-3 border-b px-3 py-2"><span className="w-16 shrink-0 rounded border bg-slate-50 p-2 text-center font-mono text-xs font-bold">{selecionada}</span><FunctionSquare size={18} className="shrink-0 text-slate-400"/><input ref={barraFormula} aria-label={`Conteúdo de ${selecionada}`} placeholder="Digite um valor ou uma fórmula, como =MÉDIA(A1:A5)" value={editando === selecionada ? texto : rascunho.celulas[selecionada] || ''} onFocus={() => { if (!editando || !naBarra) iniciar(selecionada, undefined, true); }} onChange={e => { setTexto(e.target.value.slice(0, MAX_TEXTO_CELULA)); setEditando(selecionada); }} onBlur={confirmar} onKeyDown={e => { if (e.key === 'Enter') { confirmar(); focar(selecionada); } if (e.key === 'Escape') { ignorarBlur.current = true; setEditando(null); focar(selecionada); } }} className="min-w-0 flex-1 rounded p-2 font-mono text-sm outline-none focus:bg-emerald-50"/>
 {editando && intervaloPendente.test(texto) && <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">

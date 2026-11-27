@@ -16,6 +16,9 @@ import { enviarArquivo, enviarTextoTelegram, FalhaCanal, relatorioPdf } from "./
 import { whatsapp } from "./whatsapp.js";
 import type { Canal } from "../src/lib/regrasAutomacao.js";
 
+// ~7,5 MB de PNG; o parser JSON da rota aceita 12 MB.
+const MAX_IMAGEM_BASE64 = 10_000_000;
+const ASSINATURA_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 function config<T>(chave: string, inicial: T): T {
   const row = queryOne<{ dados: string }>("SELECT dados FROM automacao_config WHERE chave=?", [chave]);
   return row ? JSON.parse(row.dados) : inicial;
@@ -320,6 +323,40 @@ export function rotasAutomacao() {
       res.json({ ok: true });
     } catch (e) {
       res.status(502).json({ error: e instanceof FalhaCanal ? e.message : "Falha ao preparar o teste." });
+    }
+  });
+  // Contatos com WhatsApp salvo, usados pelo envio manual de imagens (ex.: seleção da planilha).
+  router.get("/contatos-whatsapp", (_req, res) =>
+    res.json({
+      conectado: whatsapp.conectado(),
+      contatos: vendedores().filter(v => v.waha).map(({ id, nome, waha }) => ({ id, nome, numero: waha })),
+    }),
+  );
+  router.post("/enviar-imagem", async (req, res) => {
+    const dados = z
+      .object({
+        id: z.string().min(1),
+        legenda: z.string().max(1000).default(""),
+        nome: z.string().regex(/^[\w.-]{1,120}\.png$/).default("planilha.png"),
+        imagem: z.string().min(1).max(MAX_IMAGEM_BASE64),
+      })
+      .safeParse(req.body);
+    if (!dados.success) return res.status(400).json({ error: "Selecione o contato e gere a imagem novamente." });
+    const destino = vendedores().find(v => v.id === dados.data.id)?.waha;
+    if (!destino) return res.status(400).json({ error: "Este contato não tem WhatsApp salvo na Automação." });
+    if (isMockModeEnabled()) return res.status(400).json({ error: "Use a base normal para enviar pelo WhatsApp." });
+    const conteudo = Buffer.from(dados.data.imagem, "base64");
+    if (!conteudo.subarray(0, 8).equals(ASSINATURA_PNG)) return res.status(400).json({ error: "A imagem enviada não é um PNG válido." });
+    try {
+      await enviarArquivo("waha", destino, dados.data.legenda.trim(), { nome: dados.data.nome, tipo: "image/png", dados: conteudo });
+      res.json({ ok: true });
+    } catch (e) {
+      const incerta = e instanceof FalhaCanal && e.incerta;
+      res.status(incerta ? 504 : 502).json({
+        error: e instanceof FalhaCanal
+          ? incerta ? e.message + " Confira no celular antes de reenviar." : e.message
+          : "Falha ao enviar a imagem.",
+      });
     }
   });
   router.post("/envios/:id/revisar", (req, res) => {

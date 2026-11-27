@@ -8,6 +8,8 @@
 - O número de versão impede que uma sessão sobrescreva alterações salvas por outra. Em caso de conflito, o rascunho permanece na tela.
 - A interface avisa antes de trocar de planilha ou sair com alterações pendentes.
 - Arraste o mouse ou use Shift + clique/setas para selecionar um intervalo. A barra inferior mostra contagem numérica, média, soma, mínimo e máximo, incluindo resultados de fórmulas e ignorando textos, vazios e erros. A seleção não altera os dados nem precisa ser salva.
+- **Copiar como imagem** gera um PNG da seleção (valores calculados, negrito, cores e larguras das colunas), como o "Copiar como imagem" do Excel, para colar com Ctrl+V no WhatsApp ou no e-mail. O navegador só permite copiar imagem em `localhost` ou HTTPS; fora disso o PNG é baixado como arquivo. Limite de 500 linhas por imagem.
+- **Enviar imagem no WhatsApp** mostra a prévia e envia o PNG, com legenda, para um contato com número salvo na Automação, usando o WhatsApp conectado ali (`GET /api/automacao/contatos-whatsapp`, `POST /api/automacao/enviar-imagem`). Teste: `node scripts/test-planilhas-imagem.cjs` (após build, com Playwright).
 
 ## Cálculos e desempenho
 

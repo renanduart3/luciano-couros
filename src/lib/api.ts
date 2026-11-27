@@ -130,7 +130,9 @@ export const api = {
   createPlanilha: (nome: string) => fetch(API_BASE + '/planilhas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome }) }).then(r => handleResponse<Planilha>(r)),
   savePlanilha: (planilha: Planilha) => fetch(API_BASE + '/planilhas/' + planilha.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(planilha) }).then(r => handleResponse<Planilha>(r)),
   limparPlanilha: (id: string, versao: number, senha: string) => fetch(API_BASE + '/planilhas/' + id + '/limpar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versao, senha }) }).then(r => handleResponse<Planilha>(r)),
-  excluirPlanilha: (id: string, versao: number, senha: string) => fetch(API_BASE + '/planilhas/' + id + '/excluir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versao, senha }) }).then(r => handleResponse<{ success: boolean }>(r)),
+  getContatosWhatsApp: () => fetch(API_BASE + '/automacao/contatos-whatsapp').then(r => handleResponse<{ conectado: boolean; contatos: { id: string; nome: string; numero: string }[] }>(r)),
+  enviarImagemWhatsApp: (dados: { id: string; legenda: string; nome: string; imagem: string }) => fetch(API_BASE + '/automacao/enviar-imagem', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dados) }).then(r => handleResponse<{ ok: true }>(r)),
+  excluirPlanilha:(id: string, versao: number, senha: string) => fetch(API_BASE + '/planilhas/' + id + '/excluir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ versao, senha }) }).then(r => handleResponse<{ success: boolean }>(r)),
 
   // SEGURANÇA LOCAL
   getSegurancaStatus: () =>

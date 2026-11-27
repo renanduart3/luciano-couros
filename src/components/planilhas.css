@@ -1,4 +1,4 @@
-.planilhas-grade { height:60vh; }
+.planilhas-grade { height:calc(100vh - 280px); height:calc(100dvh - 280px); }
 .planilhas-grade table { table-layout:fixed; }
 .planilhas-grade thead th { height:32px!important; padding:0!important; }
 .planilhas-grade tbody tr:not(.planilhas-espaco),

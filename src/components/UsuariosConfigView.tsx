@@ -3,6 +3,42 @@ import { KeyRound, ShieldCheck, UserMinus, UserPlus } from "lucide-react";
 import { api } from "../lib/api";
 import { UsuarioSistema } from "../types";
 
+function SenhaOperacaoCard() {
+  const [configurada, setConfigurada] = useState<boolean | null>(null);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmacao, setConfirmacao] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [retorno, setRetorno] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  useEffect(() => { api.getSegurancaStatus().then(s => setConfigurada(s.pinConfigurado)).catch(() => setConfigurada(null)); }, []);
+  const salvar = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setRetorno(null);
+    if (novaSenha.length < 4) return setRetorno({ tipo: "erro", texto: "A senha de operação deve possuir ao menos 4 caracteres." });
+    if (novaSenha !== confirmacao) return setRetorno({ tipo: "erro", texto: "A confirmação não confere." });
+    setSalvando(true);
+    try {
+      await api.configurarSenhaOperacao(novaSenha);
+      setConfigurada(true); setNovaSenha(""); setConfirmacao("");
+      setRetorno({ tipo: "ok", texto: "Senha de operação salva. A senha antiga deixa de funcionar nas vendas." });
+    } catch (err: any) { setRetorno({ tipo: "erro", texto: err.message || "Não foi possível salvar a senha de operação." }); }
+    finally { setSalvando(false); }
+  };
+  return <form onSubmit={salvar} aria-label="Senha de operação" className="space-y-4 rounded-2xl border border-emerald-200 bg-white p-6 shadow-sm xl:col-span-2">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="max-w-3xl"><h3 className="flex items-center gap-2 font-black text-slate-950"><KeyRound size={19} className="text-emerald-700" /> Senha de operação</h3>
+        <p className="mt-1 text-xs leading-relaxed text-slate-600">É a senha usada <strong>durante as vendas</strong>: liberar preço, cancelar, devolver, reabrir ou estornar. Normalmente o gerente digita; se um vendedor usar, considera-se que o gerente autorizou.</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-600">Ela <strong>não</strong> entra no sistema como gerente. A senha geral do gerente fica em <strong>Sistema, senha do gerente e backups</strong> e precisa ser diferente desta.</p></div>
+      <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${configurada ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{configurada ? "Configurada" : configurada === false ? "Pendente" : "…"}</span>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+      <label className="block text-xs font-black uppercase text-slate-500">Nova senha de operação<input type="password" autoComplete="new-password" required value={novaSenha} onChange={(e) => setNovaSenha(e.target.value.slice(0, 64))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold normal-case text-slate-950" /></label>
+      <label className="block text-xs font-black uppercase text-slate-500">Confirmar senha de operação<input type="password" autoComplete="new-password" required value={confirmacao} onChange={(e) => setConfirmacao(e.target.value.slice(0, 64))} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold normal-case text-slate-950" /></label>
+      <button disabled={salvando} className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><KeyRound size={16} /> {salvando ? "Salvando..." : configurada ? "Trocar senha de operação" : "Cadastrar senha de operação"}</button>
+    </div>
+    {retorno && <p role={retorno.tipo === "erro" ? "alert" : "status"} className={`rounded-xl border p-3 text-xs font-bold ${retorno.tipo === "erro" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>{retorno.texto}</p>}
+  </form>;
+}
+
 export function UsuariosConfigView() {
   const [usuarios, setUsuarios] = useState<UsuarioSistema[]>([]);
   const [nome, setNome] = useState("");
@@ -57,6 +93,7 @@ export function UsuariosConfigView() {
   };
 
   return <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
+    <SenhaOperacaoCard />
     <form onSubmit={cadastrar} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="border-b border-slate-100 pb-4"><h3 className="flex items-center gap-2 font-black text-slate-950"><UserPlus size={19} className="text-emerald-700" /> Novo vendedor</h3><p className="mt-1 text-xs text-slate-500">O vendedor trocará a senha provisória no primeiro acesso.</p></div>
       <label className="block text-xs font-black uppercase text-slate-500">Nome<input required value={nome} onChange={(e) => setNome(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-bold normal-case text-slate-950" /></label>

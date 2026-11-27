@@ -198,7 +198,7 @@ function ConteudoOrdemDetalhes({ ordem, onClose, onChanged, recebimentoDestaque 
   const encerrar = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!encerramento || !planoCancelamento || saving) return;
-    if (pinEncerramento.length < 4) return setError("Informe a senha do gerente para continuar.");
+    if (pinEncerramento.length < 4) return setError("Informe a senha de operação para continuar.");
     setSaving(true);
     setError("");
     try {
@@ -271,7 +271,7 @@ function ConteudoOrdemDetalhes({ ordem, onClose, onChanged, recebimentoDestaque 
           <p>Vales afetados: {planoCancelamento.vales.map(v => `#${v.numero} (${formatCurrency(v.valor)})`).join(", ") || "Nenhum pagamento vinculado"}</p>
           <p>Ordens dos recebimentos: {planoCancelamento.ordens.map(o => `#${o.numero}`).join(", ") || "Nenhuma"}</p>
         </div> : !error && <p className="text-xs">Conferindo valores…</p>}
-        <label className="block text-[10px] font-black uppercase text-slate-600">Senha do gerente<input autoFocus type="password" autoComplete="off" value={pinEncerramento} onChange={(event) => { setPinEncerramento(event.target.value.slice(0, 64)); setError(""); }} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /></label>
+        <label className="block text-[10px] font-black uppercase text-slate-600">Senha de operação<input autoFocus type="password" autoComplete="off" value={pinEncerramento} onChange={(event) => { setPinEncerramento(event.target.value.slice(0, 64)); setError(""); }} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-widest" /></label>
         <label className="block text-[10px] font-black uppercase text-slate-600">Motivo (opcional)<textarea rows={2} value={motivoEncerramento} onChange={(event) => setMotivoEncerramento(event.target.value.slice(0, 300))} placeholder="Ex.: cliente solicitou novas datas" className="mt-1 w-full rounded-xl border border-slate-300 p-3 text-sm font-bold" /></label>
         {error && <div className="flex items-center gap-2 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-black text-red-800"><AlertCircle size={16}/>{error}</div>}
       </div>

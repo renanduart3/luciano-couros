@@ -240,7 +240,7 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
     event.preventDefault();
     if (!activeHistory || !produtoRemocao) return;
     if (pinRemocao.length < 4 || pinRemocao.length > 64) {
-      setErroRemocao("Informe a senha do gerente.");
+      setErroRemocao("Informe a senha de operação.");
       return;
     }
     const produto = produtoRemocao;
@@ -290,8 +290,8 @@ export function ClientesView({ onRefreshStats, onOpenVale }: ClientesViewProps) 
               <p className="mt-1 text-xs font-bold text-red-800">Remover {produtoRemocao.nome}{produtoRemocao.fornecedorReferencia ? ` — ref. ${produtoRemocao.fornecedorReferencia}` : ""} deste cliente?</p>
             </div>
             <div className="space-y-3 p-5">
-              <span className="block text-xs font-black text-slate-600">PIN ADMINISTRATIVO</span>
-              <PinAdministrativoInput autoFocus value={pinRemocao} onChange={value => { setPinRemocao(value); setErroRemocao(""); }} label="PIN administrativo" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-widest outline-none" />
+              <span className="block text-xs font-black text-slate-600">SENHA DE OPERAÇÃO</span>
+              <PinAdministrativoInput autoFocus value={pinRemocao} onChange={value => { setPinRemocao(value); setErroRemocao(""); }} label="Senha de operação" className="w-full rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-center text-xl font-black tracking-widest outline-none" />
               {erroRemocao && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700">{erroRemocao}</p>}
             </div>
             <div className="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 p-4">

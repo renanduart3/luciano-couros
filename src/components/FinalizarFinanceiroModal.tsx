@@ -20,7 +20,7 @@ export function FinalizarFinanceiroModal({ titulo, restante, excedente, demonstr
   const [visualizacao, setVisualizacao] = useState<"demonstrativo" | "recebimento" | null>(null);
   const confirmar = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (pin.length < 4) return setErro("Informe a senha do gerente.");
+    if (pin.length < 4) return setErro("Informe a senha de operação.");
     if (!bonusFinal.trim() || !Number.isFinite(Number(bonusFinal)) || Number(bonusFinal) < 0) return setErro("Informe um bônus válido, maior ou igual a zero.");
     setSalvando(true); setErro("");
     try { const resultado = await onConfirm({ pin, destinoRestante: "novo_vale", bonusFinal: Number(bonusFinal), motivo }); setSucesso(resultado.mensagem); }
@@ -43,7 +43,7 @@ export function FinalizarFinanceiroModal({ titulo, restante, excedente, demonstr
           {restante > 0.005 && <p className="rounded-xl border p-3 text-sm font-bold">O saldo devedor será transferido para outro vale, identificado com todos os vales de origem.</p>}
 
           <label className="block text-[10px] font-black uppercase text-slate-600">Observação<textarea rows={2} value={motivo} onChange={e => setMotivo(e.target.value.slice(0, 300))} className="mt-1 w-full rounded-xl border p-3 text-sm font-bold"/></label>
-          <label className="block text-[10px] font-black uppercase text-slate-600">Senha do gerente<input type="password" autoComplete="off" value={pin} onChange={e => { setPin(e.target.value.slice(0, 64)); setErro(""); }} className="mt-1 w-full rounded-xl border p-3 text-center font-black tracking-widest"/></label>
+          <label className="block text-[10px] font-black uppercase text-slate-600">Senha de operação<input type="password" autoComplete="off" value={pin} onChange={e => { setPin(e.target.value.slice(0, 64)); setErro(""); }} className="mt-1 w-full rounded-xl border p-3 text-center font-black tracking-widest"/></label>
           {erro && <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs font-bold text-red-800">{erro}</p>}
         </>}
       </div>

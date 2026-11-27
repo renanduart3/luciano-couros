@@ -22,7 +22,7 @@ export function PinAdministrativoInput({ value, onChange, label, className, auto
       maxLength={usarSenha ? 64 : 4}
       pattern={usarSenha ? undefined : "[0-9]{4}"}
       required={required}
-      aria-label={usarSenha ? "Senha do gerente" : label}
+      aria-label={usarSenha ? "Senha de operação" : label}
       placeholder={usarSenha ? "Senha" : "PIN"}
       value={value}
       onChange={event => onChange(usarSenha ? event.target.value : event.target.value.replace(/\D/g, "").slice(0, 4))}
@@ -37,6 +37,6 @@ export function PinAdministrativoInput({ value, onChange, label, className, auto
     <button type="button" className="text-[10px] font-bold text-slate-600 underline" onClick={() => {
       onChange("");
       setUsarSenha(!usarSenha);
-    }}>{usarSenha ? "Usar PIN" : "Usar senha do gerente"}</button>
+    }}>{usarSenha ? "Senha só com números" : "Senha com letras"}</button>
   </span>;
 }

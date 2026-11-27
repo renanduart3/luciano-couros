@@ -176,7 +176,7 @@ export function CarteiraClienteView({ onRefreshStats, clienteInicialId, onRecebi
   };
 
   const estornar = async (recebimentoId: string) => {
-    const pin = prompt("INFORME A SENHA DO GERENTE PARA ESTORNAR ESTE RECEBIMENTO:");
+    const pin = prompt("INFORME A SENHA DE OPERAÇÃO PARA ESTORNAR ESTE RECEBIMENTO:");
     if (!pin) return;
     if (!await confirmacao.confirmar({
       titulo: "Estornar recebimento",

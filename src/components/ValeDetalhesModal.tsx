@@ -104,7 +104,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
   };
 
   const cancelarVale = async () => {
-    if (pin.length < 4 || pin.length > 64) return setErro("Informe a senha do gerente.");
+    if (pin.length < 4 || pin.length > 64) return setErro("Informe a senha de operação.");
     setSalvando(true);
     setErro("");
     try {
@@ -119,7 +119,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
   };
 
   const devolverItens = async () => {
-    if (pin.length < 4 || pin.length > 64) return setErro("Informe a senha do gerente.");
+    if (pin.length < 4 || pin.length > 64) return setErro("Informe a senha de operação.");
     const selecionados = itens
       .map((item) => ({
         itemVendaId: item.id,
@@ -190,7 +190,7 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
             <div className="vale-header-tools">
               {linkWhatsApp && <a href={linkWhatsApp} target="_blank" rel="noreferrer noopener" title="WhatsApp" aria-label="WhatsApp" className="vale-icon-button text-emerald-700"><MessageCircle size={19}/></a>}
               <button type="button" onClick={imprimir} title="Imprimir vale" aria-label="Imprimir vale" className="vale-icon-button"><Printer size={19}/></button>
-              {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setAba("itens"); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} title="Devolver itens do vale (requer senha administrativa)" aria-label="Devolver itens do vale" className="vale-icon-button text-violet-800"><RotateCcw size={19}/></button>}
+              {!bloqueado && onUpdated && vale.status !== "cancelada" && itens.some(item => Number(item.quantidadeDisponivel ?? item.quantidade) > 0.005) && <button type="button" onClick={() => { setAba("itens"); setModo("devolver"); setErro(""); setPin(""); setMotivo(""); setResultadoDevolucao(""); }} title="Devolver itens do vale (requer senha de operação)" aria-label="Devolver itens do vale" className="vale-icon-button text-violet-800"><RotateCcw size={19}/></button>}
             </div>
           </div>
           <button type="button" title="Fechar" aria-label="Fechar detalhes do vale" onClick={onClose} className="vale-icon-button vale-header-close"><X size={20}/></button>
@@ -215,14 +215,14 @@ function ConteudoValeDetalhes({ vale, onClose, onUpdated, ordemCobranca, onOpenO
                 </div>
               </div>
               <div className="grid gap-2 sm:grid-cols-2"><label className="text-[10px] font-black uppercase text-violet-900">Data da devolução<input type="date" value={dataDevolucao} onChange={(event) => setDataDevolucao(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold" /></label><label className="text-[10px] font-black uppercase text-violet-900">Observação<input value={motivo} maxLength={100} onChange={(event) => setMotivo(event.target.value.slice(0, 100))} placeholder="Motivo ou detalhes (opcional, até 100 caracteres)" className="mt-1 min-h-11 w-full rounded-xl border border-violet-200 bg-white px-3 text-sm font-bold normal-case" /></label></div>
-              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha do gerente" className="min-h-11 flex-1 rounded-xl border border-violet-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={devolverItens} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-800 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Validar devolução</button></div>
+              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha de operação" className="min-h-11 flex-1 rounded-xl border border-violet-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={devolverItens} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-800 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Validar devolução</button></div>
               {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
 
             {modo === "cancelar" && <div className="space-y-3 rounded-2xl border border-red-300 bg-red-50 p-4">
               <div className="flex items-center justify-between gap-3"><div><h3 className="font-black text-red-950">Cancelar vale #{vale.numeroSequencial}</h3><p className="text-xs font-semibold text-red-800">Sai da contabilidade e permanece no histórico.</p></div><button type="button" onClick={() => setModo(null)} className="rounded-lg p-2 text-red-800"><X size={17} /></button></div>
               <input value={motivo} onChange={(event) => setMotivo(event.target.value)} placeholder="Motivo do cancelamento (opcional)" className="min-h-11 w-full rounded-xl border border-red-200 bg-white px-3 text-sm font-bold" />
-              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha do gerente" className="min-h-11 flex-1 rounded-xl border border-red-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={cancelarVale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Confirmar cancelamento</button></div>
+              <div className="flex flex-col gap-2 sm:flex-row"><input type="password" value={pin} onChange={(event) => { setPin(event.target.value.slice(0, 64)); setErro(""); }} placeholder="Senha de operação" className="min-h-11 flex-1 rounded-xl border border-red-300 bg-white px-3 text-center font-black tracking-widest" /><button type="button" disabled={salvando} onClick={cancelarVale} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-xs font-black uppercase text-white disabled:opacity-50"><ShieldCheck size={16} /> Confirmar cancelamento</button></div>
               {erro && <p className="rounded-lg border border-red-200 bg-white p-2 text-xs font-bold text-red-800">{erro}</p>}
             </div>}
 

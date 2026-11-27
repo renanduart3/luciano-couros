@@ -39,7 +39,7 @@ export function resolverLinhaDevolucao(entrada: any, clienteId: string, vendaId:
   if (entrada.unidade && entrada.unidade !== origem.unidade) erro('A unidade da devolução deve ser a mesma da compra.');
   if (Number(entrada.desconto || 0) !== 0) erro('Devolução não aceita desconto adicional.');
   const preservar = atual?.itemOrigemId === origemId && Number(atual.quantidade)<0;
-  if (entrada.precoDevolucaoAlterado === true && !autorizado) throw Object.assign(new Error('Senha administrativa inválida para alterar o preço de devolução.'), { statusCode: 403 });
+  if (entrada.precoDevolucaoAlterado === true && !autorizado) throw Object.assign(new Error('Senha de operação inválida para alterar o preço de devolução.'), { statusCode: 403 });
   const precoBase = preservar ? Number(atual.precoUnitario) : origem.preco;
   const preco = entrada.precoDevolucaoAlterado === true && autorizado ? Number(entrada.precoUnitario) : precoBase;
   if (!Number.isFinite(preco) || preco < 0) erro('Informe um preço de devolução válido.');

@@ -38,13 +38,73 @@ function numeroLiteral(valor: string): boolean {
   catch { return false; }
 }
 export function endereco(linha: number, coluna: number) { return `${String.fromCharCode(65 + coluna)}${linha + 1}`; }
-export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<string>(), cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }): Decimal {
+
+// Datas como no Excel: dd/mm/aaaa (ou dd/mm/aa) vira o número de dias desde 30/12/1899,
+// o que permite tirar a média de datas (prazo médio) e somar dias a uma data.
+const BASE_DATA = Date.UTC(1899, 11, 30);
+const DIA_MS = 86400000;
+export function serialData(texto: string): number | null {
+  const partes = /^(\d{1,2})\/(\d{1,2})\/(\d{4}|\d{2})$/.exec(texto.trim());
+  if (!partes) return null;
+  const dia = Number(partes[1]), mes = Number(partes[2]);
+  let ano = Number(partes[3]);
+  if (partes[3].length === 2) ano += ano < 30 ? 2000 : 1900;
+  if (ano < 1900) return null;
+  const utc = Date.UTC(ano, mes - 1, dia), data = new Date(utc);
+  if (data.getUTCFullYear() !== ano || data.getUTCMonth() !== mes - 1 || data.getUTCDate() !== dia) return null;
+  return Math.round((utc - BASE_DATA) / DIA_MS);
+}
+function formatarData({ n, d }: Decimal) {
+  // Como o Excel, a fração do dia (horas) é descartada na exibição.
+  let dias = n / d;
+  if (n < 0n && n % d !== 0n) dias -= 1n;
+  const data = new Date(BASE_DATA + Number(dias) * DIA_MS);
+  if (Number.isNaN(data.getTime()) || data.getUTCFullYear() > 9999 || data.getUTCFullYear() < 1900) return "#VALOR!";
+  return `${String(data.getUTCDate()).padStart(2, "0")}/${String(data.getUTCMonth() + 1).padStart(2, "0")}/${data.getUTCFullYear()}`;
+}
+type TiposData = Map<string, boolean>;
+const formulaMediaDatas = /^=\s*(M[ÉE]DIA|MEDIANA)\s*\(\s*([A-Z]\d+)\s*:\s*([A-Z]\d+)\s*\)\s*$/i;
+const formulaDataMaisDias = /^=\s*([A-Z]\d+)\s*(?:[+-]\s*\d+(?:[.,]\d+)?\s*)?$/i;
+function intervaloSoDeDatas(celulas: Celulas, inicio: string, fim: string, tipos: TiposData, visitando: Set<string>) {
+  if (!enderecoValido(inicio) || !enderecoValido(fim)) return false;
+  const { primeiraLinha, ultimaLinha, primeiraColuna, ultimaColuna } = limitesSelecao(inicio, fim);
+  let datas = 0;
+  for (let l = primeiraLinha; l <= ultimaLinha; l++) for (let c = primeiraColuna; c <= ultimaColuna; c++) {
+    const ref = endereco(l, c), conteudo = (celulas[ref] || "").trim();
+    if (!conteudo) continue;
+    if (ehData(celulas, ref, tipos, visitando)) datas++;
+    else if (conteudo.startsWith("=") || numeroLiteral(conteudo)) return false;
+  }
+  return datas > 0;
+}
+/** Indica se a célula guarda (ou calcula) uma data: data digitada, média de datas ou data ± dias. */
+export function ehData(celulas: Celulas, id: string, tipos: TiposData = new Map(), visitando = new Set<string>()): boolean {
+  const salvo = tipos.get(id);
+  if (salvo !== undefined) return salvo;
+  if (visitando.has(id) || visitando.size > 100) return false;
+  const texto = (celulas[id] || "").trim();
+  let resultado = false;
+  if (!texto.startsWith("=")) resultado = serialData(texto) !== null;
+  else {
+    visitando.add(id);
+    const media = formulaMediaDatas.exec(texto), deslocamento = formulaDataMaisDias.exec(texto);
+    if (media) resultado = intervaloSoDeDatas(celulas, media[2].toUpperCase(), media[3].toUpperCase(), tipos, visitando);
+    else if (deslocamento) resultado = enderecoValido(deslocamento[1].toUpperCase()) && ehData(celulas, deslocamento[1].toUpperCase(), tipos, visitando);
+    visitando.delete(id);
+  }
+  tipos.set(id, resultado);
+  return resultado;
+}
+
+export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<string>(), cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }, tipos: TiposData = new Map()): Decimal {
   if (!enderecoValido(id)) throw new Error("#REF!");
   if (caminho.has(id)) throw new Error("#CICLO!");
   if (cache.has(id)) return cache.get(id)!;
   if (caminho.size > 100) throw new Error("#LIMITE!");
   const texto = (celulas[id] || "").trim();
   if (!texto) return numero(0n);
+  const serial = texto.startsWith("=") ? null : serialData(texto);
+  if (serial !== null) return numero(BigInt(serial));
   if (!texto.startsWith("=")) return texto.endsWith("%") ? multiplicar(literal(texto.slice(0, -1)), numero(1n, 100n)) : literal(texto);
   if (--limite.restante < 0) throw new Error("#LIMITE!");
   const fonte = texto.slice(1).toUpperCase();
@@ -53,7 +113,7 @@ export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<st
   if (tokens.join("") !== fonte.replace(/\s/g, "")) throw new Error("#FÓRMULA!");
   let pos = 0;
   const proximo = new Set(caminho).add(id);
-  const referencia = (ref: string) => avaliarCelula(celulas, ref, proximo, cache, limite);
+  const referencia = (ref: string) => avaliarCelula(celulas, ref, proximo, cache, limite, tipos);
   const exigir = (token: string) => { if (tokens[pos++] !== token) throw new Error("#FÓRMULA!"); };
   function primario(): Decimal {
     const token = tokens[pos++];
@@ -69,6 +129,9 @@ export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<st
         if (token === "MEDIANA") valores.push(item);
         else valor = somar(valor, item);
       };
+      // Datas de um intervalo: a SOMA as ignora (como rótulos); MÉDIA e MEDIANA só as usam
+      // quando o intervalo não tem números, para calcular a data média.
+      const datas: string[] = [];
       do {
         if (tokens[pos] === ";") pos++;
         if (/^[A-Z]+\d+$/.test(tokens[pos] || "") && tokens[pos + 1] === ":") {
@@ -81,12 +144,14 @@ export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<st
             const ref = endereco(l, c), conteudo = (celulas[ref] || "").trim();
             // Como em uma soma de planilha, rótulos em intervalos são ignorados.
             if (!conteudo) continue;
+            if (ehData(celulas, ref, tipos)) { datas.push(ref); continue; }
             if (!conteudo.startsWith("=") && !numeroLiteral(conteudo)) continue;
             incluir(referencia(ref));
           }
         } else incluir(expressao());
       } while (tokens[pos] === ";");
       exigir(")");
+      if (!quantidade && datas.length && token !== "SOMA" && token !== "SUM") for (const ref of datas) incluir(referencia(ref));
       if (token === "MEDIA" || token === "MÉDIA") valor = numero(valor.n, valor.d * BigInt(quantidade));
       if (token === "MEDIANA") {
         if (!quantidade) throw new Error("#VALOR!");
@@ -127,7 +192,7 @@ export function avaliarCelula(celulas: Celulas, id: string, caminho = new Set<st
   cache.set(id, resultado);
   return resultado;
 }
-export type ExibicaoCelula = { texto: string; erro: boolean; numerico: boolean; valor?: Decimal };
+export type ExibicaoCelula = { texto: string; erro: boolean; numerico: boolean; valor?: Decimal; data?: boolean };
 function formatarDecimal({ n, d }: Decimal, moeda = false) {
   const negativo = n < 0n, absoluto = negativo ? -n : n;
   const centavos = (absoluto * 100n * 2n + d) / (d * 2n);
@@ -135,12 +200,17 @@ function formatarDecimal({ n, d }: Decimal, moeda = false) {
   const fracao = (centavos % 100n).toString().padStart(2, "0");
   return `${negativo && centavos ? "-" : ""}${moeda ? "R$ " : ""}${inteiro}${moeda || fracao !== "00" ? `,${fracao}` : ""}`;
 }
-export function apresentarCelula(celulas: Celulas, id: string, moeda: boolean, cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }): ExibicaoCelula {
+export function apresentarCelula(celulas: Celulas, id: string, moeda: boolean, cache = new Map<string, Decimal>(), limite: LimiteCalculo = { restante: 200000 }, tipos: TiposData = new Map()): ExibicaoCelula {
   const original = celulas[id] || "";
   if (!original.trim()) return { texto: "", erro: false, numerico: false };
-  if (!original.startsWith("=") && !numeroLiteral(original)) return { texto: original, erro: false, numerico: false };
+  const data = ehData(celulas, id, tipos);
+  if (!original.startsWith("=") && !data && !numeroLiteral(original)) return { texto: original, erro: false, numerico: false };
   try {
-    const valor = avaliarCelula(celulas, id, new Set(), cache, limite);
+    const valor = avaliarCelula(celulas, id, new Set(), cache, limite, tipos);
+    if (data) {
+      const texto = formatarData(valor);
+      return texto.startsWith("#") ? { texto, erro: true, numerico: false } : { texto, erro: false, numerico: true, valor, data: true };
+    }
     const texto = !original.startsWith("=") && original.trim().endsWith("%") ? original.trim() : formatarDecimal(valor, moeda);
     return { texto, erro: false, numerico: true, valor };
   } catch (e) { return { texto: (e as Error).message, erro: true, numerico: false }; }
@@ -150,7 +220,8 @@ export function calcularPlanilha(celulas: Celulas, moedas: string[]) {
   const cache = new Map<string, Decimal>();
   const formatos = new Set(moedas);
   const limite = { restante: 200000 };
-  return Object.fromEntries(Object.keys(celulas).map(id => [id, apresentarCelula(celulas, id, formatos.has(id), cache, limite)]));
+  const tipos: TiposData = new Map();
+  return Object.fromEntries(Object.keys(celulas).map(id => [id, apresentarCelula(celulas, id, formatos.has(id), cache, limite, tipos)]));
 }
 
 export function limitesSelecao(inicio: string, fim: string) {
@@ -158,17 +229,28 @@ export function limitesSelecao(inicio: string, fim: string) {
   const c1 = inicio.charCodeAt(0) - 65, c2 = fim.charCodeAt(0) - 65;
   return { primeiraLinha: Math.min(l1,l2), ultimaLinha: Math.max(l1,l2), primeiraColuna: Math.min(c1,c2), ultimaColuna: Math.max(c1,c2) };
 }
-export function resumirSelecao(exibicao: Record<string, ExibicaoCelula>, inicio: string, fim: string) {
+export type ResumoSelecao = { quantidade: number; soma: string; media: string; minimo: string; maximo: string; erro: boolean; datas?: number };
+export function resumirSelecao(exibicao: Record<string, ExibicaoCelula>, inicio: string, fim: string): ResumoSelecao {
   const limites = limitesSelecao(inicio, fim);
   let quantidade = 0, soma = numero(0n), minimo: Decimal | undefined, maximo: Decimal | undefined;
+  let datas = 0, somaDatas = numero(0n), primeiraData: Decimal | undefined, ultimaData: Decimal | undefined;
+  const menor = (a: Decimal, b: Decimal) => a.n * b.d < b.n * a.d;
   try {
     for (let l = limites.primeiraLinha; l <= limites.ultimaLinha; l++) for (let c = limites.primeiraColuna; c <= limites.ultimaColuna; c++) {
-      const valor = exibicao[endereco(l,c)]?.valor;
+      const celula = exibicao[endereco(l,c)], valor = celula?.valor;
       if (!valor) continue;
+      if (celula.data) {
+        datas++; somaDatas = somar(somaDatas, valor);
+        if (!primeiraData || menor(valor, primeiraData)) primeiraData = valor;
+        if (!ultimaData || menor(ultimaData, valor)) ultimaData = valor;
+        continue;
+      }
       quantidade++; soma = somar(soma, valor);
-      if (!minimo || valor.n * minimo.d < minimo.n * valor.d) minimo = valor;
-      if (!maximo || valor.n * maximo.d > maximo.n * valor.d) maximo = valor;
+      if (!minimo || menor(valor, minimo)) minimo = valor;
+      if (!maximo || menor(maximo, valor)) maximo = valor;
     }
+    // Seleção só de datas: mostra a data média, a primeira e a última.
+    if (!quantidade && datas) return { quantidade: 0, datas, soma: '—', media: formatarData(numero(somaDatas.n, somaDatas.d * BigInt(datas))), minimo: formatarData(primeiraData!), maximo: formatarData(ultimaData!), erro: false };
     return { quantidade, soma: quantidade ? formatarDecimal(soma) : '—', media: quantidade ? formatarDecimal(numero(soma.n, soma.d * BigInt(quantidade))) : '—', minimo: minimo ? formatarDecimal(minimo) : '—', maximo: maximo ? formatarDecimal(maximo) : '—', erro: false };
   } catch {
     return { quantidade, soma: '—', media: '—', minimo: '—', maximo: '—', erro: true };

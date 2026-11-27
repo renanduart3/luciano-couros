@@ -148,7 +148,13 @@ export const api = {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(dados)
-    }).then(r => handleResponse<{ success: boolean; nome: string; pinConfigurado: boolean }>(r)),
+    }).then(r => handleResponse<{ success: boolean; nome: string; senhaGerenteConfigurada: boolean }>(r)),
+  configurarSenhaOperacao: (novaSenha: string) =>
+    fetch(`${API_BASE}/seguranca/senha-operacao`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ novaSenha })
+    }).then(r => handleResponse<{ success: boolean; pinConfigurado: boolean }>(r)),
 
   // DASHBOARD
   getDashboard: () => fetch(`${API_BASE}/dashboard`).then(r => handleResponse<DashboardStats>(r)),

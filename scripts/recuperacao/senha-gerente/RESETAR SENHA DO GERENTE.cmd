@@ -7,11 +7,18 @@ echo ===============================================
 echo       RESET DE SENHA - CENTRAL DE TECIDOS
 echo ===============================================
 echo.
-echo Este comando redefine a senha do gerente para:
+echo Este comando redefine a SENHA DO GERENTE (a senha geral,
+echo usada para entrar no sistema como gerente) para:
 echo Altinopolis
 echo.
-echo No proximo acesso, o gerente devera cadastrar
-echo uma nova senha antes de usar o sistema.
+echo No proximo acesso, entre com o usuario "gerente" e essa senha.
+echo O sistema vai pedir uma senha nova, diferente da senha de operacao.
+echo.
+echo A SENHA DE OPERACAO (usada nas vendas para liberar preco,
+echo cancelar etc.) NAO muda. Ela e trocada pelo gerente em
+echo Configuracoes - Usuarios e senha de operacao.
+echo.
+echo Use somente no computador servidor, com o sistema ligado.
 echo.
 set /p "CONFIRMA=Digite SIM para continuar: "
 if /I not "%CONFIRMA%"=="SIM" (

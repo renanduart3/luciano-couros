@@ -136,7 +136,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
       return;
     }
     if (novoPin !== confirmarPin) {
-      setPinFeedback({ type: "error", text: "A confirmação do PIN não confere." });
+      setPinFeedback({ type: "error", text: "A confirmação da senha não confere." });
       return;
     }
 
@@ -144,21 +144,22 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
     try {
       const result = await api.configurarPinAdministrador({
         nome: adminNome.trim() || "Administrador",
-        pinAtual: seguranca?.pinConfigurado ? pinAtual : undefined,
+        pinAtual: seguranca?.senhaGerenteConfigurada ? pinAtual : undefined,
         novoPin
       });
       setSeguranca((atual) => ({
         usuarioId: atual?.usuarioId || "usuario_admin",
         nome: result.nome,
-        pinConfigurado: true
+        pinConfigurado: atual?.pinConfigurado ?? false,
+        senhaGerenteConfigurada: true
       }));
       setAdminNome(result.nome);
       setPinAtual("");
       setNovoPin("");
       setConfirmarPin("");
-      setPinFeedback({ type: "success", text: "PIN administrativo salvo com segurança." });
+      setPinFeedback({ type: "success", text: "Senha do gerente salva. Use-a só para entrar no sistema como gerente." });
     } catch (err: any) {
-      setPinFeedback({ type: "error", text: err.message || "Erro ao salvar o PIN." });
+      setPinFeedback({ type: "error", text: err.message || "Erro ao salvar a senha do gerente." });
     } finally {
       setSavingPin(false);
     }
@@ -213,11 +214,11 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
           Informações da loja
         </button>
         <button type="button" onClick={() => setActiveTab("usuarios")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-medium transition-colors ${activeTab === "usuarios" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
-          Usuários e acessos
+          Usuários e senha de operação
         </button>
         <button type="button" onClick={() => setActiveTab("automacao")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-medium ${activeTab === "automacao" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500"}`}>Automação</button>
         <button type="button" onClick={() => setActiveTab("sistema")} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-medium transition-colors ${activeTab === "sistema" ? "bg-white text-slate-950 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
-          Sistema, PIN e backups
+          Sistema, senha do gerente e backups
         </button>
       </div>
 
@@ -271,18 +272,20 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
               <div className="flex items-start justify-between gap-3 border-b border-slate-50 pb-3">
                 <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
                   <KeyRound size={16} className="text-amber-600" />
-                  Senha do gerente
+                  Senha do gerente (acesso geral)
                 </h3>
                 <span className={`rounded-full px-2 py-1 text-[9px] font-extrabold uppercase ${
-                  seguranca?.pinConfigurado ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                  seguranca?.senhaGerenteConfigurada ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                 }`}>
-                  {seguranca?.pinConfigurado ? "Configurado" : "Pendente"}
+                  {seguranca?.senhaGerenteConfigurada ? "Configurada" : "Pendente"}
                 </span>
               </div>
 
-              <p className="text-[11px] leading-relaxed text-slate-500">
-                Usada pelo gerente para entrar no sistema, ver custos e lucros e autorizar ações administrativas.
-              </p>
+              <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-950">
+                <p><strong>Senha geral do gerente.</strong> Usada só para entrar no sistema como gerente e ver tudo: relatórios, custos, lucros e configurações.</p>
+                <p>Não digite esta senha nas vendas. Para liberar preço, cancelar ou reabrir, use a <strong>senha de operação</strong>, em Usuários e senha de operação. As duas senhas precisam ser diferentes.</p>
+                <p>Esqueceu? No computador servidor, abra <code className="break-all rounded bg-white px-1 font-bold">{"scripts\\recuperacao\\senha-gerente\\RESETAR SENHA DO GERENTE.cmd"}</code>. A senha volta a ser <strong>Altinopolis</strong> e o sistema pede uma nova no próximo acesso.</p>
+              </div>
 
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-400 uppercase">Responsável</label>
@@ -295,9 +298,9 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 />
               </div>
 
-              {seguranca?.pinConfigurado && (
+              {seguranca?.senhaGerenteConfigurada && (
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-400 uppercase">Senha atual</label>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Senha atual do gerente</label>
                   <input
                     type="password"
                     autoComplete="current-password"
@@ -349,7 +352,7 @@ export function BackupConfigView({ onRefreshConfig, initialTab = "loja" }: Backu
                 disabled={savingPin}
                 className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md transition-colors disabled:opacity-50"
               >
-                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.pinConfigurado ? "Alterar senha" : "Configurar senha"}
+                <KeyRound size={14} /> {savingPin ? "Protegendo..." : seguranca?.senhaGerenteConfigurada ? "Alterar senha do gerente" : "Configurar senha do gerente"}
               </button>
             </form>
 

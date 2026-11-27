@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownToLine, Check, Copy, FunctionSquare, Send, Plus, Save, Sheet, Table2, Trash2, Eraser, RefreshCw } from "lucide-react";
+import { Bold, Calculator, Check, Copy, Ellipsis, Eraser, FunctionSquare, Plus, Printer, RefreshCw, Save, Send, Sheet, Sigma, Trash2 } from "lucide-react";
 import { calcularPlanilha, limitesSelecao, resumirSelecao, CORES_CELULA, type FormatoCelula, COLUNAS, endereco, LINHAS, MAX_PLANILHAS, MAX_TEXTO_CELULA, ULTIMA_COLUNA } from "../lib/planilhas";
 import { api } from "../lib/api";
 import { Planilha, PlanilhaResumo } from "../types";
@@ -372,6 +372,69 @@ export function PlanilhasView() {
     if (!gerada) return;
     try { setEnvioImagem({ imagem: await gerada.png, nome: gerada.nome, legenda: gerada.legenda }); } catch (e: any) { setErro(e.message); }
   };
+  const menuMais = useRef<HTMLDetailsElement>(null);
+  const fecharMenu = () => { if (menuMais.current) menuMais.current.open = false; };
+  // AutoSoma e Média como no Excel: o resultado vai para a célula logo abaixo da seleção
+  // (ou à direita, se a seleção for uma linha). Com uma célula vazia selecionada, usa os
+  // valores logo acima dela (ou à esquerda).
+  const autoCalcular = (funcao: 'SOMA' | 'MÉDIA') => {
+    if (!rascunho) return;
+    const celulas = editando ? { ...rascunho.celulas, [editando]: textoDaFormula(texto) } : rascunho.celulas;
+    if (editando) confirmar();
+    setErro('');
+    const valorEm = (l: number, c: number) => Boolean(exibicao[endereco(l, c)]?.valor);
+    const vazia = (l: number, c: number) => !celulas[endereco(l, c)];
+    const { primeiraLinha: l1, ultimaLinha: l2, primeiraColuna: c1, ultimaColuna: c2 } = limites;
+    if (l1 === l2 && c1 === c2 && vazia(l1, c1)) {
+      const destino = endereco(l1, c1);
+      let inicio = l1;
+      while (inicio > 0 && valorEm(inicio - 1, c1)) inicio--;
+      if (inicio < l1) { escrever(destino, `=${funcao}(${endereco(inicio, c1)}:${endereco(l1 - 1, c1)})`); focar(destino); return; }
+      let esquerda = c1;
+      while (esquerda > 0 && valorEm(l1, esquerda - 1)) esquerda--;
+      if (esquerda < c1) { escrever(destino, `=${funcao}(${endereco(l1, esquerda)}:${endereco(l1, c1 - 1)})`); focar(destino); return; }
+      // Sem valores ao lado: abre a fórmula para o cliente arrastar sobre as células.
+      iniciar(destino, `=${funcao}(`);
+      setAviso('Arraste sobre as células com os valores e solte para concluir.');
+      return;
+    }
+    if (l1 === l2 && c1 !== c2) {
+      // Uma linha selecionada: resultado à direita (ou na última célula, se ela estiver vazia).
+      let fimValores = c2, destino = c2 + 1;
+      if (vazia(l1, c2)) { fimValores = c2 - 1; destino = c2; }
+      while (destino < COLUNAS && !vazia(l1, destino)) destino++;
+      if (destino >= COLUNAS) { setErro('Não há célula vazia à direita da seleção para colocar o resultado.'); return; }
+      const alvo = endereco(l1, destino);
+      escrever(alvo, `=${funcao}(${endereco(l1, c1)}:${endereco(l1, fimValores)})`);
+      focar(alvo);
+      return;
+    }
+    // Uma ou mais colunas: um resultado por coluna, na mesma linha, logo abaixo.
+    const colunas = Array.from({ length: c2 - c1 + 1 }, (_, i) => c1 + i);
+    let fimValores = l2, destino = l2 + 1;
+    if (l2 > l1 && colunas.every(c => vazia(l2, c))) { fimValores = l2 - 1; destino = l2; }
+    while (destino < LINHAS && colunas.some(c => !vazia(destino, c))) destino++;
+    if (destino >= LINHAS) { setErro('Não há linha vazia abaixo da seleção para colocar o resultado.'); return; }
+    const alvos = colunas.filter(c => Array.from({ length: fimValores - l1 + 1 }, (_, i) => l1 + i).some(l => valorEm(l, c)));
+    if (!alvos.length) { setErro('Selecione células com números ou datas.'); return; }
+    mudar(anterior => {
+      const novas = { ...anterior.celulas };
+      for (const c of alvos) novas[endereco(destino, c)] = `=${funcao}(${endereco(l1, c)}:${endereco(fimValores, c)})`;
+      return { ...anterior, celulas: novas };
+    });
+    focar(endereco(destino, alvos[0]));
+    if (alvos.length > 1) setSelecionada(endereco(destino, alvos[alvos.length - 1]));
+  };
+  const imprimir = () => {
+    if (!rascunho) return;
+    const documento = editando ? { ...rascunho, celulas: { ...rascunho.celulas, [editando]: textoDaFormula(texto) } } : rascunho;
+    confirmar();
+    setImpressao({ planilha: documento, inicio: endereco(limites.primeiraLinha, limites.primeiraColuna), fim: endereco(limites.ultimaLinha, limites.ultimaColuna) });
+  };
+  const negrito = Boolean(formatoSelecionado.negrito);
+  const corAtual = formatoSelecionado.cor || 'preto';
+  const botao = 'flex h-9 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50';
+  const separador = <span className="mx-0.5 h-6 border-l border-slate-300" aria-hidden="true"/>;
   const fim = Math.min(LINHAS, janela.inicio + janela.quantidade);
   return <section className="mx-auto flex max-w-[1600px] flex-col gap-4">
     {IMPRESSAO_PLANILHAS_PREVIEW && impressao && <PlanilhaImpressaoPreview {...impressao} fechar={() => setImpressao(null)}/>}
@@ -392,25 +455,38 @@ export function PlanilhasView() {
       {erroAcao && <p role="alert" className="text-sm text-red-700">{erroAcao}</p>}
       <div className="flex justify-end gap-2"><button type="button" disabled={ocupado} onClick={() => { setAcao(null); setSenha(''); }} className="rounded border px-4 py-2">Cancelar</button><button type="submit" disabled={ocupado || !senha} className="rounded bg-red-700 px-4 py-2 font-bold text-white disabled:opacity-40">{ocupado ? 'Aguarde…' : acao === 'limpar' ? 'Confirmar limpeza' : 'Confirmar exclusão'}</button></div>
     </form></div>}
-    <header className="flex flex-wrap items-center justify-between gap-3"><h1 className="flex items-center gap-3 text-2xl font-black text-slate-900"><Sheet className="text-emerald-700" />Planilhas</h1><div className="flex flex-wrap gap-2"><button type="button" disabled={ocupado || carregando || planilhas.length >= MAX_PLANILHAS} onClick={() => void criar()} className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-bold disabled:opacity-40"><Plus size={16} />Nova planilha</button>{rascunho && <button type="button" disabled={ocupado || !pendente} onClick={() => void salvar()} className="flex items-center gap-2 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white disabled:opacity-40"><Save size={16} />{ocupado ? 'Aguarde…' : 'Salvar'}</button>}</div></header>
     {erro && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{erro}</p>}
-    {carregando ? <p role="status">Carregando planilhas…</p> : !rascunho ? <div className="rounded-xl border bg-white p-8 text-center text-slate-600"><p>Crie uma planilha para começar.</p></div> : <fieldset disabled={ocupado || Boolean(acao)} className="min-w-0 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3"><label className="flex items-center gap-2 text-emerald-800"><Table2 size={19}/><input aria-label="Nome da planilha" maxLength={60} value={rascunho.nome} onChange={e => mudar(a => ({ ...a, nome: e.target.value }))} className="w-52 rounded border px-2 py-1 font-bold text-slate-800" /></label><div className="flex flex-wrap items-center gap-2"><span className="text-xs text-slate-500">{LINHAS.toLocaleString('pt-BR')} linhas × {COLUNAS} colunas</span><button type="button" aria-label="Recarregar planilha" onClick={() => void abrir(rascunho.id)} className="rounded border p-2"><RefreshCw size={15}/></button><button type="button" onClick={() => pedirAcao('limpar')} className="flex items-center gap-1 rounded border px-3 py-2 text-xs font-bold"><Eraser size={15}/>Limpar planilha</button><button type="button" onClick={() => pedirAcao('excluir')} className="flex items-center gap-1 rounded border border-red-200 px-3 py-2 text-xs font-bold text-red-700"><Trash2 size={15}/>Excluir planilha</button></div></div>
-      <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-2 text-xs"><span>Formato da seleção</span><button type="button" aria-pressed={!moeda} onClick={() => formatarMoeda(false)} className={`rounded border px-3 py-1.5 ${!moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>Número / texto</button><button type="button" aria-pressed={moeda} onClick={() => formatarMoeda(true)} className={`rounded border px-3 py-1.5 ${moeda ? 'bg-emerald-100 font-bold text-emerald-900' : ''}`}>R$ Moeda</button><span className="mx-1 h-6 border-l border-slate-300" aria-hidden="true"/>
-        <button type="button" aria-pressed={Boolean(formatoSelecionado.negrito)} onClick={() => formatar({ negrito: true })} className={`rounded border px-3 py-1.5 font-bold ${formatoSelecionado.negrito ? 'bg-emerald-100 text-emerald-900' : 'bg-white'}`}>Negrito</button>
-        <button type="button" aria-pressed={!formatoSelecionado.negrito} onClick={() => formatar({ negrito: false })} className={`rounded border px-3 py-1.5 ${!formatoSelecionado.negrito ? 'bg-emerald-100 text-emerald-900' : 'bg-white'}`}>Sem negrito</button>
-        <span className="ml-1">Cor do texto</span>
-        {(Object.keys(CORES_CELULA) as Array<keyof typeof CORES_CELULA>).map(cor => <button key={cor} type="button" aria-label={`Cor do texto: ${cor}`} aria-pressed={(formatoSelecionado.cor || 'preto') === cor} onClick={() => formatar({ cor })} className={`flex items-center gap-1.5 rounded border px-2 py-1.5 ${(formatoSelecionado.cor || 'preto') === cor ? 'border-emerald-600 bg-white font-bold' : 'border-slate-300 bg-white'}`}><span aria-hidden="true" className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: CORES_CELULA[cor] }}/>{cor === 'preto' ? 'Preto' : cor === 'vermelho' ? 'Vermelho' : cor === 'verde' ? 'Verde' : 'Amarelo'}</button>)}
-        {IMPRESSAO_PLANILHAS_PREVIEW && <button type="button" onClick={() => {
-          const documento = editando ? { ...rascunho, celulas: { ...rascunho.celulas, [editando]: textoDaFormula(texto) } } : rascunho;
-          confirmar();
-          setImpressao({ planilha: documento, inicio: endereco(limites.primeiraLinha, limites.primeiraColuna), fim: endereco(limites.ultimaLinha, limites.ultimaColuna) });
-        }} className="rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800">Imprimir seleção · prévia</button>}
-        <button type="button" onClick={() => void copiarImagem()} title="Copia as células selecionadas como imagem, para colar no WhatsApp ou no e-mail" className="flex items-center gap-1.5 rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800"><Copy size={14}/>Copiar como imagem</button>
-        <button type="button" onClick={() => void enviarImagem()} title="Envia as células selecionadas como imagem pelo WhatsApp da Automação" className="flex items-center gap-1.5 rounded border border-emerald-700 bg-white px-3 py-1.5 font-bold text-emerald-800"><Send size={14}/>Enviar imagem no WhatsApp</button>
-        {avisoImagem && <span role="status" className="font-bold text-emerald-800">{avisoImagem}</span>}
-        <span className="ml-auto hidden items-center gap-1 text-slate-400 lg:flex"><ArrowDownToLine size={13}/>Cole linhas e colunas de outra planilha</span></div>
-      <div className="flex items-center gap-3 border-b px-3 py-2"><span className="w-16 shrink-0 rounded border bg-slate-50 p-2 text-center font-mono text-xs font-bold">{selecionada}</span><FunctionSquare size={18} className="shrink-0 text-slate-400"/><input ref={barraFormula} aria-label={`Conteúdo de ${selecionada}`} placeholder="Digite um valor ou uma fórmula, como =MÉDIA(A1:A5)" value={editando === selecionada ? texto : rascunho.celulas[selecionada] || ''} onFocus={() => { if (!editando || !naBarra) iniciar(selecionada, undefined, true); }} onChange={e => { setTexto(e.target.value.slice(0, MAX_TEXTO_CELULA)); setEditando(selecionada); }} onBlur={confirmar} onKeyDown={e => { if (e.key === 'Enter') { confirmar(); focar(selecionada); } if (e.key === 'Escape') { ignorarBlur.current = true; setEditando(null); focar(selecionada); } }} className="min-w-0 flex-1 rounded p-2 font-mono text-sm outline-none focus:bg-emerald-50"/>
+    {carregando ? <p role="status">Carregando planilhas…</p> : !rascunho ? <div className="rounded-xl border bg-white p-8 text-center text-slate-600"><Sheet className="mx-auto mb-3 text-emerald-700" /><p>Crie uma planilha para começar.</p><button type="button" disabled={ocupado || planilhas.length >= MAX_PLANILHAS} onClick={() => void criar()} className="mx-auto mt-4 flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-bold disabled:opacity-40"><Plus size={16} />Nova planilha</button></div> : <fieldset disabled={ocupado || Boolean(acao)} className="min-w-0 overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+      <div role="toolbar" aria-label="Ferramentas da planilha" className="flex flex-wrap items-center gap-1.5 border-b bg-slate-50 px-2 py-1.5">
+        <input aria-label="Nome da planilha" title={`${LINHAS.toLocaleString('pt-BR')} linhas × ${COLUNAS} colunas`} maxLength={60} value={rascunho.nome} onChange={e => mudar(a => ({ ...a, nome: e.target.value }))} className="h-9 w-40 rounded-md border border-slate-300 bg-white px-2 text-sm font-bold text-slate-800" />
+        {separador}
+        <button type="button" aria-label="AutoSoma" title="AutoSoma: selecione os valores e clique. O total vai para a célula logo abaixo." onPointerDown={e => e.preventDefault()} onClick={() => autoCalcular('SOMA')} className="flex h-9 items-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-black text-white hover:bg-emerald-800"><Sigma size={16}/>AutoSoma</button>
+        <button type="button" aria-label="Média" title="Média: selecione números ou datas e clique. A média vai para a célula logo abaixo." onPointerDown={e => e.preventDefault()} onClick={() => autoCalcular('MÉDIA')} className="flex h-9 items-center gap-1.5 rounded-md border border-emerald-700 bg-white px-3 text-xs font-black text-emerald-800 hover:bg-emerald-50"><Calculator size={15}/>Média</button>
+        {separador}
+        <button type="button" aria-label="R$ Moeda" title="Mostrar como moeda (R$)" aria-pressed={moeda} onClick={() => formatarMoeda(!moeda)} className={`${botao} ${moeda ? '!border-emerald-600 !bg-emerald-100 text-emerald-900' : ''}`}>R$</button>
+        <button type="button" aria-label="Negrito" title="Negrito" aria-pressed={negrito} onClick={() => formatar({ negrito: !negrito })} className={`${botao} ${negrito ? '!border-emerald-600 !bg-emerald-100 text-emerald-900' : ''}`}><Bold size={15}/></button>
+        <span className="flex items-center gap-0.5" role="group" aria-label="Cor do texto">
+          {(Object.keys(CORES_CELULA) as Array<keyof typeof CORES_CELULA>).map(cor => <button key={cor} type="button" aria-label={`Cor do texto: ${cor}`} title={`Texto ${cor}`} aria-pressed={corAtual === cor} onClick={() => formatar({ cor })} className={`flex h-9 w-8 items-center justify-center rounded-md border ${corAtual === cor ? 'border-emerald-600 bg-white ring-1 ring-emerald-600' : 'border-transparent hover:border-slate-300'}`}><span aria-hidden="true" className="h-4 w-4 rounded-full border border-black/10" style={{ backgroundColor: CORES_CELULA[cor] }}/></button>)}
+        </span>
+        {separador}
+        {IMPRESSAO_PLANILHAS_PREVIEW && <button type="button" aria-label="Imprimir seleção · prévia" title="Imprimir as células selecionadas" onClick={imprimir} className={botao}><Printer size={15}/><span className="hidden xl:inline">Imprimir</span></button>}
+        <button type="button" aria-label="Copiar como imagem" onClick={() => void copiarImagem()} title="Copia as células selecionadas como imagem, para colar no WhatsApp ou no e-mail" className={botao}><Copy size={15}/><span className="hidden xl:inline">Copiar imagem</span></button>
+        <button type="button" aria-label="Enviar imagem no WhatsApp" onClick={() => void enviarImagem()} title="Envia as células selecionadas como imagem pelo WhatsApp da Automação" className={botao}><Send size={15}/><span className="hidden xl:inline">WhatsApp</span></button>
+        <span className="ml-auto flex items-center gap-1.5">
+          <button type="button" disabled={planilhas.length >= MAX_PLANILHAS} aria-label="Nova planilha" title="Nova planilha" onClick={() => void criar()} className={`${botao} disabled:opacity-40`}><Plus size={15}/><span className="hidden lg:inline">Nova</span></button>
+          <button type="button" disabled={!pendente} onClick={() => void salvar()} className="flex h-9 items-center gap-1.5 rounded-md bg-emerald-700 px-3 text-xs font-bold text-white disabled:opacity-40"><Save size={15} />{ocupado ? 'Aguarde…' : 'Salvar'}</button>
+          <details ref={menuMais} className="relative">
+            <summary aria-label="Mais opções" title="Mais opções" className={`${botao} cursor-pointer list-none [&::-webkit-details-marker]:hidden`}><Ellipsis size={16}/></summary>
+            <div className="absolute right-0 z-40 mt-1 w-48 space-y-1 rounded-lg border bg-white p-1 shadow-lg">
+              <button type="button" onClick={() => { fecharMenu(); void abrir(rascunho.id); }} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs font-bold hover:bg-slate-100"><RefreshCw size={15}/>Recarregar planilha</button>
+              <button type="button" onClick={() => { fecharMenu(); pedirAcao('limpar'); }} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs font-bold hover:bg-slate-100"><Eraser size={15}/>Limpar planilha</button>
+              <button type="button" onClick={() => { fecharMenu(); pedirAcao('excluir'); }} className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-xs font-bold text-red-700 hover:bg-red-50"><Trash2 size={15}/>Excluir planilha</button>
+            </div>
+          </details>
+        </span>
+        {avisoImagem && <span role="status" className="w-full text-xs font-bold text-emerald-800">{avisoImagem}</span>}
+      </div>
+      <div className="flex items-center gap-2 border-b px-2 py-1"><span className="w-14 shrink-0 rounded border bg-slate-50 px-1 py-1 text-center font-mono text-xs font-bold">{selecionada}</span><FunctionSquare size={16} className="shrink-0 text-slate-400"/><input ref={barraFormula} aria-label={`Conteúdo de ${selecionada}`} placeholder="Digite um valor ou uma fórmula, como =MÉDIA(A1:A5)" value={editando === selecionada ? texto : rascunho.celulas[selecionada] || ''} onFocus={() => { if (!editando || !naBarra) iniciar(selecionada, undefined, true); }} onChange={e => { setTexto(e.target.value.slice(0, MAX_TEXTO_CELULA)); setEditando(selecionada); }} onBlur={confirmar} onKeyDown={e => { if (e.key === 'Enter') { confirmar(); focar(selecionada); } if (e.key === 'Escape') { ignorarBlur.current = true; setEditando(null); focar(selecionada); } }} className="min-w-0 flex-1 rounded px-2 py-1 font-mono text-sm outline-none focus:bg-emerald-50"/>
 {editando && intervaloPendente.test(texto) && <div className="flex items-center gap-2 border-b px-3 py-2 text-xs">
         <span>Resultado em <b>{editando}</b> · Enter para somar</span>
         {['SOMA', 'MÉDIA', 'MEDIANA'].map(funcao => <button type="button" key={funcao} className="rounded border px-3 py-1" onPointerDown={e => e.preventDefault()} onClick={() => {
@@ -419,7 +495,7 @@ export function PlanilhasView() {
         }}>{funcao}</button>)}
       </div>}
       </div>
-      <div ref={grade} onScroll={atualizarJanela} className="planilhas-grade max-h-[60vh] min-h-[340px] overflow-auto overscroll-contain" aria-label="Células da planilha" tabIndex={-1}>
+      <div ref={grade} onScroll={atualizarJanela} className="planilhas-grade min-h-[340px] overflow-auto overscroll-contain" aria-label="Células da planilha" tabIndex={-1}>
         <table className="table-fixed border-separate border-spacing-0 text-xs" style={{ width: 44 + Array.from({ length: COLUNAS }, (_, c) => larguraColuna(c, rascunho.larguras)).reduce((a, b) => a + b, 0) }}>
           <colgroup><col style={{ width: 44 }}/>{Array.from({ length: COLUNAS }, (_, c) => <col key={c} style={{ width: larguraColuna(c, rascunho.larguras) }}/>)}</colgroup>
           <thead className="sticky top-0 z-20"><tr><th className="sticky left-0 z-30 border-b border-r bg-slate-100 text-slate-400">◢</th>{Array.from({ length: COLUNAS }, (_, c) => <th key={c} className={`relative border-b border-r font-semibold ${selecionada.charCodeAt(0) - 65 === c ? 'bg-emerald-100 text-emerald-900' : 'bg-slate-100 text-slate-500'}`}>
@@ -466,7 +542,7 @@ export function PlanilhasView() {
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t bg-slate-50 px-3 py-2"><nav aria-label="Planilhas" className="flex flex-wrap gap-2">{planilhas.map(p => <button key={p.id} type="button" aria-current={p.id === rascunho.id ? 'page' : undefined} onClick={() => p.id !== rascunho.id && void abrir(p.id)} className={`max-w-52 truncate rounded border px-3 py-2 text-xs font-bold ${p.id === rascunho.id ? 'border-emerald-600 bg-white text-emerald-800' : ''}`}>{p.id === rascunho.id ? rascunho.nome : p.nome}</button>)}</nav><div role="status" aria-label="Resumo da seleção" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-700">
         <span className="font-mono">{ancora === selecionada ? selecionada : `${endereco(limites.primeiraLinha, limites.primeiraColuna)}:${endereco(limites.ultimaLinha, limites.ultimaColuna)}`}</span>
-        {resumoSelecao.erro ? <span>Cálculo do intervalo excedeu o limite.</span> : resumoSelecao.quantidade > 0 ? <><span>Números: <b>{resumoSelecao.quantidade}</b></span><span>Média: <b>{resumoSelecao.media}</b></span><span>Soma: <b>{resumoSelecao.soma}</b></span><span>Mín.: <b>{resumoSelecao.minimo}</b></span><span>Máx.: <b>{resumoSelecao.maximo}</b></span></> : <span>Selecione células numéricas</span>}
+        {resumoSelecao.erro ? <span>Cálculo do intervalo excedeu o limite.</span> : resumoSelecao.datas ? <><span>Datas: <b>{resumoSelecao.datas}</b></span><span>Data média: <b>{resumoSelecao.media}</b></span><span>Primeira: <b>{resumoSelecao.minimo}</b></span><span>Última: <b>{resumoSelecao.maximo}</b></span></> : resumoSelecao.quantidade > 0 ? <><span>Números: <b>{resumoSelecao.quantidade}</b></span><span>Média: <b>{resumoSelecao.media}</b></span><span>Soma: <b>{resumoSelecao.soma}</b></span><span>Mín.: <b>{resumoSelecao.minimo}</b></span><span>Máx.: <b>{resumoSelecao.maximo}</b></span></> : <span>Selecione números ou datas</span>}
       </div>
       {!editando && intervaloLinear && <div className="flex flex-wrap items-center gap-2 text-xs">
         {destinoResultado ? <><span>Inserir resultado em <b>{destinoResultado}</b></span>
@@ -477,6 +553,6 @@ export function PlanilhasView() {
       </div>}
       </footer>
     </fieldset>}
-    {rascunho && <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500"><p>Arraste a borda do cabeçalho para ajustar a coluna; dois cliques ajustam ao conteúdo. Arraste as células para selecionar um intervalo ou use Shift + clique / setas. Dê dois cliques para editar. Fórmulas: <code>=B4*C4</code> · <code>=SOMA(D4:D6)</code></p><p role="status" className="flex items-center gap-1">{!pendente && <Check size={14}/>}{pendente ? 'Alterações não salvas' : aviso || 'Salvo'}</p></div>}
+    {rascunho && <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500"><p>AutoSoma/Média: selecione os valores e clique; o resultado vai logo abaixo. Datas (10/11/2026) entram na Média. Dois cliques editam · Ctrl+V cola de outra planilha.</p><p role="status" className="flex items-center gap-1">{!pendente && <Check size={14}/>}{pendente ? 'Alterações não salvas' : aviso || 'Salvo'}</p></div>}
   </section>;
 }

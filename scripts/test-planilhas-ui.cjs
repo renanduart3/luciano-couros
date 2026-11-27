@@ -36,16 +36,16 @@ async function main(){
   const estilo=seletor=>p.locator(seletor).evaluate(e=>({cor:getComputedStyle(e).color,peso:getComputedStyle(e).fontWeight}));
   await p.locator('[data-celula="A1"]').click();
   await p.getByRole('button',{name:'Negrito',exact:true}).click();assert.equal((await estilo('[data-celula="A1"]')).peso,'700');
-  await p.getByRole('button',{name:'Sem negrito',exact:true}).click();assert.equal((await estilo('[data-celula="A1"]')).peso,'400');
+  await p.getByRole('button',{name:'Negrito',exact:true}).click();assert.equal((await estilo('[data-celula="A1"]')).peso,'400');
   await p.getByRole('button',{name:'Negrito',exact:true}).click();
   for(const [cor,rgb] of [['preto','rgb(0, 0, 0)'],['vermelho','rgb(220, 38, 38)'],['verde','rgb(21, 128, 61)'],['amarelo','rgb(202, 138, 4)']]){
     await p.getByRole('button',{name:'Cor do texto: '+cor,exact:true}).click();assert.equal((await estilo('[data-celula="A1"]')).cor,rgb);
   }
   await p.getByRole('button',{name:'Cor do texto: vermelho',exact:true}).click();
-  await p.locator('[data-celula="B1"]').click();await p.getByRole('button',{name:'Sem negrito',exact:true}).click();await p.getByRole('button',{name:'Cor do texto: verde',exact:true}).click();
+  await p.locator('[data-celula="B1"]').click();await p.getByRole('button',{name:'Cor do texto: verde',exact:true}).click();
   await p.getByRole('button',{name:'Salvar',exact:true}).click();await p.getByText('Planilha salva.',{exact:true}).waitFor();
   assert.equal(docs.get('p1').celulas.B1,'=A1*2');
-  assert.deepEqual(docs.get('p1').formatos,{A1:{negrito:true,cor:'vermelho'},B1:{negrito:false,cor:'verde'}});
+  assert.deepEqual(docs.get('p1').formatos,{A1:{negrito:true,cor:'vermelho'},B1:{cor:'verde'}});
   await mount();await p.getByRole('button',{name:'B1: 25',exact:true}).waitFor();assert.equal(await p.getByRole('textbox',{name:'Nome da planilha',exact:true}).inputValue(),'Controle de materiais');
   assert.deepEqual(await estilo('[data-celula="A1"]'),{cor:'rgb(220, 38, 38)',peso:'700'});
   assert.deepEqual(await estilo('[data-celula="B1"]'),{cor:'rgb(21, 128, 61)',peso:'400'});
@@ -157,10 +157,10 @@ async function main(){
   await p.getByRole('button',{name:'O500: 7.000',exact:true}).waitFor();assert.ok(await p.locator('tr[data-linha]').count()<50);
   await p.locator('[data-celula="O500"]').click({modifiers:['Shift']});assert.match(await resumo.textContent(),/C2:O500/);
   await p.locator('[data-celula="O500"]').click();await p.keyboard.press('ArrowUp');await p.waitForFunction(()=>document.activeElement?.getAttribute('data-celula')==='O499');
-  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();let dialog=p.getByRole('alertdialog');await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
-  await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('errada');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
+  await p.locator('summary[aria-label="Mais opções"]').click();await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();let dialog=p.getByRole('alertdialog');await dialog.getByRole('button',{name:'Cancelar',exact:true}).click();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
+  await p.locator('summary[aria-label="Mais opções"]').click();await p.getByRole('button',{name:'Limpar planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('errada');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await dialog.getByRole('alert').waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,7500);
   await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar limpeza',exact:true}).click();await p.getByRole('button',{name:'A1: vazia',exact:true}).waitFor();assert.equal(Object.keys(docs.get('p1').celulas).length,0);assert.deepEqual(docs.get('p1').formatos,{});
-  await p.getByRole('button',{name:'Excluir planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar exclusão',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha 2',exact:true}).waitFor();assert.equal(docs.size,4);assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isEnabled());
+  await p.locator('summary[aria-label="Mais opções"]').click();await p.getByRole('button',{name:'Excluir planilha',exact:true}).click();dialog=p.getByRole('alertdialog');await dialog.getByLabel('Senha do gerente',{exact:true}).fill('Teste123');await dialog.getByRole('button',{name:'Confirmar exclusão',exact:true}).click();await p.getByRole('navigation',{name:'Planilhas',exact:true}).getByRole('button',{name:'Planilha 2',exact:true}).waitFor();assert.equal(docs.size,4);assert.ok(await p.getByRole('button',{name:'Nova planilha',exact:true}).isEnabled());
   // Alterações locais permanecem na tela se outra sessão salvou antes.
   const input=p.getByRole('textbox',{name:'Conteúdo de A1',exact:true});await input.fill('Meu ajuste');await input.press('Enter');docs.get('p2').versao++;
   await p.getByRole('button',{name:'Salvar',exact:true}).click();await p.getByRole('alert').waitFor();assert.equal(await p.locator('[data-celula="A1"]').textContent(),'Meu ajuste');
@@ -193,8 +193,8 @@ async function main(){
   assert.equal(await p.locator('[data-celula="B2"]').textContent(),'R$ 5,00');
   await p.getByRole('button',{name:'Salvar',exact:true}).click();await p.getByText('Planilha salva.',{exact:true}).waitFor();
   assert.deepEqual([...docs.get('p3').moedas].sort(),['A1','A2','B1','B2']);
-  await p.getByRole('button',{name:'Número / texto',exact:true}).click();
-  await p.getByRole('button',{name:'Sem negrito',exact:true}).click();
+  await p.getByRole('button',{name:'R$ Moeda',exact:true}).click();
+  await p.getByRole('button',{name:'Negrito',exact:true}).click();
   for(const id of ['A1','B1','A2','B2'])assert.equal((await estilo('[data-celula="'+id+'"]')).peso,'400');
   assert.equal(await p.locator('[data-celula="B1"]').textContent(),'12,50');
   await p.locator('[data-celula="D4"]').click();

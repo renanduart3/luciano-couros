@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("Install", "Uninstall", "Update", "Start", "Stop", "Restart", "Status", "MigrateData")]
     [string]$Action,
@@ -293,6 +293,11 @@ function Apply-UpdatePackage {
     $robocopyArgs = @($sourceDir, $ProjectRoot, "/E", "/R:2", "/W:1", "/XD", ".git", "node_modules", "dist", ".runtime", "backups", "data", "/XF", "database*.db*", "mock_config.json", ".env", "installation-paths.json", "installation-paths.json.tmp", "atualizacao.zip")
     & robocopy.exe @robocopyArgs | Out-Host
     if ($LASTEXITCODE -gt 7) { throw "Falha ao copiar os arquivos da atualizacao (codigo $LASTEXITCODE)." }
+    # Arquivos que mudaram de lugar em versoes novas (o pacote zip nao apaga os antigos).
+    foreach ($obsoleto in @("RESETAR SENHA DO GERENTE.cmd")) {
+        $caminhoObsoleto = Join-Path $ProjectRoot $obsoleto
+        if (Test-Path -LiteralPath $caminhoObsoleto) { Remove-Item -LiteralPath $caminhoObsoleto -Force }
+    }
 
     $appliedPackagesDir = Join-Path $ProjectRoot ".runtime\pacotes-aplicados"
     New-Item -ItemType Directory -Path $appliedPackagesDir -Force | Out-Null

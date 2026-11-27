@@ -861,6 +861,19 @@ export function initDatabase() {
   try { db.prepare(`ALTER TABLE usuarios ADD COLUMN login TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE usuarios ADD COLUMN deveTrocarSenha INTEGER NOT NULL DEFAULT 0`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE usuarios ADD COLUMN ultimoAcesso TEXT`).run(); } catch (e) {}
+  // Senha de operação (liberar preço, cancelar, reabrir...) separada da senha de login do gerente.
+  try { db.prepare(`ALTER TABLE usuarios ADD COLUMN operacaoHash TEXT`).run(); } catch (e) {}
+  try { db.prepare(`ALTER TABLE usuarios ADD COLUMN operacaoSalt TEXT`).run(); } catch (e) {}
+  // Na primeira execução com duas senhas, a senha atual (já conhecida na loja) vira a senha de
+  // operação e o gerente precisa criar uma senha nova, só dele, no próximo login.
+  // Roda uma única vez: depois disso, o gerente controla as duas senhas pela tela de configurações.
+  if (!db.prepare(`SELECT 1 FROM configuracoes WHERE chave = 'senhas_separadas_v1'`).get()) {
+    db.transaction(() => {
+      db.prepare(`UPDATE usuarios SET operacaoHash = pinHash, operacaoSalt = pinSalt, deveTrocarSenha = 1, updatedAt = CURRENT_TIMESTAMP
+        WHERE perfil = 'administrador' AND pinHash IS NOT NULL AND operacaoHash IS NULL`).run();
+      db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES ('senhas_separadas_v1', '1')`).run();
+    })();
+  }
   try { db.prepare(`ALTER TABLE vendas ADD COLUMN vendedorId TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTitular TEXT`).run(); } catch (e) {}
   try { db.prepare(`ALTER TABLE instrumentos_recebimento ADD COLUMN cpfTerceiro TEXT`).run(); } catch (e) {}

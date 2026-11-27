@@ -32,7 +32,7 @@ async function main() {
  }
  await page.evaluate(()=>window.renderCase('excluir'));await page.getByRole('button',{name:'Excluir',exact:true}).click();
  await page.getByText(/O saldo será atualizado/).waitFor();assert.equal(await page.getByRole('checkbox').count(),0);
- await page.getByLabel('Senha do gerente').fill('1234');assert.equal(await page.getByRole('button',{name:'Confirmar exclusão'}).isEnabled(),true);
+ await page.getByLabel('Senha de operação').fill('1234');assert.equal(await page.getByRole('button',{name:'Confirmar exclusão'}).isEnabled(),true);
  await page.evaluate(()=>window.renderCase('recibo'));await page.getByText('ABATIDO ATÉ ESTE RECIBO',{exact:true}).waitFor();
  assert.equal(await page.getByText('Nº CHEQUE / BOLETO',{exact:true}).count(),0);
  assert.equal(await page.getByText('SALDO ANTES',{exact:true}).count(),0);

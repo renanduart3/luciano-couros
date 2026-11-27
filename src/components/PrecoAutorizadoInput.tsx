@@ -68,7 +68,7 @@ export function PrecoAutorizadoInput({
 
   const validarPin = async () => {
     if (pin.length < 4 || pin.length > 64) {
-      setErro("Informe a senha do gerente.");
+      setErro("Informe a senha de operação.");
       return;
     }
     setValidando(true);

@@ -57,6 +57,8 @@ type UsuarioAdministrador = {
   deveTrocarSenha: number;
   pinHash: string | null;
   pinSalt: string | null;
+  operacaoHash?: string | null;
+  operacaoSalt?: string | null;
 };
 
 type UsuarioAutenticado = Pick<UsuarioAdministrador, "id" | "nome" | "login" | "perfil" | "deveTrocarSenha">;
@@ -70,7 +72,7 @@ const tentativasLogin = new Map<string, { quantidade: number; bloqueadoAte: numb
 
 function getUsuarioAdministrador(): UsuarioAdministrador | undefined {
   return queryOne<UsuarioAdministrador>(
-    `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt
+    `SELECT id, nome, login, perfil, ativo, deveTrocarSenha, pinHash, pinSalt, operacaoHash, operacaoSalt
      FROM usuarios
      WHERE perfil = 'administrador' AND ativo = 1
      ORDER BY createdAt ASC
@@ -93,25 +95,33 @@ function gerarHashPin(pin: string, salt = crypto.randomBytes(16).toString("hex")
   };
 }
 
+function conferirHash(senha: unknown, hash: string | null | undefined, salt: string | null | undefined) {
+  if (!hash || !salt || typeof senha !== "string") return false;
+  const informado = Buffer.from(gerarHashPin(senha, salt).hash, "hex");
+  const esperado = Buffer.from(hash, "hex");
+  return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado);
+}
+
+// Duas senhas diferentes:
+// - senha de operação: liberada no dia a dia (preço, cancelamento, reabertura...). Pode ser digitada
+//   por quem o gerente autorizar. Configurada em Configurações → Usuários e senha de operação.
+// - senha do gerente: login administrativo (relatórios, custos, configurações). Configurada em
+//   Configurações → Sistema, senha do gerente e backups. Recuperação pelo script em scripts/recuperacao.
 function validarPinAdministrador(pin: unknown): UsuarioAdministrador | null {
   const administrador = getUsuarioAdministrador();
-  if (!administrador?.pinHash || !administrador.pinSalt || typeof pin !== "string") {
-    return null;
-  }
+  return administrador && conferirHash(pin, administrador.operacaoHash, administrador.operacaoSalt) ? administrador : null;
+}
 
-  const informado = Buffer.from(gerarHashPin(pin, administrador.pinSalt).hash, "hex");
-  const esperado = Buffer.from(administrador.pinHash, "hex");
-  return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado)
-    ? administrador
-    : null;
+function validarSenhaGerente(senha: unknown): UsuarioAdministrador | null {
+  const administrador = getUsuarioAdministrador();
+  return administrador && validarSenhaUsuario(administrador, senha) ? administrador : null;
 }
 
 function validarSenhaUsuario(usuario: UsuarioAdministrador | undefined, senha: unknown) {
-  if (!usuario?.pinHash || !usuario.pinSalt || typeof senha !== "string") return false;
-  const informado = Buffer.from(gerarHashPin(senha, usuario.pinSalt).hash, "hex");
-  const esperado = Buffer.from(usuario.pinHash, "hex");
-  return informado.length === esperado.length && crypto.timingSafeEqual(informado, esperado);
+  return conferirHash(senha, usuario?.pinHash, usuario?.pinSalt);
 }
+
+const ERRO_SENHAS_IGUAIS = "A senha do gerente e a senha de operação precisam ser diferentes.";
 
 function senhaValida(senha: unknown) {
   return typeof senha === "string" && senha.length >= 4 && senha.length <= 64;
@@ -954,7 +964,7 @@ function estornarRecebimentoEmOrdens(recebimentoId: string) {
 function exigirDocumentoNaoFinalizado(tipo: 'ordem' | 'vale', id: string) {
   const tabela = tipo === 'ordem' ? 'ordens_cobranca' : 'vendas';
   if (queryOne(`SELECT id FROM ${tabela} WHERE id=? AND finalizadoAt IS NOT NULL AND deletedAt IS NULL`, [id])) {
-    throw erroHttp('Reabra o documento com a senha do gerente antes de alterar seus valores ou pagamentos.', 409);
+    throw erroHttp('Reabra o documento com a senha de operação antes de alterar seus valores ou pagamentos.', 409);
   }
 }
 
@@ -966,7 +976,7 @@ function exigirRecebimentoNaoFinalizado(id: string) {
       (EXISTS (SELECT 1 FROM recebimentos_cliente r WHERE r.id=? AND r.ordemCobrancaId=o.id)
        OR EXISTS (SELECT 1 FROM ordem_cobranca_recebimentos r WHERE r.recebimentoId=? AND r.ordemId=o.id AND r.deletedAt IS NULL)
        OR EXISTS (SELECT 1 FROM ordem_cobranca_parcela_recebimentos r WHERE r.recebimentoId=? AND r.ordemId=o.id AND r.deletedAt IS NULL))`, [id, id, id, id]);
-  if (finalizado) throw erroHttp('Reabra a ordem ou o vale finalizado com a senha do gerente antes de alterar este pagamento.', 409);
+  if (finalizado) throw erroHttp('Reabra a ordem ou o vale finalizado com a senha de operação antes de alterar este pagamento.', 409);
 }
 
 app.get("/api/auth/status", (req, res) => {
@@ -1076,6 +1086,9 @@ app.put("/api/auth/senha", exigirAutenticacao, (req, res) => {
     if (!senhaValida(novaSenha)) {
       return res.status(400).json({ error: "A nova senha deve possuir de 4 a 64 caracteres." });
     }
+    if (usuario.perfil === "administrador" && validarPinAdministrador(novaSenha)) {
+      return res.status(400).json({ error: ERRO_SENHAS_IGUAIS + " Crie uma senha nova, só sua, para entrar como gerente." });
+    }
     const protegida = gerarHashPin(String(novaSenha));
     execute(
       `UPDATE usuarios SET pinHash = ?, pinSalt = ?, deveTrocarSenha = 0,
@@ -1109,7 +1122,7 @@ app.post("/api/auth/reset-gerente", (req, res) => {
       success: true,
       login: "gerente",
       senhaTemporaria: SENHA_RESET_LOCAL,
-      mensagem: "Senha redefinida. Entre como gerente e cadastre uma nova senha.",
+      mensagem: "Senha do gerente redefinida. Entre com o usuario gerente e a senha Altinopolis e cadastre uma nova senha. A senha de operacao (das vendas) nao foi alterada.",
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1153,7 +1166,7 @@ app.use("/api", (req, res, next) => {
 app.use("/api/automacao", exigirGerente, rotasAutomacao());
 app.use(["/api/backups", "/api/usuarios"], exigirGerente);
 ajustarPlanilhasAoLimite(registrarAuditoria);
-app.use('/api/planilhas', exigirGerente, rotasPlanilhas(validarPinAdministrador, registrarAuditoria));
+app.use('/api/planilhas', exigirGerente, rotasPlanilhas(validarSenhaGerente, registrarAuditoria));
 app.use("/api", (req, res, next) => {
   const operacaoGerencial = req.method === "DELETE"
     || /\/(cancelar|devolucoes)(\/|$)/.test(req.path);
@@ -1217,6 +1230,9 @@ app.put("/api/usuarios/:id", (req, res) => {
       [nome, login, ativo, atual.id]
     );
     if (senhaValida(req.body?.novaSenha)) {
+      if (atual.perfil === "administrador" && validarPinAdministrador(req.body.novaSenha)) {
+        return res.status(400).json({ error: ERRO_SENHAS_IGUAIS });
+      }
       const protegida = gerarHashPin(String(req.body.novaSenha));
       execute(
         `UPDATE usuarios SET pinHash = ?, pinSalt = ?, deveTrocarSenha = 1,
@@ -1291,7 +1307,8 @@ app.get("/api/seguranca/status", (_req, res) => {
     res.json({
       usuarioId: administrador?.id || null,
       nome: administrador?.nome || "Administrador",
-      pinConfigurado: !!administrador?.pinHash
+      pinConfigurado: !!administrador?.operacaoHash,
+      senhaGerenteConfigurada: !!administrador?.pinHash
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -1301,13 +1318,13 @@ app.get("/api/seguranca/status", (_req, res) => {
 app.post("/api/seguranca/verificar-pin", (req, res) => {
   try {
     const administrador = getUsuarioAdministrador();
-    if (!administrador?.pinHash) {
-      return res.status(428).json({ error: "Configure primeiro o PIN administrativo em Ajustes & Backups." });
+    if (!administrador?.operacaoHash) {
+      return res.status(428).json({ error: "Configure primeiro a senha de operação em Configurações → Usuários e senha de operação." });
     }
 
     const usuario = validarPinAdministrador(req.body?.pin);
     if (!usuario) {
-      return res.status(403).json({ error: "PIN administrativo inválido." });
+      return res.status(403).json({ error: "Senha de operação inválida." });
     }
 
     if (req.body?.finalidade === "visualizar_analise_venda") {
@@ -1327,6 +1344,7 @@ app.post("/api/seguranca/verificar-pin", (req, res) => {
   }
 });
 
+// Senha do gerente (login administrativo). Exige a senha atual do gerente.
 app.put("/api/seguranca/admin-pin", exigirGerente, (req, res) => {
   try {
     const { nome, pinAtual, novoPin } = req.body || {};
@@ -1336,13 +1354,16 @@ app.put("/api/seguranca/admin-pin", exigirGerente, (req, res) => {
     }
     const origemLocal = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.ip || "");
     if (!administrador.pinHash && !origemLocal) {
-      return res.status(403).json({ error: "A configuração inicial do PIN deve ser feita diretamente no computador servidor." });
+      return res.status(403).json({ error: "A configuração inicial da senha deve ser feita diretamente no computador servidor." });
     }
     if (!senhaValida(novoPin)) {
       return res.status(400).json({ error: "A nova senha deve possuir de 4 a 64 caracteres." });
     }
-    if (administrador.pinHash && !validarPinAdministrador(pinAtual)) {
-      return res.status(403).json({ error: "PIN atual inválido." });
+    if (administrador.pinHash && !validarSenhaUsuario(administrador, pinAtual)) {
+      return res.status(403).json({ error: "Senha atual do gerente inválida." });
+    }
+    if (validarPinAdministrador(novoPin)) {
+      return res.status(400).json({ error: ERRO_SENHAS_IGUAIS });
     }
 
     const pinProtegido = gerarHashPin(novoPin);
@@ -1350,20 +1371,55 @@ app.put("/api/seguranca/admin-pin", exigirGerente, (req, res) => {
     runInTransaction(() => {
       execute(
         `UPDATE usuarios
-         SET nome = ?, pinHash = ?, pinSalt = ?, updatedAt = CURRENT_TIMESTAMP
+         SET nome = ?, pinHash = ?, pinSalt = ?, deveTrocarSenha = 0, updatedAt = CURRENT_TIMESTAMP
          WHERE id = ?`,
         [nomeNormalizado, pinProtegido.hash, pinProtegido.salt, administrador.id]
       );
       registrarAuditoria(
         administrador.id,
-        administrador.pinHash ? "pin_administrativo_alterado" : "pin_administrativo_configurado",
+        administrador.pinHash ? "senha_gerente_alterada" : "senha_gerente_configurada",
         "usuario",
         administrador.id,
         { nome: nomeNormalizado }
       );
     });
 
-    res.json({ success: true, nome: nomeNormalizado, pinConfigurado: true });
+    res.json({ success: true, nome: nomeNormalizado, senhaGerenteConfigurada: true });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message });
+  }
+});
+
+// Senha de operação (vendas, liberação de preço, cancelamentos...). Só o gerente logado altera,
+// sem precisar da senha de operação anterior, para que ele possa trocá-la quando vazar.
+app.put("/api/seguranca/senha-operacao", exigirGerente, (req, res) => {
+  try {
+    const novaSenha = req.body?.novaSenha;
+    const administrador = getUsuarioAdministrador();
+    if (!administrador) {
+      return res.status(500).json({ error: "Usuário administrador não foi inicializado." });
+    }
+    if (!senhaValida(novaSenha)) {
+      return res.status(400).json({ error: "A senha de operação deve possuir de 4 a 64 caracteres." });
+    }
+    if (validarSenhaUsuario(administrador, novaSenha)) {
+      return res.status(400).json({ error: ERRO_SENHAS_IGUAIS + " Escolha outra senha de operação." });
+    }
+    const protegida = gerarHashPin(String(novaSenha));
+    runInTransaction(() => {
+      execute(
+        `UPDATE usuarios SET operacaoHash = ?, operacaoSalt = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+        [protegida.hash, protegida.salt, administrador.id]
+      );
+      registrarAuditoria(
+        usuarioDaRequisicao(req)?.id || administrador.id,
+        administrador.operacaoHash ? "senha_operacao_alterada" : "senha_operacao_configurada",
+        "usuario",
+        administrador.id,
+        {}
+      );
+    });
+    res.json({ success: true, pinConfigurado: true });
   } catch (error: any) {
     res.status(error.statusCode || 500).json({ error: error.message });
   }
@@ -1879,12 +1935,12 @@ app.put("/api/clientes/:id/orcamento-padrao", (req, res) => {
     if (!cliente) return res.status(404).json({ error: "Cliente não encontrado." });
 
     const administrador = getUsuarioAdministrador();
-    if (!administrador?.pinHash) {
-      return res.status(428).json({ error: "Configure o PIN administrativo antes de alterar a lista do cliente." });
+    if (!administrador?.operacaoHash) {
+      return res.status(428).json({ error: "Configure a senha de operação (Configurações → Usuários e senha de operação) antes de alterar a lista do cliente." });
     }
     const autorizador = validarPinAdministrador(req.body?.pin);
     if (!autorizador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. A lista não foi alterada." });
+      return res.status(403).json({ error: "Senha de operação inválida. A lista não foi alterada." });
     }
     const itens = req.body?.items;
     if (!Array.isArray(itens)) {
@@ -1942,12 +1998,12 @@ app.put("/api/clientes/:clienteId/produtos/:produtoId/preco", (req, res) => {
       return res.status(400).json({ error: "Informe um preço personalizado válido." });
     }
     const administrador = getUsuarioAdministrador();
-    if (!administrador?.pinHash) {
-      return res.status(428).json({ error: "Configure o PIN administrativo antes de alterar preços." });
+    if (!administrador?.operacaoHash) {
+      return res.status(428).json({ error: "Configure a senha de operação (Configurações → Usuários e senha de operação) antes de alterar preços." });
     }
     const autorizador = validarPinAdministrador(req.body?.pin);
     if (!autorizador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. O preço não foi alterado." });
+      return res.status(403).json({ error: "Senha de operação inválida. O preço não foi alterado." });
     }
     const produto = queryOne<{ precoVendaPadrao: number }>(
       "SELECT precoVendaPadrao FROM produtos WHERE id = ? AND deletedAt IS NULL AND ativo = 1",
@@ -1981,12 +2037,12 @@ app.delete("/api/clientes/:clienteId/produtos/:produtoId", (req, res) => {
     const { clienteId, produtoId } = req.params;
     const fornecedorId = req.body?.fornecedorId ? String(req.body.fornecedorId) : null;
     const administrador = getUsuarioAdministrador();
-    if (!administrador?.pinHash) {
-      return res.status(428).json({ error: "Configure o PIN administrativo antes de excluir preços de clientes." });
+    if (!administrador?.operacaoHash) {
+      return res.status(428).json({ error: "Configure a senha de operação (Configurações → Usuários e senha de operação) antes de excluir preços de clientes." });
     }
     const autorizador = validarPinAdministrador(req.body?.pin);
     if (!autorizador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. O preço não foi excluído." });
+      return res.status(403).json({ error: "Senha de operação inválida. O preço não foi excluído." });
     }
     const resultado = runInTransaction(() => {
       const relacionamento = fornecedorId
@@ -2237,7 +2293,7 @@ app.post("/api/fornecedores/:id/produtos", (req, res) => {
 app.put("/api/fornecedores/:id/produtos/:produtoId", (req, res) => {
   try {
     const autorizador = validarPinAdministrador(req.body?.pin);
-    if (!autorizador) return res.status(403).json({ error: "PIN administrativo inválido." });
+    if (!autorizador) return res.status(403).json({ error: "Senha de operação inválida." });
 
     const associacao = queryOne(
       `SELECT fornecedorId, produtoId FROM fornecedor_produtos
@@ -2606,7 +2662,7 @@ app.put("/api/produtos/:id", (req, res) => {
 app.delete("/api/produtos/:id", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) return res.status(403).json({ error: "Senha do gerente inválida. O material não foi arquivado." });
+    if (!administrador) return res.status(403).json({ error: "Senha de operação inválida. O material não foi arquivado." });
     const { id } = req.params;
     const produto = queryOne<any>("SELECT id, nome, codigo FROM produtos WHERE id = ? AND deletedAt IS NULL", [id]);
     if (!produto) return res.status(404).json({ error: "Material não encontrado ou já arquivado." });
@@ -2807,8 +2863,8 @@ app.post("/api/orcamentos", (req, res) => {
         .filter((item) => Math.abs(item.precoEfetivo - item.precoMinimoSemPin) > 0.005);
       if (itensQueExigemAutorizacao.length > 0) {
         const administrador = getUsuarioAdministrador();
-        if (!administrador?.pinHash) {
-          throw erroHttp("Configure o PIN administrativo antes de alterar preços.", 428);
+        if (!administrador?.operacaoHash) {
+          throw erroHttp("Configure a senha de operação (Configurações → Usuários e senha de operação) antes de alterar preços.", 428);
         }
         administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
         if (!administradorAutorizador) {
@@ -3471,13 +3527,13 @@ app.post("/api/vendas", (req, res) => {
 
       if (itensQueExigemAutorizacao.length > 0 || origensDevolucao.size > 0) {
         const administrador = getUsuarioAdministrador();
-        if (!administrador?.pinHash) {
-          throw erroHttp("Configure o PIN administrativo em Ajustes & Backups antes de alterar preços.", 428);
+        if (!administrador?.operacaoHash) {
+          throw erroHttp("Configure a senha de operação (Configurações → Usuários e senha de operação) antes de alterar preços.", 428);
         }
 
         administradorAutorizador = validarPinAdministrador(autorizacaoPreco?.pin);
         if (!administradorAutorizador) {
-          throw erroHttp("Informe a senha do gerente para autorizar os preços ou a devolução antes de registrar a venda.", 403);
+          throw erroHttp("Informe a senha de operação para autorizar os preços ou a devolução antes de registrar a venda.", 403);
         }
       }
 
@@ -3635,7 +3691,7 @@ app.post("/api/vendas/:id/devolucoes", (req, res) => {
     const { data, observacoes, pin, items } = req.body || {};
     const administrador = validarPinAdministrador(pin);
     if (!administrador) {
-      return res.status(403).json({ error: "PIN administrativo inválido." });
+      return res.status(403).json({ error: "Senha de operação inválida." });
     }
     if (!dataFinanceiraValida(String(data || "")) || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "Informe a data e ao menos um item para devolução." });
@@ -3795,7 +3851,7 @@ app.put("/api/vendas/:id", (req, res) => {
     exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi alterada." });
+      return res.status(403).json({ error: "Senha de operação inválida. A venda não foi alterada." });
     }
     if (req.body?.data !== undefined && !dataFinanceiraValida(String(req.body.data))) throw erroHttp("Informe uma data válida para a venda.", 400);
     const vendaId = req.params.id;
@@ -4052,7 +4108,7 @@ app.put("/api/vales/:id", (req, res) => {
     exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi alterado." });
+      return res.status(403).json({ error: "Senha de operação inválida. O vale não foi alterado." });
     }
     const { id } = req.params;
     const venda = queryOne<any>(
@@ -4108,7 +4164,7 @@ app.put("/api/vales/:id", (req, res) => {
 app.post("/api/vales/:id/restaurar", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) return res.status(403).json({ error: "Senha administrativa inválida." });
+    if (!administrador) return res.status(403).json({ error: "Senha de operação inválida." });
     const id = req.params.id;
     runInTransaction(() => {
       const venda = queryOne<any>("SELECT * FROM vendas WHERE id=? AND deletedAt IS NULL AND vencimento IS NOT NULL", [id]);
@@ -4130,7 +4186,7 @@ app.post("/api/vales/:id/cancelar", (req, res) => {
     exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. O vale não foi cancelado." });
+      return res.status(403).json({ error: "Senha de operação inválida. O vale não foi cancelado." });
     }
     const { id } = req.params;
     runInTransaction(() => {
@@ -4190,7 +4246,7 @@ app.post("/api/vendas/:id/cancelar", (req, res) => {
     const { id } = req.params;
     const administrador = validarPinAdministrador(req.body?.pin);
     if (!administrador) {
-      return res.status(403).json({ error: "PIN administrativo inválido. A venda não foi cancelada." });
+      return res.status(403).json({ error: "Senha de operação inválida. A venda não foi cancelada." });
     }
     const nowStr = new Date().toISOString();
     
@@ -4997,7 +5053,7 @@ app.post('/api/ordens-cobranca/:id/renegociar-saldo', exigirGerente, (req, res) 
     const formaPagamento = String(req.body?.formaPagamento || '').trim();
     if (formaPagamento && !FORMAS_PAGAMENTO_CLIENTE.has(formaPagamento)) throw erroHttp('Informe uma forma de pagamento válida.', 400);
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) throw erroHttp('Senha do gerente inválida.', 403);
+    if (!administrador) throw erroHttp('Senha de operação inválida.', 403);
     runInTransaction(() => {
       const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND status = 'aberta' AND deletedAt IS NULL", [req.params.id]);
       if (!ordem || ordem.updatedAt !== req.body.updatedAt) throw erroHttp('A ordem mudou. Atualize antes de renegociar.', 409);
@@ -5147,7 +5203,7 @@ app.post("/api/ordens-cobranca/:id/encerrar", exigirGerente, (req, res) => {
 app.post("/api/ordens-cobranca/:id/restaurar", exigirGerente, (req,res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) throw erroHttp('Senha administrativa inválida.',403);
+    if (!administrador) throw erroHttp('Senha de operação inválida.',403);
     runInTransaction(() => {
       const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id=? AND deletedAt IS NULL",[req.params.id]);
       if (!ordem || ordem.status !== 'cancelada') throw erroHttp('Somente ordens canceladas podem ser restauradas.',409);
@@ -5255,7 +5311,7 @@ function ajustarBonusFinalizacao(clienteId: string, atual: number, solicitado: u
 app.post("/api/ordens-cobranca/:id/finalizar", (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
+    if (!administrador) throw erroHttp("Senha de operação inválida.", 403);
     const destinoRestante = "novo_vale";
     let residual: ReturnType<typeof criarValeResidual> = null;
     runInTransaction(() => {
@@ -5304,7 +5360,7 @@ app.post("/api/vendas/:id/finalizar", (req, res) => {
   try {
     exigirValeSemOrdemAberta(req.params.id);
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) throw erroHttp("Senha do gerente inválida.", 403);
+    if (!administrador) throw erroHttp("Senha de operação inválida.", 403);
     const destinoRestante = "novo_vale";
     let residual: ReturnType<typeof criarValeResidual> = null;
     runInTransaction(() => {
@@ -5457,7 +5513,7 @@ function registrarRecebimentoCliente(req: any, body = req.body, ordemValidadaNoL
     const ordemCobrancaId = String(body?.ordemCobrancaId || '').trim();
     const projecaoId = String(body?.projecaoId || '');
     const gerenteProjecao = projecaoId ? validarPinAdministrador(body?.pin) : null;
-    if (projecaoId && !gerenteProjecao) throw erroHttp("Informe a senha do gerente para registrar a previsão.", 403);
+    if (projecaoId && !gerenteProjecao) throw erroHttp("Informe a senha de operação para registrar a previsão.", 403);
     if (ordemCobrancaId && parcelaOrdemId) throw erroHttp('Selecione a ordem ou a parcela, não ambas.', 400);
     const arredondar = (valor: unknown) => Math.round(Number(valor || 0) * 100) / 100;
 
@@ -6383,7 +6439,7 @@ app.post("/api/ordens-cobranca/:id/pagamentos/previa", exigirGerente, (req, res)
 app.post("/api/ordens-cobranca/:id/pagamentos/acoes", exigirGerente, (req, res) => {
   try {
     const gerente = validarPinAdministrador(req.body.pin);
-    if (!gerente) throw erroHttp("Senha do gerente inválida.", 403);
+    if (!gerente) throw erroHttp("Senha de operação inválida.", 403);
     acoesPagamentosOrdem.executar(req.params.id, req.body.acao, req.body.itens, req.body.revisao, gerente.id);
     res.json(listarOrdensCobranca("AND oc.id = ?", [req.params.id])[0]);
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }
@@ -6391,7 +6447,7 @@ app.post("/api/ordens-cobranca/:id/pagamentos/acoes", exigirGerente, (req, res) 
 app.put("/api/ordens-cobranca/:id/projecoes/:projecaoId", exigirGerente, (req, res) => {
   try {
     const gerente = validarPinAdministrador(req.body.pin);
-    if (!gerente) throw erroHttp("Senha do gerente inválida.", 403);
+    if (!gerente) throw erroHttp("Senha de operação inválida.", 403);
     runInTransaction(() => {
       const ordem = queryOne<any>("SELECT * FROM ordens_cobranca WHERE id = ? AND deletedAt IS NULL AND status IN ('aberta','quitada')", [req.params.id]);
       const p = queryOne<any>("SELECT * FROM ordem_pagamentos_projetados WHERE id = ? AND ordemId = ? AND estado = 'pendente'", [req.params.projecaoId, req.params.id]);
@@ -6425,7 +6481,7 @@ app.post("/api/reabertura-pagamentos/:tipo/:id", exigirGerente, (req, res) => {
   try {
     if (!["vale", "parcela", "recebimento"].includes(req.params.tipo)) throw erroHttp("Tipo de reabertura inválido.", 400);
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) return res.status(403).json({ error: "Senha do gerente inválida." });
+    if (!administrador) return res.status(403).json({ error: "Senha de operação inválida." });
     if (req.params.tipo === "vale") exigirValeSemOrdemAberta(req.params.id);
     res.json(reabertura.executar(req.params.tipo as "vale" | "parcela" | "recebimento", req.params.id,
       String(req.body?.revisao || ""), administrador.id, String(req.body?.motivo || "").trim().slice(0, 300)));
@@ -6435,7 +6491,7 @@ app.post("/api/reabertura-pagamentos/:tipo/:id", exigirGerente, (req, res) => {
 app.post("/api/recebimentos-cliente/:id/cancelar", exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) return res.status(403).json({ error: "Senha do gerente inválida." });
+    if (!administrador) return res.status(403).json({ error: "Senha de operação inválida." });
     const plano = reabertura.preparar("recebimento", req.params.id);
     res.json(reabertura.executar("recebimento", req.params.id, plano.revisao, administrador.id, String(req.body?.motivo || "").slice(0, 300)));
   } catch (error: any) {
@@ -6586,7 +6642,7 @@ app.get('/api/finalizacoes/:tipo/:id/reabertura', exigirGerente, (req, res) => {
 app.post('/api/finalizacoes/:tipo/:id/reabertura', exigirGerente, (req, res) => {
   try {
     const administrador = validarPinAdministrador(req.body?.pin);
-    if (!administrador) throw erroHttp('Senha do gerente inválida.', 403);
+    if (!administrador) throw erroHttp('Senha de operação inválida.', 403);
     res.json(reaberturaFinalizacao.executar(req.params.tipo as 'ordem' | 'vale', req.params.id,
       String(req.body?.revisao || ''), administrador.id, String(req.body?.motivo || '').trim().slice(0, 300)));
   } catch (error: any) { res.status(error.statusCode || 500).json({ error: error.message }); }

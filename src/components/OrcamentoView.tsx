@@ -751,9 +751,9 @@ export function OrcamentoView({ onLevarParaVenda, compact = false, clienteExtern
             </div>
             <div className="space-y-4 p-5">
               {seguranca?.pinConfigurado ? (
-                <div><span className="mb-1 block text-xs font-black uppercase text-slate-600">PIN administrativo</span><PinAdministrativoInput autoFocus value={adminPin} onChange={value => { setAdminPin(value); setPinErro(""); }} label="PIN administrativo" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" /></div>
+                <div><span className="mb-1 block text-xs font-black uppercase text-slate-600">Senha de operação</span><PinAdministrativoInput autoFocus value={adminPin} onChange={value => { setAdminPin(value); setPinErro(""); }} label="Senha de operação" className="w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-lg font-black tracking-[0.35em]" /></div>
               ) : (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure o PIN administrativo em Configurações.</p>
+                <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">Configure a senha de operação em Configurações → Usuários e senha de operação.</p>
               )}
               {pinErro && <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">{pinErro}</p>}
             </div>

@@ -7,10 +7,26 @@ const mod = new Module(path.resolve('scripts/planilha-runtime.cjs'));
 mod._compile(compiled.outputFiles[0].text, mod.id);
 const { avaliarCelula, apresentarCelula, calcularPlanilha, resumirSelecao, limitesSelecao, LINHAS, COLUNAS } = mod.exports;
 const mostrar = (formula) => apresentarCelula({ A1: formula }, 'A1', true).texto;
-for (const texto of ['25/10/2026', '25-10-2026', '2+3', '12/4', '123 produto']) {
+for (const texto of ['25-10-2026', '2+3', '12/4', '31/02/2026', '123 produto']) {
   assert.deepEqual(apresentarCelula({A1:texto},'A1',true),{texto,erro:false,numerico:false});
 }
 assert.equal(mostrar('=12/4'),'R$ 3,00');
+// Datas: média de datas (prazo médio), data + dias e diferença em dias; a SOMA ignora datas.
+{
+  const datas = calcularPlanilha({ A1:'10/11/2026', A2:'20/11/2026', A3:'30/11/2026', A4:'=MÉDIA(A1:A3)', A5:'=A4+30', A6:'=A3-A1', A7:'=SOMA(A1:A3)', A8:'=MEDIANA(A1:A3)', B1:'1/12/26', B2:'2/12/26', B3:'=MÉDIA(B1:B2)' }, ['A1']);
+  assert.equal(datas.A1.texto,'10/11/2026');assert.equal(datas.A1.data,true);
+  assert.equal(datas.A4.texto,'20/11/2026');assert.equal(datas.A4.data,true);
+  assert.equal(datas.A5.texto,'20/12/2026');
+  assert.equal(datas.A6.texto,'20');assert.equal(datas.A6.data,undefined);
+  assert.equal(datas.A7.texto,'0');
+  assert.equal(datas.A8.texto,'20/11/2026');
+  assert.equal(datas.B1.texto,'01/12/2026');
+  assert.equal(datas.B3.texto,'01/12/2026','a fração do dia é descartada, como no Excel');
+  assert.deepEqual(resumirSelecao(datas,'A1','A3'),{quantidade:0,datas:3,soma:'—',media:'20/11/2026',minimo:'10/11/2026',maximo:'30/11/2026',erro:false});
+  // Números e datas misturados: a média usa só os números.
+  assert.equal(apresentarCelula({ A1:'10/11/2026', A2:'4', A3:'6', A4:'=MÉDIA(A1:A3)' },'A4',false).texto,'5');
+  assert.equal(apresentarCelula({ A1:'12', A2:'12', A3:'-12', A4:'100', A5:'=SOMA(A1:A4)' },'A5',false).texto,'112');
+}
 assert.equal(apresentarCelula({A1:'25/10/2026',A2:'10',A3:'=SOMA(A1:A2)'},'A3',false).texto,'10');
 assert.deepEqual(avaliarCelula({ A1: '=0,1+0,2' }, 'A1'), { n: 3n, d: 10n });
 assert.equal(mostrar('=1/3*3'), 'R$ 1,00');

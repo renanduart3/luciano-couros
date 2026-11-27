@@ -43,7 +43,7 @@ export function RenegociarSaldoOrdem({ ordem, origem, onSaved, onClose }: { key?
         <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 bg-slate-50 px-2 py-2 font-semibold"><span>Total: {formatCurrency(total / 100)}</span><span className={diferenca === 0 ? 'text-emerald-700' : 'text-amber-800'}>{diferenca === 0 ? 'Saldo distribuído' : `${diferenca > 0 ? 'Falta' : 'Excede'} ${formatCurrency(Math.abs(diferenca) / 100)}`}</span></div>
       </div>
       <div className="flex flex-wrap items-end justify-end gap-2">
-        <label className="grid w-40 gap-1 font-semibold text-slate-700">Senha do gerente<input aria-label="Senha do gerente para renegociar" disabled={saving} type="password" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} className={campo}/></label>
+        <label className="grid w-40 gap-1 font-semibold text-slate-700">Senha de operação<input aria-label="Senha de operação para renegociar" disabled={saving} type="password" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} className={campo}/></label>
         <div className="flex justify-end gap-2"><button type="button" disabled={saving} onClick={onClose} className="h-8 rounded-md border border-slate-300 px-3 font-semibold">Cancelar</button><button type="button" disabled={saving || !valido || pin.length < 4} onClick={() => void salvar()} className="h-8 rounded-md bg-blue-700 px-3 font-bold text-white disabled:opacity-40">{saving ? 'Salvando…' : 'Salvar negociação'}</button></div>
       </div>
       {erro && <p role="alert" className="text-red-800">{erro}</p>}

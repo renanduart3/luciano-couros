@@ -38,7 +38,7 @@ export function ReabrirFinalizacaoModal({ tipo, id, onClose, onSaved, cancelado 
         {plano.bonusRestituido < 0 && <p>Bônus a remover da carteira: {formatCurrency(-plano.bonusRestituido)}.</p>}
       </div> : !erro && !cancelado && <p>Conferindo a finalização…</p>}
       <label className="block text-sm font-bold">Motivo<textarea value={motivo} onChange={e => setMotivo(e.target.value)} maxLength={300} className="mt-1 w-full rounded border p-2" /></label>
-      <label className="block text-sm font-bold">Senha do gerente<input type="password" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} maxLength={64} className="mt-1 w-full rounded border p-2" /></label>
+      <label className="block text-sm font-bold">Senha de operação<input type="password" autoComplete="off" value={pin} onChange={e => setPin(e.target.value)} maxLength={64} className="mt-1 w-full rounded border p-2" /></label>
       {erro && <p role="alert" className="text-sm font-bold text-red-700">{erro}</p>}
       <footer className="flex justify-end gap-2"><button type="button" disabled={salvando} onClick={onClose} className="rounded border px-4 py-2">Voltar</button><button disabled={(!plano && !cancelado) || salvando || pin.length < 4} className="rounded bg-amber-700 px-4 py-2 font-bold text-white disabled:opacity-40">{salvando ? 'Reabrindo…' : 'Reabrir para editar'}</button></footer>
     </form>

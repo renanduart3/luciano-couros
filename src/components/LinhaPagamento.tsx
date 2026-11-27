@@ -100,7 +100,7 @@ export function LinhaPagamento({ listarTitulosSeparados = false, ocultarAcoes = 
     if (saving || revisando || concluido) return;
     setErro("");
     if (somenteReabertura && !novo && situacao !== "em_aberto") return setErro("Selecione Em aberto para corrigir o pagamento.");
-    if ((!novo || projecao) && pin.length < 4) return setErro("Informe a senha do gerente.");
+    if ((!novo || projecao) && pin.length < 4) return setErro("Informe a senha de operação.");
     if (situacao === "em_aberto" && !projecao && (!plano || (!excluindo && !confirmado))) return setErro("Confira e confirme o estorno abaixo.");
     if (situacao !== "em_aberto" && (!data || !Number.isFinite(totalAbatimento) || bonusUsado < 0 || total < 0 || (totalAbatimento <= 0 && situacao !== "recusado"))) return setErro("Informe data e valor válidos.");
     setSaving(true);
@@ -185,7 +185,7 @@ export function LinhaPagamento({ listarTitulosSeparados = false, ocultarAcoes = 
       {revisando && <p className="text-xs">Conferindo valores…</p>}
       {excluindo && plano && <div className="my-2 space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950"><p>Excluir pagamento de {formatCurrency(plano.totalFinanceiro)}? A exclusão ficará no histórico.</p><p>Saldo após a exclusão: {plano.vales.map(v => `vale #${v.numero}: ${formatCurrency(v.saldoDepois)}`).join(" · ")}.</p>{plano.vales.some(v => v.bonusRevertido > 0.005) && <p>Bônus da devolução ou alteração revertido: {formatCurrency(plano.vales.reduce((s, v) => s + v.bonusRevertido, 0))}.</p>}</div>}
       {!excluindo && plano && situacao === "em_aberto" && <label className="my-2 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900"><input type="checkbox" checked={confirmado} disabled={saving || concluido} onChange={e => setConfirmado(e.target.checked)}/><span>{excluindo ? "Excluir este pagamento, estornar" : "Estornar"} {formatCurrency(plano.totalFinanceiro)} e reabrir o saldo. Vales afetados: {plano.vales.map(v => `#${v.numero} (${formatCurrency(v.valor)})`).join(", ")}.{plano.compartilhado && " O pagamento é compartilhado: o estorno atinge todos os vales acima."}{Math.abs(plano.variacaoBonus) > 0.005 && ` Ajuste na carteira: ${formatCurrency(plano.variacaoBonus)}.`}</span></label>}
-      {(!novo || projecao) && <label className="mt-2 inline-flex items-center gap-2 text-[10px] font-bold">Senha do gerente<input type="password" autoComplete="off" maxLength={64} disabled={saving || concluido} value={pin} onChange={e => setPin(e.target.value)} className={`${campo} max-w-44`}/></label>}
+      {(!novo || projecao) && <label className="mt-2 inline-flex items-center gap-2 text-[10px] font-bold">Senha de operação<input type="password" autoComplete="off" maxLength={64} disabled={saving || concluido} value={pin} onChange={e => setPin(e.target.value)} className={`${campo} max-w-44`}/></label>}
       {erro && <p role="alert" className="mt-2 text-xs font-bold text-red-800">{concluido ? "Pagamento salvo; atualize a tela para carregar os saldos. " : ""}{erro}</p>}
     </td></tr>}
   </>;

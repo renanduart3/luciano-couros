@@ -701,7 +701,10 @@ export interface Config {
 export interface SegurancaStatus {
   usuarioId: string | null;
   nome: string;
+  /** Senha de operação (vendas, liberação de preço, cancelamentos). */
   pinConfigurado: boolean;
+  /** Senha do gerente (login administrativo). */
+  senhaGerenteConfigurada?: boolean;
 }
 
 export interface UsuarioSistema {

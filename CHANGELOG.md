@@ -1,7 +1,8 @@
 # Histórico de versões
 
-## 1.44.0 — 22/11/2026
+## 1.44.0 — 26/11/2026
 
+- CPF/CNPJ do titular exibido nos cheques e duplicatas de terceiro, no demonstrativo da ordem e no comprovante de pagamento do vale. Descrições longas quebram linha e a data de vencimento usa fonte menor para caber sem quebra.
 - Aba de automação para o gerente definir periodicidade, atraso, saldo mínimo e orientação ao vendedor. A ficha de cada cliente permite personalizar cada campo.
 - Relatórios das parcelas de vales em aberto por cliente e vendedor, com envio programado por WhatsApp via WAHA + NOWEB ou por Telegram. Inclui prévia, histórico e teste de PDF ou imagem.
 
